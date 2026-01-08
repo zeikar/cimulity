@@ -1,36 +1,210 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cimulity
+
+**Open-source minimal city simulation game in the browser.**
+
+A SimCity-style city building simulation game built with Next.js, TypeScript, and PixiJS. Features an isometric grid-based world with camera controls, tile interactions, and a clean architectural separation between game logic, rendering, and UI.
+
+## Current Status: MVP-0 ✅
+
+MVP-0 is complete with the following features:
+- ✅ 16x16 isometric diamond grid rendering
+- ✅ Camera controls (right-click/middle-click pan, mouse wheel zoom around cursor)
+- ✅ Tile interaction (hover highlight, click selection)
+- ✅ HUD overlay (FPS counter, selected tile coordinates, camera position)
+- ✅ Clean architecture with separated concerns
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+# Install dependencies
+npm install
+
+# Run development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to play!
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Controls
+- **Pan**: Right-click or middle-click and drag
+- **Zoom**: Mouse wheel (zooms around cursor)
+- **Select Tile**: Left-click on any tile
+- **Hover**: Move mouse over tiles to see highlight
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tech Stack
 
-## Learn More
+- **Framework**: Next.js 16.1.1 (App Router)
+- **Language**: TypeScript (strict mode)
+- **Rendering**: PixiJS 8.5.2 (WebGL with Canvas fallback)
+- **Styling**: Tailwind CSS 4
 
-To learn more about Next.js, take a look at the following resources:
+## Project Architecture
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The codebase follows a strict layered architecture to maintain clean separation of concerns:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    React UI Layer                            │
+│  - Minimal state (only display values)                       │
+│  - GameCanvas, GameHUD components                            │
+└────────────────────┬────────────────────────────────────────┘
+                     │ Callbacks & Events
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Input Layer                               │
+│  - PointerHandler (tile picking)                             │
+│  - CameraController (pan/zoom)                               │
+│  - ToolManager (placeholder for MVP-1)                       │
+└────────────────────┬────────────────────────────────────────┘
+                     │ User Input Events
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Render Layer                              │
+│  - PixiJS Application lifecycle                              │
+│  - Camera (pan/zoom with constraints)                        │
+│  - IsoTransform (coordinate conversion)                      │
+│  - TileRenderer, GridRenderer, SelectionRenderer            │
+└────────────────────┬────────────────────────────────────────┘
+                     │ Reads State
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Core Layer                                │
+│  - World (game state container)                              │
+│  - GameMap (2D grid structure)                               │
+│  - Tile (data model)                                         │
+│  - GameLoop (tick system - placeholder)                      │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## Deploy on Vercel
+### Directory Structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+cimulity/
+├── app/                          # Next.js App Router
+│   ├── components/               # React components
+│   │   ├── GameCanvas.tsx        # PixiJS mount point
+│   │   └── GameHUD.tsx           # HUD overlay
+│   ├── page.tsx                  # Main game page
+│   ├── layout.tsx                # Root layout
+│   └── globals.css               # Global styles
+│
+├── game/                         # Game engine code
+│   ├── core/                     # Game logic layer
+│   │   ├── Tile.ts               # Tile data model
+│   │   ├── Map.ts                # 2D grid structure
+│   │   ├── World.ts              # World state container
+│   │   └── GameLoop.ts           # Tick system (placeholder)
+│   │
+│   ├── render/                   # Rendering layer
+│   │   ├── PixiApp.ts            # PixiJS lifecycle wrapper
+│   │   ├── Camera.ts             # Camera system
+│   │   ├── IsoTransform.ts       # Coordinate transforms
+│   │   ├── TileRenderer.ts       # Tile rendering
+│   │   ├── GridRenderer.ts       # Debug grid lines
+│   │   └── SelectionRenderer.ts  # Hover/selection highlights
+│   │
+│   ├── input/                    # Input handling layer
+│   │   ├── PointerHandler.ts     # Mouse/touch input
+│   │   ├── CameraController.ts   # Camera controls
+│   │   └── ToolManager.ts        # Tool state (placeholder)
+│   │
+│   └── types/                    # Shared TypeScript types
+│       ├── coordinates.ts        # Coordinate types
+│       └── events.ts             # Event types
+│
+└── package.json
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Key Technical Details
+
+### Isometric Coordinate System
+
+The game uses **diamond isometric projection** (classic 45° rotation):
+
+```typescript
+// Tile → Screen (64x32 tile size)
+screenX = (tileX - tileY) * 32
+screenY = (tileX + tileY) * 16
+
+// Screen → Tile (inverse transform)
+tileX = (screenX/32 + screenY/16) / 2
+tileY = (screenY/16 - screenX/32) / 2
+```
+
+### Camera System
+
+- **Pan**: Drag with right-click or middle-click
+- **Zoom**: Mouse wheel zooms around cursor position (not center)
+- **Constraints**: Pan limited to map boundaries, zoom 0.25x - 2x
+- **Algorithm**: Uses transform matrix for efficient coordinate conversion
+
+```typescript
+// Zoom around cursor
+worldBefore = (cursorPos - cameraPos) / oldZoom
+// Update zoom
+worldAfter = (cursorPos - cameraPos) / newZoom
+cameraPos += (worldAfter - worldBefore) * newZoom
+```
+
+### Tile Picking Pipeline
+
+```
+Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.getTile() → Validate bounds
+```
+
+### Performance Optimizations
+
+- **Batched rendering**: Graphics API optimized for minimal draw calls
+- **Cached Graphics**: Tiles rendered once, not every frame
+- **React optimization**: `useCallback` prevents infinite re-renders
+- **Future**: Viewport frustum culling (render only visible tiles)
+
+### React StrictMode Safety
+
+- **Idempotent initialization**: PixiApp.init() can be called multiple times safely
+- **Ref guards**: Prevent double-initialization in development
+- **Proper cleanup**: All PixiJS resources destroyed on unmount
+- **No memory leaks**: Verified with hot reload testing
+
+## Roadmap
+
+### MVP-1 (Next Steps)
+
+- [ ] **Road painting tool** - Click-drag to paint road tiles
+- [ ] **Expanded tile types** - Water, dirt, different terrain
+- [ ] **Building placement** - Click to place buildings on tiles
+- [ ] **Game tick system** - Implement simulation loop
+- [ ] **Sprites/textures** - Replace colored shapes with actual graphics
+- [ ] **Viewport culling** - Render only visible tiles
+- [ ] **UI toolbar** - Tool selection interface
+- [ ] **Increase map size** - Scale back to 64x64 (4096 tiles)
+
+### MVP-2 (Future)
+
+- [ ] **Citizens** - Population simulation
+- [ ] **Resources** - Money, power, water systems
+- [ ] **Zoning** - Residential, commercial, industrial zones
+- [ ] **Services** - Police, fire, hospitals
+- [ ] **Statistics** - Population, happiness, budget charts
+- [ ] **Save/load** - Persistent world state
+- [ ] **Sound effects** - Audio feedback
+
+## Contributing
+
+This is a learning/demonstration project. Feel free to fork and experiment!
+
+### Code Style
+
+- **TypeScript strict mode** enabled
+- **Functional approach** where possible
+- **Immutable data** in core layer (future)
+- **Clean separation** of concerns
+- **No circular dependencies** between layers
+
+## License
+
+MIT (or your preferred license)
+
+---
+
+**Built with GPT-4 + Claude Code** 🤖✨
