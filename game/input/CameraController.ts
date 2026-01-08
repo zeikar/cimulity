@@ -12,9 +12,13 @@ export class CameraController {
   private canvas: HTMLCanvasElement;
   private camera: Camera;
   private callbacks: CameraControlCallbacks;
-  private isPanning: boolean = false;
-  private lastPointerX: number = 0;
-  private lastPointerY: number = 0;
+  private isEdgePanning: boolean = false;
+  private rafId: number | null = null;
+  private lastFrameTime: number = 0;
+  private pointerX: number = 0;
+  private pointerY: number = 0;
+  private edgePanSpeed: number = 600;
+  private edgePanMargin: number = 32;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -29,42 +33,20 @@ export class CameraController {
   }
 
   private attachListeners(): void {
-    this.canvas.addEventListener('pointerdown', this.handlePointerDown);
     this.canvas.addEventListener('pointermove', this.handlePointerMove);
-    this.canvas.addEventListener('pointerup', this.handlePointerUp);
-    this.canvas.addEventListener('pointerleave', this.handlePointerUp);
+    this.canvas.addEventListener('pointerleave', this.handlePointerLeave);
     this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
   }
 
-  private handlePointerDown = (event: PointerEvent): void => {
-    // Right-click or middle-click to pan
-    if (event.button === 2 || event.button === 1) {
-      event.preventDefault();
-      this.isPanning = true;
-      this.lastPointerX = event.clientX;
-      this.lastPointerY = event.clientY;
-      this.canvas.style.cursor = 'grabbing';
-    }
-  };
-
   private handlePointerMove = (event: PointerEvent): void => {
-    if (!this.isPanning) return;
-
-    const deltaX = event.clientX - this.lastPointerX;
-    const deltaY = event.clientY - this.lastPointerY;
-
-    this.camera.pan(deltaX, deltaY);
-    this.notifyCameraUpdate();
-
-    this.lastPointerX = event.clientX;
-    this.lastPointerY = event.clientY;
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointerX = event.clientX - rect.left;
+    this.pointerY = event.clientY - rect.top;
+    this.startEdgePanIfNeeded(rect.width, rect.height);
   };
 
-  private handlePointerUp = (): void => {
-    if (this.isPanning) {
-      this.isPanning = false;
-      this.canvas.style.cursor = 'default';
-    }
+  private handlePointerLeave = (): void => {
+    this.stopEdgePan();
   };
 
   private handleWheel = (event: WheelEvent): void => {
@@ -88,11 +70,72 @@ export class CameraController {
     this.callbacks.onCameraUpdate(pos.x, pos.y, this.camera.getZoom());
   }
 
+  private startEdgePanIfNeeded(width: number, height: number): void {
+    const inEdge =
+      this.pointerX < this.edgePanMargin ||
+      this.pointerX > width - this.edgePanMargin ||
+      this.pointerY < this.edgePanMargin ||
+      this.pointerY > height - this.edgePanMargin;
+
+    if (inEdge && !this.isEdgePanning) {
+      this.isEdgePanning = true;
+      this.lastFrameTime = performance.now();
+      this.rafId = requestAnimationFrame(this.edgePanStep);
+      this.canvas.style.cursor = 'move';
+    } else if (!inEdge && this.isEdgePanning) {
+      this.stopEdgePan();
+    }
+  }
+
+  private edgePanStep = (time: number): void => {
+    if (!this.isEdgePanning) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const deltaTime = Math.max(0, time - this.lastFrameTime) / 1000;
+    this.lastFrameTime = time;
+
+    let panX = 0;
+    let panY = 0;
+
+    if (this.pointerX < this.edgePanMargin) {
+      const intensity = 1 - this.pointerX / this.edgePanMargin;
+      panX += this.edgePanSpeed * intensity * deltaTime;
+    } else if (this.pointerX > rect.width - this.edgePanMargin) {
+      const distance = rect.width - this.pointerX;
+      const intensity = 1 - distance / this.edgePanMargin;
+      panX -= this.edgePanSpeed * intensity * deltaTime;
+    }
+
+    if (this.pointerY < this.edgePanMargin) {
+      const intensity = 1 - this.pointerY / this.edgePanMargin;
+      panY += this.edgePanSpeed * intensity * deltaTime;
+    } else if (this.pointerY > rect.height - this.edgePanMargin) {
+      const distance = rect.height - this.pointerY;
+      const intensity = 1 - distance / this.edgePanMargin;
+      panY -= this.edgePanSpeed * intensity * deltaTime;
+    }
+
+    if (panX !== 0 || panY !== 0) {
+      this.camera.pan(panX, panY);
+      this.notifyCameraUpdate();
+    }
+
+    this.rafId = requestAnimationFrame(this.edgePanStep);
+  };
+
+  private stopEdgePan(): void {
+    this.isEdgePanning = false;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    this.canvas.style.cursor = 'default';
+  }
+
   detach(): void {
-    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
     this.canvas.removeEventListener('pointermove', this.handlePointerMove);
-    this.canvas.removeEventListener('pointerup', this.handlePointerUp);
-    this.canvas.removeEventListener('pointerleave', this.handlePointerUp);
+    this.canvas.removeEventListener('pointerleave', this.handlePointerLeave);
     this.canvas.removeEventListener('wheel', this.handleWheel);
+    this.stopEdgePan();
   }
 }
