@@ -6,6 +6,7 @@
  */
 
 import type { TileCoord } from '@/game/types/coordinates';
+import type { Tool } from '@/game/input/ToolManager';
 
 export interface GameHUDProps {
   selectedTile: TileCoord | null;
@@ -13,6 +14,7 @@ export interface GameHUDProps {
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
+  currentTool?: Tool;
 }
 
 export function GameHUD({
@@ -21,6 +23,7 @@ export function GameHUD({
   cameraX,
   cameraY,
   cameraZoom,
+  currentTool,
 }: GameHUDProps) {
   return (
     <div
@@ -41,6 +44,11 @@ export function GameHUD({
       <div>
         <strong>FPS:</strong> {fps}
       </div>
+      {currentTool && (
+        <div>
+          <strong>Tool:</strong> {currentTool.toUpperCase()}
+        </div>
+      )}
       <div>
         <strong>Selected Tile:</strong>{' '}
         {selectedTile ? `(${selectedTile.x}, ${selectedTile.y})` : 'None'}
@@ -49,7 +57,7 @@ export function GameHUD({
         <strong>Camera:</strong> ({Math.round(cameraX)}, {Math.round(cameraY)}) | Zoom: {cameraZoom.toFixed(2)}
       </div>
       <div style={{ marginTop: '8px', opacity: 0.7, fontSize: '12px' }}>
-        Right-click/Middle-click: Pan | Scroll: Zoom
+        R: Road | S: Select | Left-click: Place | Drag: Paint
       </div>
     </div>
   );

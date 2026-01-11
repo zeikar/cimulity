@@ -8,6 +8,8 @@
 import { useCallback, useState } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { GameHUD } from './components/GameHUD';
+import { Toolbar } from './components/Toolbar';
+import { Tool } from '@/game/input/ToolManager';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export default function Home() {
@@ -16,6 +18,8 @@ export default function Home() {
   const [hoveredTile, setHoveredTile] = useState<TileCoord | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
+
   const handleCameraUpdate = useCallback((x: number, y: number, zoom: number) => {
     setCamera({ x, y, zoom });
   }, []);
@@ -27,6 +31,8 @@ export default function Home() {
         onTileClick={setSelectedTile}
         onFpsUpdate={setFps}
         onCameraUpdate={handleCameraUpdate}
+        currentTool={currentTool}
+        onToolChange={setCurrentTool}
       />
       <GameHUD
         selectedTile={selectedTile}
@@ -34,7 +40,9 @@ export default function Home() {
         cameraX={camera.x}
         cameraY={camera.y}
         cameraZoom={camera.zoom}
+        currentTool={currentTool}
       />
+      <Toolbar currentTool={currentTool} onToolChange={setCurrentTool} />
     </div>
   );
 }

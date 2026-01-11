@@ -39,7 +39,6 @@ export class TileRenderer {
   render(map: GameMap): void {
     if (!this.isDirty) return;
 
-    console.log('TileRenderer: Starting render...');
     this.graphics.clear();
 
     // Draw each tile individually for now (simpler, will optimize later)
@@ -72,7 +71,6 @@ export class TileRenderer {
     }
 
     this.isDirty = false;
-    console.log('TileRenderer: Render complete!');
   }
 
   /**

@@ -10,16 +10,20 @@ export class SelectionRenderer {
   private container: Container;
   private hoverGraphics: Graphics;
   private selectedGraphics: Graphics;
+  private dragPreviewGraphics: Graphics;
   private currentHover: TileCoord | null = null;
   private currentSelected: TileCoord | null = null;
+  private currentDragPreview: TileCoord[] = [];
 
   constructor(container: Container) {
     this.container = container;
 
     this.hoverGraphics = new Graphics();
     this.selectedGraphics = new Graphics();
+    this.dragPreviewGraphics = new Graphics();
 
     this.container.addChild(this.selectedGraphics);
+    this.container.addChild(this.dragPreviewGraphics); // Drag preview below hover
     this.container.addChild(this.hoverGraphics); // Hover on top
   }
 
@@ -43,6 +47,22 @@ export class SelectionRenderer {
     this.renderSelected();
   }
 
+  /**
+   * Update drag preview (show tiles that will be affected)
+   */
+  setDragPreview(tiles: TileCoord[]): void {
+    this.currentDragPreview = tiles;
+    this.renderDragPreview();
+  }
+
+  /**
+   * Clear drag preview
+   */
+  clearDragPreview(): void {
+    this.currentDragPreview = [];
+    this.dragPreviewGraphics.clear();
+  }
+
   private renderHover(): void {
     this.hoverGraphics.clear();
     if (!this.currentHover) return;
@@ -57,6 +77,23 @@ export class SelectionRenderer {
 
     const screen = tileToScreen(this.currentSelected);
     this.drawHighlight(this.selectedGraphics, screen, 0xffff00, 0.5);
+  }
+
+  private renderDragPreview(): void {
+    this.dragPreviewGraphics.clear();
+    if (this.currentDragPreview.length === 0) return;
+
+    for (const tile of this.currentDragPreview) {
+      const screen = tileToScreen(tile);
+      // Draw filled semi-transparent tile
+      this.dragPreviewGraphics.beginPath();
+      this.dragPreviewGraphics.moveTo(screen.x, screen.y);
+      this.dragPreviewGraphics.lineTo(screen.x + ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
+      this.dragPreviewGraphics.lineTo(screen.x, screen.y + ISO_CONFIG.TILE_HEIGHT);
+      this.dragPreviewGraphics.lineTo(screen.x - ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
+      this.dragPreviewGraphics.closePath();
+      this.dragPreviewGraphics.fill({ color: 0x4a4a4a, alpha: 0.4 }); // Road color with transparency
+    }
   }
 
   private drawHighlight(graphics: Graphics, screen: ScreenCoord, color: number, alpha: number): void {
@@ -78,5 +115,6 @@ export class SelectionRenderer {
   destroy(): void {
     this.hoverGraphics.destroy();
     this.selectedGraphics.destroy();
+    this.dragPreviewGraphics.destroy();
   }
 }

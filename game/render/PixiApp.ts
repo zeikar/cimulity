@@ -82,6 +82,13 @@ export class PixiApp {
     // Center camera on map
     this.centerCameraOnMap();
 
+    // Setup render loop
+    this.app.ticker.add(() => {
+      if (this.tileRenderer && this.world) {
+        this.tileRenderer.render(this.world.getMap());
+      }
+    });
+
     // Setup FPS counter
     this.fpsUpdateInterval = window.setInterval(() => {
       if (this.app) {
@@ -132,6 +139,20 @@ export class PixiApp {
    */
   getCamera(): Camera | null {
     return this.camera;
+  }
+
+  /**
+   * Get tile renderer instance for marking dirty
+   */
+  getTileRenderer(): TileRenderer | null {
+    return this.tileRenderer;
+  }
+
+  /**
+   * Get selection renderer instance for drag preview
+   */
+  getSelectionRenderer(): SelectionRenderer | null {
+    return this.selectionRenderer;
   }
 
   /**
