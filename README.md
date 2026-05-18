@@ -4,13 +4,19 @@
 
 A SimCity-style city building simulation game built with Next.js, TypeScript, and PixiJS. Features an isometric grid-based world with camera controls, tile interactions, and a clean architectural separation between game logic, rendering, and UI.
 
-## Current Status: MVP-0 ✅
+## Current Status: MVP-1 (in progress)
 
-MVP-0 is complete with the following features:
+Implemented so far:
 - ✅ 16x16 isometric diamond grid rendering
 - ✅ Camera controls (edge-pan by moving cursor to screen edge, mouse wheel zoom around cursor)
 - ✅ Tile interaction (hover highlight, click selection)
-- ✅ HUD overlay (FPS counter, selected tile coordinates, camera position)
+- ✅ HUD overlay (FPS counter, tick counter, selected tile coordinates, camera position)
+- ✅ UI toolbar for tool selection
+- ✅ Road painting tool (click or click-drag)
+- ✅ R/C/I zoning (click or drag a rectangle to paint residential/commercial/industrial)
+- ✅ Bulldoze tool (rectangular area selection, leaves a regrowing scar)
+- ✅ Fixed-timestep simulation tick loop
+- ✅ Autosave to localStorage with a "New City" reset
 - ✅ Clean architecture with separated concerns
 
 ## Getting Started
@@ -197,25 +203,19 @@ Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.
 
 ## Roadmap
 
-### MVP-1 (Next Steps)
+### MVP-1 (Remaining)
 
-- [ ] **Road painting tool** - Click-drag to paint road tiles
 - [ ] **Expanded tile types** - Water, dirt, different terrain
-- [x] **R/C/I zoning** - Click or drag a rectangle to paint residential/commercial/industrial zones
-- [ ] **Game tick system** - Implement simulation loop
 - [ ] **Sprites/textures** - Replace colored shapes with actual graphics
 - [ ] **Viewport culling** - Render only visible tiles
-- [ ] **UI toolbar** - Tool selection interface
 - [ ] **Increase map size** - Scale back to 64x64 (4096 tiles)
 
 ### MVP-2 (Future)
 
 - [ ] **Citizens** - Population simulation
 - [ ] **Resources** - Money, power, water systems
-- [ ] **Zoning** - Residential, commercial, industrial zones
 - [ ] **Services** - Police, fire, hospitals
 - [ ] **Statistics** - Population, happiness, budget charts
-- [ ] **Save/load** - Persistent world state
 - [ ] **Sound effects** - Audio feedback
 
 ## Contributing
