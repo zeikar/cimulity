@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { GameMap } from './Map';
 import { TileType, createTile } from './Tile';
-import { ZONE_MAX_LEVEL } from './World';
+import { World, ZONE_MAX_LEVEL, STARTING_FUNDS } from './World';
 import {
   serializeMap,
   deserializeMapInto,
+  serializeWorld,
+  deserializeWorldInto,
   SAVE_VERSION,
+  WORLD_SAVE_VERSION,
 } from './mapSerialization';
 
 describe('serializeMap / deserializeMapInto', () => {
@@ -249,5 +252,250 @@ describe('serializeMap / deserializeMapInto', () => {
     const bad = JSON.stringify({ v: 0, w, h, t: [TileType.GRASS, TileType.GRASS], l: [0, 0] });
     expect(deserializeMapInto(map, bad)).toBe(false);
     expect(map.getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// World-envelope API: serializeWorld / deserializeWorldInto
+// ---------------------------------------------------------------------------
+
+describe('serializeWorld / deserializeWorldInto', () => {
+  // Helper: build a minimal valid v3 JSON for a 2x1 map.
+  function makeV3(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      v: 3,
+      w: 2,
+      h: 1,
+      t: [TileType.GRASS, TileType.GRASS],
+      l: [0, 0],
+      m: 500,
+      ...overrides,
+    });
+  }
+
+  it('round-trips money: serialize then deserializeWorldInto restores map + money, v === WORLD_SAVE_VERSION', () => {
+    const src = new World(3, 2);
+    src.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    src.trySpend(3000);
+    src.earn(250);
+    const expectedMoney = src.getMoney();
+
+    const json = serializeWorld(src);
+    const parsed = JSON.parse(json);
+    expect(parsed.v).toBe(WORLD_SAVE_VERSION);
+
+    const dst = new World(3, 2);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+    expect(dst.getMoney()).toBe(expectedMoney);
+    expect(dst.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
+    expect(dst.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  it('split-contract lock: serializeWorld (v3) JSON accepted by deserializeWorldInto, rejected by deserializeMapInto', () => {
+    const world = new World(2, 2);
+    const json = serializeWorld(world);
+
+    const fresh = new World(2, 2);
+    expect(deserializeWorldInto(fresh, json)).toBe(true);
+
+    const map = new GameMap(2, 2);
+    expect(deserializeMapInto(map, json)).toBe(false);
+  });
+
+  // --- Shape-guard ---
+
+  it('shape-guard: "null" → false, world untouched', () => {
+    const world = new World(2, 2);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, 'null')).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('shape-guard: "[]" → false, world untouched', () => {
+    const world = new World(2, 2);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, '[]')).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('shape-guard: "{}" → false (no v field), world untouched', () => {
+    const world = new World(2, 2);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, '{}')).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  // --- v1 legacy ---
+
+  it('(v1, no m, no l) legacy: map loads with all levels 0, money === STARTING_FUNDS', () => {
+    const w = 2;
+    const h = 2;
+    const world = new World(w, h);
+    const payload = JSON.stringify({
+      v: 1,
+      w,
+      h,
+      t: [TileType.ROAD, TileType.GRASS, TileType.ZONE_RESIDENTIAL, TileType.WATER],
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
+    expect(world.getMap().getTile(0, 0)?.level).toBe(0);
+  });
+
+  it('(v1, stray m:{v:1,...,m:0}) → reject, world untouched', () => {
+    const w = 2;
+    const h = 1;
+    const world = new World(w, h);
+    const before = world.getMoney();
+    const payload = JSON.stringify({
+      v: 1,
+      w,
+      h,
+      t: [TileType.GRASS, TileType.GRASS],
+      m: 0,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  // --- v2 backward-compat ---
+
+  it('(v2, valid l, no m) → map loads, money === STARTING_FUNDS', () => {
+    const w = 2;
+    const h = 1;
+    const world = new World(w, h);
+    const payload = JSON.stringify({
+      v: 2,
+      w,
+      h,
+      t: [TileType.ROAD, TileType.GRASS],
+      l: [0, 0],
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
+  });
+
+  it('(v2, valid l, stray m) → accepted, m ignored, money === STARTING_FUNDS', () => {
+    const w = 2;
+    const h = 1;
+    const world = new World(w, h);
+    const payload = JSON.stringify({
+      v: 2,
+      w,
+      h,
+      t: [TileType.ROAD, TileType.GRASS],
+      l: [0, 0],
+      m: 9999,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+  });
+
+  // --- v3 valid ---
+
+  it('(v3, valid l + whole ≥0 m) → map + money loaded', () => {
+    const w = 2;
+    const h = 1;
+    const world = new World(w, h);
+    const payload = JSON.stringify({
+      v: 3,
+      w,
+      h,
+      t: [TileType.ZONE_RESIDENTIAL, TileType.ROAD],
+      l: [2, 0],
+      m: 750,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(750);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(world.getMap().getTile(0, 0)?.level).toBe(2);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
+  });
+
+  // --- v3 m rejection cases ---
+
+  it('(v3, m missing) → reject; money unchanged; map not written', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    const payload = JSON.stringify({ v: 3, w: 2, h: 1, t: [TileType.GRASS, TileType.GRASS], l: [0, 0] });
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  it('(v3, m:null) → reject', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, makeV3({ m: null }))).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('(v3, m non-number "x") → reject', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, makeV3({ m: 'x' }))).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('(v3, m overflow literal 1e999 → Infinity) → reject', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    // JSON.parse("1e999") → Infinity in JS; Number.isInteger(Infinity) === false.
+    const raw = '{"v":3,"w":2,"h":1,"t":["grass","grass"],"l":[0,0],"m":1e999}';
+    expect(deserializeWorldInto(world, raw)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('(v3, m negative) → reject', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, makeV3({ m: -1 }))).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('(v3, m fractional 12.5) → reject', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    expect(deserializeWorldInto(world, makeV3({ m: 12.5 }))).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  // --- all-or-nothing across map + money ---
+
+  it('(v3, valid m but invalid map l: non-zone ROAD level≠0) → reject; money unchanged', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    // ROAD tile with level=1 is invalid per map rules.
+    const payload = JSON.stringify({
+      v: 3,
+      w: 2,
+      h: 1,
+      t: [TileType.ROAD, TileType.GRASS],
+      l: [1, 0],
+      m: 500,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  // --- unsupported envelope version ---
+
+  it('(envelope v:4) → reject', () => {
+    const world = new World(2, 1);
+    const before = world.getMoney();
+    const payload = JSON.stringify({
+      v: 4,
+      w: 2,
+      h: 1,
+      t: [TileType.GRASS, TileType.GRASS],
+      l: [0, 0],
+      m: 0,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before);
   });
 });
