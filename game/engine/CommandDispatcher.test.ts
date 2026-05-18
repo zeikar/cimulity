@@ -309,5 +309,49 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
       expect(world.getMap().getTile(0, 1)?.type).toBe(expectedType);
       expect(world.getMap().getTile(1, 1)?.type).toBe(expectedType);
     });
+
+    it(`(f) SAME-ZONE level preserved: ${tool} repaint over a level-3 tile emits no change and level stays 3`, () => {
+      const world = makeWorld(5);
+      // Pre-seed a developed tile at level 3
+      world.getMap().setTile(2, 2, createTile(2, 2, expectedType, 3));
+
+      const result = executeClick(tool, { x: 2, y: 2 }, world);
+
+      // Same-zone skip in buildZoneCommands → no command emitted → no write
+      expect(result.changedTiles).toEqual([]);
+      expect(world.getMap().getTile(2, 2)?.level).toBe(3);
+      expect(world.getMap().getTile(2, 2)?.type).toBe(expectedType);
+    });
+
+    it(`(g) DIFFERENT-ZONE resets level: painting a different zone over a level-3 ${tool} tile resets level to 0`, () => {
+      const world = makeWorld(5);
+      const otherTool =
+        tool === Tool.ZONE_RESIDENTIAL ? Tool.ZONE_COMMERCIAL : Tool.ZONE_RESIDENTIAL;
+      const otherType =
+        otherTool === Tool.ZONE_RESIDENTIAL
+          ? TileType.ZONE_RESIDENTIAL
+          : TileType.ZONE_COMMERCIAL;
+      // Pre-seed a developed tile at level 3
+      world.getMap().setTile(2, 2, createTile(2, 2, expectedType, 3));
+
+      const result = executeClick(otherTool, { x: 2, y: 2 }, world);
+
+      expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+      expect(world.getMap().getTile(2, 2)?.type).toBe(otherType);
+      expect(world.getMap().getTile(2, 2)?.level).toBe(0);
+    });
   }
+});
+
+describe('executeClick - zoning × level', () => {
+  it('(c) GRASS paint: zone placed on a grass tile starts with level 0', () => {
+    const world = makeWorld(5);
+    // Tile at (2,2) is GRASS by default
+
+    const result = executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(world.getMap().getTile(2, 2)?.level).toBe(0);
+  });
 });
