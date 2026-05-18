@@ -8,7 +8,7 @@ A SimCity-style city building simulation game built with Next.js, TypeScript, an
 
 MVP-0 is complete with the following features:
 - ✅ 16x16 isometric diamond grid rendering
-- ✅ Camera controls (right-click/middle-click pan, mouse wheel zoom around cursor)
+- ✅ Camera controls (edge-pan by moving cursor to screen edge, mouse wheel zoom around cursor)
 - ✅ Tile interaction (hover highlight, click selection)
 - ✅ HUD overlay (FPS counter, selected tile coordinates, camera position)
 - ✅ Clean architecture with separated concerns
@@ -26,7 +26,7 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) to play!
 
 ### Controls
-- **Pan**: Right-click or middle-click and drag
+- **Pan**: Move cursor to any screen edge to scroll (speed scales with proximity to edge)
 - **Zoom**: Mouse wheel (zooms around cursor)
 - **Select Tile**: Left-click on any tile
 - **Hover**: Move mouse over tiles to see highlight
@@ -42,9 +42,11 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 
 The codebase follows a strict layered architecture to maintain clean separation of concerns:
 
+> **Boundary principle:** input emits raw drag endpoints → tools build commands & paths → engine dispatches → core mutates state → render draws from core. React is the shell.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    React UI Layer                            │
+│                    React Shell                               │
 │  - Minimal state (only display values)                       │
 │  - GameCanvas, GameHUD components                            │
 └────────────────────┬────────────────────────────────────────┘
@@ -53,26 +55,41 @@ The codebase follows a strict layered architecture to maintain clean separation 
 ┌─────────────────────────────────────────────────────────────┐
 │                    Input Layer                               │
 │  - PointerHandler (tile picking)                             │
-│  - CameraController (pan/zoom)                               │
-│  - ToolManager (placeholder for MVP-1)                       │
+│  - CameraController (edge-pan / wheel zoom)                  │
+│  - Emits raw drag endpoints only                             │
 └────────────────────┬────────────────────────────────────────┘
-                     │ User Input Events
+                     │ Raw drag endpoints
                      ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Render Layer                              │
-│  - PixiJS Application lifecycle                              │
-│  - Camera (pan/zoom with constraints)                        │
-│  - IsoTransform (coordinate conversion)                      │
-│  - TileRenderer, GridRenderer, SelectionRenderer            │
+│                    Tools Layer                               │
+│  - Tool enum, RoadTool (path rules)                          │
+│  - ToolActions, ToolResult                                   │
+│  - Builds commands & paths from raw input                    │
 └────────────────────┬────────────────────────────────────────┘
-                     │ Reads State
+                     │ Commands
                      ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Core Layer                                │
+│                    Engine Layer                              │
+│  - CommandDispatcher                                         │
+│  - GameSession                                               │
+└────────────────────┬────────────────────────────────────────┘
+                     │ State mutations
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Core Layer (state primitives)             │
 │  - World (game state container)                              │
 │  - GameMap (2D grid structure)                               │
 │  - Tile (data model)                                         │
 │  - GameLoop (tick system - placeholder)                      │
+└────────────────────┬────────────────────────────────────────┘
+                     │ Reads state
+                     ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Render Layer                              │
+│  - PixiJS Application lifecycle                              │
+│  - Camera (edge-pan/zoom with constraints)                   │
+│  - IsoTransform (coordinate conversion)                      │
+│  - TileRenderer, GridRenderer, SelectionRenderer             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -89,24 +106,36 @@ cimulity/
 │   └── globals.css               # Global styles
 │
 ├── game/                         # Game engine code
-│   ├── core/                     # Game logic layer
+│   ├── input/                    # Input layer (raw drag endpoints only)
+│   │   ├── PointerHandler.ts     # Mouse/touch input
+│   │   ├── CameraController.ts   # Edge-pan / wheel zoom
+│   │   └── ToolManager.ts        # Active tool dispatch
+│   │
+│   ├── tools/                    # Tools layer (path rules + commands)
+│   │   ├── Tool.ts               # Tool enum
+│   │   ├── RoadTool.ts           # Road path rule
+│   │   ├── ToolActions.ts        # Action definitions
+│   │   ├── ToolResult.ts         # Result types
+│   │   └── index.ts
+│   │
+│   ├── engine/                   # Engine layer (dispatch + session)
+│   │   ├── CommandDispatcher.ts  # Routes commands to core
+│   │   ├── GameSession.ts        # Session lifecycle
+│   │   └── index.ts
+│   │
+│   ├── core/                     # Core layer (state primitives)
 │   │   ├── Tile.ts               # Tile data model
 │   │   ├── Map.ts                # 2D grid structure
 │   │   ├── World.ts              # World state container
 │   │   └── GameLoop.ts           # Tick system (placeholder)
 │   │
-│   ├── render/                   # Rendering layer
+│   ├── render/                   # Rendering layer (draws from core state)
 │   │   ├── PixiApp.ts            # PixiJS lifecycle wrapper
 │   │   ├── Camera.ts             # Camera system
 │   │   ├── IsoTransform.ts       # Coordinate transforms
 │   │   ├── TileRenderer.ts       # Tile rendering
 │   │   ├── GridRenderer.ts       # Debug grid lines
 │   │   └── SelectionRenderer.ts  # Hover/selection highlights
-│   │
-│   ├── input/                    # Input handling layer
-│   │   ├── PointerHandler.ts     # Mouse/touch input
-│   │   ├── CameraController.ts   # Camera controls
-│   │   └── ToolManager.ts        # Tool state (placeholder)
 │   │
 │   └── types/                    # Shared TypeScript types
 │       ├── coordinates.ts        # Coordinate types
@@ -133,7 +162,7 @@ tileY = (screenY/16 - screenX/32) / 2
 
 ### Camera System
 
-- **Pan**: Drag with right-click or middle-click
+- **Pan**: Move cursor within 32px of any canvas edge; speed scales with proximity (up to 600px/s)
 - **Zoom**: Mouse wheel zooms around cursor position (not center)
 - **Constraints**: Pan limited to map boundaries, zoom 0.25x - 2x
 - **Algorithm**: Uses transform matrix for efficient coordinate conversion
