@@ -11,9 +11,9 @@
 import { World } from './World';
 import { serializeMap, deserializeMapInto } from './mapSerialization';
 
-const MAP_WIDTH = 16;
-const MAP_HEIGHT = 16;
-const STORAGE_KEY = 'cimulity:save:v1';
+const MAP_WIDTH = 64;
+const MAP_HEIGHT = 64;
+const STORAGE_KEY = 'cimulity:save:v2'; // v2: map grew to 64×64; v1 (16×16) saves are intentionally incompatible and ignored (no migration).
 
 const store = globalThis as unknown as { __cimulityWorld?: World };
 
