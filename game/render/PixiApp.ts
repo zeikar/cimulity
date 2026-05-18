@@ -177,6 +177,7 @@ export class PixiApp {
     // recenter on resize (simplest, predictable)
     if (this.camera && this.app) {
       this.centerCameraOnMap();
+      this.notifyCameraUpdate();
     }
   }
 

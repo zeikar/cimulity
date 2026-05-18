@@ -7,7 +7,7 @@ A SimCity-style city building simulation game built with Next.js, TypeScript, an
 ## Current Status: MVP-1 (in progress)
 
 Implemented so far:
-- ✅ 16x16 isometric diamond grid rendering
+- ✅ 64x64 isometric diamond grid rendering
 - ✅ Camera controls (edge-pan by moving cursor to screen edge, mouse wheel zoom around cursor)
 - ✅ Tile interaction (hover highlight, click selection)
 - ✅ HUD overlay (FPS counter, tick counter, selected tile coordinates, camera position)
@@ -208,7 +208,6 @@ Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.
 - [ ] **Expanded tile types** - Water, dirt, different terrain
 - [ ] **Sprites/textures** - Replace colored shapes with actual graphics
 - [ ] **Viewport culling** - Render only visible tiles
-- [ ] **Increase map size** - Scale back to 64x64 (4096 tiles)
 
 ### MVP-2 (Future)
 
