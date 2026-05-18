@@ -105,14 +105,19 @@ export class GameSession {
         this.markIfChanged(executeDrag(tool, start, end, world));
       },
       onDragPreview: (start, end) => {
-        // Only show preview for ROAD tool
+        // Any tool with a drag path previews; previewDrag returns [] for
+        // tools without one, so no per-tool gate is needed here.
         const tool = this.toolManager.getCurrentTool();
         const selectionRenderer = pixiApp.getSelectionRenderer();
-        if (end === null || tool !== Tool.ROAD) {
+        if (end === null) {
           selectionRenderer?.clearDragPreview();
           return;
         }
-        selectionRenderer?.setDragPreview(previewDrag(tool, start, end, world));
+        const previewColor = tool === Tool.BULLDOZE ? 0xff3b30 : 0x4a4a4a;
+        selectionRenderer?.setDragPreview(
+          previewDrag(tool, start, end, world),
+          previewColor
+        );
       },
     });
     this.pointerHandler = pointerHandler;

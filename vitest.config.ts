@@ -20,6 +20,7 @@ export default defineConfig({
         'game/core/World.ts',
         'game/core/Tile.ts',
         'game/tools/RoadTool.ts',
+        'game/tools/BulldozeTool.ts',
         'game/tools/ToolActions.ts',
         'game/engine/CommandDispatcher.ts',
         'game/render/IsoTransform.ts',

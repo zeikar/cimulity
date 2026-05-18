@@ -13,6 +13,7 @@ export interface KeyboardCallbacks {
  */
 const KEY_TO_TOOL: Record<string, Tool> = {
   r: Tool.ROAD,
+  b: Tool.BULLDOZE,
   s: Tool.SELECT,
   Escape: Tool.SELECT,
 };

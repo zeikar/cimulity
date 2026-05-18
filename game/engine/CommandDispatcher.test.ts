@@ -55,12 +55,63 @@ describe('executeClick', () => {
     const world = makeWorld();
 
     expect(
-      executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world).changedTiles
-    ).toEqual([]);
-    expect(
       executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world).changedTiles
     ).toEqual([]);
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+});
+
+describe('executeClick — bulldoze', () => {
+  it('reverts a road tile back to grass', () => {
+    const world = makeWorld();
+    executeClick(Tool.ROAD, { x: 2, y: 2 }, world);
+
+    const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+
+  it('does nothing on a non-road tile', () => {
+    const world = makeWorld();
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+
+    expect(
+      executeClick(Tool.BULLDOZE, { x: 0, y: 0 }, world).changedTiles
+    ).toEqual([]);
+    expect(
+      executeClick(Tool.BULLDOZE, { x: 1, y: 1 }, world).changedTiles
+    ).toEqual([]);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+  });
+
+  it('reports no change when bulldozing out of bounds', () => {
+    const world = makeWorld();
+    expect(
+      executeClick(Tool.BULLDOZE, { x: 99, y: 99 }, world).changedTiles
+    ).toEqual([]);
+  });
+});
+
+describe('executeDrag — bulldoze', () => {
+  it('clears only the road tiles inside the dragged rectangle', () => {
+    const world = makeWorld(5);
+    // Roads on two opposite corners of a 2x2 box; the other two stay grass
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
+    // A road outside the box must survive
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
+
+    const result = executeDrag(Tool.BULLDOZE, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    // Row-major order, non-road tiles in the box skipped
+    expect(result.changedTiles).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ]);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.ROAD);
   });
 });
 

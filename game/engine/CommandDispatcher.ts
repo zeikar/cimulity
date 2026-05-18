@@ -10,21 +10,30 @@
 
 import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
+import { rectDragPath } from '../tools/BulldozeTool';
 import { buildToolCommands } from '../tools';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolCommand, ToolResult } from '../tools';
 
 /**
- * Single place tool→path mapping lives. ROAD is the only tool with a drag
- * path today; other drag tools add a branch here later (YAGNI).
+ * Single place tool→path mapping lives. Each drag tool owns its own path
+ * rule: ROAD snaps to H/V/45° lines, BULLDOZE clears a filled rectangle.
+ * Other drag tools add a case here later (YAGNI).
  */
 function pathForTool(
   tool: Tool,
   start: TileCoord,
   end: TileCoord
 ): TileCoord[] {
-  return tool === Tool.ROAD ? snapRoadDragPath(start, end) : [];
+  switch (tool) {
+    case Tool.ROAD:
+      return snapRoadDragPath(start, end);
+    case Tool.BULLDOZE:
+      return rectDragPath(start, end);
+    default:
+      return [];
+  }
 }
 
 /**

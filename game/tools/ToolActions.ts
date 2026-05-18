@@ -23,10 +23,11 @@ export function buildToolCommands(
   switch (tool) {
     case Tool.ROAD:
       return buildRoadCommands(tiles, world);
+    case Tool.BULLDOZE:
+      return buildBulldozeCommands(tiles, world);
     case Tool.SELECT:
       // Selection doesn't modify tiles
       return [];
-    case Tool.BULLDOZE:
     case Tool.ZONE_RESIDENTIAL:
       // Not implemented yet
       return [];
@@ -60,6 +61,32 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, TileType.ROAD),
+    });
+  }
+
+  return commands;
+}
+
+/**
+ * Build bulldoze commands
+ * Reverts placed roads back to grass; natural terrain (water, dirt) and
+ * already-grass tiles are left untouched.
+ */
+function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] {
+  const map = world.getMap();
+  const commands: ToolCommand[] = [];
+
+  for (const coord of tiles) {
+    const currentTile = map.getTile(coord.x, coord.y);
+
+    if (!currentTile || currentTile.type !== TileType.ROAD) {
+      continue;
+    }
+
+    commands.push({
+      x: coord.x,
+      y: coord.y,
+      tile: createTile(coord.x, coord.y, TileType.GRASS),
     });
   }
 

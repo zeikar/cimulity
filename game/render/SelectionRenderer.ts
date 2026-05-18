@@ -14,6 +14,7 @@ export class SelectionRenderer {
   private currentHover: TileCoord | null = null;
   private currentSelected: TileCoord | null = null;
   private currentDragPreview: TileCoord[] = [];
+  private dragPreviewColor = 0x4a4a4a;
 
   constructor(container: Container) {
     this.container = container;
@@ -48,10 +49,13 @@ export class SelectionRenderer {
   }
 
   /**
-   * Update drag preview (show tiles that will be affected)
+   * Update drag preview (show tiles that will be affected). The caller
+   * passes a tint so the preview reads as the acting tool — e.g. road
+   * gray vs. a destructive red for bulldoze.
    */
-  setDragPreview(tiles: TileCoord[]): void {
+  setDragPreview(tiles: TileCoord[], color = 0x4a4a4a): void {
     this.currentDragPreview = tiles;
+    this.dragPreviewColor = color;
     this.renderDragPreview();
   }
 
@@ -92,7 +96,7 @@ export class SelectionRenderer {
       this.dragPreviewGraphics.lineTo(screen.x, screen.y + ISO_CONFIG.TILE_HEIGHT);
       this.dragPreviewGraphics.lineTo(screen.x - ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
       this.dragPreviewGraphics.closePath();
-      this.dragPreviewGraphics.fill({ color: 0x4a4a4a, alpha: 0.4 }); // Road color with transparency
+      this.dragPreviewGraphics.fill({ color: this.dragPreviewColor, alpha: 0.4 });
     }
   }
 

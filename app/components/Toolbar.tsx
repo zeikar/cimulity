@@ -20,6 +20,7 @@ interface ToolButton {
 const TOOLS: ToolButton[] = [
   { tool: Tool.SELECT, label: 'Select', shortcut: 'S' },
   { tool: Tool.ROAD, label: 'Road', shortcut: 'R' },
+  { tool: Tool.BULLDOZE, label: 'Bulldoze', shortcut: 'B' },
 ];
 
 export function Toolbar({ currentTool, onToolChange }: ToolbarProps) {
