@@ -195,26 +195,100 @@ describe('executeClick - zoning', () => {
   }
 });
 
-describe('executeDrag/previewDrag - zoning click-only contract', () => {
-  const zoneTools = [Tool.ZONE_RESIDENTIAL, Tool.ZONE_COMMERCIAL, Tool.ZONE_INDUSTRIAL];
+describe('executeDrag/previewDrag - zoning rectangle paint', () => {
+  const zoneCases: Array<[Tool, TileType]> = [
+    [Tool.ZONE_RESIDENTIAL, TileType.ZONE_RESIDENTIAL],
+    [Tool.ZONE_COMMERCIAL, TileType.ZONE_COMMERCIAL],
+    [Tool.ZONE_INDUSTRIAL, TileType.ZONE_INDUSTRIAL],
+  ];
 
-  for (const tool of zoneTools) {
-    it(`executeDrag returns no changes when dragging ${tool}`, () => {
+  for (const [tool, expectedType] of zoneCases) {
+    it(`(a) PAINT incl. DIRT: ${tool} paints all four tiles in a 2x2 drag including a dirt tile`, () => {
       const world = makeWorld(5);
+      world.getMap().setTile(1, 0, createTile(1, 0, TileType.DIRT));
 
-      const result = executeDrag(tool, { x: 0, y: 0 }, { x: 3, y: 0 }, world);
+      const result = executeDrag(tool, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
 
-      expect(result.changedTiles).toEqual([]);
-      expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
-      expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
-      expect(world.getMap().getTile(2, 0)?.type).toBe(TileType.GRASS);
-      expect(world.getMap().getTile(3, 0)?.type).toBe(TileType.GRASS);
+      expect(result.changedTiles).toEqual([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 1 },
+      ]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(0, 1)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(expectedType);
     });
 
-    it(`previewDrag returns empty for ${tool}`, () => {
+    it(`(b) SKIP allowlist: ${tool} skips WATER, ROAD, and existing zones inside the rect`, () => {
+      const world = makeWorld(5);
+      world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      world.getMap().setTile(0, 1, createTile(0, 1, TileType.ROAD));
+      world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+
+      const result = executeDrag(tool, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+      expect(result.changedTiles).toEqual([{ x: 0, y: 0 }]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+      expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.ROAD);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
+    });
+
+    it(`(c) PREVIEW path: ${tool} previews 4-tile rectangle without mutating`, () => {
       const world = makeWorld(5);
 
-      expect(previewDrag(tool, { x: 0, y: 0 }, { x: 3, y: 0 }, world)).toEqual([]);
+      const path = previewDrag(tool, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+      expect(path).toEqual([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 1 },
+      ]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+    });
+
+    it(`(d) BOUNDS clip: ${tool} drops out-of-bounds x=-1 column from preview and paint`, () => {
+      const world = makeWorld(5);
+
+      const path = previewDrag(tool, { x: -1, y: 0 }, { x: 1, y: 1 }, world);
+      expect(path).toEqual([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 1 },
+      ]);
+
+      const result = executeDrag(tool, { x: -1, y: 0 }, { x: 1, y: 1 }, world);
+      expect(result.changedTiles).toEqual([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 1 },
+      ]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(0, 1)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(expectedType);
+    });
+
+    it(`(e) REVERSED corners: ${tool} drag from {1,1} to {0,0} yields same 4 tiles as forward`, () => {
+      const world = makeWorld(5);
+
+      const result = executeDrag(tool, { x: 1, y: 1 }, { x: 0, y: 0 }, world);
+
+      expect(result.changedTiles).toEqual([
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: 1 },
+      ]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(0, 1)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(expectedType);
     });
   }
 });

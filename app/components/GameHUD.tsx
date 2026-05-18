@@ -76,7 +76,7 @@ export function GameHUD({
         <strong>Camera:</strong> ({Math.round(cameraX)}, {Math.round(cameraY)}) | Zoom: {cameraZoom.toFixed(2)}
       </div>
       <div style={{ marginTop: '8px', opacity: 0.7, fontSize: '12px' }}>
-        Keys: S/R/B/1/2/3 | Drag: roads/bulldoze only
+        Keys: S/R/B/1/2/3 | Drag: road/bulldoze/zone
       </div>
     </div>
   );

@@ -18,8 +18,8 @@ import type { ToolCommand, ToolResult } from '../tools';
 
 /**
  * Single place tool→path mapping lives. Each drag tool owns its own path
- * rule: ROAD snaps to H/V/45° lines, BULLDOZE clears a filled rectangle.
- * Other drag tools add a case here later (YAGNI).
+ * rule: ROAD snaps to H/V/45° lines, BULLDOZE and all zone tools share the
+ * filled-rectangle rule (rectDragPath).
  */
 function pathForTool(
   tool: Tool,
@@ -29,6 +29,9 @@ function pathForTool(
   switch (tool) {
     case Tool.ROAD:
       return snapRoadDragPath(start, end);
+    case Tool.ZONE_RESIDENTIAL:
+    case Tool.ZONE_COMMERCIAL:
+    case Tool.ZONE_INDUSTRIAL:
     case Tool.BULLDOZE:
       return rectDragPath(start, end);
     default:

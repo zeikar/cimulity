@@ -20,6 +20,14 @@ import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
 import type { GameLoopTickInfo } from '../core/GameLoop';
 
+// Mirrors TileRenderer TILE_COLORS; may drift if the tile palette changes.
+const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
+  [Tool.ZONE_RESIDENTIAL]: 0x3cc44b,
+  [Tool.ZONE_COMMERCIAL]: 0x2f8fd6,
+  [Tool.ZONE_INDUSTRIAL]: 0xe8c531,
+  [Tool.BULLDOZE]: 0xff3b30,
+};
+
 export interface GameSessionCallbacks {
   onTileHover?: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
@@ -148,7 +156,7 @@ export class GameSession {
           selectionRenderer?.clearDragPreview();
           return;
         }
-        const previewColor = tool === Tool.BULLDOZE ? 0xff3b30 : 0x4a4a4a;
+        const previewColor = DRAG_PREVIEW_COLORS[tool] ?? 0x4a4a4a;
         selectionRenderer?.setDragPreview(
           previewDrag(tool, start, end, world),
           previewColor
