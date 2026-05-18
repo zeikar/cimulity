@@ -34,7 +34,7 @@ export interface GameSessionCallbacks {
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
-  onTickUpdate?: (tick: number, dirt: number) => void;
+  onTickUpdate?: (tick: number, dirt: number, population: number) => void;
 }
 
 export class GameSession {
@@ -64,7 +64,7 @@ export class GameSession {
     this.pixiApp?.getTileRenderer()?.markDirty();
     this.scheduleSave();
     // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
-    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt());
+    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation());
   }
 
   private scheduleSave(): void {
@@ -88,7 +88,7 @@ export class GameSession {
     clearSave();
     // Reset accumulator so no catch-up burst fires, and sync HUD to tick 0 + dirt 0 immediately.
     this.gameLoop?.reset();
-    this.callbacks.onTickUpdate?.(0, 0);
+    this.callbacks.onTickUpdate?.(0, 0, 0);
     this.pixiApp?.setSelectedTile(null);
     this.pixiApp?.setHoverTile(null);
     this.pixiApp?.getTileRenderer()?.markDirty();
@@ -186,12 +186,12 @@ export class GameSession {
         this.pixiApp?.getTileRenderer()?.markDirty();
         this.scheduleSave();
       }
-      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt());
+      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation());
     });
     // Sync HUD to the world's current state before the first tick, so a
     // hydrated/reused world with persisted DIRT shows the real count instead
     // of staying at 0 until the first tick heals it away.
-    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt());
+    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation());
     gameLoop.start();
     this.gameLoop = gameLoop;
   }

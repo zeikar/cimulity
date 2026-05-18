@@ -22,6 +22,7 @@ export interface GameHUDProps {
   fps: number;
   tick: number;
   dirt: number;
+  population: number;
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
@@ -33,6 +34,7 @@ export function GameHUD({
   fps,
   tick,
   dirt,
+  population,
   cameraX,
   cameraY,
   cameraZoom,
@@ -62,6 +64,9 @@ export function GameHUD({
       </div>
       <div>
         <strong>Dirt:</strong> {dirt}
+      </div>
+      <div>
+        <strong>Population:</strong> {population}
       </div>
       {currentTool && (
         <div>
