@@ -186,7 +186,9 @@ export class PixiApp {
     this.gridRenderer?.destroy();
 
     if (this.app) {
-      this.app.destroy(true, { children: true });
+      // removeView: false — the canvas is owned by React, not Pixi.
+      // Removing it from the DOM here breaks HMR/Fast Refresh re-init.
+      this.app.destroy({ removeView: false }, { children: true });
       this.app = null;
     }
 

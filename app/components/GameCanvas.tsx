@@ -71,6 +71,10 @@ export function GameCanvas({
 
     const canvas = canvasRef.current;
 
+    // Set by cleanup so a still-pending init() can abort instead of
+    // wiring handlers onto an app that was already destroyed (HMR race).
+    let cancelled = false;
+
     console.log('GameCanvas: Initializing world...');
     // Initialize world (16x16 grid for testing - will increase later)
     const world = new World(16, 16);
@@ -94,6 +98,12 @@ export function GameCanvas({
 
     // Initialize PixiJS (async)
     pixiApp.init(canvas, window.innerWidth, window.innerHeight).then(() => {
+      // Cleanup already ran while init() was pending — discard this app.
+      if (cancelled) {
+        pixiApp.destroy();
+        return;
+      }
+
       const camera = pixiApp.getCamera();
       if (!camera) return;
 
@@ -151,6 +161,7 @@ export function GameCanvas({
 
     // Cleanup function
     return () => {
+      cancelled = true;
       window.removeEventListener('resize', handleResize);
 
       pointerHandlerRef.current?.detach();
