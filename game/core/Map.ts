@@ -40,13 +40,17 @@ export class GameMap {
   }
 
   /**
-   * Update tile (returns new map for immutability)
+   * Set tile at grid coordinates (bounds-checked)
+   * Returns true on write, false when out-of-bounds
    */
-  setTile(x: number, y: number, tile: Tile): GameMap {
+  setTile(x: number, y: number, tile: Tile): boolean {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+      return false;
+    }
     // For MVP-0, mutations are acceptable since no history needed
     // For MVP-1+, implement immutable updates
     this.tiles[y * this.width + x] = tile;
-    return this;
+    return true;
   }
 
   get totalTiles(): number {
