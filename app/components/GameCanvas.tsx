@@ -1,23 +1,17 @@
 'use client';
 
 /**
- * GameCanvas component: Mounts PixiJS and handles lifecycle
+ * GameCanvas component: thin React shell that mounts/disposes a GameSession
  *
  * React StrictMode Safety:
- * - useEffect cleanup properly destroys PixiJS
- * - PixiApp.init() is idempotent
- * - Refs prevent double-initialization
+ * - useEffect cleanup disposes the GameSession (GameSession's disposed flag
+ *   discards an in-flight async init)
+ * - sessionRef prevents double-initialization
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { PixiApp } from '@/game/render/PixiApp';
-import { getWorld } from '@/game/core/worldStore';
-import type { World } from '@/game/core/World';
-import { PointerHandler } from '@/game/input/PointerHandler';
-import { CameraController } from '@/game/input/CameraController';
-import { ToolManager, Tool } from '@/game/input/ToolManager';
-import { KeyboardHandler } from '@/game/input/KeyboardHandler';
-import { executeToolAction } from '@/game/core/ToolActions';
+import { useEffect, useRef } from 'react';
+import { GameSession } from '@/game/engine';
+import { Tool } from '@/game/input/ToolManager';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export interface GameCanvasProps {
@@ -38,148 +32,79 @@ export function GameCanvas({
   onToolChange,
 }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const pixiAppRef = useRef<PixiApp | null>(null);
-  const worldRef = useRef<World | null>(null);
-  const pointerHandlerRef = useRef<PointerHandler | null>(null);
-  const cameraControllerRef = useRef<CameraController | null>(null);
-  const toolManagerRef = useRef<ToolManager>(new ToolManager());
-  const keyboardHandlerRef = useRef<KeyboardHandler | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const sessionRef = useRef<GameSession | null>(null);
 
-  // Sync external tool changes to tool manager
+  // Latest prop callbacks, refreshed every render so stable forwarders below
+  // always reach the current callbacks without recreating the session.
+  const callbacksRef = useRef({
+    onTileHover,
+    onTileClick,
+    onFpsUpdate,
+    onCameraUpdate,
+    onToolChange,
+  });
+
+  // Stable forwarders: identity never changes; read callbacksRef at call time.
+  const stableForwarders = useRef({
+    onTileHover: (t: TileCoord | null) => callbacksRef.current.onTileHover(t),
+    onTileClick: (t: TileCoord) => callbacksRef.current.onTileClick(t),
+    onFpsUpdate: (fps: number) => callbacksRef.current.onFpsUpdate(fps),
+    onCameraUpdate: (x: number, y: number, zoom: number) =>
+      callbacksRef.current.onCameraUpdate(x, y, zoom),
+    onToolChange: (tool: Tool) => callbacksRef.current.onToolChange?.(tool),
+  });
+
+  // Track current tool so the mount effect can read the initial tool without
+  // closing over `currentTool` (avoids an exhaustive-deps warning).
+  const currentToolRef = useRef(currentTool);
+
+  // Refresh refs after every commit (no deps array). Declared before the
+  // mount effect so refs are current when the mount effect first reads them.
   useEffect(() => {
-    toolManagerRef.current.setTool(currentTool);
+    callbacksRef.current = {
+      onTileHover,
+      onTileClick,
+      onFpsUpdate,
+      onCameraUpdate,
+      onToolChange,
+    };
+    currentToolRef.current = currentTool;
+  });
+
+  // Sync external tool changes to the session (subsequent changes only;
+  // the mount effect already did the initial sync).
+  useEffect(() => {
+    sessionRef.current?.setTool(currentTool);
   }, [currentTool]);
-
-  // Handle tool execution on tiles
-  const handleToolExecution = useCallback((tiles: TileCoord[]) => {
-    if (!worldRef.current || !pixiAppRef.current) return;
-
-    const tool = toolManagerRef.current.getCurrentTool();
-    const modified = executeToolAction(tool, tiles, worldRef.current);
-
-    if (modified) {
-      const tileRenderer = pixiAppRef.current.getTileRenderer();
-      tileRenderer?.markDirty();
-    }
-  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     // Prevent double initialization in StrictMode
-    if (pixiAppRef.current) return;
+    if (sessionRef.current) return;
 
     const container = containerRef.current;
 
-    // Set by cleanup so a still-pending init() can abort instead of
-    // wiring handlers onto an app that was already destroyed (HMR race).
-    let cancelled = false;
-
-    console.log('GameCanvas: Initializing world...');
-    // Reuse the process-wide World so HMR/Fast Refresh keeps placed tiles
-    const world = getWorld();
-    worldRef.current = world;
-    console.log('GameCanvas: World created');
-
-    // Initialize PixiJS app
-    const pixiApp = new PixiApp(world, {
-      onTileHover: (tile) => {
-        pixiApp.setHoverTile(tile);
-        onTileHover(tile);
-      },
-      onTileClick: (tile) => {
-        pixiApp.setSelectedTile(tile);
-        onTileClick(tile);
-      },
-      onFpsUpdate,
-      onCameraUpdate,
-    });
-    pixiAppRef.current = pixiApp;
-
-    // Initialize PixiJS (async)
-    pixiApp.init(container, window.innerWidth, window.innerHeight).then(() => {
-      // Cleanup already ran while init() was pending — discard this app.
-      if (cancelled) {
-        pixiApp.destroy();
-        return;
-      }
-
-      const camera = pixiApp.getCamera();
-      const canvas = pixiApp.getCanvas();
-      if (!camera || !canvas) return;
-
-      // Setup input handlers
-      const pointerHandler = new PointerHandler(canvas, camera, world.getMap(), {
-        onTileHover: (tile) => {
-          pixiApp.setHoverTile(tile);
-          onTileHover(tile);
-        },
-        onTileClick: (tile) => {
-          // Execute tool action on single tile
-          handleToolExecution([tile]);
-          pixiApp.setSelectedTile(tile);
-          onTileClick(tile);
-        },
-        onTileDrag: (tiles) => {
-          // Execute tool action on all dragged tiles
-          handleToolExecution(tiles);
-        },
-        onDragPreview: (tiles) => {
-          // Only show preview for ROAD tool
-          const currentTool = toolManagerRef.current.getCurrentTool();
-          const selectionRenderer = pixiApp.getSelectionRenderer();
-          if (tiles === null || currentTool !== Tool.ROAD) {
-            selectionRenderer?.clearDragPreview();
-          } else {
-            selectionRenderer?.setDragPreview(tiles);
-          }
-        },
-      });
-      pointerHandlerRef.current = pointerHandler;
-
-      const cameraController = new CameraController(canvas, camera, {
-        onCameraUpdate,
-      });
-      cameraControllerRef.current = cameraController;
-
-      // Setup keyboard handler for tool shortcuts
-      const keyboardHandler = new KeyboardHandler({
-        onToolChange: (tool) => {
-          toolManagerRef.current.setTool(tool);
-          onToolChange?.(tool);
-        },
-      });
-      keyboardHandlerRef.current = keyboardHandler;
-
-      setIsInitialized(true);
-    });
+    const session = new GameSession(stableForwarders.current);
+    sessionRef.current = session;
+    // Apply a non-default initial tool even if the [currentTool] effect's
+    // first run preceded sessionRef.current being set.
+    session.setTool(currentToolRef.current);
+    void session.start(container, window.innerWidth, window.innerHeight);
 
     // Handle window resize
     const handleResize = () => {
-      pixiApp.resize(window.innerWidth, window.innerHeight);
+      sessionRef.current?.resize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', handleResize);
 
     // Cleanup function
     return () => {
-      cancelled = true;
       window.removeEventListener('resize', handleResize);
-
-      pointerHandlerRef.current?.detach();
-      cameraControllerRef.current?.detach();
-      keyboardHandlerRef.current?.detach();
-      pixiAppRef.current?.destroy();
-
-      pixiAppRef.current = null;
-      pointerHandlerRef.current = null;
-      cameraControllerRef.current = null;
-      keyboardHandlerRef.current = null;
-      worldRef.current = null;
-
-      setIsInitialized(false);
+      session.dispose();
+      sessionRef.current = null;
     };
-  }, [onTileHover, onTileClick, onFpsUpdate, onCameraUpdate, onToolChange, handleToolExecution]);
+  }, []);
 
   return (
     <div
