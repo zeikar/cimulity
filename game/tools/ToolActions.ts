@@ -113,8 +113,9 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
 
 /**
  * Build zone-placement commands.
- * Places a zone only on GRASS or DIRT; any other tile (water, road,
- * existing zone, or future types) is implicitly rejected by the allowlist.
+ * Places a zone on GRASS, DIRT, or an existing zone of a different type
+ * (R/C/I freely repaint over each other). Water, road, and other types
+ * are implicitly rejected; repainting the same zone is skipped as a no-op.
  * Reads world only to decide intent; never mutates core.
  */
 function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: World): ToolCommand[] {
@@ -124,7 +125,12 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
   for (const coord of tiles) {
     const currentTile = map.getTile(coord.x, coord.y);
     if (!currentTile) continue;
-    if (currentTile.type !== TileType.GRASS && currentTile.type !== TileType.DIRT) continue;
+    if (currentTile.type === zoneType) continue;
+    const paintable =
+      currentTile.type === TileType.GRASS ||
+      currentTile.type === TileType.DIRT ||
+      isZone(currentTile.type);
+    if (!paintable) continue;
     commands.push({
       x: coord.x,
       y: coord.y,

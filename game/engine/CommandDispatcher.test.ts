@@ -221,11 +221,11 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
       expect(world.getMap().getTile(1, 1)?.type).toBe(expectedType);
     });
 
-    it(`(b) SKIP allowlist: ${tool} skips WATER, ROAD, and existing zones inside the rect`, () => {
+    it(`(b) SKIP allowlist: ${tool} skips WATER, ROAD, and the same-zone no-op inside the rect`, () => {
       const world = makeWorld(5);
       world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
       world.getMap().setTile(0, 1, createTile(0, 1, TileType.ROAD));
-      world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+      world.getMap().setTile(1, 0, createTile(1, 0, expectedType));
 
       const result = executeDrag(tool, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
 
@@ -233,7 +233,26 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
       expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
       expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
       expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.ROAD);
-      expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
+    });
+
+    it(`(b2) CROSS-ZONE repaint: ${tool} overwrites a different existing zone inside the rect`, () => {
+      const world = makeWorld(5);
+      const otherZone =
+        expectedType === TileType.ZONE_RESIDENTIAL
+          ? TileType.ZONE_COMMERCIAL
+          : TileType.ZONE_RESIDENTIAL;
+      world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      world.getMap().setTile(0, 1, createTile(0, 1, TileType.ROAD));
+      world.getMap().setTile(1, 0, createTile(1, 0, otherZone));
+
+      const result = executeDrag(tool, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+      expect(result.changedTiles).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+      expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.ROAD);
     });
 
     it(`(c) PREVIEW path: ${tool} previews 4-tile rectangle without mutating`, () => {

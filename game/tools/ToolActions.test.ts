@@ -74,11 +74,21 @@ describe('buildToolCommands - zone tools', () => {
     });
   }
 
-  describe('cross-zone block (no re-zoning to a different zone type)', () => {
-    it('a ZONE_RESIDENTIAL tile yields [] when Tool.ZONE_COMMERCIAL runs on it', () => {
+  describe('cross-zone repaint (R/C/I overwrite each other)', () => {
+    it('a ZONE_RESIDENTIAL tile is overwritten when Tool.ZONE_COMMERCIAL runs on it', () => {
       world.getMap().setTile(5, 5, createTile(5, 5, TileType.ZONE_RESIDENTIAL));
       const commands = buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 5, y: 5 }], world);
-      expect(commands).toHaveLength(0);
+      expect(commands).toEqual([
+        { x: 5, y: 5, tile: createTile(5, 5, TileType.ZONE_COMMERCIAL) },
+      ]);
+    });
+
+    it('a ZONE_INDUSTRIAL tile is overwritten when Tool.ZONE_RESIDENTIAL runs on it', () => {
+      world.getMap().setTile(6, 6, createTile(6, 6, TileType.ZONE_INDUSTRIAL));
+      const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 6, y: 6 }], world);
+      expect(commands).toEqual([
+        { x: 6, y: 6, tile: createTile(6, 6, TileType.ZONE_RESIDENTIAL) },
+      ]);
     });
   });
 });
