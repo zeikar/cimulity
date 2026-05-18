@@ -6,7 +6,16 @@
  */
 
 import type { TileCoord } from '@/game/types/coordinates';
-import type { Tool } from '@/game/tools';
+import { Tool } from '@/game/tools';
+
+const TOOL_LABELS: Record<Tool, string> = {
+  [Tool.SELECT]: 'Select',
+  [Tool.ROAD]: 'Road',
+  [Tool.BULLDOZE]: 'Bulldoze',
+  [Tool.ZONE_RESIDENTIAL]: 'Residential',
+  [Tool.ZONE_COMMERCIAL]: 'Commercial',
+  [Tool.ZONE_INDUSTRIAL]: 'Industrial',
+};
 
 export interface GameHUDProps {
   selectedTile: TileCoord | null;
@@ -56,7 +65,7 @@ export function GameHUD({
       </div>
       {currentTool && (
         <div>
-          <strong>Tool:</strong> {currentTool.toUpperCase()}
+          <strong>Tool:</strong> {TOOL_LABELS[currentTool]}
         </div>
       )}
       <div>
@@ -67,7 +76,7 @@ export function GameHUD({
         <strong>Camera:</strong> ({Math.round(cameraX)}, {Math.round(cameraY)}) | Zoom: {cameraZoom.toFixed(2)}
       </div>
       <div style={{ marginTop: '8px', opacity: 0.7, fontSize: '12px' }}>
-        R: Road | S: Select | Left-click: Place | Drag: Paint
+        Keys: S/R/B/1/2/3 | Drag: roads/bulldoze only
       </div>
     </div>
   );

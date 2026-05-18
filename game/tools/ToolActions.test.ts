@@ -12,82 +12,102 @@ beforeEach(() => {
   world = new World(MAP_SIZE, MAP_SIZE);
 });
 
-describe('buildToolCommands - Tool.BUILDING', () => {
-  it('(a) returns one BUILDING command for a GRASS tile', () => {
-    const commands = buildToolCommands(Tool.BUILDING, [{ x: 2, y: 3 }], world);
-    expect(commands).toHaveLength(1);
-    expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, TileType.BUILDING) });
-  });
+describe('buildToolCommands - zone tools', () => {
+  const zoneTable: [Tool, TileType, string][] = [
+    [Tool.ZONE_RESIDENTIAL, TileType.ZONE_RESIDENTIAL, 'ZONE_RESIDENTIAL'],
+    [Tool.ZONE_COMMERCIAL,  TileType.ZONE_COMMERCIAL,  'ZONE_COMMERCIAL'],
+    [Tool.ZONE_INDUSTRIAL,  TileType.ZONE_INDUSTRIAL,  'ZONE_INDUSTRIAL'],
+  ];
 
-  it('(b) returns one BUILDING command for a DIRT tile', () => {
-    world.getMap().setTile(4, 4, createTile(4, 4, TileType.DIRT));
-    const commands = buildToolCommands(Tool.BUILDING, [{ x: 4, y: 4 }], world);
-    expect(commands).toHaveLength(1);
-    expect(commands[0]).toEqual({ x: 4, y: 4, tile: createTile(4, 4, TileType.BUILDING) });
-  });
+  for (const [tool, zoneType, label] of zoneTable) {
+    describe(`Tool.${label}`, () => {
+      it('(a) emits one command on a default GRASS tile', () => {
+        const commands = buildToolCommands(tool, [{ x: 2, y: 3 }], world);
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, zoneType) });
+      });
 
-  it('(c) returns empty for a WATER tile (allowlist rejects)', () => {
-    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
-    const commands = buildToolCommands(Tool.BUILDING, [{ x: 1, y: 1 }], world);
-    expect(commands).toHaveLength(0);
-  });
+      it('(b) emits one command on a DIRT tile', () => {
+        world.getMap().setTile(4, 4, createTile(4, 4, TileType.DIRT));
+        const commands = buildToolCommands(tool, [{ x: 4, y: 4 }], world);
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toEqual({ x: 4, y: 4, tile: createTile(4, 4, zoneType) });
+      });
 
-  it('(d) returns empty for a ROAD tile (allowlist rejects)', () => {
-    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
-    const commands = buildToolCommands(Tool.BUILDING, [{ x: 2, y: 2 }], world);
-    expect(commands).toHaveLength(0);
-  });
+      it('(c) returns [] on a WATER tile', () => {
+        world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+        const commands = buildToolCommands(tool, [{ x: 1, y: 1 }], world);
+        expect(commands).toHaveLength(0);
+      });
 
-  it('(e) returns empty for an existing BUILDING tile (no re-place)', () => {
-    world.getMap().setTile(3, 3, createTile(3, 3, TileType.BUILDING));
-    const commands = buildToolCommands(Tool.BUILDING, [{ x: 3, y: 3 }], world);
-    expect(commands).toHaveLength(0);
-  });
+      it('(d) returns [] on a ROAD tile', () => {
+        world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+        const commands = buildToolCommands(tool, [{ x: 2, y: 2 }], world);
+        expect(commands).toHaveLength(0);
+      });
 
-  it('(f) returns empty for an out-of-bounds coord', () => {
-    const commands = buildToolCommands(Tool.BUILDING, [{ x: 99, y: 99 }], world);
-    expect(commands).toHaveLength(0);
-  });
+      it('(e) returns [] on an already-zoned tile of the SAME zone type', () => {
+        world.getMap().setTile(3, 3, createTile(3, 3, zoneType));
+        const commands = buildToolCommands(tool, [{ x: 3, y: 3 }], world);
+        expect(commands).toHaveLength(0);
+      });
 
-  it('(g) only eligible tiles yield commands, input order preserved', () => {
-    world.getMap().setTile(0, 0, createTile(0, 0, TileType.WATER));
-    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    // tile at (2,0) is default GRASS
-    world.getMap().setTile(3, 0, createTile(3, 0, TileType.DIRT));
-    const commands = buildToolCommands(
-      Tool.BUILDING,
-      [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 0 }, { x: 3, y: 0 }],
-      world
-    );
-    expect(commands).toHaveLength(2);
-    expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, TileType.BUILDING) });
-    expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, TileType.BUILDING) });
+      it('(f) returns [] for out-of-bounds {x:99,y:99}', () => {
+        const commands = buildToolCommands(tool, [{ x: 99, y: 99 }], world);
+        expect(commands).toHaveLength(0);
+      });
+
+      it('(g) mixed batch [WATER, GRASS, ROAD, DIRT]: only GRASS+DIRT yield commands, input order preserved', () => {
+        world.getMap().setTile(0, 0, createTile(0, 0, TileType.WATER));
+        world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+        // tile at (2,0) is default GRASS
+        world.getMap().setTile(3, 0, createTile(3, 0, TileType.DIRT));
+        const commands = buildToolCommands(
+          tool,
+          [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 0 }, { x: 3, y: 0 }],
+          world
+        );
+        expect(commands).toHaveLength(2);
+        expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, zoneType) });
+        expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, zoneType) });
+      });
+    });
+  }
+
+  describe('cross-zone block (no re-zoning to a different zone type)', () => {
+    it('a ZONE_RESIDENTIAL tile yields [] when Tool.ZONE_COMMERCIAL runs on it', () => {
+      world.getMap().setTile(5, 5, createTile(5, 5, TileType.ZONE_RESIDENTIAL));
+      const commands = buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 5, y: 5 }], world);
+      expect(commands).toHaveLength(0);
+    });
   });
 });
 
 describe('buildToolCommands - Tool.ROAD', () => {
-  it('skips a BUILDING tile and leaves GRASS neighbour intact', () => {
-    world.getMap().setTile(1, 0, createTile(1, 0, TileType.BUILDING));
-    // tile at (2,0) is default GRASS
-    const commands = buildToolCommands(
-      Tool.ROAD,
-      [{ x: 1, y: 0 }, { x: 2, y: 0 }],
-      world
-    );
-    // BUILDING coord must produce no command; GRASS coord must produce a road command
-    expect(commands).toHaveLength(1);
-    expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, TileType.ROAD) });
-  });
+  const zoneSkipTable: [TileType, string][] = [
+    [TileType.ZONE_RESIDENTIAL, 'ZONE_RESIDENTIAL'],
+    [TileType.ZONE_COMMERCIAL,  'ZONE_COMMERCIAL'],
+    [TileType.ZONE_INDUSTRIAL,  'ZONE_INDUSTRIAL'],
+  ];
+
+  for (const [zoneType, label] of zoneSkipTable) {
+    it(`skips a ${label} tile and places road on adjacent GRASS`, () => {
+      world.getMap().setTile(1, 0, createTile(1, 0, zoneType));
+      // tile at (2,0) is default GRASS
+      const commands = buildToolCommands(
+        Tool.ROAD,
+        [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+        world
+      );
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, TileType.ROAD) });
+    });
+  }
 });
 
 describe('buildToolCommands - no-op tools still return []', () => {
   it('Tool.SELECT returns empty', () => {
     const commands = buildToolCommands(Tool.SELECT, [{ x: 0, y: 0 }], world);
-    expect(commands).toHaveLength(0);
-  });
-
-  it('Tool.ZONE_RESIDENTIAL returns empty', () => {
-    const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 0, y: 0 }], world);
     expect(commands).toHaveLength(0);
   });
 });

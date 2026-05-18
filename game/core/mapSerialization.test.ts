@@ -51,4 +51,41 @@ describe('serializeMap / deserializeMapInto', () => {
     const map = new GameMap(2, 2);
     expect(deserializeMapInto(map, 'not json{')).toBe(false);
   });
+
+  it('round-trips ZONE_RESIDENTIAL, ZONE_COMMERCIAL, and ZONE_INDUSTRIAL', () => {
+    const src = new GameMap(4, 4);
+    src.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    src.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+    src.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
+
+    const dst = new GameMap(4, 4);
+    expect(deserializeMapInto(dst, serializeMap(src))).toBe(true);
+
+    expect(dst.getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(dst.getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
+    expect(dst.getTile(2, 0)?.type).toBe(TileType.ZONE_INDUSTRIAL);
+  });
+
+  it('rejects a payload with an obsolete tile type string and leaves the map unmutated', () => {
+    const w = 3;
+    const h = 2;
+    const map = new GameMap(w, h);
+    // Schema-correct payload: correct v/w/h, correct t length (w*h=6),
+    // but one entry uses the obsolete string 'building'.
+    const stalePayload = JSON.stringify({
+      v: SAVE_VERSION,
+      w,
+      h,
+      t: [TileType.GRASS, TileType.GRASS, 'building', TileType.GRASS, TileType.GRASS, TileType.GRASS],
+    });
+
+    expect(deserializeMapInto(map, stalePayload)).toBe(false);
+
+    // All tiles must still be GRASS — no partial mutation.
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        expect(map.getTile(x, y)?.type).toBe(TileType.GRASS);
+      }
+    }
+  });
 });

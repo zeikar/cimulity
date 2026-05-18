@@ -70,6 +70,26 @@ describe('World.tick() — heal rule', () => {
   });
 });
 
+describe('World.tick() — permanence guard', () => {
+  it('leaves zone tiles unchanged and only heals the DIRT control tile', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
+    map.setTile(3, 0, createTile(3, 0, TileType.DIRT));
+
+    const result = world.tick();
+
+    expect(result).toEqual({ changed: 1 });
+    expect(map.getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(map.getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
+    expect(map.getTile(2, 0)?.type).toBe(TileType.ZONE_INDUSTRIAL);
+    expect(map.getTile(3, 0)?.type).toBe(TileType.GRASS);
+  });
+});
+
 describe('World.countDirt()', () => {
   it('returns the number of DIRT tiles before a tick', () => {
     const world = new World(4, 4);

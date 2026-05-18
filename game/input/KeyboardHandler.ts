@@ -14,9 +14,11 @@ export interface KeyboardCallbacks {
 const KEY_TO_TOOL: Record<string, Tool> = {
   r: Tool.ROAD,
   b: Tool.BULLDOZE,
-  g: Tool.BUILDING,
   s: Tool.SELECT,
   Escape: Tool.SELECT,
+  '1': Tool.ZONE_RESIDENTIAL,
+  '2': Tool.ZONE_COMMERCIAL,
+  '3': Tool.ZONE_INDUSTRIAL,
 };
 
 export class KeyboardHandler {

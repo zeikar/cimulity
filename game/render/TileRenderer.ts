@@ -19,7 +19,9 @@ const TILE_COLORS: Record<TileType, number> = {
   dirt: 0x8b6f47,
   water: 0x2e6ba3,
   road: 0x4a4a4a,
-  building: 0xb5651d,
+  zone_residential: 0x3cc44b,
+  zone_commercial: 0x2f8fd6,
+  zone_industrial: 0xe8c531,
 };
 
 export class TileRenderer {

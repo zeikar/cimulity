@@ -21,7 +21,9 @@ const TOOLS: ToolButton[] = [
   { tool: Tool.SELECT, label: 'Select', shortcut: 'S' },
   { tool: Tool.ROAD, label: 'Road', shortcut: 'R' },
   { tool: Tool.BULLDOZE, label: 'Bulldoze', shortcut: 'B' },
-  { tool: Tool.BUILDING, label: 'Building', shortcut: 'G' },
+  { tool: Tool.ZONE_RESIDENTIAL, label: 'Residential', shortcut: '1' },
+  { tool: Tool.ZONE_COMMERCIAL, label: 'Commercial', shortcut: '2' },
+  { tool: Tool.ZONE_INDUSTRIAL, label: 'Industrial', shortcut: '3' },
 ];
 
 export function Toolbar({ currentTool, onToolChange }: ToolbarProps) {
@@ -32,6 +34,8 @@ export function Toolbar({ currentTool, onToolChange }: ToolbarProps) {
         bottom: '16px',
         left: '16px',
         display: 'flex',
+        flexWrap: 'wrap',
+        maxWidth: 'calc(100vw - 32px)',
         gap: '8px',
         padding: '12px',
         backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -45,7 +49,7 @@ export function Toolbar({ currentTool, onToolChange }: ToolbarProps) {
           onClick={() => onToolChange(tool)}
           title={`${label} (${shortcut})`}
           style={{
-            padding: '8px 16px',
+            padding: '6px 12px',
             backgroundColor: currentTool === tool ? 'rgba(74, 158, 61, 0.8)' : 'rgba(60, 60, 60, 0.8)',
             color: 'white',
             border: currentTool === tool ? '2px solid rgba(74, 158, 61, 1)' : '2px solid transparent',

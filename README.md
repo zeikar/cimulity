@@ -201,7 +201,7 @@ Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.
 
 - [ ] **Road painting tool** - Click-drag to paint road tiles
 - [ ] **Expanded tile types** - Water, dirt, different terrain
-- [ ] **Building placement** - Click to place buildings on tiles
+- [x] **R/C/I zoning** - Click to paint residential/commercial/industrial zones
 - [ ] **Game tick system** - Implement simulation loop
 - [ ] **Sprites/textures** - Replace colored shapes with actual graphics
 - [ ] **Viewport culling** - Render only visible tiles

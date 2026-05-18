@@ -11,6 +11,20 @@ import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
 
+/** Narrow union of the three placeable zone tile types. */
+type ZoneTileType = TileType.ZONE_RESIDENTIAL | TileType.ZONE_COMMERCIAL | TileType.ZONE_INDUSTRIAL;
+
+/** Zone tile types -- used to guard road placement and zone placement. */
+const ZONE_TYPES: ReadonlySet<TileType> = new Set([
+  TileType.ZONE_RESIDENTIAL,
+  TileType.ZONE_COMMERCIAL,
+  TileType.ZONE_INDUSTRIAL,
+]);
+
+function isZone(type: TileType): boolean {
+  return ZONE_TYPES.has(type);
+}
+
 /**
  * Build the commands a tool would apply on a set of tiles
  * @returns the intended tile writes (empty if the tool changes nothing)
@@ -21,18 +35,19 @@ export function buildToolCommands(
   world: World
 ): ToolCommand[] {
   switch (tool) {
+    case Tool.SELECT:
+      // Selection doesn't modify tiles
+      return [];
     case Tool.ROAD:
       return buildRoadCommands(tiles, world);
     case Tool.BULLDOZE:
       return buildBulldozeCommands(tiles, world);
-    case Tool.BUILDING:
-      return buildBuildingCommands(tiles, world);
-    case Tool.SELECT:
-      // Selection doesn't modify tiles
-      return [];
     case Tool.ZONE_RESIDENTIAL:
-      // Not implemented yet
-      return [];
+      return buildZoneCommands(TileType.ZONE_RESIDENTIAL, tiles, world);
+    case Tool.ZONE_COMMERCIAL:
+      return buildZoneCommands(TileType.ZONE_COMMERCIAL, tiles, world);
+    case Tool.ZONE_INDUSTRIAL:
+      return buildZoneCommands(TileType.ZONE_INDUSTRIAL, tiles, world);
     default:
       return [];
   }
@@ -40,7 +55,7 @@ export function buildToolCommands(
 
 /**
  * Build road-placement commands
- * Cannot place on water tiles, existing roads, or buildings
+ * Cannot place on water, existing roads, or zoned land.
  */
 function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
@@ -54,8 +69,8 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
       continue;
     }
 
-    // Cannot place roads on water or buildings
-    if (currentTile.type === TileType.WATER || currentTile.type === TileType.BUILDING) {
+    // Cannot place roads on water or zoned land
+    if (currentTile.type === TileType.WATER || isZone(currentTile.type)) {
       continue;
     }
 
@@ -97,26 +112,23 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
 }
 
 /**
- * Build building-placement commands
- * Places a building only on GRASS or DIRT; any other tile (water, road,
- * existing building, future types) is left untouched.
+ * Build zone-placement commands.
+ * Places a zone only on GRASS or DIRT; any other tile (water, road,
+ * existing zone, or future types) is implicitly rejected by the allowlist.
  * Reads world only to decide intent; never mutates core.
  */
-function buildBuildingCommands(tiles: TileCoord[], world: World): ToolCommand[] {
+function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
   const commands: ToolCommand[] = [];
 
   for (const coord of tiles) {
     const currentTile = map.getTile(coord.x, coord.y);
-    if (!currentTile) continue; // missing/oob
-    if (
-      currentTile.type !== TileType.GRASS &&
-      currentTile.type !== TileType.DIRT
-    ) continue;
+    if (!currentTile) continue;
+    if (currentTile.type !== TileType.GRASS && currentTile.type !== TileType.DIRT) continue;
     commands.push({
       x: coord.x,
       y: coord.y,
-      tile: createTile(coord.x, coord.y, TileType.BUILDING),
+      tile: createTile(coord.x, coord.y, zoneType),
     });
   }
 

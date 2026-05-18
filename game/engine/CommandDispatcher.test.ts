@@ -51,14 +51,6 @@ describe('executeClick', () => {
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
   });
 
-  it('treats not-yet-implemented tools as no-ops', () => {
-    const world = makeWorld();
-
-    expect(
-      executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world).changedTiles
-    ).toEqual([]);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
-  });
 });
 
 describe('executeClick — bulldoze', () => {
@@ -175,42 +167,54 @@ describe('previewDrag', () => {
   });
 });
 
-describe('executeClick - building', () => {
-  it('places a building on a grass tile and reports the change', () => {
-    const world = makeWorld();
-    const result = executeClick(Tool.BUILDING, { x: 2, y: 2 }, world);
+describe('executeClick - zoning', () => {
+  const zoneCases: Array<[Tool, TileType]> = [
+    [Tool.ZONE_RESIDENTIAL, TileType.ZONE_RESIDENTIAL],
+    [Tool.ZONE_COMMERCIAL, TileType.ZONE_COMMERCIAL],
+    [Tool.ZONE_INDUSTRIAL, TileType.ZONE_INDUSTRIAL],
+  ];
 
-    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.BUILDING);
-  });
+  for (const [tool, expectedType] of zoneCases) {
+    it(`places a zone tile when clicking with ${tool}`, () => {
+      const world = makeWorld();
+      const result = executeClick(tool, { x: 2, y: 2 }, world);
 
-  it('does not place a building on a water tile', () => {
-    const world = makeWorld();
-    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+      expect(world.getMap().getTile(2, 2)?.type).toBe(expectedType);
+    });
 
-    const result = executeClick(Tool.BUILDING, { x: 1, y: 1 }, world);
+    it(`rejects ${tool} on a water tile`, () => {
+      const world = makeWorld();
+      world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
 
-    expect(result.changedTiles).toEqual([]);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
-  });
+      const result = executeClick(tool, { x: 1, y: 1 }, world);
+
+      expect(result.changedTiles).toEqual([]);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+    });
+  }
 });
 
-describe('executeDrag - building', () => {
-  it('does nothing when dragging the building tool (click-only contract)', () => {
-    const world = makeWorld(5);
+describe('executeDrag/previewDrag - zoning click-only contract', () => {
+  const zoneTools = [Tool.ZONE_RESIDENTIAL, Tool.ZONE_COMMERCIAL, Tool.ZONE_INDUSTRIAL];
 
-    const result = executeDrag(Tool.BUILDING, { x: 0, y: 0 }, { x: 3, y: 0 }, world);
+  for (const tool of zoneTools) {
+    it(`executeDrag returns no changes when dragging ${tool}`, () => {
+      const world = makeWorld(5);
 
-    expect(result.changedTiles).toEqual([]);
-    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
-    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
-    expect(world.getMap().getTile(2, 0)?.type).toBe(TileType.GRASS);
-    expect(world.getMap().getTile(3, 0)?.type).toBe(TileType.GRASS);
-  });
+      const result = executeDrag(tool, { x: 0, y: 0 }, { x: 3, y: 0 }, world);
 
-  it('previewDrag returns empty for the building tool', () => {
-    const world = makeWorld(5);
+      expect(result.changedTiles).toEqual([]);
+      expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+      expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
+      expect(world.getMap().getTile(2, 0)?.type).toBe(TileType.GRASS);
+      expect(world.getMap().getTile(3, 0)?.type).toBe(TileType.GRASS);
+    });
 
-    expect(previewDrag(Tool.BUILDING, { x: 0, y: 0 }, { x: 3, y: 0 }, world)).toEqual([]);
-  });
+    it(`previewDrag returns empty for ${tool}`, () => {
+      const world = makeWorld(5);
+
+      expect(previewDrag(tool, { x: 0, y: 0 }, { x: 3, y: 0 }, world)).toEqual([]);
+    });
+  }
 });
