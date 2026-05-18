@@ -4,10 +4,17 @@
  */
 
 import { GameMap } from './Map';
-import { TileType, createTile } from './Tile';
+import { TileType, createTile, isZoneType } from './Tile';
+
+/** Ticks between each zone growth step. tickCount is post-increment (≥1), so first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0. */
+export const ZONE_GROWTH_INTERVAL = 8;
+/** Maximum zone growth level a tile may reach. */
+export const ZONE_MAX_LEVEL = 5;
+/** Population contribution per zone level point. */
+export const POPULATION_PER_LEVEL = 10;
 
 export interface WorldTickResult {
-  /** Number of DIRT tiles converted to GRASS this tick */
+  /** Number of tiles changed this tick (DIRT→GRASS heals + zone level-ups). */
   changed: number;
 }
 
@@ -36,6 +43,17 @@ export class World {
     return count;
   }
 
+  /** Sum of (level × POPULATION_PER_LEVEL) across all zone tiles. Defensive ?? 0 for HMR singletons that may predate the level field. */
+  getPopulation(): number {
+    let sum = 0;
+    for (const tile of this.map.iterateTiles()) {
+      if (isZoneType(tile.type)) {
+        sum += (tile.level ?? 0);
+      }
+    }
+    return sum * POPULATION_PER_LEVEL;
+  }
+
   /**
    * Reset to a blank city: clear the map and the tick counter.
    */
@@ -46,17 +64,48 @@ export class World {
 
   /**
    * Advance simulation by one tick.
-   * Rule: DIRT heals to GRASS on the next tick; no per-tile age.
+   * Rules:
+   *   1. tickCount is incremented first (post-increment means first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0).
+   *   2. DIRT heals to GRASS; each heal contributes to `changed`.
+   *   3. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
+   *      No snapshot needed — growth reads only ROAD type; heal never produces/removes ROAD
+   *      and growth only writes `level`, so ROAD adjacency is invariant within the tick,
+   *      making the pass order-independent.
    */
   tick(): WorldTickResult {
     this.tickCount++;
     let changed = 0;
+
+    // Pass 1: DIRT→GRASS heal (unchanged behavior).
     for (const tile of this.map.iterateTiles()) {
       if (tile.type === TileType.DIRT) {
         this.map.setTile(tile.x, tile.y, createTile(tile.x, tile.y, TileType.GRASS));
         changed++;
       }
     }
+
+    // Pass 2: Zone growth — only on growth ticks.
+    if (this.tickCount % ZONE_GROWTH_INTERVAL === 0) {
+      for (const tile of this.map.iterateTiles()) {
+        if (!isZoneType(tile.type)) continue;
+        const currentLevel = tile.level ?? 0;
+        if (currentLevel >= ZONE_MAX_LEVEL) continue;
+        // Grow only if at least one orthogonal neighbor is a ROAD tile.
+        const { x, y } = tile;
+        const neighbors = [
+          this.map.getTile(x + 1, y),
+          this.map.getTile(x - 1, y),
+          this.map.getTile(x, y + 1),
+          this.map.getTile(x, y - 1),
+        ];
+        const hasRoad = neighbors.some(n => n !== null && n.type === TileType.ROAD);
+        if (hasRoad) {
+          this.map.setTile(x, y, createTile(x, y, tile.type, currentLevel + 1));
+          changed++;
+        }
+      }
+    }
+
     return { changed };
   }
 }

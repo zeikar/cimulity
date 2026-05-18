@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { World } from './World';
+import { World, ZONE_GROWTH_INTERVAL, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './World';
 import { TileType, createTile } from './Tile';
 
 describe('World', () => {
@@ -106,5 +106,129 @@ describe('World.countDirt()', () => {
     world.tick();
 
     expect(world.countDirt()).toBe(0);
+  });
+});
+
+describe('World.tick() — zone growth', () => {
+  it('ROAD-adjacent zone does NOT grow before the Nth tick (ZONE_GROWTH_INTERVAL - 1 ticks)', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+
+    expect(map.getTile(1, 0)?.level).toBe(0);
+  });
+
+  it('ROAD-adjacent zone grows 0→1 exactly on tick N; returned changed includes the level-up', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    const result = world.tick(); // tick N
+
+    expect(map.getTile(1, 0)?.level).toBe(1);
+    expect(result.changed).toBeGreaterThanOrEqual(1);
+  });
+
+  it('zone with no orthogonal ROAD neighbor stays level 0 across multiple growth intervals', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    // No road anywhere near
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+
+    expect(map.getTile(1, 1)?.level).toBe(0);
+  });
+
+  it('diagonal-only ROAD adjacency does NOT cause growth (orthogonal only)', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    // Zone at (1,1), ROAD only at (2,2) — diagonal, not orthogonal
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(2, 2, createTile(2, 2, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 2; i++) world.tick();
+
+    expect(map.getTile(1, 1)?.level).toBe(0);
+  });
+
+  it('zone level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Run enough intervals to exceed the cap
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * (ZONE_MAX_LEVEL + 2); i++) world.tick();
+
+    expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+  });
+
+  it('at cap, zone no longer contributes to changed', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, ZONE_MAX_LEVEL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Run exactly one growth tick
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) {
+      const result = world.tick();
+      if (i === ZONE_GROWTH_INTERVAL - 1) {
+        // On the growth tick, this zone is already capped — should not appear in changed
+        expect(result.changed).toBe(0);
+      }
+    }
+    expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+  });
+});
+
+describe('World.getPopulation()', () => {
+  it('returns 0 for a default map with no zone tiles', () => {
+    const world = new World(4, 4);
+    expect(world.getPopulation()).toBe(0);
+  });
+
+  it('returns 0 when zone tiles are all at level 0', () => {
+    const world = new World(4, 4);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 0));
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 0));
+    expect(world.getPopulation()).toBe(0);
+  });
+
+  it('sums levels across all zone tiles and multiplies by POPULATION_PER_LEVEL', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 3));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 2));
+    map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL, 1));
+    // sum = 3+2+1 = 6; population = 6 * POPULATION_PER_LEVEL
+    expect(world.getPopulation()).toBe(6 * POPULATION_PER_LEVEL);
+  });
+
+  it('non-zone tiles (ROAD, GRASS, etc.) contribute 0 to population', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    map.setTile(1, 0, createTile(1, 0, TileType.WATER));
+    map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
+    map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL, 2));
+    expect(world.getPopulation()).toBe(2 * POPULATION_PER_LEVEL);
+  });
+
+  it('reset() zeroes tick and population returns 0 after reset', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 3));
+    world.tick();
+
+    world.reset();
+
+    expect(world.getTick()).toBe(0);
+    expect(world.getPopulation()).toBe(0);
   });
 });
