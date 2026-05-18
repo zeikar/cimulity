@@ -3,32 +3,33 @@
  * Centralizes game state mutations for all tools
  */
 
-import { Tool } from '../input/ToolManager';
+import { Tool } from './Tool';
+import { TileType, createTile } from '../core/Tile';
 import type { TileCoord } from '../types/coordinates';
-import type { World } from './World';
-import { TileType, createTile } from './Tile';
+import type { World } from '../core/World';
+import type { ToolResult } from './ToolResult';
 
 /**
  * Execute a tool action on a set of tiles
- * @returns true if any tiles were modified
+ * @returns ToolResult with the tiles that were actually modified
  */
 export function executeToolAction(
   tool: Tool,
   tiles: TileCoord[],
   world: World
-): boolean {
+): ToolResult {
   switch (tool) {
     case Tool.ROAD:
       return placeRoads(tiles, world);
     case Tool.SELECT:
       // Selection doesn't modify tiles
-      return false;
+      return { changedTiles: [] };
     case Tool.BULLDOZE:
     case Tool.ZONE_RESIDENTIAL:
       // Not implemented yet
-      return false;
+      return { changedTiles: [] };
     default:
-      return false;
+      return { changedTiles: [] };
   }
 }
 
@@ -36,9 +37,9 @@ export function executeToolAction(
  * Place roads on the specified tiles
  * Cannot place on water tiles
  */
-function placeRoads(tiles: TileCoord[], world: World): boolean {
+function placeRoads(tiles: TileCoord[], world: World): ToolResult {
   const map = world.getMap();
-  let modified = false;
+  const changedTiles: TileCoord[] = [];
 
   for (const coord of tiles) {
     const currentTile = map.getTile(coord.x, coord.y);
@@ -55,9 +56,10 @@ function placeRoads(tiles: TileCoord[], world: World): boolean {
 
     // Create new road tile
     const roadTile = createTile(coord.x, coord.y, TileType.ROAD);
-    map.setTile(coord.x, coord.y, roadTile);
-    modified = true;
+    if (map.setTile(coord.x, coord.y, roadTile)) {
+      changedTiles.push({ x: coord.x, y: coord.y });
+    }
   }
 
-  return modified;
+  return { changedTiles };
 }
