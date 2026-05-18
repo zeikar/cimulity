@@ -53,6 +53,17 @@ export class GameMap {
     return true;
   }
 
+  /**
+   * Reset every cell back to a fresh grass tile (used by "New City").
+   */
+  reset(): void {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        this.tiles[y * this.width + x] = createTile(x, y);
+      }
+    }
+  }
+
   get totalTiles(): number {
     return this.tiles.length;
   }

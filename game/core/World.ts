@@ -22,6 +22,14 @@ export class World {
   }
 
   /**
+   * Reset to a blank city: clear the map and the tick counter.
+   */
+  reset(): void {
+    this.map.reset();
+    this.tickCount = 0;
+  }
+
+  /**
    * Advance simulation (placeholder for MVP-1)
    */
   tick(): void {

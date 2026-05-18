@@ -7,7 +7,7 @@
  */
 
 import { PixiApp } from '../render/PixiApp';
-import { getWorld } from '../core/worldStore';
+import { getWorld, saveWorld, clearSave } from '../core/worldStore';
 import { PointerHandler } from '../input/PointerHandler';
 import { CameraController } from '../input/CameraController';
 import { ToolManager } from '../input/ToolManager';
@@ -35,6 +35,7 @@ export class GameSession {
   private cameraController: CameraController | null = null;
   private keyboardHandler: KeyboardHandler | null = null;
   private disposed = false;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(callbacks: GameSessionCallbacks) {
     this.callbacks = callbacks;
@@ -44,11 +45,36 @@ export class GameSession {
     this.toolManager.setTool(tool);
   }
 
-  // Redraw tiles only if a tool command actually changed core state
+  // Redraw tiles only if a tool command actually changed core state,
+  // and debounce-persist so rapid drags coalesce into one write.
   private markIfChanged(result: ToolResult): void {
-    if (result.changedTiles.length > 0) {
-      this.pixiApp?.getTileRenderer()?.markDirty();
+    if (result.changedTiles.length === 0) return;
+    this.pixiApp?.getTileRenderer()?.markDirty();
+    this.scheduleSave();
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.world) saveWorld(this.world);
+    }, 500);
+  }
+
+  /**
+   * "New City": wipe the world and its saved state, drop any pending
+   * autosave, and force a redraw + clear selection/hover highlights.
+   */
+  resetWorld(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
     }
+    this.world?.reset();
+    clearSave();
+    this.pixiApp?.setSelectedTile(null);
+    this.pixiApp?.setHoverTile(null);
+    this.pixiApp?.getTileRenderer()?.markDirty();
   }
 
   async start(container: HTMLElement, width: number, height: number): Promise<void> {
@@ -147,6 +173,13 @@ export class GameSession {
   dispose(): void {
     this.disposed = true;
 
+    // Flush a pending debounced save so a quick refresh/navigation within
+    // the debounce window doesn't drop the last mutation.
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+      if (this.world) saveWorld(this.world);
+    }
     this.pointerHandler?.detach();
     this.cameraController?.detach();
     this.keyboardHandler?.detach();

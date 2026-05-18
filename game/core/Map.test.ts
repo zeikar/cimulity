@@ -45,6 +45,20 @@ describe('GameMap', () => {
     expect(map.getTileByIndex(5)).toEqual(map.getTile(2, 1));
   });
 
+  it('reset() returns every cell to a fresh grass tile', () => {
+    const map = new GameMap(3, 3);
+    map.setTile(1, 1, createTile(1, 1, TileType.ROAD));
+
+    map.reset();
+
+    expect(map.getTile(1, 1)).toEqual({
+      x: 1,
+      y: 1,
+      type: TileType.GRASS,
+      elevation: 0,
+    });
+  });
+
   it('iterates all tiles in row-major order', () => {
     const map = new GameMap(2, 2);
     const coords = [...map.iterateTiles()].map((t) => [t.x, t.y]);

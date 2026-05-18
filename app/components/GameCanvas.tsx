@@ -21,6 +21,8 @@ export interface GameCanvasProps {
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   currentTool?: Tool;
   onToolChange?: (tool: Tool) => void;
+  /** Bump to trigger a "New City" reset on the live session. */
+  resetNonce?: number;
 }
 
 export function GameCanvas({
@@ -30,6 +32,7 @@ export function GameCanvas({
   onCameraUpdate,
   currentTool = Tool.SELECT,
   onToolChange,
+  resetNonce = 0,
 }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<GameSession | null>(null);
@@ -76,6 +79,17 @@ export function GameCanvas({
   useEffect(() => {
     sessionRef.current?.setTool(currentTool);
   }, [currentTool]);
+
+  // "New City": run on bump only, never on the initial mount (which would
+  // wipe the just-hydrated save).
+  const resetMounted = useRef(false);
+  useEffect(() => {
+    if (!resetMounted.current) {
+      resetMounted.current = true;
+      return;
+    }
+    sessionRef.current?.resetWorld();
+  }, [resetNonce]);
 
   useEffect(() => {
     if (!containerRef.current) return;

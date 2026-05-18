@@ -18,9 +18,18 @@ export default function Home() {
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
   const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
+  const [resetNonce, setResetNonce] = useState(0);
 
   const handleCameraUpdate = useCallback((x: number, y: number, zoom: number) => {
     setCamera({ x, y, zoom });
+  }, []);
+
+  const handleNewCity = useCallback(() => {
+    if (!window.confirm('Start a new city? This erases your current city.')) {
+      return;
+    }
+    setSelectedTile(null);
+    setResetNonce((n) => n + 1);
   }, []);
 
   return (
@@ -31,7 +40,27 @@ export default function Home() {
         onCameraUpdate={handleCameraUpdate}
         currentTool={currentTool}
         onToolChange={setCurrentTool}
+        resetNonce={resetNonce}
       />
+      <button
+        onClick={handleNewCity}
+        style={{
+          position: 'fixed',
+          top: '16px',
+          right: '16px',
+          padding: '8px 16px',
+          backgroundColor: 'rgba(60, 60, 60, 0.8)',
+          color: 'white',
+          border: '2px solid transparent',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontFamily: 'monospace',
+          fontSize: '14px',
+          zIndex: 1000,
+        }}
+      >
+        New City
+      </button>
       <GameHUD
         selectedTile={selectedTile}
         fps={fps}
