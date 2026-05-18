@@ -10,8 +10,8 @@ import type { GameMap } from '../core/Map';
 export interface PointerCallbacks {
   onTileHover: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
-  onTileDrag?: (tiles: TileCoord[]) => void;
-  onDragPreview?: (tiles: TileCoord[] | null) => void;
+  onTileDrag?: (start: TileCoord, end: TileCoord) => void;
+  onDragPreview?: (start: TileCoord, end: TileCoord | null) => void;
 }
 
 export class PointerHandler {
@@ -88,18 +88,20 @@ export class PointerHandler {
   private handlePointerUp = (event: PointerEvent): void => {
     if (!this.isDragging) return;
 
-    // Calculate all tiles from start to end
-    const tiles = this.getTilesInLine(this.dragStartTile, this.dragEndTile);
-
-    // Fire drag callback if more than one tile
-    if (tiles.length > 1 && this.callbacks.onTileDrag) {
-      this.callbacks.onTileDrag(tiles);
+    // Fire drag callback only for a true multi-tile drag (start != end).
+    // A single-tile pointer-up is left for the subsequent click to select.
+    if (
+      this.dragStartTile &&
+      this.dragEndTile &&
+      !this.tilesEqual(this.dragStartTile, this.dragEndTile)
+    ) {
+      this.callbacks.onTileDrag?.(this.dragStartTile, this.dragEndTile);
       this.justDragged = true; // Mark that we just completed a drag
     }
 
     // Clear drag preview
-    if (this.callbacks.onDragPreview) {
-      this.callbacks.onDragPreview(null);
+    if (this.dragStartTile) {
+      this.callbacks.onDragPreview?.(this.dragStartTile, null);
     }
 
     // Reset drag state
@@ -107,57 +109,6 @@ export class PointerHandler {
     this.dragStartTile = null;
     this.dragEndTile = null;
   };
-
-  /**
-   * Calculate all tiles on the road drag path. The cursor is snapped to the
-   * nearest of three shapes: horizontal, vertical, or a perfect 45° (1:1)
-   * diagonal — no arbitrary-angle staircases.
-   */
-  private getTilesInLine(
-    start: TileCoord | null,
-    end: TileCoord | null
-  ): TileCoord[] {
-    if (!start || !end) return [];
-
-    const tiles: TileCoord[] = [];
-    const push = (x: number, y: number): void => {
-      if (this.map.getTile(x, y)) {
-        tiles.push({ x, y });
-      }
-    };
-
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const adx = Math.abs(dx);
-    const ady = Math.abs(dy);
-
-    // Snap the end point: dominant horizontal/vertical, else 45° diagonal
-    let endX: number, endY: number;
-    if (adx > ady * 2) {
-      endX = end.x;
-      endY = start.y;
-    } else if (ady > adx * 2) {
-      endX = start.x;
-      endY = end.y;
-    } else {
-      const len = Math.round((adx + ady) / 2);
-      endX = start.x + Math.sign(dx) * len;
-      endY = start.y + Math.sign(dy) * len;
-    }
-
-    const stepX = Math.sign(endX - start.x);
-    const stepY = Math.sign(endY - start.y);
-    const steps = Math.max(
-      Math.abs(endX - start.x),
-      Math.abs(endY - start.y)
-    );
-
-    for (let i = 0; i <= steps; i++) {
-      push(start.x + stepX * i, start.y + stepY * i);
-    }
-
-    return tiles;
-  }
 
   private handlePointerMove = (event: PointerEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
@@ -170,11 +121,8 @@ export class PointerHandler {
     if (this.isDragging && tile && this.dragStartTile) {
       this.dragEndTile = tile;
 
-      // Calculate and update drag preview
-      if (this.callbacks.onDragPreview) {
-        const previewTiles = this.getTilesInLine(this.dragStartTile, this.dragEndTile);
-        this.callbacks.onDragPreview(previewTiles);
-      }
+      // Emit raw drag endpoints; path resolution lives in the dispatcher
+      this.callbacks.onDragPreview?.(this.dragStartTile, this.dragEndTile);
     }
 
     // Handle hover (only if not dragging or tile changed)
