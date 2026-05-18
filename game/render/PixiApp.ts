@@ -8,8 +8,7 @@ import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { GridRenderer } from './GridRenderer';
-import { tileToScreen } from './IsoTransform';
-import { mapWorldExtent, cameraBounds } from './cameraConstraints';
+import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 
@@ -29,6 +28,7 @@ export class PixiApp {
   private world: World;
   private callbacks: PixiAppCallbacks;
   private fpsUpdateInterval: number = 0;
+  private extent: ReturnType<typeof mapWorldExtent> | null = null;
 
   constructor(world: World, callbacks: PixiAppCallbacks) {
     this.world = world;
@@ -64,12 +64,14 @@ export class PixiApp {
 
     // Setup camera with constraints based on map size
     const map = this.world.getMap();
-    const extent = mapWorldExtent(map.getWidth(), map.getHeight());
+    this.extent = mapWorldExtent(map.getWidth(), map.getHeight());
     const constraints: CameraConstraints = {
       minZoom: 0.25,
       maxZoom: 2,
       boundsProvider: (zoom) =>
-        cameraBounds(extent, this.app!.screen.width, this.app!.screen.height, zoom),
+        this.extent
+          ? cameraBounds(this.extent, this.app!.screen.width, this.app!.screen.height, zoom)
+          : { minX: 0, maxX: 0, minY: 0, maxY: 0 },
     };
 
     this.camera = new Camera(this.app.stage, constraints);
@@ -108,20 +110,12 @@ export class PixiApp {
    * Center camera on the map
    */
   private centerCameraOnMap(): void {
-    if (!this.camera || !this.app) return;
+    if (!this.camera || !this.app || !this.extent) return;
 
-    const map = this.world.getMap();
-    const centerTile = { x: map.getWidth() / 2, y: map.getHeight() / 2 };
-    const centerScreen = tileToScreen(centerTile);
-
-    // Center in viewport
-    const viewportCenterX = this.app.screen.width / 2;
-    const viewportCenterY = this.app.screen.height / 2;
-
-    this.camera.pan(
-      viewportCenterX - centerScreen.x,
-      viewportCenterY - centerScreen.y - 200 // Offset up slightly for better view
-    );
+    const offset = centerOffset(this.extent, this.app.screen.width, this.app.screen.height, this.camera.getZoom());
+    // pan-delta from current pos because Camera has no setPosition; clamping is centralized in pan.
+    const cur = this.camera.getPosition();
+    this.camera.pan(offset.x - cur.x, offset.y - cur.y);
   }
 
   /**
@@ -180,6 +174,10 @@ export class PixiApp {
    */
   resize(width: number, height: number): void {
     this.app?.renderer.resize(width, height);
+    // recenter on resize (simplest, predictable)
+    if (this.camera && this.app) {
+      this.centerCameraOnMap();
+    }
   }
 
   /**
