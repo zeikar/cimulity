@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
+import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 
 function makeWorld(size = 5): World {
@@ -353,5 +354,98 @@ describe('executeClick - zoning × level', () => {
     expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ZONE_RESIDENTIAL);
     expect(world.getMap().getTile(2, 2)?.level).toBe(0);
+  });
+});
+
+describe('build costs', () => {
+  it('placing a road deducts ROAD_COST from the treasury', () => {
+    const world = makeWorld();
+    const before = world.getMoney();
+    executeClick(Tool.ROAD, { x: 2, y: 2 }, world);
+    expect(world.getMoney()).toBe(before - ROAD_COST);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
+  });
+
+  it('placing a zone tile deducts ZONE_COST from the treasury', () => {
+    const world = makeWorld();
+    const before = world.getMoney();
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world);
+    expect(world.getMoney()).toBe(before - ZONE_COST);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+  });
+
+  it('bulldozing a tile deducts BULLDOZE_COST from the treasury', () => {
+    const world = makeWorld();
+    // Place a road first (free accounting — we only care about the bulldoze cost here)
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const before = world.getMoney();
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
+  });
+
+  it('dragging road over N tiles deducts N × ROAD_COST', () => {
+    const world = makeWorld(5);
+    const before = world.getMoney();
+    // horizontal drag x=0..4, y=0 → 5 tiles
+    const result = executeDrag(Tool.ROAD, { x: 0, y: 0 }, { x: 4, y: 0 }, world);
+    expect(result.changedTiles).toHaveLength(5);
+    expect(world.getMoney()).toBe(before - 5 * ROAD_COST);
+  });
+
+  it('insufficient funds: tile is NOT placed and money is unchanged', () => {
+    const world = makeWorld();
+    world.setMoney(ROAD_COST - 1); // one short
+    const before = world.getMoney();
+    const result = executeClick(Tool.ROAD, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('same-zone repaint emits no command → money is unchanged', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL, 3));
+    const before = world.getMoney();
+    const result = executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('partial-afford drag: entire batch is rejected when total exceeds balance', () => {
+    const world = makeWorld(5);
+    // Balance sufficient for 2 roads but not 5
+    world.setMoney(2 * ROAD_COST);
+    const before = world.getMoney();
+    // horizontal drag produces 5 road commands; total = 5 × ROAD_COST > balance
+    const result = executeDrag(Tool.ROAD, { x: 0, y: 0 }, { x: 4, y: 0 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMoney()).toBe(before);
+    // No tiles were placed
+    for (let x = 0; x <= 4; x++) {
+      expect(world.getMap().getTile(x, 0)?.type).toBe(TileType.GRASS);
+    }
+  });
+
+  it('previewDrag does not spend money', () => {
+    const world = makeWorld(5);
+    const before = world.getMoney();
+    previewDrag(Tool.ROAD, { x: 0, y: 0 }, { x: 4, y: 0 }, world);
+    expect(world.getMoney()).toBe(before);
+    // No tiles written either
+    for (let x = 0; x <= 4; x++) {
+      expect(world.getMap().getTile(x, 0)?.type).toBe(TileType.GRASS);
+    }
+  });
+
+  it('bulldoze drag over multiple tiles deducts BULLDOZE_COST per tile cleared', () => {
+    const world = makeWorld(5);
+    // Seed two road tiles inside the drag rectangle
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    const before = world.getMoney();
+    const result = executeDrag(Tool.BULLDOZE, { x: 0, y: 0 }, { x: 1, y: 0 }, world);
+    expect(result.changedTiles).toHaveLength(2);
+    expect(world.getMoney()).toBe(before - 2 * BULLDOZE_COST);
   });
 });

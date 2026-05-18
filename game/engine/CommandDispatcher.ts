@@ -12,6 +12,8 @@ import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
 import { buildToolCommands } from '../tools';
+import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
+import { TileType, isZoneType } from '../core/Tile';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolCommand, ToolResult } from '../tools';
@@ -40,10 +42,34 @@ function pathForTool(
 }
 
 /**
+ * Cost for a single command, keyed on the tile type being written.
+ * DIRT is the tile bulldoze writes; zone types share ZONE_COST.
+ */
+function commandCost(cmd: ToolCommand): number {
+  const t = cmd.tile.type;
+  if (t === TileType.ROAD) return ROAD_COST;
+  if (isZoneType(t)) return ZONE_COST;
+  if (t === TileType.DIRT) return BULLDOZE_COST;
+  return 0;
+}
+
+/**
  * Apply tool commands to core state; report tiles actually written.
  * This is the only place tool-driven mutation reaches core.
+ *
+ * Cost is charged on the whole batch before any tile write (all-or-nothing).
+ * Same-zone repaint emits no commands → zero total → free, no trySpend call.
+ * Insufficient funds → silent no-op, empty changedTiles.
  */
 function applyCommands(commands: ToolCommand[], world: World): ToolResult {
+  if (commands.length === 0) return { changedTiles: [] };
+
+  const total = commands.reduce((s, c) => s + commandCost(c), 0);
+  // Never call trySpend(0) — only charge when there is an actual cost.
+  if (total > 0 && !world.trySpend(total)) {
+    return { changedTiles: [] };
+  }
+
   const map = world.getMap();
   const changedTiles: TileCoord[] = [];
   for (const cmd of commands) {
