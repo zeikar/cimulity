@@ -9,6 +9,7 @@ import { TileRenderer } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { GridRenderer } from './GridRenderer';
 import { tileToScreen } from './IsoTransform';
+import { mapWorldExtent, cameraBounds } from './cameraConstraints';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 
@@ -63,13 +64,12 @@ export class PixiApp {
 
     // Setup camera with constraints based on map size
     const map = this.world.getMap();
+    const extent = mapWorldExtent(map.getWidth(), map.getHeight());
     const constraints: CameraConstraints = {
-      minX: -width,
-      maxX: width * 2,
-      minY: -height,
-      maxY: height * 2,
       minZoom: 0.25,
       maxZoom: 2,
+      boundsProvider: (zoom) =>
+        cameraBounds(extent, this.app!.screen.width, this.app!.screen.height, zoom),
     };
 
     this.camera = new Camera(this.app.stage, constraints);

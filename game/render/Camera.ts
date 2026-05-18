@@ -7,12 +7,18 @@ import { Container } from 'pixi.js';
 import type { ScreenCoord } from '../types/coordinates';
 
 export interface CameraConstraints {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
   minZoom: number;
   maxZoom: number;
+  /**
+   * Live, zoom-aware position bounds. The valid _x/_y window changes on every
+   * zoom step, so this is queried after pan AND zoom (not cached at construction).
+   */
+  boundsProvider: (zoom: number) => {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
 }
 
 export class Camera {
@@ -35,11 +41,17 @@ export class Camera {
     this._x += deltaX;
     this._y += deltaY;
 
-    // Apply constraints
-    this._x = Math.max(this.constraints.minX, Math.min(this.constraints.maxX, this._x));
-    this._y = Math.max(this.constraints.minY, Math.min(this.constraints.maxY, this._y));
-
+    this.clampPosition();
     this.updateTransform();
+  }
+
+  /**
+   * Clamp _x/_y into the live bounds for the CURRENT zoom level.
+   */
+  private clampPosition(): void {
+    const bounds = this.constraints.boundsProvider(this._zoom);
+    this._x = Math.max(bounds.minX, Math.min(bounds.maxX, this._x));
+    this._y = Math.max(bounds.minY, Math.min(bounds.maxY, this._y));
   }
 
   /**
@@ -71,6 +83,7 @@ export class Camera {
     this._x += (worldAfterX - worldBeforeX) * newZoom;
     this._y += (worldAfterY - worldBeforeY) * newZoom;
 
+    this.clampPosition();
     this.updateTransform();
   }
 
@@ -116,6 +129,7 @@ export class Camera {
     this._x = 0;
     this._y = 0;
     this._zoom = 1;
+    this.clampPosition();
     this.updateTransform();
   }
 }
