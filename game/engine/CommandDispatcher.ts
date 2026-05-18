@@ -1,17 +1,19 @@
 /**
- * Command dispatcher: the seam between raw input drags and tool actions
+ * Command dispatcher: the seam between input intent and core mutation
  *
- * Given the current tool and a raw drag, resolves the tool's path,
- * bounds-filters it against the map, and runs the tool action. Resolving
- * the path with the current tool at drag time avoids stale-rule bugs.
+ * Given the current tool and a click or raw drag, resolves the tool's
+ * path, bounds-filters it, asks the tool to build commands, then applies
+ * those commands to core. Resolving the path with the current tool at
+ * call time avoids stale-rule bugs. Tools never mutate core; the engine
+ * applies their commands here.
  */
 
 import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
-import { executeToolAction } from '../tools';
+import { buildToolCommands } from '../tools';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
-import type { ToolResult } from '../tools';
+import type { ToolCommand, ToolResult } from '../tools';
 
 /**
  * Single place tool→path mapping lives. ROAD is the only tool with a drag
@@ -25,6 +27,29 @@ function pathForTool(
   return tool === Tool.ROAD ? snapRoadDragPath(start, end) : [];
 }
 
+/**
+ * Apply tool commands to core state; report tiles actually written.
+ * This is the only place tool-driven mutation reaches core.
+ */
+function applyCommands(commands: ToolCommand[], world: World): ToolResult {
+  const map = world.getMap();
+  const changedTiles: TileCoord[] = [];
+  for (const cmd of commands) {
+    if (map.setTile(cmd.x, cmd.y, cmd.tile)) {
+      changedTiles.push({ x: cmd.x, y: cmd.y });
+    }
+  }
+  return { changedTiles };
+}
+
+export function executeClick(
+  tool: Tool,
+  tile: TileCoord,
+  world: World
+): ToolResult {
+  return applyCommands(buildToolCommands(tool, [tile], world), world);
+}
+
 export function executeDrag(
   tool: Tool,
   start: TileCoord,
@@ -34,9 +59,10 @@ export function executeDrag(
   const tiles = pathForTool(tool, start, end).filter((t) =>
     world.getMap().getTile(t.x, t.y)
   );
-  return tiles.length > 0
-    ? executeToolAction(tool, tiles, world)
-    : { changedTiles: [] };
+  if (tiles.length === 0) {
+    return { changedTiles: [] };
+  }
+  return applyCommands(buildToolCommands(tool, tiles, world), world);
 }
 
 export function previewDrag(

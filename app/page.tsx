@@ -9,7 +9,7 @@ import { useCallback, useState } from 'react';
 import { GameCanvas } from './components/GameCanvas';
 import { GameHUD } from './components/GameHUD';
 import { Toolbar } from './components/Toolbar';
-import { Tool } from '@/game/input/ToolManager';
+import { Tool } from '@/game/tools';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export default function Home() {

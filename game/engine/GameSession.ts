@@ -10,12 +10,13 @@ import { PixiApp } from '../render/PixiApp';
 import { getWorld } from '../core/worldStore';
 import { PointerHandler } from '../input/PointerHandler';
 import { CameraController } from '../input/CameraController';
-import { ToolManager, Tool } from '../input/ToolManager';
+import { ToolManager } from '../input/ToolManager';
+import { Tool } from '../tools/Tool';
 import { KeyboardHandler } from '../input/KeyboardHandler';
-import { executeToolAction } from '../tools';
-import { executeDrag, previewDrag } from './CommandDispatcher';
+import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
+import type { ToolResult } from '../tools';
 
 export interface GameSessionCallbacks {
   onTileHover: (tile: TileCoord | null) => void;
@@ -43,16 +44,10 @@ export class GameSession {
     this.toolManager.setTool(tool);
   }
 
-  // Handle tool execution on tiles
-  private handleToolExecution(tiles: TileCoord[]): void {
-    if (!this.world || !this.pixiApp) return;
-
-    const tool = this.toolManager.getCurrentTool();
-    const { changedTiles } = executeToolAction(tool, tiles, this.world);
-
-    if (changedTiles.length > 0) {
-      const tileRenderer = this.pixiApp.getTileRenderer();
-      tileRenderer?.markDirty();
+  // Redraw tiles only if a tool command actually changed core state
+  private markIfChanged(result: ToolResult): void {
+    if (result.changedTiles.length > 0) {
+      this.pixiApp?.getTileRenderer()?.markDirty();
     }
   }
 
@@ -98,18 +93,16 @@ export class GameSession {
         this.callbacks.onTileHover(tile);
       },
       onTileClick: (tile) => {
-        // Execute tool action on single tile
-        this.handleToolExecution([tile]);
+        // Single-tile execution goes through the dispatcher, same as drags
+        const tool = this.toolManager.getCurrentTool();
+        this.markIfChanged(executeClick(tool, tile, world));
         pixiApp.setSelectedTile(tile);
         this.callbacks.onTileClick(tile);
       },
       onTileDrag: (start, end) => {
         // Resolve path with the current tool at drag time
         const tool = this.toolManager.getCurrentTool();
-        const { changedTiles } = executeDrag(tool, start, end, world);
-        if (changedTiles.length > 0) {
-          this.pixiApp?.getTileRenderer()?.markDirty();
-        }
+        this.markIfChanged(executeDrag(tool, start, end, world));
       },
       onDragPreview: (start, end) => {
         // Only show preview for ROAD tool

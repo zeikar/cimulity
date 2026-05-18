@@ -1,45 +1,47 @@
 /**
- * Tool action execution logic
- * Centralizes game state mutations for all tools
+ * Tool command builders
+ *
+ * Tools read world state to decide intent and return pure ToolCommand
+ * objects; the engine dispatcher applies them. Tools never mutate core.
  */
 
 import { Tool } from './Tool';
 import { TileType, createTile } from '../core/Tile';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
-import type { ToolResult } from './ToolResult';
+import type { ToolCommand } from './ToolCommand';
 
 /**
- * Execute a tool action on a set of tiles
- * @returns ToolResult with the tiles that were actually modified
+ * Build the commands a tool would apply on a set of tiles
+ * @returns the intended tile writes (empty if the tool changes nothing)
  */
-export function executeToolAction(
+export function buildToolCommands(
   tool: Tool,
   tiles: TileCoord[],
   world: World
-): ToolResult {
+): ToolCommand[] {
   switch (tool) {
     case Tool.ROAD:
-      return placeRoads(tiles, world);
+      return buildRoadCommands(tiles, world);
     case Tool.SELECT:
       // Selection doesn't modify tiles
-      return { changedTiles: [] };
+      return [];
     case Tool.BULLDOZE:
     case Tool.ZONE_RESIDENTIAL:
       // Not implemented yet
-      return { changedTiles: [] };
+      return [];
     default:
-      return { changedTiles: [] };
+      return [];
   }
 }
 
 /**
- * Place roads on the specified tiles
- * Cannot place on water tiles
+ * Build road-placement commands
+ * Cannot place on water tiles or existing roads
  */
-function placeRoads(tiles: TileCoord[], world: World): ToolResult {
+function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
-  const changedTiles: TileCoord[] = [];
+  const commands: ToolCommand[] = [];
 
   for (const coord of tiles) {
     const currentTile = map.getTile(coord.x, coord.y);
@@ -54,12 +56,12 @@ function placeRoads(tiles: TileCoord[], world: World): ToolResult {
       continue;
     }
 
-    // Create new road tile
-    const roadTile = createTile(coord.x, coord.y, TileType.ROAD);
-    if (map.setTile(coord.x, coord.y, roadTile)) {
-      changedTiles.push({ x: coord.x, y: coord.y });
-    }
+    commands.push({
+      x: coord.x,
+      y: coord.y,
+      tile: createTile(coord.x, coord.y, TileType.ROAD),
+    });
   }
 
-  return { changedTiles };
+  return commands;
 }

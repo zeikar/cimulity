@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from 'react';
 import { GameSession } from '@/game/engine';
-import { Tool } from '@/game/input/ToolManager';
+import { Tool } from '@/game/tools';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export interface GameCanvasProps {

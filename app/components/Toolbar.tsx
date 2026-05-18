@@ -4,7 +4,7 @@
  * Toolbar component for tool selection
  */
 
-import { Tool } from '@/game/input/ToolManager';
+import { Tool } from '@/game/tools';
 
 export interface ToolbarProps {
   currentTool: Tool;

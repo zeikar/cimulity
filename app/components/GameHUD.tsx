@@ -6,7 +6,7 @@
  */
 
 import type { TileCoord } from '@/game/types/coordinates';
-import type { Tool } from '@/game/input/ToolManager';
+import type { Tool } from '@/game/tools';
 
 export interface GameHUDProps {
   selectedTile: TileCoord | null;

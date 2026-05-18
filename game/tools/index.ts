@@ -3,5 +3,6 @@
  */
 
 export { Tool } from './Tool';
-export { executeToolAction } from './ToolActions';
+export { buildToolCommands } from './ToolActions';
+export type { ToolCommand } from './ToolCommand';
 export type { ToolResult } from './ToolResult';
