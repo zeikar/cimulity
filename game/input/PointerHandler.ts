@@ -109,9 +109,9 @@ export class PointerHandler {
   };
 
   /**
-   * Calculate all tiles on the straight line from start to end using
-   * Bresenham's algorithm. This naturally supports horizontal, vertical,
-   * and diagonal road drags in a single pass.
+   * Calculate all tiles on the road drag path. The cursor is snapped to the
+   * nearest of three shapes: horizontal, vertical, or a perfect 45° (1:1)
+   * diagonal — no arbitrary-angle staircases.
    */
   private getTilesInLine(
     start: TileCoord | null,
@@ -126,28 +126,34 @@ export class PointerHandler {
       }
     };
 
-    let x = start.x;
-    let y = start.y;
-    const dx = Math.abs(end.x - x);
-    const dy = Math.abs(end.y - y);
-    const stepX = end.x >= x ? 1 : -1;
-    const stepY = end.y >= y ? 1 : -1;
-    let err = dx - dy;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
 
-    // Walk from start to end one tile at a time
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      push(x, y);
-      if (x === end.x && y === end.y) break;
-      const e2 = 2 * err;
-      if (e2 > -dy) {
-        err -= dy;
-        x += stepX;
-      }
-      if (e2 < dx) {
-        err += dx;
-        y += stepY;
-      }
+    // Snap the end point: dominant horizontal/vertical, else 45° diagonal
+    let endX: number, endY: number;
+    if (adx > ady * 2) {
+      endX = end.x;
+      endY = start.y;
+    } else if (ady > adx * 2) {
+      endX = start.x;
+      endY = end.y;
+    } else {
+      const len = Math.round((adx + ady) / 2);
+      endX = start.x + Math.sign(dx) * len;
+      endY = start.y + Math.sign(dy) * len;
+    }
+
+    const stepX = Math.sign(endX - start.x);
+    const stepY = Math.sign(endY - start.y);
+    const steps = Math.max(
+      Math.abs(endX - start.x),
+      Math.abs(endY - start.y)
+    );
+
+    for (let i = 0; i <= steps; i++) {
+      push(start.x + stepX * i, start.y + stepY * i);
     }
 
     return tiles;
