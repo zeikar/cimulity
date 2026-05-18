@@ -23,11 +23,23 @@ export interface Tile {
   readonly y: number;
   readonly type: TileType;
   readonly elevation: number; // Height for future 3D visuals
+  readonly level: number; // Zone growth level; non-zone tiles are always 0
 }
 
 /**
  * Factory function to create tiles
  */
-export function createTile(x: number, y: number, type: TileType = TileType.GRASS): Tile {
-  return { x, y, type, elevation: 0 };
+export function createTile(x: number, y: number, type: TileType = TileType.GRASS, level: number = 0): Tile {
+  return { x, y, type, elevation: 0, level };
+}
+
+/** Zone tile types — single source of truth for zone membership checks. */
+export const ZONE_TYPES: ReadonlySet<TileType> = new Set([
+  TileType.ZONE_RESIDENTIAL,
+  TileType.ZONE_COMMERCIAL,
+  TileType.ZONE_INDUSTRIAL,
+]);
+
+export function isZoneType(type: TileType): boolean {
+  return ZONE_TYPES.has(type);
 }

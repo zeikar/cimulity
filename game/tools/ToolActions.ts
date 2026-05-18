@@ -6,24 +6,13 @@
  */
 
 import { Tool } from './Tool';
-import { TileType, createTile } from '../core/Tile';
+import { TileType, createTile, isZoneType } from '../core/Tile';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
 
 /** Narrow union of the three placeable zone tile types. */
 type ZoneTileType = TileType.ZONE_RESIDENTIAL | TileType.ZONE_COMMERCIAL | TileType.ZONE_INDUSTRIAL;
-
-/** Zone tile types -- used to guard road placement and zone placement. */
-const ZONE_TYPES: ReadonlySet<TileType> = new Set([
-  TileType.ZONE_RESIDENTIAL,
-  TileType.ZONE_COMMERCIAL,
-  TileType.ZONE_INDUSTRIAL,
-]);
-
-function isZone(type: TileType): boolean {
-  return ZONE_TYPES.has(type);
-}
 
 /**
  * Build the commands a tool would apply on a set of tiles
@@ -70,7 +59,7 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
     }
 
     // Cannot place roads on water or zoned land
-    if (currentTile.type === TileType.WATER || isZone(currentTile.type)) {
+    if (currentTile.type === TileType.WATER || isZoneType(currentTile.type)) {
       continue;
     }
 
@@ -129,7 +118,7 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
     const paintable =
       currentTile.type === TileType.GRASS ||
       currentTile.type === TileType.DIRT ||
-      isZone(currentTile.type);
+      isZoneType(currentTile.type);
     if (!paintable) continue;
     commands.push({
       x: coord.x,
