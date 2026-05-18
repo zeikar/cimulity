@@ -11,7 +11,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PixiApp } from '@/game/render/PixiApp';
-import { World } from '@/game/core/World';
+import { getWorld } from '@/game/core/worldStore';
+import type { World } from '@/game/core/World';
 import { PointerHandler } from '@/game/input/PointerHandler';
 import { CameraController } from '@/game/input/CameraController';
 import { ToolManager, Tool } from '@/game/input/ToolManager';
@@ -36,7 +37,7 @@ export function GameCanvas({
   currentTool = Tool.SELECT,
   onToolChange,
 }: GameCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const pixiAppRef = useRef<PixiApp | null>(null);
   const worldRef = useRef<World | null>(null);
   const pointerHandlerRef = useRef<PointerHandler | null>(null);
@@ -64,20 +65,20 @@ export function GameCanvas({
   }, []);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!containerRef.current) return;
 
     // Prevent double initialization in StrictMode
     if (pixiAppRef.current) return;
 
-    const canvas = canvasRef.current;
+    const container = containerRef.current;
 
     // Set by cleanup so a still-pending init() can abort instead of
     // wiring handlers onto an app that was already destroyed (HMR race).
     let cancelled = false;
 
     console.log('GameCanvas: Initializing world...');
-    // Initialize world (16x16 grid for testing - will increase later)
-    const world = new World(16, 16);
+    // Reuse the process-wide World so HMR/Fast Refresh keeps placed tiles
+    const world = getWorld();
     worldRef.current = world;
     console.log('GameCanvas: World created');
 
@@ -97,7 +98,7 @@ export function GameCanvas({
     pixiAppRef.current = pixiApp;
 
     // Initialize PixiJS (async)
-    pixiApp.init(canvas, window.innerWidth, window.innerHeight).then(() => {
+    pixiApp.init(container, window.innerWidth, window.innerHeight).then(() => {
       // Cleanup already ran while init() was pending — discard this app.
       if (cancelled) {
         pixiApp.destroy();
@@ -105,7 +106,8 @@ export function GameCanvas({
       }
 
       const camera = pixiApp.getCamera();
-      if (!camera) return;
+      const canvas = pixiApp.getCanvas();
+      if (!camera || !canvas) return;
 
       // Setup input handlers
       const pointerHandler = new PointerHandler(canvas, camera, world.getMap(), {
@@ -180,15 +182,14 @@ export function GameCanvas({
   }, [onTileHover, onTileClick, onFpsUpdate, onCameraUpdate, onToolChange, handleToolExecution]);
 
   return (
-    <canvas
-      ref={canvasRef}
+    <div
+      ref={containerRef}
       style={{
         position: 'fixed',
         top: 0,
         left: 0,
         width: '100vw',
         height: '100vh',
-        display: 'block',
       }}
     />
   );

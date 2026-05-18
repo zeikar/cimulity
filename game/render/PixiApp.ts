@@ -38,16 +38,17 @@ export class PixiApp {
    * Initialize PixiJS application
    * Safe for React StrictMode (idempotent)
    */
-  async init(canvas: HTMLCanvasElement, width: number, height: number): Promise<void> {
+  async init(container: HTMLElement, width: number, height: number): Promise<void> {
     if (this.app) {
       console.warn('PixiApp already initialized');
       return;
     }
 
-    // Create PixiJS app with auto-detected renderer
+    // Create PixiJS app with auto-detected renderer. Pixi creates and owns
+    // its own canvas (a fresh WebGL context every init) — React only owns
+    // the container, so HMR/Fast Refresh re-init is clean.
     this.app = new Application();
     await this.app.init({
-      canvas,
       width,
       height,
       backgroundColor: 0x1a1a1a,
@@ -56,6 +57,9 @@ export class PixiApp {
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
     });
+
+    this.app.canvas.style.display = 'block';
+    container.appendChild(this.app.canvas);
 
     // Setup camera with constraints based on map size
     const map = this.world.getMap();
@@ -135,6 +139,13 @@ export class PixiApp {
   }
 
   /**
+   * Get the Pixi-owned canvas (for attaching input handlers)
+   */
+  getCanvas(): HTMLCanvasElement | null {
+    return this.app?.canvas ?? null;
+  }
+
+  /**
    * Get camera instance for input handling
    */
   getCamera(): Camera | null {
@@ -186,9 +197,9 @@ export class PixiApp {
     this.gridRenderer?.destroy();
 
     if (this.app) {
-      // removeView: false — the canvas is owned by React, not Pixi.
-      // Removing it from the DOM here breaks HMR/Fast Refresh re-init.
-      this.app.destroy({ removeView: false }, { children: true });
+      // removeView: true — Pixi owns this canvas; remove it so the next
+      // init() creates a fresh canvas with a fresh WebGL context.
+      this.app.destroy({ removeView: true }, { children: true });
       this.app = null;
     }
 
