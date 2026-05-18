@@ -2,7 +2,7 @@
  * Keyboard input handler for tool shortcuts
  */
 
-import { Tool } from './ToolManager';
+import { Tool } from '../tools/Tool';
 
 export interface KeyboardCallbacks {
   onToolChange: (tool: Tool) => void;

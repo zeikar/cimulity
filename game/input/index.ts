@@ -4,4 +4,5 @@
 
 export { PointerHandler, type PointerCallbacks } from './PointerHandler';
 export { CameraController, type CameraControlCallbacks } from './CameraController';
-export { ToolManager, Tool } from './ToolManager';
+export { ToolManager } from './ToolManager';
+export { Tool } from '../tools';
