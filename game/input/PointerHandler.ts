@@ -25,7 +25,6 @@ export class PointerHandler {
   private isDragging: boolean = false;
   private dragStartTile: TileCoord | null = null;
   private dragEndTile: TileCoord | null = null;
-  private dragDirection: 'horizontal' | 'vertical' | null = null;
   private justDragged: boolean = false; // Flag to suppress click after drag
 
   constructor(
@@ -83,7 +82,6 @@ export class PointerHandler {
       this.isDragging = true;
       this.dragStartTile = tile;
       this.dragEndTile = tile;
-      this.dragDirection = null;
     }
   };
 
@@ -91,7 +89,7 @@ export class PointerHandler {
     if (!this.isDragging) return;
 
     // Calculate all tiles from start to end
-    const tiles = this.getTilesInLine(this.dragStartTile, this.dragEndTile, this.dragDirection);
+    const tiles = this.getTilesInLine(this.dragStartTile, this.dragEndTile);
 
     // Fire drag callback if more than one tile
     if (tiles.length > 1 && this.callbacks.onTileDrag) {
@@ -108,42 +106,48 @@ export class PointerHandler {
     this.isDragging = false;
     this.dragStartTile = null;
     this.dragEndTile = null;
-    this.dragDirection = null;
   };
 
   /**
-   * Calculate all tiles in a line from start to end
+   * Calculate all tiles on the straight line from start to end using
+   * Bresenham's algorithm. This naturally supports horizontal, vertical,
+   * and diagonal road drags in a single pass.
    */
   private getTilesInLine(
     start: TileCoord | null,
-    end: TileCoord | null,
-    direction: 'horizontal' | 'vertical' | null
+    end: TileCoord | null
   ): TileCoord[] {
     if (!start || !end) return [];
 
     const tiles: TileCoord[] = [];
+    const push = (x: number, y: number): void => {
+      if (this.map.getTile(x, y)) {
+        tiles.push({ x, y });
+      }
+    };
 
-    if (direction === 'horizontal') {
-      // Horizontal line: same y, varying x
-      const minX = Math.min(start.x, end.x);
-      const maxX = Math.max(start.x, end.x);
-      for (let x = minX; x <= maxX; x++) {
-        if (this.map.getTile(x, start.y)) {
-          tiles.push({ x, y: start.y });
-        }
+    let x = start.x;
+    let y = start.y;
+    const dx = Math.abs(end.x - x);
+    const dy = Math.abs(end.y - y);
+    const stepX = end.x >= x ? 1 : -1;
+    const stepY = end.y >= y ? 1 : -1;
+    let err = dx - dy;
+
+    // Walk from start to end one tile at a time
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      push(x, y);
+      if (x === end.x && y === end.y) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) {
+        err -= dy;
+        x += stepX;
       }
-    } else if (direction === 'vertical') {
-      // Vertical line: same x, varying y
-      const minY = Math.min(start.y, end.y);
-      const maxY = Math.max(start.y, end.y);
-      for (let y = minY; y <= maxY; y++) {
-        if (this.map.getTile(start.x, y)) {
-          tiles.push({ x: start.x, y });
-        }
+      if (e2 < dx) {
+        err += dx;
+        y += stepY;
       }
-    } else {
-      // No direction yet, just the start tile
-      tiles.push(start);
     }
 
     return tiles;
@@ -156,37 +160,13 @@ export class PointerHandler {
 
     const tile = this.canvasToTile(canvasX, canvasY);
 
-    // Handle dragging with direction locking (SimCity-style)
+    // Handle dragging: straight line from start to current tile
     if (this.isDragging && tile && this.dragStartTile) {
-      const deltaX = Math.abs(tile.x - this.dragStartTile.x);
-      const deltaY = Math.abs(tile.y - this.dragStartTile.y);
-
-      // Determine drag direction on first move
-      if (!this.dragDirection && (deltaX > 0 || deltaY > 0)) {
-        this.dragDirection = deltaX > deltaY ? 'horizontal' : 'vertical';
-      }
-
-      // Apply directional constraint and validate
-      let constrainedTile: TileCoord | null = null;
-      if (this.dragDirection === 'horizontal') {
-        // Keep y fixed at start tile's y, use current x
-        constrainedTile = { x: tile.x, y: this.dragStartTile.y };
-      } else if (this.dragDirection === 'vertical') {
-        // Keep x fixed at start tile's x, use current y
-        constrainedTile = { x: this.dragStartTile.x, y: tile.y };
-      } else {
-        // No direction yet
-        constrainedTile = tile;
-      }
-
-      // Only update dragEndTile if the constrained tile is valid
-      if (constrainedTile && this.map.getTile(constrainedTile.x, constrainedTile.y)) {
-        this.dragEndTile = constrainedTile;
-      }
+      this.dragEndTile = tile;
 
       // Calculate and update drag preview
       if (this.callbacks.onDragPreview) {
-        const previewTiles = this.getTilesInLine(this.dragStartTile, this.dragEndTile, this.dragDirection);
+        const previewTiles = this.getTilesInLine(this.dragStartTile, this.dragEndTile);
         this.callbacks.onDragPreview(previewTiles);
       }
     }
