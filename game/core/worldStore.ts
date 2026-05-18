@@ -13,7 +13,7 @@ import { serializeMap, deserializeMapInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-const STORAGE_KEY = 'cimulity:save:v2'; // v2: map grew to 64×64; v1 (16×16) saves are intentionally incompatible and ignored (no migration).
+const STORAGE_KEY = 'cimulity:save:v2'; // v2: map grew to 64×64; v1 (16×16) saves are intentionally incompatible and ignored. Payload-schema version is handled by SAVE_VERSION in mapSerialization, which loads v1 legacy (l-less) saves with levels 0; these upgrade to v2 on the next save normal play triggers (build/bulldoze/New City); existing cities preserved, key stays at v2.
 
 const store = globalThis as unknown as { __cimulityWorld?: World };
 
