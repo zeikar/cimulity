@@ -15,7 +15,7 @@ import { Tool } from '@/game/tools';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export interface GameCanvasProps {
-  onTileHover: (tile: TileCoord | null) => void;
+  onTileHover?: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
@@ -46,7 +46,7 @@ export function GameCanvas({
 
   // Stable forwarders: identity never changes; read callbacksRef at call time.
   const stableForwarders = useRef({
-    onTileHover: (t: TileCoord | null) => callbacksRef.current.onTileHover(t),
+    onTileHover: (t: TileCoord | null) => callbacksRef.current.onTileHover?.(t),
     onTileClick: (t: TileCoord) => callbacksRef.current.onTileClick(t),
     onFpsUpdate: (fps: number) => callbacksRef.current.onFpsUpdate(fps),
     onCameraUpdate: (x: number, y: number, zoom: number) =>

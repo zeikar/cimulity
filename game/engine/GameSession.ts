@@ -19,7 +19,7 @@ import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
 
 export interface GameSessionCallbacks {
-  onTileHover: (tile: TileCoord | null) => void;
+  onTileHover?: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
@@ -62,7 +62,7 @@ export class GameSession {
     const pixiApp = new PixiApp(world, {
       onTileHover: (tile) => {
         pixiApp.setHoverTile(tile);
-        this.callbacks.onTileHover(tile);
+        this.callbacks.onTileHover?.(tile);
       },
       onTileClick: (tile) => {
         pixiApp.setSelectedTile(tile);
@@ -90,7 +90,7 @@ export class GameSession {
     const pointerHandler = new PointerHandler(canvas, camera, world.getMap(), {
       onTileHover: (tile) => {
         pixiApp.setHoverTile(tile);
-        this.callbacks.onTileHover(tile);
+        this.callbacks.onTileHover?.(tile);
       },
       onTileClick: (tile) => {
         // Single-tile execution goes through the dispatcher, same as drags

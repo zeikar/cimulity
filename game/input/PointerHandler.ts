@@ -85,7 +85,7 @@ export class PointerHandler {
     }
   };
 
-  private handlePointerUp = (event: PointerEvent): void => {
+  private handlePointerUp = (): void => {
     if (!this.isDragging) return;
 
     // Fire drag callback only for a true multi-tile drag (start != end).
