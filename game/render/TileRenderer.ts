@@ -12,6 +12,8 @@ import { Container, Graphics } from 'pixi.js';
 import { tileToScreen, ISO_CONFIG } from './IsoTransform';
 import type { GameMap } from '../core/Map';
 import type { TileType } from '../core/Tile';
+import { isZoneType } from '../core/Tile';
+import { ZONE_MAX_LEVEL } from '../core/World';
 
 // Color palette for tile types
 const TILE_COLORS: Record<TileType, number> = {
@@ -50,7 +52,9 @@ export class TileRenderer {
         const tile = map.getTile(x, y);
         if (tile) {
           const screen = tileToScreen({ x: tile.x, y: tile.y });
-          const color = TILE_COLORS[tile.type];
+          // Fill color depends on tile.level; level-ups increment changed (Task 2),
+          // so markDirty fires via the existing GameSession path — no new trigger needed.
+          const color = this.tileFillColor(tile.type, tile.level ?? 0);
 
           // Draw filled diamond
           this.graphics.beginPath();
@@ -74,6 +78,27 @@ export class TileRenderer {
     }
 
     this.isDirty = false;
+  }
+
+  /**
+   * Compute fill color for a tile.
+   * Non-zone tiles return the exact base color (no behavioral change).
+   * Zone tiles interpolate toward white as level grows — brighter = more developed.
+   * K=0.6 caps lightening so max level is clearly lighter but not pure white.
+   */
+  private tileFillColor(type: TileType, level: number): number {
+    const base = TILE_COLORS[type];
+    if (!isZoneType(type)) return base;
+
+    const K = 0.6;
+    const t = Math.min(Math.max(level / ZONE_MAX_LEVEL, 0), 1);
+    const r = (base >> 16) & 0xff;
+    const g = (base >> 8) & 0xff;
+    const b = base & 0xff;
+    const r2 = Math.round(r + (255 - r) * t * K);
+    const g2 = Math.round(g + (255 - g) * t * K);
+    const b2 = Math.round(b + (255 - b) * t * K);
+    return (r2 << 16) | (g2 << 8) | b2;
   }
 
   /**
