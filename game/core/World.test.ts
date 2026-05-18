@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { World, ZONE_GROWTH_INTERVAL, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './World';
+import {
+  World,
+  ZONE_GROWTH_INTERVAL,
+  ZONE_MAX_LEVEL,
+  POPULATION_PER_LEVEL,
+  STARTING_FUNDS,
+  TAX_PER_POP,
+} from './World';
 import { TileType, createTile } from './Tile';
 
 describe('World', () => {
@@ -184,6 +191,170 @@ describe('World.tick() — zone growth', () => {
       }
     }
     expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+  });
+});
+
+describe('World money — initial state', () => {
+  it('new World starts with STARTING_FUNDS', () => {
+    const world = new World(4, 4);
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+  });
+});
+
+describe('World.trySpend()', () => {
+  it('returns true and decrements money when amount is within balance', () => {
+    const world = new World(4, 4);
+    const result = world.trySpend(100);
+    expect(result).toBe(true);
+    expect(world.getMoney()).toBe(STARTING_FUNDS - 100);
+  });
+
+  it('returns false and leaves money unchanged when amount exceeds balance', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    const result = world.trySpend(STARTING_FUNDS + 1);
+    expect(result).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns true and leaves 0 when spending exactly the full balance', () => {
+    const world = new World(4, 4);
+    const result = world.trySpend(STARTING_FUNDS);
+    expect(result).toBe(true);
+    expect(world.getMoney()).toBe(0);
+  });
+
+  it('returns false and leaves money unchanged for negative amount', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.trySpend(-1)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns false and leaves money unchanged for Infinity', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.trySpend(Infinity)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns false and leaves money unchanged for NaN', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.trySpend(NaN)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns false and leaves money unchanged for fractional amount', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.trySpend(12.5)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+});
+
+describe('World.earn()', () => {
+  it('increases money by a valid whole amount', () => {
+    const world = new World(4, 4);
+    world.earn(50);
+    expect(world.getMoney()).toBe(STARTING_FUNDS + 50);
+  });
+
+  it('earn(0) is a no-op that leaves money unchanged', () => {
+    const world = new World(4, 4);
+    world.earn(0);
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+  });
+
+  it('earn(-1) is a no-op', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    world.earn(-1);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('earn(NaN) is a no-op', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    world.earn(NaN);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('earn(12.5) is a no-op', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    world.earn(12.5);
+    expect(world.getMoney()).toBe(before);
+  });
+});
+
+describe('World.setMoney()', () => {
+  it('returns true and sets money to 500', () => {
+    const world = new World(4, 4);
+    expect(world.setMoney(500)).toBe(true);
+    expect(world.getMoney()).toBe(500);
+  });
+
+  it('returns false and leaves money unchanged for -1', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.setMoney(-1)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns false and leaves money unchanged for Infinity', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.setMoney(Infinity)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns false and leaves money unchanged for NaN', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.setMoney(NaN)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('returns false and leaves money unchanged for 12.5', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    expect(world.setMoney(12.5)).toBe(false);
+    expect(world.getMoney()).toBe(before);
+  });
+});
+
+describe('World.tick() — tax accrual', () => {
+  it('money is unchanged when population is 0', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    world.tick();
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('money increases by Math.floor(population * TAX_PER_POP) on a growth tick with road-adjacent zones', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Advance to the growth tick so the zone reaches level 1
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+
+    const moneyBeforeGrowthTick = world.getMoney();
+    world.tick(); // this is the growth tick: zone grows to level 1, then tax is collected
+    const popAfterGrowth = world.getPopulation(); // level 1 * POPULATION_PER_LEVEL
+    const expectedTax = Math.floor(popAfterGrowth * TAX_PER_POP);
+    expect(world.getMoney()).toBe(moneyBeforeGrowthTick + expectedTax);
+  });
+});
+
+describe('World.reset() — treasury', () => {
+  it('restores money to STARTING_FUNDS after spending', () => {
+    const world = new World(4, 4);
+    world.trySpend(5000);
+    world.reset();
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
   });
 });
 

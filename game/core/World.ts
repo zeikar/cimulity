@@ -12,6 +12,16 @@ export const ZONE_GROWTH_INTERVAL = 8;
 export const ZONE_MAX_LEVEL = 5;
 /** Population contribution per zone level point. */
 export const POPULATION_PER_LEVEL = 10;
+/** Initial city treasury balance. */
+export const STARTING_FUNDS = 10000;
+/** Tax revenue per population point per tick. */
+export const TAX_PER_POP = 1;
+/** Cost to place one ROAD tile. */
+export const ROAD_COST = 10;
+/** Cost to place one zone (R/C/I) tile. */
+export const ZONE_COST = 5;
+/** Cost to bulldoze one tile. */
+export const BULLDOZE_COST = 2;
 
 export interface WorldTickResult {
   /** Number of tiles changed this tick (DIRT→GRASS heals + zone level-ups). */
@@ -21,6 +31,7 @@ export interface WorldTickResult {
 export class World {
   private map: GameMap;
   private tickCount: number = 0;
+  private money: number = STARTING_FUNDS;
 
   constructor(mapWidth: number, mapHeight: number) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -32,6 +43,36 @@ export class World {
 
   getTick(): number {
     return this.tickCount;
+  }
+
+  getMoney(): number {
+    return this.money;
+  }
+
+  /** Money is always whole non-negative units; this guard enforces that invariant for all mutators. */
+  private isValidMoneyAmount(n: number): boolean {
+    return Number.isInteger(n) && n >= 0;
+  }
+
+  trySpend(amount: number): boolean {
+    if (!this.isValidMoneyAmount(amount) || this.money < amount) return false;
+    this.money -= amount;
+    return true;
+  }
+
+  earn(amount: number): void {
+    if (!this.isValidMoneyAmount(amount)) return;
+    this.money += amount;
+  }
+
+  /**
+   * Restore the treasury to a specific amount. For serialization use only —
+   * do not call this in normal gameplay logic; use trySpend/earn instead.
+   */
+  setMoney(amount: number): boolean {
+    if (!this.isValidMoneyAmount(amount)) return false;
+    this.money = amount;
+    return true;
   }
 
   /** Count DIRT tiles currently on the map. */
@@ -55,11 +96,12 @@ export class World {
   }
 
   /**
-   * Reset to a blank city: clear the map and the tick counter.
+   * Reset to a blank city: clear the map, the tick counter, and the treasury.
    */
   reset(): void {
     this.map.reset();
     this.tickCount = 0;
+    this.money = STARTING_FUNDS;
   }
 
   /**
@@ -105,6 +147,9 @@ export class World {
         }
       }
     }
+
+    // Tax accrues every tick from current population (no upkeep — out of scope).
+    this.money += Math.floor(this.getPopulation() * TAX_PER_POP);
 
     return { changed };
   }
