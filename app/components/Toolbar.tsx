@@ -21,6 +21,7 @@ const TOOLS: ToolButton[] = [
   { tool: Tool.SELECT, label: 'Select', shortcut: 'S' },
   { tool: Tool.ROAD, label: 'Road', shortcut: 'R' },
   { tool: Tool.BULLDOZE, label: 'Bulldoze', shortcut: 'B' },
+  { tool: Tool.BUILDING, label: 'Building', shortcut: 'G' },
 ];
 
 export function Toolbar({ currentTool, onToolChange }: ToolbarProps) {

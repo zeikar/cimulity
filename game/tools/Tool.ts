@@ -7,5 +7,6 @@ export enum Tool {
   ROAD = 'road',
   BULLDOZE = 'bulldoze',
   ZONE_RESIDENTIAL = 'zone_residential',
+  BUILDING = 'building',
   // More tools in MVP-1
 }

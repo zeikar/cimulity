@@ -174,3 +174,43 @@ describe('previewDrag', () => {
     expect(previewDrag(Tool.SELECT, { x: 0, y: 0 }, { x: 3, y: 3 }, world)).toEqual([]);
   });
 });
+
+describe('executeClick - building', () => {
+  it('places a building on a grass tile and reports the change', () => {
+    const world = makeWorld();
+    const result = executeClick(Tool.BUILDING, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.BUILDING);
+  });
+
+  it('does not place a building on a water tile', () => {
+    const world = makeWorld();
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+
+    const result = executeClick(Tool.BUILDING, { x: 1, y: 1 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+  });
+});
+
+describe('executeDrag - building', () => {
+  it('does nothing when dragging the building tool (click-only contract)', () => {
+    const world = makeWorld(5);
+
+    const result = executeDrag(Tool.BUILDING, { x: 0, y: 0 }, { x: 3, y: 0 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(2, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(3, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  it('previewDrag returns empty for the building tool', () => {
+    const world = makeWorld(5);
+
+    expect(previewDrag(Tool.BUILDING, { x: 0, y: 0 }, { x: 3, y: 0 }, world)).toEqual([]);
+  });
+});

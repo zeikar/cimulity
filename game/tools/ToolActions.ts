@@ -25,6 +25,8 @@ export function buildToolCommands(
       return buildRoadCommands(tiles, world);
     case Tool.BULLDOZE:
       return buildBulldozeCommands(tiles, world);
+    case Tool.BUILDING:
+      return buildBuildingCommands(tiles, world);
     case Tool.SELECT:
       // Selection doesn't modify tiles
       return [];
@@ -38,7 +40,7 @@ export function buildToolCommands(
 
 /**
  * Build road-placement commands
- * Cannot place on water tiles or existing roads
+ * Cannot place on water tiles, existing roads, or buildings
  */
 function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
@@ -52,8 +54,8 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
       continue;
     }
 
-    // Cannot place roads on water
-    if (currentTile.type === TileType.WATER) {
+    // Cannot place roads on water or buildings
+    if (currentTile.type === TileType.WATER || currentTile.type === TileType.BUILDING) {
       continue;
     }
 
@@ -88,6 +90,33 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, TileType.DIRT),
+    });
+  }
+
+  return commands;
+}
+
+/**
+ * Build building-placement commands
+ * Places a building only on GRASS or DIRT; any other tile (water, road,
+ * existing building, future types) is left untouched.
+ * Reads world only to decide intent; never mutates core.
+ */
+function buildBuildingCommands(tiles: TileCoord[], world: World): ToolCommand[] {
+  const map = world.getMap();
+  const commands: ToolCommand[] = [];
+
+  for (const coord of tiles) {
+    const currentTile = map.getTile(coord.x, coord.y);
+    if (!currentTile) continue; // missing/oob
+    if (
+      currentTile.type !== TileType.GRASS &&
+      currentTile.type !== TileType.DIRT
+    ) continue;
+    commands.push({
+      x: coord.x,
+      y: coord.y,
+      tile: createTile(coord.x, coord.y, TileType.BUILDING),
     });
   }
 
