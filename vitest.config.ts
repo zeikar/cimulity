@@ -1,0 +1,35 @@
+import { resolve } from 'node:path';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  resolve: {
+    alias: { '@': resolve(__dirname, '.') },
+  },
+  test: {
+    environment: 'node',
+    include: ['game/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      // Gate ONLY the pure-logic layer. Pixi render glue, DOM input
+      // handlers, and the GameSession composition root are verified by
+      // gameplay/manual testing, not brittle headless mocks — keeping
+      // them out of the denominator keeps the % honest.
+      include: [
+        'game/core/Map.ts',
+        'game/core/World.ts',
+        'game/core/Tile.ts',
+        'game/tools/RoadTool.ts',
+        'game/tools/ToolActions.ts',
+        'game/engine/CommandDispatcher.ts',
+        'game/render/IsoTransform.ts',
+      ],
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        functions: 80,
+        branches: 80,
+      },
+    },
+  },
+});
