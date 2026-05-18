@@ -9,11 +9,18 @@
  */
 
 import { World } from './World';
-import { serializeMap, deserializeMapInto } from './mapSerialization';
+import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-const STORAGE_KEY = 'cimulity:save:v2'; // v2: map grew to 64×64; v1 (16×16) saves are intentionally incompatible and ignored. Payload-schema version is handled by SAVE_VERSION in mapSerialization, which loads v1 legacy (l-less) saves with levels 0; these upgrade to v2 on the next save normal play triggers (build/bulldoze/New City); existing cities preserved, key stays at v2.
+// STORAGE_KEY is frozen at 'cimulity:save:v2' (key name tracks the 64×64 map dimension
+// change, not the payload schema). The persisted payload is now a world envelope at
+// WORLD_SAVE_VERSION = 3 (adds treasury field `m`). v1/v2 schema-compatible same-dimension
+// payloads still load (map preserved; money defaults to STARTING_FUNDS). Next
+// build/bulldoze/tax-triggered save writes a v3 payload. clearSave() unchanged.
+// "New City" → world.reset() (resets money to STARTING_FUNDS) and a fresh v3 is written
+// on the next save after New City.
+const STORAGE_KEY = 'cimulity:save:v2';
 
 const store = globalThis as unknown as { __cimulityWorld?: World };
 
@@ -32,7 +39,7 @@ export function getWorld(): World {
     const world = new World(MAP_WIDTH, MAP_HEIGHT);
     const saved = readSave();
     if (saved) {
-      deserializeMapInto(world.getMap(), saved);
+      deserializeWorldInto(world, saved);
     }
     store.__cimulityWorld = world;
   }
@@ -43,7 +50,7 @@ export function getWorld(): World {
 export function saveWorld(world: World): void {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(STORAGE_KEY, serializeMap(world.getMap()));
+    localStorage.setItem(STORAGE_KEY, serializeWorld(world));
   } catch {
     // Quota exceeded / private mode — drop the save silently.
   }
