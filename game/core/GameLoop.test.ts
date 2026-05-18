@@ -1,0 +1,193 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GameLoop, GameLoopTickInfo, MAX_CATCHUP_TICKS, DEFAULT_TICK_MS } from './GameLoop';
+import { World } from './World';
+import { TileType, createTile } from './Tile';
+
+/**
+ * We use two separate controls per test:
+ *   - fakeNow: a counter advanced manually that the GameLoop's injected clock reads.
+ *   - vi.useFakeTimers(): controls setInterval so we can fire the driver pump at will.
+ */
+
+describe('GameLoop', () => {
+  const TICK_MS = 100; // short tick for fast tests
+
+  let fakeNow: number;
+  let world: World;
+  let onTick: ReturnType<typeof vi.fn>;
+  let loop: GameLoop;
+
+  function makeLoop(w = world, cb = onTick as ((info: GameLoopTickInfo) => void) | undefined) {
+    return new GameLoop(w, cb, TICK_MS, () => fakeNow);
+  }
+
+  /** Fire the driver interval pump once (advances setInterval by tickMs/4). */
+  function pump() {
+    vi.advanceTimersByTime(TICK_MS / 4);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fakeNow = 0;
+    world = new World(4, 4);
+    onTick = vi.fn();
+    loop = makeLoop();
+  });
+
+  afterEach(() => {
+    loop.stop();
+    vi.useRealTimers();
+  });
+
+  // (a) No immediate tick on start()
+  it('(a) does not tick immediately on start()', () => {
+    loop.start();
+    // No fake clock advance, no pump
+    expect(world.getTick()).toBe(0);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+
+  // (b) Exactly one tickMs elapsed → exactly one tick + one notification
+  it('(b) one tickMs elapsed produces exactly one tick and one onTick', () => {
+    loop.start();
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+  });
+
+  // (c) Bounded catch-up: 5 * tickMs → exactly MAX_CATCHUP_TICKS ticks in one notification
+  it('(c) 5x tickMs drains exactly MAX_CATCHUP_TICKS ticks in one notification', () => {
+    loop.start();
+    fakeNow += TICK_MS * 5;
+    pump();
+    expect(world.getTick()).toBe(MAX_CATCHUP_TICKS);
+    expect(onTick).toHaveBeenCalledOnce();
+    expect(onTick).toHaveBeenCalledWith({ tick: MAX_CATCHUP_TICKS, changed: 0 });
+  });
+
+  // (d) Catch-up capped (spiral guard): 100x tickMs → at most 5 ticks, backlog discarded
+  it('(d) 100x tickMs is capped at MAX_CATCHUP_TICKS; backlog is discarded', () => {
+    loop.start();
+    fakeNow += TICK_MS * 100;
+    pump();
+    expect(world.getTick()).toBe(MAX_CATCHUP_TICKS);
+    expect(onTick).toHaveBeenCalledOnce();
+
+    // After discarding backlog, a single-tickMs advance produces exactly 1 more tick
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(MAX_CATCHUP_TICKS + 1);
+    expect(onTick).toHaveBeenCalledTimes(2);
+  });
+
+  // (e) Aggregated changed sum: 1 DIRT tile, 3 ticks → changed===1 in the notification
+  it('(e) changed sum reflects DIRT->GRASS conversion across drained ticks', () => {
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.DIRT));
+    loop.start();
+    fakeNow += TICK_MS * 3;
+    pump();
+    // First tick converts the dirt; subsequent ticks have changed=0
+    expect(onTick).toHaveBeenCalledOnce();
+    const info = onTick.mock.calls[0][0] as GameLoopTickInfo;
+    expect(info.changed).toBe(1);
+    expect(info.tick).toBe(3);
+  });
+
+  // (f) Partial elapsed carries over remainder
+  it('(f) 1.5x tickMs yields 1 tick; 0.5x more yields 1 additional tick', () => {
+    loop.start();
+    fakeNow += TICK_MS * 1.5;
+    pump();
+    expect(world.getTick()).toBe(1);
+
+    fakeNow += TICK_MS * 0.5;
+    pump();
+    expect(world.getTick()).toBe(2);
+    expect(onTick).toHaveBeenCalledTimes(2);
+  });
+
+  // (g) start() twice does not stack drivers
+  it('(g) calling start() twice does not stack drivers', () => {
+    loop.start();
+    loop.start(); // second call is no-op
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+  });
+
+  // (h) stop() halts ticking
+  it('(h) stop() halts further ticking', () => {
+    loop.start();
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(1);
+
+    loop.stop();
+    fakeNow += TICK_MS * 10;
+    pump(); // interval cleared, no-op
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+  });
+
+  // (i) reset() while running clears accumulator
+  it('(i) reset() while running clears partial accumulator so no extra tick fires', () => {
+    loop.start();
+    // Advance to just under a full tick
+    fakeNow += TICK_MS * 0.8;
+    pump(); // no tick yet (< tickMs)
+
+    loop.reset(); // clears accumulator and updates lastTime to fakeNow
+    // Advance another 0.8 of a tick — without reset this would have been 1.6 total
+    fakeNow += TICK_MS * 0.8;
+    pump(); // should still not tick (only 0.8 elapsed since reset)
+    expect(world.getTick()).toBe(0);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+
+  // (j) reset() while stopped: no throw, no ticking, later start() works
+  it('(j) reset() while stopped is safe and later start() behaves normally', () => {
+    // Should not throw
+    expect(() => loop.reset()).not.toThrow();
+
+    // Should not start ticking on its own
+    fakeNow += TICK_MS * 10;
+    pump();
+    expect(world.getTick()).toBe(0);
+
+    // Later start() should work normally
+    fakeNow = 0; // reset clock to clean state
+    loop.start();
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+  });
+
+  // (k) onTick not called when drained === 0
+  it('(k) onTick is not called when elapsed < tickMs', () => {
+    loop.start();
+    fakeNow += TICK_MS * 0.5;
+    pump(); // < tickMs, no drain
+    expect(world.getTick()).toBe(0);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+
+  // Verify tickMs getter
+  it('exposes tickMs via getter', () => {
+    expect(loop.tickMs).toBe(TICK_MS);
+  });
+
+  // Verify DEFAULT_TICK_MS and MAX_CATCHUP_TICKS exports
+  it('exports DEFAULT_TICK_MS and MAX_CATCHUP_TICKS', () => {
+    expect(DEFAULT_TICK_MS).toBe(1000);
+    expect(MAX_CATCHUP_TICKS).toBe(5);
+  });
+
+  // Verify getWorld() returns the world
+  it('getWorld() returns the constructed world', () => {
+    expect(loop.getWorld()).toBe(world);
+  });
+});

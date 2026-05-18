@@ -17,11 +17,16 @@ export default function Home() {
   const [selectedTile, setSelectedTile] = useState<TileCoord | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const [sim, setSim] = useState({ tick: 0, dirt: 0 });
   const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
   const [resetNonce, setResetNonce] = useState(0);
 
   const handleCameraUpdate = useCallback((x: number, y: number, zoom: number) => {
     setCamera({ x, y, zoom });
+  }, []);
+
+  const handleSimUpdate = useCallback((tick: number, dirt: number) => {
+    setSim({ tick, dirt });
   }, []);
 
   const handleNewCity = useCallback(() => {
@@ -38,6 +43,7 @@ export default function Home() {
         onTileClick={setSelectedTile}
         onFpsUpdate={setFps}
         onCameraUpdate={handleCameraUpdate}
+        onTickUpdate={handleSimUpdate}
         currentTool={currentTool}
         onToolChange={setCurrentTool}
         resetNonce={resetNonce}
@@ -67,6 +73,8 @@ export default function Home() {
         cameraX={camera.x}
         cameraY={camera.y}
         cameraZoom={camera.zoom}
+        tick={sim.tick}
+        dirt={sim.dirt}
         currentTool={currentTool}
       />
       <Toolbar currentTool={currentTool} onToolChange={setCurrentTool} />

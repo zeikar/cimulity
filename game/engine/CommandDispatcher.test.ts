@@ -62,14 +62,14 @@ describe('executeClick', () => {
 });
 
 describe('executeClick — bulldoze', () => {
-  it('reverts a road tile back to grass', () => {
+  it('reverts a road tile back to dirt', () => {
     const world = makeWorld();
     executeClick(Tool.ROAD, { x: 2, y: 2 }, world);
 
     const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
 
     expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
   });
 
   it('does nothing on a non-road tile', () => {
@@ -94,7 +94,7 @@ describe('executeClick — bulldoze', () => {
 });
 
 describe('executeDrag — bulldoze', () => {
-  it('clears only the road tiles inside the dragged rectangle', () => {
+  it('clears only the road tiles inside the dragged rectangle to dirt', () => {
     const world = makeWorld(5);
     // Roads on two opposite corners of a 2x2 box; the other two stay grass
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
@@ -109,8 +109,8 @@ describe('executeDrag — bulldoze', () => {
       { x: 0, y: 0 },
       { x: 1, y: 1 },
     ]);
-    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.DIRT);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.DIRT);
     expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.ROAD);
   });
 });

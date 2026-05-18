@@ -14,9 +14,11 @@ import { ToolManager } from '../input/ToolManager';
 import { Tool } from '../tools/Tool';
 import { KeyboardHandler } from '../input/KeyboardHandler';
 import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
+import { GameLoop } from '../core/GameLoop';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
+import type { GameLoopTickInfo } from '../core/GameLoop';
 
 export interface GameSessionCallbacks {
   onTileHover?: (tile: TileCoord | null) => void;
@@ -24,6 +26,7 @@ export interface GameSessionCallbacks {
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
+  onTickUpdate?: (tick: number, dirt: number) => void;
 }
 
 export class GameSession {
@@ -34,6 +37,7 @@ export class GameSession {
   private pointerHandler: PointerHandler | null = null;
   private cameraController: CameraController | null = null;
   private keyboardHandler: KeyboardHandler | null = null;
+  private gameLoop: GameLoop | null = null;
   private disposed = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -51,6 +55,8 @@ export class GameSession {
     if (result.changedTiles.length === 0) return;
     this.pixiApp?.getTileRenderer()?.markDirty();
     this.scheduleSave();
+    // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
+    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt());
   }
 
   private scheduleSave(): void {
@@ -72,6 +78,9 @@ export class GameSession {
     }
     this.world?.reset();
     clearSave();
+    // Reset accumulator so no catch-up burst fires, and sync HUD to tick 0 + dirt 0 immediately.
+    this.gameLoop?.reset();
+    this.callbacks.onTickUpdate?.(0, 0);
     this.pixiApp?.setSelectedTile(null);
     this.pixiApp?.setHoverTile(null);
     this.pixiApp?.getTileRenderer()?.markDirty();
@@ -161,6 +170,22 @@ export class GameSession {
       },
     });
     this.keyboardHandler = keyboardHandler;
+
+    // Start fixed-timestep simulation loop; render/persist are gated on
+    // changed > 0, but onTickUpdate fires every drained pump for the HUD.
+    const gameLoop = new GameLoop(world, (agg: GameLoopTickInfo) => {
+      if (agg.changed > 0) {
+        this.pixiApp?.getTileRenderer()?.markDirty();
+        this.scheduleSave();
+      }
+      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt());
+    });
+    // Sync HUD to the world's current state before the first tick, so a
+    // hydrated/reused world with persisted DIRT shows the real count instead
+    // of staying at 0 until the first tick heals it away.
+    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt());
+    gameLoop.start();
+    this.gameLoop = gameLoop;
   }
 
   /**
@@ -180,6 +205,8 @@ export class GameSession {
       this.saveTimer = null;
       if (this.world) saveWorld(this.world);
     }
+    this.gameLoop?.stop();
+    this.gameLoop = null;
     this.pointerHandler?.detach();
     this.cameraController?.detach();
     this.keyboardHandler?.detach();

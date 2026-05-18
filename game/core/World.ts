@@ -4,6 +4,12 @@
  */
 
 import { GameMap } from './Map';
+import { TileType, createTile } from './Tile';
+
+export interface WorldTickResult {
+  /** Number of DIRT tiles converted to GRASS this tick */
+  changed: number;
+}
 
 export class World {
   private map: GameMap;
@@ -21,6 +27,15 @@ export class World {
     return this.tickCount;
   }
 
+  /** Count DIRT tiles currently on the map. */
+  countDirt(): number {
+    let count = 0;
+    for (const tile of this.map.iterateTiles()) {
+      if (tile.type === TileType.DIRT) count++;
+    }
+    return count;
+  }
+
   /**
    * Reset to a blank city: clear the map and the tick counter.
    */
@@ -30,10 +45,18 @@ export class World {
   }
 
   /**
-   * Advance simulation (placeholder for MVP-1)
+   * Advance simulation by one tick.
+   * Rule: DIRT heals to GRASS on the next tick; no per-tile age.
    */
-  tick(): void {
+  tick(): WorldTickResult {
     this.tickCount++;
-    // Future: Update city simulation here
+    let changed = 0;
+    for (const tile of this.map.iterateTiles()) {
+      if (tile.type === TileType.DIRT) {
+        this.map.setTile(tile.x, tile.y, createTile(tile.x, tile.y, TileType.GRASS));
+        changed++;
+      }
+    }
+    return { changed };
   }
 }

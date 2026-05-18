@@ -11,6 +11,8 @@ import type { Tool } from '@/game/tools';
 export interface GameHUDProps {
   selectedTile: TileCoord | null;
   fps: number;
+  tick: number;
+  dirt: number;
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
@@ -20,6 +22,8 @@ export interface GameHUDProps {
 export function GameHUD({
   selectedTile,
   fps,
+  tick,
+  dirt,
   cameraX,
   cameraY,
   cameraZoom,
@@ -43,6 +47,12 @@ export function GameHUD({
     >
       <div>
         <strong>FPS:</strong> {fps}
+      </div>
+      <div>
+        <strong>Tick:</strong> {tick}
+      </div>
+      <div>
+        <strong>Dirt:</strong> {dirt}
       </div>
       {currentTool && (
         <div>

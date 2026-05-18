@@ -69,8 +69,9 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
 
 /**
  * Build bulldoze commands
- * Reverts placed roads back to grass; natural terrain (water, dirt) and
- * already-grass tiles are left untouched.
+ * Reverts placed roads to a dirt scar that the simulation regrows to grass on
+ * the next tick; natural terrain (water, dirt) and already-grass tiles are
+ * left untouched.
  */
 function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
@@ -86,7 +87,7 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
     commands.push({
       x: coord.x,
       y: coord.y,
-      tile: createTile(coord.x, coord.y, TileType.GRASS),
+      tile: createTile(coord.x, coord.y, TileType.DIRT),
     });
   }
 

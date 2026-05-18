@@ -19,6 +19,7 @@ export interface GameCanvasProps {
   onTileClick: (tile: TileCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
+  onTickUpdate?: (tick: number, dirt: number) => void;
   currentTool?: Tool;
   onToolChange?: (tool: Tool) => void;
   /** Bump to trigger a "New City" reset on the live session. */
@@ -30,6 +31,7 @@ export function GameCanvas({
   onTileClick,
   onFpsUpdate,
   onCameraUpdate,
+  onTickUpdate,
   currentTool = Tool.SELECT,
   onToolChange,
   resetNonce = 0,
@@ -44,6 +46,7 @@ export function GameCanvas({
     onTileClick,
     onFpsUpdate,
     onCameraUpdate,
+    onTickUpdate,
     onToolChange,
   });
 
@@ -54,6 +57,8 @@ export function GameCanvas({
     onFpsUpdate: (fps: number) => callbacksRef.current.onFpsUpdate(fps),
     onCameraUpdate: (x: number, y: number, zoom: number) =>
       callbacksRef.current.onCameraUpdate(x, y, zoom),
+    onTickUpdate: (tick: number, dirt: number) =>
+      callbacksRef.current.onTickUpdate?.(tick, dirt),
     onToolChange: (tool: Tool) => callbacksRef.current.onToolChange?.(tool),
   });
 
@@ -69,6 +74,7 @@ export function GameCanvas({
       onTileClick,
       onFpsUpdate,
       onCameraUpdate,
+      onTickUpdate,
       onToolChange,
     };
     currentToolRef.current = currentTool;
