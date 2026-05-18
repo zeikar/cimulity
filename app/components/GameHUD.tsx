@@ -23,6 +23,7 @@ export interface GameHUDProps {
   tick: number;
   dirt: number;
   population: number;
+  money: number;
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
@@ -35,6 +36,7 @@ export function GameHUD({
   tick,
   dirt,
   population,
+  money,
   cameraX,
   cameraY,
   cameraZoom,
@@ -67,6 +69,9 @@ export function GameHUD({
       </div>
       <div>
         <strong>Population:</strong> {population}
+      </div>
+      <div>
+        <strong>Money:</strong> {money}
       </div>
       {currentTool && (
         <div>

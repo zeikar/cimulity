@@ -10,6 +10,7 @@ import { GameCanvas } from './components/GameCanvas';
 import { GameHUD } from './components/GameHUD';
 import { Toolbar } from './components/Toolbar';
 import { Tool } from '@/game/tools';
+import { STARTING_FUNDS } from '@/game/core/World';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export default function Home() {
@@ -17,7 +18,7 @@ export default function Home() {
   const [selectedTile, setSelectedTile] = useState<TileCoord | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
-  const [sim, setSim] = useState({ tick: 0, dirt: 0, population: 0 });
+  const [sim, setSim] = useState({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS });
   const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
   const [resetNonce, setResetNonce] = useState(0);
 
@@ -25,8 +26,8 @@ export default function Home() {
     setCamera({ x, y, zoom });
   }, []);
 
-  const handleSimUpdate = useCallback((tick: number, dirt: number, population: number) => {
-    setSim({ tick, dirt, population });
+  const handleSimUpdate = useCallback((tick: number, dirt: number, population: number, money: number) => {
+    setSim({ tick, dirt, population, money });
   }, []);
 
   const handleNewCity = useCallback(() => {
@@ -76,6 +77,7 @@ export default function Home() {
         tick={sim.tick}
         dirt={sim.dirt}
         population={sim.population}
+        money={sim.money}
         currentTool={currentTool}
       />
       <Toolbar currentTool={currentTool} onToolChange={setCurrentTool} />

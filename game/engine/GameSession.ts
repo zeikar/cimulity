@@ -16,6 +16,7 @@ import { KeyboardHandler } from '../input/KeyboardHandler';
 import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
 import { GameLoop } from '../core/GameLoop';
 import type { World } from '../core/World';
+import { STARTING_FUNDS } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
 import type { GameLoopTickInfo } from '../core/GameLoop';
@@ -34,7 +35,7 @@ export interface GameSessionCallbacks {
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
-  onTickUpdate?: (tick: number, dirt: number, population: number) => void;
+  onTickUpdate?: (tick: number, dirt: number, population: number, money: number) => void;
 }
 
 export class GameSession {
@@ -48,6 +49,7 @@ export class GameSession {
   private gameLoop: GameLoop | null = null;
   private disposed = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastSyncedMoney: number | null = null;
 
   constructor(callbacks: GameSessionCallbacks) {
     this.callbacks = callbacks;
@@ -64,7 +66,10 @@ export class GameSession {
     this.pixiApp?.getTileRenderer()?.markDirty();
     this.scheduleSave();
     // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
-    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation());
+    const money = this.world!.getMoney();
+    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation(), money);
+    // Keep tracker in sync; tool mutation already scheduled a save via scheduleSave above.
+    this.lastSyncedMoney = money;
   }
 
   private scheduleSave(): void {
@@ -88,7 +93,10 @@ export class GameSession {
     clearSave();
     // Reset accumulator so no catch-up burst fires, and sync HUD to tick 0 + dirt 0 immediately.
     this.gameLoop?.reset();
-    this.callbacks.onTickUpdate?.(0, 0, 0);
+    // Read post-reset money (reset already set STARTING_FUNDS; avoids ordering coupling).
+    const m = this.world ? this.world.getMoney() : STARTING_FUNDS;
+    this.callbacks.onTickUpdate?.(0, 0, 0, m);
+    this.lastSyncedMoney = m;
     this.pixiApp?.setSelectedTile(null);
     this.pixiApp?.setHoverTile(null);
     this.pixiApp?.getTileRenderer()?.markDirty();
@@ -182,16 +190,24 @@ export class GameSession {
     // Start fixed-timestep simulation loop; render/persist are gated on
     // changed > 0, but onTickUpdate fires every drained pump for the HUD.
     const gameLoop = new GameLoop(world, (agg: GameLoopTickInfo) => {
+      const money = world.getMoney();
+      const economyDirty = this.lastSyncedMoney !== null && money !== this.lastSyncedMoney;
       if (agg.changed > 0) {
         this.pixiApp?.getTileRenderer()?.markDirty();
         this.scheduleSave();
       }
-      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation());
+      // Tax-only money change still persists, debounced; guard by changed===0 to avoid double-schedule.
+      if (agg.changed === 0 && economyDirty) {
+        this.scheduleSave();
+      }
+      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money);
+      this.lastSyncedMoney = money;
     });
     // Sync HUD to the world's current state before the first tick, so a
     // hydrated/reused world with persisted DIRT shows the real count instead
     // of staying at 0 until the first tick heals it away.
-    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation());
+    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney());
+    this.lastSyncedMoney = world.getMoney();
     gameLoop.start();
     this.gameLoop = gameLoop;
   }
