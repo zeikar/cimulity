@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cimulity">
+  <!-- full-bleed background: doubles as a maskable safe-zone canvas -->
+  <rect width="512" height="512" fill="#1b2027"/>
+
+  <!-- isometric city tile: top face + two darker side faces -->
+  <polygon points="256,150 430,236 256,322 82,236" fill="#5bbf7b"/>
+  <polygon points="82,236 256,322 256,378 82,292" fill="#3f9d5d"/>
+  <polygon points="256,322 430,236 430,292 256,378" fill="#2f7c49"/>
+
+  <!-- C-shaped road: three iso-projected bands on the top face, open to front-right -->
+  <g fill="#2c3138">
+    <polygon points="256,177.5 374.3,236.0 350.0,248.0 231.6,189.6"/>
+    <polygon points="256,177.5 280.4,189.6 162.0,248.0 137.7,236.0"/>
+    <polygon points="162.0,224.0 280.4,282.4 256.0,294.5 137.7,236.0"/>
+  </g>
+
+  <!-- small city blocks (muted blue-gray) sitting inside the C -->
+  <g>
+    <polygon points="236,215 270,232 236,249 202,232" fill="#7e90a4"/>
+    <polygon points="202,232 236,249 236,279 202,262" fill="#5f6f82"/>
+    <polygon points="236,249 270,232 270,262 236,279" fill="#4c5a6b"/>
+  </g>
+  <g>
+    <polygon points="292,230 320,244 292,258 264,244" fill="#8a9bb0"/>
+    <polygon points="264,244 292,258 292,284 264,270" fill="#67768a"/>
+    <polygon points="292,258 320,244 320,270 292,284" fill="#516074"/>
+    <!-- small warm accent (lit rooftop) -->
+    <polygon points="292,234 306,241 292,248 278,241" fill="#f4a23c"/>
+  </g>
+</svg>
