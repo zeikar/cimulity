@@ -34,8 +34,22 @@ function readSave(): string | null {
   }
 }
 
+/**
+ * A singleton that survived HMR/Fast Refresh may predate the economy API
+ * (`getMoney`/`trySpend`/`setMoney`); the session/dispatcher now call those,
+ * so a stale instance would crash. Treat such an instance as absent and
+ * rebuild (re-hydrating from the save) instead of returning it.
+ */
+function hasEconomyApi(world: World): boolean {
+  return (
+    typeof world.getMoney === 'function' &&
+    typeof world.trySpend === 'function' &&
+    typeof world.setMoney === 'function'
+  );
+}
+
 export function getWorld(): World {
-  if (!store.__cimulityWorld) {
+  if (!store.__cimulityWorld || !hasEconomyApi(store.__cimulityWorld)) {
     const world = new World(MAP_WIDTH, MAP_HEIGHT);
     const saved = readSave();
     if (saved) {
