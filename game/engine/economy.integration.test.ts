@@ -4,12 +4,12 @@
  * Exercises the already-gated World + CommandDispatcher + mapSerialization
  * stack in a full end-to-end slice:
  *   build → spend money
- *   tick with road-adjacent zones → earn tax
+ *   tick with road-adjacent zones → earn monthly tax
  *   serializeWorld → deserializeWorldInto → exact restore
  */
 
 import { describe, it, expect } from 'vitest';
-import { World, STARTING_FUNDS, ROAD_COST, ZONE_COST, BULLDOZE_COST, ZONE_GROWTH_INTERVAL, TAX_PER_POP } from '../core/World';
+import { World, STARTING_FUNDS, ROAD_COST, ZONE_COST, BULLDOZE_COST, ZONE_GROWTH_INTERVAL, TAX_PER_POP, DAYS_PER_MONTH } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { Tool } from '../tools/Tool';
 import { executeClick, executeDrag } from './CommandDispatcher';
@@ -66,42 +66,57 @@ describe('build spend — executeDrag', () => {
   });
 });
 
-describe('tax accrual across ticks with road-adjacent zones', () => {
-  it('tax accumulates correctly over several growth ticks', () => {
+describe('monthly tax settlement with road-adjacent zones', () => {
+  it('money is unchanged on every non-boundary tick and increases exactly once at the DAYS_PER_MONTH-th tick', () => {
     const world = new World(10, 10);
 
     // Layout: road at (1,0); zone at (0,0) adjacent to the road.
     // Set up tiles directly to avoid spending money on them.
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 0));
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
 
     // Reset money to a known amount for deterministic accounting.
     world.setMoney(STARTING_FUNDS);
-    const startMoney = world.getMoney();
 
-    // Run enough ticks to trigger two growth events.
-    // Growth fires every ZONE_GROWTH_INTERVAL ticks (1-indexed: tick 8, 16, …).
-    // Each non-growth tick earns floor(pop * TAX_PER_POP); growth ticks earn
-    // tax on the population BEFORE the level-up (tick increments first, then
-    // DIRT heals, then zone grows, then tax is charged — tax uses post-grow pop).
-    //
-    // We run 2 * ZONE_GROWTH_INTERVAL ticks and track expected money manually.
-    let expectedMoney = startMoney;
-    let currentLevel = 0; // zone starts at level 0
-
-    for (let t = 1; t <= 2 * ZONE_GROWTH_INTERVAL; t++) {
-      if (t % ZONE_GROWTH_INTERVAL === 0 && currentLevel < 5) {
-        // Growth fires this tick, THEN tax is computed on updated population.
-        currentLevel++;
-      }
-      const pop = currentLevel * 10; // POPULATION_PER_LEVEL = 10
-      expectedMoney += Math.floor(pop * TAX_PER_POP);
+    // Run exactly DAYS_PER_MONTH ticks (M1→M2 boundary lands on the last one).
+    // Settlement is pre-growth, so the month is taxed at the population measured
+    // just before the boundary tick — capture it on the tick before the boundary.
+    let popJustBeforeThatTick = 0;
+    for (let t = 1; t <= DAYS_PER_MONTH; t++) {
+      const before = world.getMoney();
+      if (t === DAYS_PER_MONTH) popJustBeforeThatTick = world.getPopulation();
       world.tick();
+      if (t < DAYS_PER_MONTH) {
+        // No completed month yet — money must not move.
+        expect(world.getMoney()).toBe(before);
+      } else {
+        expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+        expect(world.getMoney()).toBe(
+          before + Math.floor(popJustBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH,
+        );
+      }
     }
+  });
 
-    expect(world.getMoney()).toBe(expectedMoney);
-    // Zone should have grown twice.
-    expect(world.getMap().getTile(0, 0)?.level).toBe(2);
+  it('setElapsedDays(DAYS_PER_MONTH - 1) then one tick() settles exactly one month at the pre-growth population', () => {
+    const world = new World(10, 10);
+
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
+    world.setMoney(STARTING_FUNDS);
+
+    world.setElapsedDays(DAYS_PER_MONTH - 1);
+    expect(world.getTick()).toBe(DAYS_PER_MONTH - 1);
+
+    const before = world.getMoney();
+    const popBefore = world.getPopulation(); // pre-growth population
+    world.tick();
+
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getTick()).toBe(DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(
+      before + Math.floor(popBefore * TAX_PER_POP) * DAYS_PER_MONTH,
+    );
   });
 });
 

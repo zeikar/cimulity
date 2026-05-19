@@ -6,6 +6,8 @@ import {
   POPULATION_PER_LEVEL,
   STARTING_FUNDS,
   TAX_PER_POP,
+  DAYS_PER_MONTH,
+  MONTHS_PER_YEAR,
 } from './World';
 import { TileType, createTile } from './Tile';
 
@@ -324,37 +326,166 @@ describe('World.setMoney()', () => {
   });
 });
 
-describe('World.tick() — tax accrual', () => {
-  it('money is unchanged when population is 0', () => {
+describe('World calendar', () => {
+  it('from a fresh world getDate() is {1,1,1} and getElapsedDays() is 0', () => {
     const world = new World(4, 4);
-    const before = world.getMoney();
-    world.tick();
-    expect(world.getMoney()).toBe(before);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+    expect(world.getElapsedDays()).toBe(0);
   });
 
-  it('money increases by Math.floor(population * TAX_PER_POP) on a growth tick with road-adjacent zones', () => {
+  it('after exactly 1 tick() getDate() is {1,1,2} and getElapsedDays() is 1', () => {
+    const world = new World(4, 4);
+    world.tick();
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 2 });
+    expect(world.getElapsedDays()).toBe(1);
+  });
+
+  it('after a total of DAYS_PER_MONTH tick() calls getDate() is {1,2,1}', () => {
+    const world = new World(4, 4);
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+    expect(world.getDate()).toEqual({ year: 1, month: 2, day: 1 });
+  });
+
+  it('after a total of DAYS_PER_MONTH*MONTHS_PER_YEAR tick() calls getDate() is {2,1,1}', () => {
+    const world = new World(4, 4);
+    for (let i = 0; i < DAYS_PER_MONTH * MONTHS_PER_YEAR; i++) world.tick();
+    expect(world.getDate()).toEqual({ year: 2, month: 1, day: 1 });
+  });
+
+  it('getElapsedDays() equals the total number of tick() calls', () => {
+    const world = new World(4, 4);
+    for (let i = 0; i < 47; i++) world.tick();
+    expect(world.getElapsedDays()).toBe(47);
+  });
+
+  it('reset() returns a ticked world calendar to {1,1,1}, getElapsedDays() to 0, getTick() to 0', () => {
+    const world = new World(4, 4);
+    for (let i = 0; i < DAYS_PER_MONTH + 3; i++) world.tick();
+
+    world.reset();
+
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+  });
+});
+
+describe('World.setElapsedDays()', () => {
+  it('returns true and sets day and tick together for a valid whole ≥0 value', () => {
+    const world = new World(4, 4);
+    expect(world.setElapsedDays(DAYS_PER_MONTH)).toBe(true);
+    expect(world.getDate()).toEqual({ year: 1, month: 2, day: 1 });
+    expect(world.getTick()).toBe(DAYS_PER_MONTH);
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+  });
+
+  it('returns false and leaves elapsed days / tick / date unchanged for -1', () => {
+    const world = new World(4, 4);
+    expect(world.setElapsedDays(-1)).toBe(false);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+  });
+
+  it('returns false and leaves elapsed days / tick / date unchanged for Infinity', () => {
+    const world = new World(4, 4);
+    expect(world.setElapsedDays(Infinity)).toBe(false);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+  });
+
+  it('returns false and leaves elapsed days / tick / date unchanged for NaN', () => {
+    const world = new World(4, 4);
+    expect(world.setElapsedDays(NaN)).toBe(false);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+  });
+
+  it('returns false and leaves elapsed days / tick / date unchanged for 12.5', () => {
+    const world = new World(4, 4);
+    expect(world.setElapsedDays(12.5)).toBe(false);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+  });
+});
+
+describe('World.tick() — monthly tax settlement', () => {
+  it('money is unchanged after the 1st tick() and on every non-month-boundary tick (from a fresh world with a road-adjacent residential zone)', () => {
     const world = new World(4, 4);
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
 
-    // Advance to the growth tick so the zone reaches level 1
-    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    for (let i = 0; i < DAYS_PER_MONTH - 1; i++) {
+      const before = world.getMoney();
+      world.tick();
+      expect(world.getElapsedDays() % DAYS_PER_MONTH).not.toBe(0);
+      expect(world.getMoney()).toBe(before);
+    }
+  });
 
-    const moneyBeforeGrowthTick = world.getMoney();
-    world.tick(); // this is the growth tick: zone grows to level 1, then tax is collected
-    const popAfterGrowth = world.getPopulation(); // level 1 * POPULATION_PER_LEVEL
-    const expectedTax = Math.floor(popAfterGrowth * TAX_PER_POP);
-    expect(world.getMoney()).toBe(moneyBeforeGrowthTick + expectedTax);
+  it('on the tick bringing getElapsedDays() to exactly DAYS_PER_MONTH money increases by Math.floor(popBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Advance to one tick before the M1→M2 boundary (no settlement yet).
+    for (let i = 0; i < DAYS_PER_MONTH - 1; i++) world.tick();
+
+    const moneyBeforeBoundary = world.getMoney();
+    const popBeforeThatTick = world.getPopulation(); // measured pre-growth, just before the boundary tick
+    world.tick(); // brings getElapsedDays() to DAYS_PER_MONTH
+
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(
+      moneyBeforeBoundary + Math.floor(popBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH,
+    );
+  });
+
+  it('a coincident growth + month-boundary tick taxes the PRE-growth population and still levels the zone up', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Next tick: tickCount = 8*30 = 240 (240 % 8 === 0 → growth) and
+    // day = 240 (240 % 30 === 0 → month boundary).
+    world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
+    // Place a road-adjacent residential zone at level 4 just before that tick.
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, ZONE_MAX_LEVEL - 1));
+
+    const moneyBefore = world.getMoney();
+    const level4Pop = world.getPopulation();
+    world.tick();
+
+    expect(world.getMoney()).toBe(
+      moneyBefore + Math.floor(level4Pop * TAX_PER_POP) * DAYS_PER_MONTH,
+    );
+    expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+  });
+
+  it('money is unchanged even on a month-boundary tick when population is 0', () => {
+    const world = new World(4, 4);
+    const before = world.getMoney();
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(before);
   });
 });
 
 describe('World.reset() — treasury', () => {
-  it('restores money to STARTING_FUNDS after spending', () => {
+  it('restores money to STARTING_FUNDS after spending and zeroes the calendar and tick', () => {
     const world = new World(4, 4);
     world.trySpend(5000);
+    for (let i = 0; i < DAYS_PER_MONTH + 5; i++) world.tick();
     world.reset();
     expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
   });
 });
 
