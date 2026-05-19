@@ -15,11 +15,13 @@ const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
 // STORAGE_KEY is frozen at 'cimulity:save:v2' (key name tracks the 64×64 map dimension
 // change, not the payload schema). The persisted payload is now a world envelope at
-// WORLD_SAVE_VERSION = 3 (adds treasury field `m`). v1/v2 schema-compatible same-dimension
-// payloads still load (map preserved; money defaults to STARTING_FUNDS). Next
-// build/bulldoze/tax-triggered save writes a v3 payload. clearSave() unchanged.
-// "New City" → world.reset() (resets money to STARTING_FUNDS) and a fresh v3 is written
-// on the next save after New City.
+// WORLD_SAVE_VERSION = 4 (adds elapsed-day field `d` on top of v3's treasury field `m`;
+// tickCount is reconstructed from `d` on load — no separate persisted tick field).
+// v1/v2/v3 schema-compatible same-dimension payloads still load (map preserved; money
+// per existing rules; calendar restarts at Year 1 M1 D1 / Tick 0, `d` defaults 0).
+// Next build/bulldoze/tax-triggered save writes a v4 payload. clearSave() unchanged.
+// "New City" → world.reset() now also zeroes the calendar and tick (covered by
+// World.reset()) and a fresh v4 is written on the next save after New City.
 const STORAGE_KEY = 'cimulity:save:v2';
 
 const store = globalThis as unknown as { __cimulityWorld?: World };
@@ -36,15 +38,19 @@ function readSave(): string | null {
 
 /**
  * A singleton that survived HMR/Fast Refresh may predate the economy API
- * (`getMoney`/`trySpend`/`setMoney`); the session/dispatcher now call those,
- * so a stale instance would crash. Treat such an instance as absent and
- * rebuild (re-hydrating from the save) instead of returning it.
+ * (`getMoney`/`trySpend`/`setMoney`) or the calendar API
+ * (`getDate`/`getElapsedDays`/`setElapsedDays`); the session/dispatcher now
+ * call those, so a stale instance would crash. Treat such an instance as
+ * absent and rebuild (re-hydrating from the save) instead of returning it.
  */
 function hasEconomyApi(world: World): boolean {
   return (
     typeof world.getMoney === 'function' &&
     typeof world.trySpend === 'function' &&
-    typeof world.setMoney === 'function'
+    typeof world.setMoney === 'function' &&
+    typeof world.getDate === 'function' &&
+    typeof world.getElapsedDays === 'function' &&
+    typeof world.setElapsedDays === 'function'
   );
 }
 
