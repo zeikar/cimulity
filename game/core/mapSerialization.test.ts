@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GameMap } from './Map';
 import { TileType, createTile } from './Tile';
-import { World, ZONE_MAX_LEVEL, STARTING_FUNDS } from './World';
+import { World, ZONE_MAX_LEVEL, STARTING_FUNDS, DAYS_PER_MONTH } from './World';
 import {
   serializeMap,
   deserializeMapInto,
@@ -273,6 +273,20 @@ describe('serializeWorld / deserializeWorldInto', () => {
     });
   }
 
+  // Helper: build a minimal valid v4 JSON for a 2x1 map (d defaults to 0).
+  function makeV4(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      v: 4,
+      w: 2,
+      h: 1,
+      t: [TileType.GRASS, TileType.GRASS],
+      l: [0, 0],
+      m: 500,
+      d: 0,
+      ...overrides,
+    });
+  }
+
   it('round-trips money: serialize then deserializeWorldInto restores map + money, v === WORLD_SAVE_VERSION', () => {
     const src = new World(3, 2);
     src.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -291,7 +305,63 @@ describe('serializeWorld / deserializeWorldInto', () => {
     expect(dst.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
   });
 
-  it('split-contract lock: serializeWorld (v3) JSON accepted by deserializeWorldInto, rejected by deserializeMapInto', () => {
+  // --- v4 calendar round-trip ---
+
+  it('(v4) round-trip: serialize a ticked World → v === WORLD_SAVE_VERSION, d present, no tk; restores map + money + days + tick + date', () => {
+    const src = new World(3, 2);
+    // Road-adjacent zone so ticks both spend nothing and exercise growth.
+    src.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    src.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 0));
+    src.trySpend(3000);
+    src.earn(250);
+
+    // Advance the calendar by a known number of real tick() calls.
+    const TICKS = 17;
+    for (let i = 0; i < TICKS; i++) src.tick();
+
+    const expectedMoney = src.getMoney();
+    const expectedDays = src.getElapsedDays();
+    const expectedTick = src.getTick();
+    const expectedDate = src.getDate();
+
+    const json = serializeWorld(src);
+    const parsed = JSON.parse(json);
+    expect(parsed.v).toBe(WORLD_SAVE_VERSION);
+    expect(parsed.v).toBe(4);
+    expect(parsed.d).toBe(expectedDays);
+    expect('tk' in parsed).toBe(false);
+
+    const dst = new World(3, 2);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+    expect(dst.getMoney()).toBe(expectedMoney);
+    expect(dst.getElapsedDays()).toBe(expectedDays);
+    // setElapsedDays restores tickCount too — both must equal the source.
+    expect(dst.getTick()).toBe(expectedTick);
+    expect(dst.getElapsedDays()).toBe(dst.getTick());
+    expect(dst.getDate()).toEqual(expectedDate);
+    expect(dst.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
+    expect(dst.getMap().getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+  });
+
+  it('(v4) serializeWorld after real tick() emits d reflecting the ticked count and round-trips with getTick() === getElapsedDays()', () => {
+    const src = new World(2, 1);
+    const TICKS = DAYS_PER_MONTH + 5;
+    for (let i = 0; i < TICKS; i++) src.tick();
+
+    const json = serializeWorld(src);
+    const parsed = JSON.parse(json);
+    expect(parsed.d).toBe(TICKS);
+    expect(parsed.d).toBe(src.getElapsedDays());
+
+    const dst = new World(2, 1);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+    expect(dst.getElapsedDays()).toBe(TICKS);
+    expect(dst.getTick()).toBe(TICKS);
+    expect(dst.getTick()).toBe(dst.getElapsedDays());
+    expect(dst.getDate()).toEqual(src.getDate());
+  });
+
+  it('split-contract lock: serializeWorld (v4) JSON accepted by deserializeWorldInto, rejected by deserializeMapInto', () => {
     const world = new World(2, 2);
     const json = serializeWorld(world);
 
@@ -339,6 +409,9 @@ describe('serializeWorld / deserializeWorldInto', () => {
     });
     expect(deserializeWorldInto(world, payload)).toBe(true);
     expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
     expect(world.getMap().getTile(0, 0)?.level).toBe(0);
   });
@@ -375,6 +448,9 @@ describe('serializeWorld / deserializeWorldInto', () => {
     });
     expect(deserializeWorldInto(world, payload)).toBe(true);
     expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
   });
 
@@ -410,9 +486,32 @@ describe('serializeWorld / deserializeWorldInto', () => {
     });
     expect(deserializeWorldInto(world, payload)).toBe(true);
     expect(world.getMoney()).toBe(750);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
     expect(world.getMap().getTile(0, 0)?.level).toBe(2);
     expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
+  });
+
+  it('(v3, valid l + m, stray d key) → accepted, d ignored, day/tick stay 0 (v3 has no calendar concept; lenient like v2 stray-m)', () => {
+    const w = 2;
+    const h = 1;
+    const world = new World(w, h);
+    const payload = JSON.stringify({
+      v: 3,
+      w,
+      h,
+      t: [TileType.GRASS, TileType.GRASS],
+      l: [0, 0],
+      m: 750,
+      d: 99,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(750);
+    expect(world.getElapsedDays()).toBe(0);
+    expect(world.getTick()).toBe(0);
+    expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
   });
 
   // --- v3 m rejection cases ---
@@ -482,18 +581,105 @@ describe('serializeWorld / deserializeWorldInto', () => {
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
   });
 
+  // --- v4 valid ---
+
+  it('(v4, valid l + m + d) → map + money + day + tick + date loaded', () => {
+    const w = 2;
+    const h = 1;
+    const world = new World(w, h);
+    const payload = JSON.stringify({
+      v: 4,
+      w,
+      h,
+      t: [TileType.ZONE_RESIDENTIAL, TileType.ROAD],
+      l: [2, 0],
+      m: 750,
+      d: DAYS_PER_MONTH + 1,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(750);
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH + 1);
+    expect(world.getTick()).toBe(DAYS_PER_MONTH + 1);
+    expect(world.getDate()).toEqual({ year: 1, month: 2, day: 2 });
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(world.getMap().getTile(0, 0)?.level).toBe(2);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
+  });
+
+  // --- v4 d rejection cases (all-or-nothing: money AND map AND day AND tick unchanged) ---
+
+  // Builds a v4 World with placed tiles + non-default money/day so we can assert nothing moved.
+  function makeDirtyWorld(): { world: World; money: number; days: number; tick: number } {
+    const world = new World(2, 1);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    world.setMoney(4321);
+    world.setElapsedDays(7);
+    return { world, money: world.getMoney(), days: world.getElapsedDays(), tick: world.getTick() };
+  }
+
+  function expectV4Reject(json: string): void {
+    const { world, money, days, tick } = makeDirtyWorld();
+    expect(deserializeWorldInto(world, json)).toBe(false);
+    expect(world.getMoney()).toBe(money);
+    expect(world.getElapsedDays()).toBe(days);
+    expect(world.getTick()).toBe(tick);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
+  }
+
+  it('(v4, d missing) → reject; money/map/day/tick unchanged', () => {
+    expectV4Reject(JSON.stringify({ v: 4, w: 2, h: 1, t: [TileType.GRASS, TileType.GRASS], l: [0, 0], m: 500 }));
+  });
+
+  it('(v4, d:null) → reject; money/map/day/tick unchanged', () => {
+    expectV4Reject(makeV4({ d: null }));
+  });
+
+  it("(v4, d non-number 'x') → reject; money/map/day/tick unchanged", () => {
+    expectV4Reject(makeV4({ d: 'x' }));
+  });
+
+  it('(v4, d overflow literal 1e999 → Infinity) → reject; money/map/day/tick unchanged', () => {
+    // JSON.parse("1e999") → Infinity in JS; Number.isInteger(Infinity) === false.
+    expectV4Reject('{"v":4,"w":2,"h":1,"t":["grass","grass"],"l":[0,0],"m":500,"d":1e999}');
+  });
+
+  it('(v4, d negative) → reject; money/map/day/tick unchanged', () => {
+    expectV4Reject(makeV4({ d: -1 }));
+  });
+
+  it('(v4, d fractional 12.5) → reject; money/map/day/tick unchanged', () => {
+    expectV4Reject(makeV4({ d: 12.5 }));
+  });
+
+  it('(v4, valid d but invalid m) → reject; money/map/day/tick unchanged', () => {
+    expectV4Reject(makeV4({ m: -1, d: 5 }));
+  });
+
+  it('(v4, valid m/d but invalid map l: non-zone ROAD level≠0) → reject; money/map/day/tick unchanged', () => {
+    expectV4Reject(JSON.stringify({
+      v: 4,
+      w: 2,
+      h: 1,
+      t: [TileType.ROAD, TileType.GRASS],
+      l: [1, 0],
+      m: 500,
+      d: 5,
+    }));
+  });
+
   // --- unsupported envelope version ---
 
-  it('(envelope v:4) → reject', () => {
+  it('(envelope v:5) → reject (unsupported)', () => {
     const world = new World(2, 1);
     const before = world.getMoney();
     const payload = JSON.stringify({
-      v: 4,
+      v: 5,
       w: 2,
       h: 1,
       t: [TileType.GRASS, TileType.GRASS],
       l: [0, 0],
       m: 0,
+      d: 0,
     });
     expect(deserializeWorldInto(world, payload)).toBe(false);
     expect(world.getMoney()).toBe(before);

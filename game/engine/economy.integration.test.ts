@@ -142,6 +142,9 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
 
     expect(ok).toBe(true);
     expect(fresh.getMoney()).toBe(expectedMoney);
+    expect(fresh.getElapsedDays()).toBe(world.getElapsedDays());
+    expect(fresh.getTick()).toBe(world.getTick());
+    expect(fresh.getDate()).toEqual(world.getDate());
     expect(fresh.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
     expect(fresh.getMap().getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
     expect(fresh.getMap().getTile(1, 0)?.level).toBe(2);
@@ -173,6 +176,9 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     expect(deserializeWorldInto(dst, json)).toBe(true);
 
     expect(dst.getMoney()).toBe(moneyAfterTicks);
+    expect(dst.getElapsedDays()).toBe(world.getElapsedDays());
+    expect(dst.getTick()).toBe(world.getTick());
+    expect(dst.getDate()).toEqual(world.getDate());
     expect(dst.getMap().getTile(0, 0)?.level).toBe(zoneLevel);
     expect(dst.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
   });

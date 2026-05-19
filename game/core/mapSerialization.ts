@@ -18,18 +18,24 @@
  *   && typeof parsed.v === 'number'
  *
  * ENVELOPE VERSION TABLE:
- *   v ∉ {1,2,3}     → reject
+ *   v ∉ {1,2,3,4}   → reject
  *   v === 1, no m   → legacy accept; money = STARTING_FUNDS; map via v1 rules
  *   v === 1, m key  → reject (strict symmetry with map-level v1+stray-l rejection)
  *   v === 2, no m   → backward-compat; money = STARTING_FUNDS; map via v2 rules
  *   v === 2, m key  → m ignored / lenient (v1 is strict, v2 is lenient; documented asymmetry)
  *   v === 3         → m required, must satisfy Number.isInteger(m) && m >= 0
  *                     map rules are identical to v2 (envelope only adds m)
+ *   v === 4         → m required (validated exactly as v3) AND d required,
+ *                     must satisfy Number.isInteger(d) && d >= 0
+ *                     map rules are identical to v2/v3 (envelope only adds d)
+ *   v1/v2/v3 default d = 0 (backward-compat — calendar restarts at Year 1 M1 D1 /
+ *     Tick 0; v3 money still preserved, v1/v2 money still STARTING_FUNDS;
+ *     existing v3/v2/v1 behavior otherwise fully preserved).
  *
- * V3 → MAP-VIEW TRANSLATION:
- *   deserializeMapInto only understands v1/v2. For a v3 envelope we build a
+ * V → MAP-VIEW TRANSLATION:
+ *   deserializeMapInto only understands v1/v2. For a v3 or v4 envelope we build a
  *   temporary map-view object with v rewritten to 2 and pass that to
- *   deserializeMapInto — map-level code needs no v3 awareness.
+ *   deserializeMapInto — map-level code needs no v3/v4 awareness.
  *   For v1/v2 envelopes we pass the original JSON string unchanged.
  *
  * MONEY VALIDATION:
@@ -37,8 +43,8 @@
  *   Rejects non-number, null, NaN, Infinity, fractional, or negative values.
  *
  * ALL-OR-NOTHING:
- *   shape-guard → validate money → apply map → set money.
- *   If any step fails nothing is mutated (neither map nor money).
+ *   shape-guard → validate money → validate day → apply map → set money → set day (which also sets tick).
+ *   If any step fails nothing is mutated (neither map nor money nor day/tick).
  */
 
 import { GameMap } from './Map';
@@ -52,9 +58,12 @@ export const SAVE_VERSION = 2;
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
  * This is the `v` value written to disk. v1/v2 had no money field;
- * v3 adds `m` (whole non-negative integer treasury balance).
+ * v3 adds `m` (whole non-negative integer treasury balance);
+ * v4 adds a single `d` (whole non-negative integer elapsed-day counter;
+ * tickCount is restored from the same `d` on the World side — no separate
+ * persisted tick field).
  */
-export const WORLD_SAVE_VERSION = 3;
+export const WORLD_SAVE_VERSION = 4;
 
 interface SaveData {
   v: number;
@@ -169,6 +178,7 @@ interface WorldSaveData {
   t: TileType[];
   l?: number[];
   m?: number;
+  d?: number;
 }
 
 /**
@@ -183,16 +193,17 @@ export function serializeWorld(world: World): string {
     ...mapFields,
     v: WORLD_SAVE_VERSION,
     m: world.getMoney(),
+    d: world.getElapsedDays(),
   };
   return JSON.stringify(data);
 }
 
 /**
  * Apply a serialized world envelope onto an existing World instance.
- * @returns true if both map and money were applied; false (without mutating) on any failure.
+ * @returns true if map, money and day/tick were applied; false (without mutating) on any failure.
  *
- * Ordering: shape-guard → validate money → apply map → set money.
- * If map application fails, money is never changed.
+ * Ordering: shape-guard → validate money → validate day → apply map → set money → set day (which also sets tick).
+ * If map application fails, money and day/tick are never changed.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
   let data: WorldSaveData;
@@ -215,12 +226,14 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   const v = data.v;
 
   // Reject unsupported envelope versions.
-  if (v !== 1 && v !== 2 && v !== 3) {
+  if (v !== 1 && v !== 2 && v !== 3 && v !== 4) {
     return false;
   }
 
-  // Determine resolved money and validate per version table.
+  // Determine resolved money + day and validate per version table.
   let resolvedMoney: number;
+  // v1/v2/v3 have no calendar concept — restart at day 0 (backward-compat).
+  let resolvedDay = 0;
 
   if (v === 1) {
     // v1: stray `m` key is a strict reject (mirrors map-level v1+stray-l rejection).
@@ -229,7 +242,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   } else if (v === 2) {
     // v2: backward-compat; stray `m` is silently ignored (lenient vs v1-strict asymmetry).
     resolvedMoney = STARTING_FUNDS;
-  } else {
+  } else if (v === 3) {
     // v === 3: m is required and must be a whole non-negative integer.
     if (
       !('m' in data) ||
@@ -239,24 +252,41 @@ export function deserializeWorldInto(world: World, json: string): boolean {
       return false;
     }
     resolvedMoney = data.m as number;
+  } else {
+    // v === 4: m validated exactly as v3, AND d required as a whole non-negative integer.
+    if (
+      !('m' in data) ||
+      !Number.isInteger(data.m) ||
+      (data.m as number) < 0 ||
+      !('d' in data) ||
+      !Number.isInteger(data.d) ||
+      (data.d as number) < 0
+    ) {
+      return false;
+    }
+    resolvedMoney = data.m as number;
+    resolvedDay = data.d as number;
   }
 
   // Build the map-view JSON to pass to deserializeMapInto.
-  // deserializeMapInto only understands v1/v2; for v3 we rewrite v to 2.
+  // deserializeMapInto only understands v1/v2; for v3/v4 we rewrite v to 2.
   // v1/v2 envelopes are passed as-is (their v values are valid for the map layer).
   let mapJson: string;
-  if (v === 3) {
-    // v3 → map-view v:2 translation: rewrite envelope v to 2 before delegating.
+  if (v === 3 || v === 4) {
+    // v3/v4 → map-view v:2 translation: rewrite envelope v to 2 before delegating.
     const mapView: WorldSaveData = { ...data, v: 2 };
     mapJson = JSON.stringify(mapView);
   } else {
     mapJson = json;
   }
 
-  // Apply map (all-or-nothing); only set money on success.
+  // Apply map (all-or-nothing); only set money + day on success.
   const mapApplied = deserializeMapInto(world.getMap(), mapJson);
   if (!mapApplied) return false;
 
+  // setMoney/setElapsedDays return values are intentionally ignored: both values
+  // were already validated immediately above with the identical guard.
   world.setMoney(resolvedMoney);
+  world.setElapsedDays(resolvedDay); // also restores tickCount (1 tick = 1 day)
   return true;
 }
