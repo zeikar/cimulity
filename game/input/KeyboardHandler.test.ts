@@ -37,8 +37,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function fire(key: string, target: unknown = null) {
-  const event = { key, target, preventDefault: vi.fn() };
+function fire(key: string, target: unknown = null, modifiers: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {}) {
+  const event = { key, target, preventDefault: vi.fn(), ...modifiers };
   for (const l of listeners) l(event);
   return event;
 }
@@ -134,5 +134,57 @@ describe('KeyboardHandler', () => {
     expect(onPauseToggle).not.toHaveBeenCalled();
     expect(onSpeedChange).not.toHaveBeenCalled();
     expect(onToolChange).not.toHaveBeenCalled();
+  });
+
+  it('modifier combos (Ctrl/Meta/Alt) are not intercepted — no callback fires and preventDefault is not called', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+
+    // Ctrl+W (close-tab combo)
+    const ectrlw = fire('w', null, { ctrlKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(ectrlw.preventDefault).not.toHaveBeenCalled();
+
+    // Meta+W
+    const emetaw = fire('w', null, { metaKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(emetaw.preventDefault).not.toHaveBeenCalled();
+
+    // Alt+W
+    const ealtw = fire('w', null, { altKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(ealtw.preventDefault).not.toHaveBeenCalled();
+
+    // Ctrl+1 (speed tier key)
+    const ectrl1 = fire('1', null, { ctrlKey: true });
+    expect(onSpeedChange).not.toHaveBeenCalled();
+    expect(ectrl1.preventDefault).not.toHaveBeenCalled();
+
+    // Ctrl+Space (pause key)
+    const ectrlspace = fire(' ', null, { ctrlKey: true });
+    expect(onPauseToggle).not.toHaveBeenCalled();
+    expect(ectrlspace.preventDefault).not.toHaveBeenCalled();
+
+    // Ctrl+A (non-game key)
+    const ectrla = fire('a', null, { ctrlKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(ectrla.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('uppercase Q / W / E (caps lock) trigger zone tools', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+
+    const eQ = fire('Q');
+    expect(onToolChange).toHaveBeenCalledWith(Tool.ZONE_RESIDENTIAL);
+    expect(eQ.preventDefault).toHaveBeenCalled();
+
+    onToolChange.mockClear();
+    const eW = fire('W');
+    expect(onToolChange).toHaveBeenCalledWith(Tool.ZONE_COMMERCIAL);
+    expect(eW.preventDefault).toHaveBeenCalled();
+
+    onToolChange.mockClear();
+    const eE = fire('E');
+    expect(onToolChange).toHaveBeenCalledWith(Tool.ZONE_INDUSTRIAL);
+    expect(eE.preventDefault).toHaveBeenCalled();
   });
 });

@@ -190,18 +190,28 @@ export class GameSession {
     });
     this.pixiApp = pixiApp;
 
+    // Keyboard listener was attached above for race-safety; if Pixi init fails or returns
+    // early, detach it so the dead session does not intercept window keystrokes.
+    try {
     // Initialize PixiJS (async)
     await pixiApp.init(container, width, height);
 
     // Cleanup already ran while init() was pending — discard this app.
     if (this.disposed) {
       pixiApp.destroy();
+      this.keyboardHandler?.detach();
+      this.keyboardHandler = null;
       return;
     }
 
     const camera = pixiApp.getCamera();
     const canvas = pixiApp.getCanvas();
-    if (!camera || !canvas) return;
+    if (!camera || !canvas) {
+      pixiApp.destroy();
+      this.keyboardHandler?.detach();
+      this.keyboardHandler = null;
+      return;
+    }
 
     // Setup input handlers
     const pointerHandler = new PointerHandler(canvas, camera, world.getMap(), {
@@ -288,6 +298,12 @@ export class GameSession {
     this.callbacks.onPauseChange?.(gameLoop.isPaused());
     this.gameLoop = gameLoop;
     gameLoop.start();
+    } catch (err) {
+      pixiApp.destroy();
+      this.keyboardHandler?.detach();
+      this.keyboardHandler = null;
+      throw err;
+    }
   }
 
   /**

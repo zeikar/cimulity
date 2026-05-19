@@ -55,21 +55,29 @@ export class KeyboardHandler {
       return;
     }
 
+    // Modifier combos (Ctrl/Cmd+W, Cmd+Q, Cmd+R, etc.) belong to the browser/OS, not the game.
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+
+    // Normalize single-char keys so caps lock / shift don't break shortcuts; multi-char keys (Space, Escape) stay as-is.
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
     // Order: pause → speed → tool. 1/2/3 NEVER fall through to tool lookup because they were removed from KEY_TO_TOOL.
-    if (event.key === ' ') {
+    if (key === ' ') {
       event.preventDefault();
       this.callbacks.onPauseToggle?.();
       return;
     }
 
-    const speed = KEY_TO_SPEED[event.key];
+    const speed = KEY_TO_SPEED[key];
     if (speed !== undefined) {
       event.preventDefault();
       this.callbacks.onSpeedChange?.(speed);
       return;
     }
 
-    const tool = KEY_TO_TOOL[event.key];
+    const tool = KEY_TO_TOOL[key];
     if (tool) {
       event.preventDefault();
       this.callbacks.onToolChange(tool);
