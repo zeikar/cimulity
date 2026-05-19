@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GameLoop, GameLoopTickInfo, MAX_CATCHUP_TICKS, DEFAULT_TICK_MS } from './GameLoop';
+import {
+  GameLoop,
+  GameLoopTickInfo,
+  MAX_CATCHUP_TICKS,
+  DEFAULT_TICK_MS,
+  DEFAULT_SPEED_MULTIPLIER,
+  ALLOWED_SPEED_MULTIPLIERS,
+} from './GameLoop';
 import { World } from './World';
 import { TileType, createTile } from './Tile';
 
@@ -189,5 +196,125 @@ describe('GameLoop', () => {
   // Verify getWorld() returns the world
   it('getWorld() returns the constructed world', () => {
     expect(loop.getWorld()).toBe(world);
+  });
+
+  // (l) Paused: setPaused(true) → 10x tickMs elapsed produces no tick and no onTick
+  it('(l) paused: setPaused(true) → 10x tickMs elapsed produces no tick and no onTick', () => {
+    loop.start();
+    loop.setPaused(true);
+    fakeNow += TICK_MS * 10;
+    pump();
+    expect(world.getTick()).toBe(0);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+
+  // (m) Resume from pause does not burst-catch-up the paused interval
+  it('(m) resume from pause does not burst-catch-up the paused interval', () => {
+    loop.start();
+    fakeNow += TICK_MS * 0.5;
+    pump(); // no tick yet — accumulator holds ~0.5 * TICK_MS
+    loop.setPaused(true);
+    fakeNow += TICK_MS * 10; // wall-clock discarded by pause early-return
+    pump(); // still no tick
+    loop.setPaused(false);
+    fakeNow += TICK_MS * 1;
+    pump();
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+  });
+
+  // (n) setPaused(true) then setPaused(false) without further elapsed time produces no tick
+  it('(n) setPaused(true) then setPaused(false) without further elapsed time produces no tick', () => {
+    loop.start();
+    pump(); // lastTime now equals fakeNow
+    loop.setPaused(true);
+    loop.setPaused(false);
+    pump();
+    expect(world.getTick()).toBe(0);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+
+  // (o) Speed multiplier 2x: 0.5 * TICK_MS wall-clock yields exactly 1 tick
+  it('(o) speed multiplier 2x: 0.5 * TICK_MS wall-clock yields exactly 1 tick', () => {
+    loop.start();
+    loop.setSpeedMultiplier(2);
+    fakeNow += TICK_MS * 0.5;
+    pump();
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+
+    fakeNow += TICK_MS * 0.5;
+    pump();
+    expect(world.getTick()).toBe(2);
+  });
+
+  // (p) Speed multiplier 3x: TICK_MS wall-clock drains exactly 3 ticks in one notification
+  it('(p) speed multiplier 3x: TICK_MS wall-clock drains exactly 3 ticks in one notification', () => {
+    loop.start();
+    loop.setSpeedMultiplier(3);
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(3);
+    expect(onTick).toHaveBeenCalledOnce();
+    expect(onTick).toHaveBeenCalledWith({ tick: 3, changed: 0 });
+  });
+
+  // (q) MAX_CATCHUP_TICKS still caps at higher speed
+  it('(q) MAX_CATCHUP_TICKS still caps at higher speed', () => {
+    loop.start();
+    loop.setSpeedMultiplier(3);
+    fakeNow += TICK_MS * 10; // would produce 30 ticks unbounded
+    pump();
+    expect(world.getTick()).toBe(MAX_CATCHUP_TICKS);
+    expect(onTick).toHaveBeenCalledOnce();
+  });
+
+  // (r) Speed change mid-flight applies on the NEXT pump only
+  it('(r) speed change mid-flight applies on the NEXT pump only', () => {
+    loop.start();
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(1);
+    loop.setSpeedMultiplier(2);
+    fakeNow += TICK_MS * 0.5;
+    pump();
+    expect(world.getTick()).toBe(2);
+  });
+
+  // (r2) Speed change with a partial accumulator already present
+  it('(r2) speed change with a partial accumulator already present', () => {
+    loop.start();
+    fakeNow += TICK_MS * 0.5;
+    pump(); // no tick yet — accumulator holds ~0.5 * TICK_MS (1x, unscaled)
+    loop.setSpeedMultiplier(2);
+    fakeNow += TICK_MS * 0.25; // wall-clock; scaled to 0.5 * TICK_MS by new multiplier
+    pump(); // old 0.5 unscaled + new 0.5 scaled = 1.0 * TICK_MS → exactly 1 tick
+    expect(world.getTick()).toBe(1);
+    expect(onTick).toHaveBeenCalledOnce();
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+  });
+
+  // (s) setSpeedMultiplier rejects invalid values without mutating
+  it('(s) setSpeedMultiplier rejects invalid values without mutating', () => {
+    expect(loop.setSpeedMultiplier(0 as any)).toBe(false);
+    expect(loop.setSpeedMultiplier(4 as any)).toBe(false);
+    expect(loop.setSpeedMultiplier(1.5 as any)).toBe(false);
+    expect(loop.setSpeedMultiplier(-1 as any)).toBe(false);
+    expect(loop.setSpeedMultiplier(NaN as any)).toBe(false);
+    expect(loop.getSpeedMultiplier()).toBe(1);
+  });
+
+  // (t) Initial state: isPaused() === false, getSpeedMultiplier() === 1
+  it('(t) initial state: isPaused() === false, getSpeedMultiplier() === 1', () => {
+    expect(loop.isPaused()).toBe(false);
+    expect(loop.getSpeedMultiplier()).toBe(1);
+  });
+
+  // (u) DEFAULT_SPEED_MULTIPLIER and ALLOWED_SPEED_MULTIPLIERS exports
+  it('(u) DEFAULT_SPEED_MULTIPLIER and ALLOWED_SPEED_MULTIPLIERS exports', () => {
+    expect(DEFAULT_SPEED_MULTIPLIER).toBe(1);
+    expect(ALLOWED_SPEED_MULTIPLIERS).toEqual([1, 2, 3]);
   });
 });
