@@ -15,6 +15,23 @@ const geistMono = Geist_Mono({
 const SITE_URL = "https://zeikar.dev/cimulity/";
 const DESCRIPTION =
   "Open-source minimal city simulation game in the browser.";
+const OG_IMAGE = `https://dogimg.vercel.app/api/og?url=${SITE_URL}`;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "VideoGame",
+  name: "Cimulity",
+  url: SITE_URL,
+  description: DESCRIPTION,
+  applicationCategory: "GameApplication",
+  operatingSystem: "Web browser",
+  gamePlatform: "Web browser",
+  genre: "City-building simulation",
+  inLanguage: "en",
+  author: { "@type": "Person", name: "zeikar", url: "https://zeikar.dev" },
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  sameAs: ["https://github.com/zeikar/cimulity"],
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://zeikar.dev"),
@@ -27,13 +44,15 @@ export const metadata: Metadata = {
     siteName: "Cimulity",
     title: "Cimulity",
     description: DESCRIPTION,
-    images: [`https://dogimg.vercel.app/api/og?url=${SITE_URL}`],
+    images: [
+      { url: OG_IMAGE, width: 1200, height: 630, alt: "Cimulity" },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Cimulity",
     description: DESCRIPTION,
-    images: [`https://dogimg.vercel.app/api/og?url=${SITE_URL}`],
+    images: [{ url: OG_IMAGE, alt: "Cimulity" }],
   },
 };
 
@@ -51,6 +70,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         {children}
       </body>
     </html>
