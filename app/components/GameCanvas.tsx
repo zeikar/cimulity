@@ -25,6 +25,16 @@ export interface GameCanvasProps {
   onToolChange?: (tool: Tool) => void;
   /** Bump to trigger a "New City" reset on the live session. */
   resetNonce?: number;
+  /** Engine → React mirror callback for the authoritative speed tier. */
+  onSpeedChange?: (multiplier: 1 | 2 | 3) => void;
+  /** Engine → React mirror callback for the authoritative paused flag. */
+  onPauseChange?: (paused: boolean) => void;
+  /** Page-supplied ref; GameCanvas populates with a speed commander after mount. */
+  commandSpeedRef?: React.RefObject<((m: 1 | 2 | 3) => void) | null>;
+  /** Page-supplied ref; GameCanvas populates with a pause-toggle commander after mount. */
+  commandPauseRef?: React.RefObject<(() => void) | null>;
+  /** Fires AFTER commandSpeedRef/commandPauseRef are populated, so the page can drain any pre-mount Toolbar clicks. */
+  onCommandsReady?: () => void;
 }
 
 export function GameCanvas({
@@ -36,6 +46,11 @@ export function GameCanvas({
   currentTool = Tool.SELECT,
   onToolChange,
   resetNonce = 0,
+  onSpeedChange,
+  onPauseChange,
+  commandSpeedRef,
+  commandPauseRef,
+  onCommandsReady,
 }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<GameSession | null>(null);
@@ -49,6 +64,8 @@ export function GameCanvas({
     onCameraUpdate,
     onTickUpdate,
     onToolChange,
+    onSpeedChange,
+    onPauseChange,
   });
 
   // Stable forwarders: identity never changes; read callbacksRef at call time.
@@ -61,6 +78,8 @@ export function GameCanvas({
     onTickUpdate: (tick: number, dirt: number, population: number, money: number, date: WorldDate) =>
       callbacksRef.current.onTickUpdate?.(tick, dirt, population, money, date),
     onToolChange: (tool: Tool) => callbacksRef.current.onToolChange?.(tool),
+    onSpeedChange: (multiplier: 1 | 2 | 3) => callbacksRef.current.onSpeedChange?.(multiplier),
+    onPauseChange: (paused: boolean) => callbacksRef.current.onPauseChange?.(paused),
   });
 
   // Track current tool so the mount effect can read the initial tool without
@@ -77,6 +96,8 @@ export function GameCanvas({
       onCameraUpdate,
       onTickUpdate,
       onToolChange,
+      onSpeedChange,
+      onPauseChange,
     };
     currentToolRef.current = currentTool;
   });
@@ -111,6 +132,17 @@ export function GameCanvas({
     // Apply a non-default initial tool even if the [currentTool] effect's
     // first run preceded sessionRef.current being set.
     session.setTool(currentToolRef.current);
+    if (commandSpeedRef) {
+      commandSpeedRef.current = (m) => sessionRef.current?.setSpeedMultiplier(m);
+    }
+    if (commandPauseRef) {
+      commandPauseRef.current = () => sessionRef.current?.togglePaused();
+    }
+    // Notify the page that the command refs are live, so it can drain any pre-mount
+    // Toolbar clicks queued in pendingCommandsRef. Calls into the refs above resolve
+    // to GameSession.setSpeedMultiplier/togglePaused, which queue internally until
+    // gameLoop is constructed in start() — so no input is silently dropped (after hydration).
+    onCommandsReady?.();
     void session.start(container, window.innerWidth, window.innerHeight);
 
     // Handle window resize
@@ -122,10 +154,12 @@ export function GameCanvas({
     // Cleanup function
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (commandSpeedRef) commandSpeedRef.current = null;
+      if (commandPauseRef) commandPauseRef.current = null;
       session.dispose();
       sessionRef.current = null;
     };
-  }, []);
+  }, [commandSpeedRef, commandPauseRef, onCommandsReady]);
 
   return (
     <div

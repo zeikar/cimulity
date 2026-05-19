@@ -14,12 +14,12 @@ import { ToolManager } from '../input/ToolManager';
 import { Tool } from '../tools/Tool';
 import { KeyboardHandler } from '../input/KeyboardHandler';
 import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
-import { GameLoop } from '../core/GameLoop';
+import { GameLoop, DEFAULT_SPEED_MULTIPLIER } from '../core/GameLoop';
 import type { World, WorldDate } from '../core/World';
 import { STARTING_FUNDS } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
-import type { GameLoopTickInfo } from '../core/GameLoop';
+import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
 
 // Mirrors TileRenderer TILE_COLORS; may drift if the tile palette changes.
 const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
@@ -36,6 +36,15 @@ export interface GameSessionCallbacks {
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
   onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate) => void;
+  /**
+   * React-state mirror callbacks. Fire after the session has accepted/applied
+   * the authoritative pause/speed value — either via the GameLoop on a
+   * Toolbar/keyboard command, or directly from `resetWorld()` to push the
+   * post-New-City defaults even when `gameLoop` is still null. React MUST NOT
+   * push state back into the engine.
+   */
+  onSpeedChange?: (multiplier: SpeedMultiplier) => void;
+  onPauseChange?: (paused: boolean) => void;
 }
 
 export class GameSession {
@@ -47,6 +56,14 @@ export class GameSession {
   private cameraController: CameraController | null = null;
   private keyboardHandler: KeyboardHandler | null = null;
   private gameLoop: GameLoop | null = null;
+  /**
+   * Pause/speed commands received before `gameLoop` exists are queued here and
+   * replayed when the loop is constructed in `start()`. Speed: last-write-wins
+   * (only the most recent tier needs to apply). Pause: parity matters (odd
+   * toggles flip state, even toggles are a no-op).
+   */
+  private pendingSpeedMultiplier: SpeedMultiplier | null = null;
+  private pendingPauseToggleCount = 0;
   private disposed = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSyncedMoney: number | null = null;
@@ -58,6 +75,32 @@ export class GameSession {
 
   setTool(tool: Tool): void {
     this.toolManager.setTool(tool);
+  }
+
+  // Both are command entry points (Toolbar AND keyboard both reach the engine through here).
+  setSpeedMultiplier(multiplier: SpeedMultiplier): void {
+    if (!this.gameLoop) {
+      // Queue: last-write-wins for speed (a later valid tier overwrites the pending value).
+      // We do NOT validate here — GameLoop.setSpeedMultiplier will validate at flush time.
+      this.pendingSpeedMultiplier = multiplier;
+      return;
+    }
+    // No-op if engine is already at this tier — avoid a redundant onSpeedChange emit.
+    if (this.gameLoop.getSpeedMultiplier() === multiplier) return;
+    if (this.gameLoop.setSpeedMultiplier(multiplier)) {
+      this.callbacks.onSpeedChange?.(multiplier);
+    }
+  }
+
+  togglePaused(): void {
+    if (!this.gameLoop) {
+      // Queue the toggle parity; flush applies the net effect once the loop exists.
+      this.pendingPauseToggleCount++;
+      return;
+    }
+    const next = !this.gameLoop.isPaused();
+    this.gameLoop.setPaused(next);
+    this.callbacks.onPauseChange?.(next);
   }
 
   // Redraw tiles only if a tool command actually changed core state,
@@ -95,6 +138,15 @@ export class GameSession {
     clearSave();
     // Reset accumulator so no catch-up burst fires, and sync HUD to tick 0 + dirt 0 immediately.
     this.gameLoop?.reset();
+    // Drop any queued pause/speed commands so a "New City" pressed during the
+    // pre-`gameLoop` window cannot replay stale toggles after defaults are restored.
+    this.pendingSpeedMultiplier = null;
+    this.pendingPauseToggleCount = 0;
+    this.gameLoop?.setPaused(false);
+    this.gameLoop?.setSpeedMultiplier(DEFAULT_SPEED_MULTIPLIER);
+    // Mirror callbacks fire even when gameLoop is null so React HUD/Toolbar snap back to defaults immediately.
+    this.callbacks.onPauseChange?.(false);
+    this.callbacks.onSpeedChange?.(DEFAULT_SPEED_MULTIPLIER);
     // Read post-reset money (reset already set STARTING_FUNDS; avoids ordering coupling).
     const m = this.world ? this.world.getMoney() : STARTING_FUNDS;
     this.callbacks.onTickUpdate?.(0, 0, 0, m, this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 });
@@ -107,6 +159,17 @@ export class GameSession {
 
   async start(container: HTMLElement, width: number, height: number): Promise<void> {
     console.log('GameCanvas: Initializing world...');
+    // Attach keyboard FIRST so early key presses during async Pixi init are captured.
+    // GameSession.setSpeedMultiplier/togglePaused queue when gameLoop is still null.
+    const keyboardHandler = new KeyboardHandler({
+      onToolChange: (tool) => {
+        this.toolManager.setTool(tool);
+        this.callbacks.onToolChange?.(tool);
+      },
+      onSpeedChange: (tier) => this.setSpeedMultiplier(tier),
+      onPauseToggle: () => this.togglePaused(),
+    });
+    this.keyboardHandler = keyboardHandler;
     // Reuse the process-wide World so HMR/Fast Refresh keeps placed tiles
     const world = getWorld();
     this.world = world;
@@ -181,15 +244,6 @@ export class GameSession {
     });
     this.cameraController = cameraController;
 
-    // Setup keyboard handler for tool shortcuts
-    const keyboardHandler = new KeyboardHandler({
-      onToolChange: (tool) => {
-        this.toolManager.setTool(tool);
-        this.callbacks.onToolChange?.(tool);
-      },
-    });
-    this.keyboardHandler = keyboardHandler;
-
     // Start fixed-timestep simulation loop; render/persist are gated on
     // changed > 0, but onTickUpdate fires every drained pump for the HUD.
     const gameLoop = new GameLoop(world, (agg: GameLoopTickInfo) => {
@@ -215,8 +269,25 @@ export class GameSession {
     this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney(), world.getDate());
     this.lastSyncedMoney = world.getMoney();
     this.lastSyncedElapsedDays = world.getElapsedDays();
-    gameLoop.start();
+    // Closes the race window between `sessionRef.current = session` and `await session.start()`.
+    // Flush any pause/speed commands received before the loop existed.
+    // We deliberately do NOT emit onSpeedChange/onPauseChange here — the
+    // unconditional initial-sync emit below covers both flushed and default cases
+    // with a single fan-out, avoiding the noisy "flush emit + initial sync emit" double-fire.
+    if (this.pendingSpeedMultiplier !== null) {
+      gameLoop.setSpeedMultiplier(this.pendingSpeedMultiplier); // validated; invalid values silently ignored
+      this.pendingSpeedMultiplier = null;
+    }
+    if (this.pendingPauseToggleCount % 2 === 1) {
+      // Odd parity: one net toggle. Even parity: net no-op (still drain the count).
+      gameLoop.setPaused(true); // initial paused is always false, so odd count ⇒ paused=true.
+    }
+    this.pendingPauseToggleCount = 0;
+    // Single initial-sync emit covers both the flushed and the default case in one fan-out (no duplicate emits).
+    this.callbacks.onSpeedChange?.(gameLoop.getSpeedMultiplier());
+    this.callbacks.onPauseChange?.(gameLoop.isPaused());
     this.gameLoop = gameLoop;
+    gameLoop.start();
   }
 
   /**

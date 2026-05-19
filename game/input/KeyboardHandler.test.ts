@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KeyboardHandler } from './KeyboardHandler';
 import { Tool } from '../tools/Tool';
 
+// Minimal event shape KeyboardHandler reads — only the fields the production code touches.
+type StubKeyEvent = { key: string; target: unknown; preventDefault: () => void };
+type StubListener = (e: StubKeyEvent) => void;
+
 // Minimal listener registry, restored per-test.
-let listeners: Array<(e: any) => void>;
+let listeners: Array<StubListener>;
 let onToolChange: ReturnType<typeof vi.fn>;
 let onSpeedChange: ReturnType<typeof vi.fn>;
 let onPauseToggle: ReturnType<typeof vi.fn>;
@@ -15,10 +19,10 @@ class FakeTextAreaElement {}
 beforeEach(() => {
   listeners = [];
   vi.stubGlobal('window', {
-    addEventListener: (type: string, fn: (e: any) => void) => {
+    addEventListener: (type: string, fn: StubListener) => {
       if (type === 'keydown') listeners.push(fn);
     },
-    removeEventListener: (type: string, fn: (e: any) => void) => {
+    removeEventListener: (type: string, fn: StubListener) => {
       if (type === 'keydown') listeners = listeners.filter((l) => l !== fn);
     },
   });

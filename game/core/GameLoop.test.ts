@@ -6,6 +6,7 @@ import {
   DEFAULT_TICK_MS,
   DEFAULT_SPEED_MULTIPLIER,
   ALLOWED_SPEED_MULTIPLIERS,
+  type SpeedMultiplier,
 } from './GameLoop';
 import { World } from './World';
 import { TileType, createTile } from './Tile';
@@ -298,11 +299,13 @@ describe('GameLoop', () => {
 
   // (s) setSpeedMultiplier rejects invalid values without mutating
   it('(s) setSpeedMultiplier rejects invalid values without mutating', () => {
-    expect(loop.setSpeedMultiplier(0 as any)).toBe(false);
-    expect(loop.setSpeedMultiplier(4 as any)).toBe(false);
-    expect(loop.setSpeedMultiplier(1.5 as any)).toBe(false);
-    expect(loop.setSpeedMultiplier(-1 as any)).toBe(false);
-    expect(loop.setSpeedMultiplier(NaN as any)).toBe(false);
+    // Cast via `unknown` to bypass the `SpeedMultiplier = 1 | 2 | 3` union so we
+    // can verify runtime rejection of out-of-tier values without using `any`.
+    expect(loop.setSpeedMultiplier(0 as unknown as SpeedMultiplier)).toBe(false);
+    expect(loop.setSpeedMultiplier(4 as unknown as SpeedMultiplier)).toBe(false);
+    expect(loop.setSpeedMultiplier(1.5 as unknown as SpeedMultiplier)).toBe(false);
+    expect(loop.setSpeedMultiplier(-1 as unknown as SpeedMultiplier)).toBe(false);
+    expect(loop.setSpeedMultiplier(NaN as unknown as SpeedMultiplier)).toBe(false);
     expect(loop.getSpeedMultiplier()).toBe(1);
   });
 
