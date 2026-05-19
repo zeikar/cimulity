@@ -30,6 +30,8 @@ export interface GameHUDProps {
   cameraY: number;
   cameraZoom: number;
   currentTool?: Tool;
+  speedMultiplier: 1 | 2 | 3;
+  paused: boolean;
 }
 
 export function GameHUD({
@@ -44,6 +46,8 @@ export function GameHUD({
   cameraY,
   cameraZoom,
   currentTool,
+  speedMultiplier,
+  paused,
 }: GameHUDProps) {
   return (
     <div
@@ -63,6 +67,12 @@ export function GameHUD({
     >
       <div>
         <strong>FPS:</strong> {fps}
+      </div>
+      <div>
+        <strong>Speed:</strong> {speedMultiplier}x
+      </div>
+      <div>
+        <strong>Status:</strong> {paused ? 'Paused' : 'Running'}
       </div>
       <div>
         <strong>Date:</strong> Year {date.year}, Month {date.month}, Day {date.day}
@@ -92,7 +102,7 @@ export function GameHUD({
         <strong>Camera:</strong> ({Math.round(cameraX)}, {Math.round(cameraY)}) | Zoom: {cameraZoom.toFixed(2)}
       </div>
       <div style={{ marginTop: '8px', opacity: 0.7, fontSize: '12px' }}>
-        Keys: S/R/B/1/2/3 | Drag: road/bulldoze/zone
+        Keys: S/R/B/Q/W/E | Space=pause | 1/2/3=speed | Drag: road/bulldoze/zone
       </div>
     </div>
   );
