@@ -15,7 +15,7 @@ import { Tool } from '../tools/Tool';
 import { KeyboardHandler } from '../input/KeyboardHandler';
 import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
 import { GameLoop } from '../core/GameLoop';
-import type { World } from '../core/World';
+import type { World, WorldDate } from '../core/World';
 import { STARTING_FUNDS } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
@@ -35,7 +35,7 @@ export interface GameSessionCallbacks {
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
-  onTickUpdate?: (tick: number, dirt: number, population: number, money: number) => void;
+  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate) => void;
 }
 
 export class GameSession {
@@ -50,6 +50,7 @@ export class GameSession {
   private disposed = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSyncedMoney: number | null = null;
+  private lastSyncedElapsedDays: number | null = null;
 
   constructor(callbacks: GameSessionCallbacks) {
     this.callbacks = callbacks;
@@ -67,9 +68,10 @@ export class GameSession {
     this.scheduleSave();
     // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
     const money = this.world!.getMoney();
-    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation(), money);
+    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation(), money, this.world!.getDate());
     // Keep tracker in sync; tool mutation already scheduled a save via scheduleSave above.
     this.lastSyncedMoney = money;
+    this.lastSyncedElapsedDays = this.world!.getElapsedDays();
   }
 
   private scheduleSave(): void {
@@ -95,8 +97,9 @@ export class GameSession {
     this.gameLoop?.reset();
     // Read post-reset money (reset already set STARTING_FUNDS; avoids ordering coupling).
     const m = this.world ? this.world.getMoney() : STARTING_FUNDS;
-    this.callbacks.onTickUpdate?.(0, 0, 0, m);
+    this.callbacks.onTickUpdate?.(0, 0, 0, m, this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 });
     this.lastSyncedMoney = m;
+    this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
     this.pixiApp?.setSelectedTile(null);
     this.pixiApp?.setHoverTile(null);
     this.pixiApp?.getTileRenderer()?.markDirty();
@@ -192,22 +195,26 @@ export class GameSession {
     const gameLoop = new GameLoop(world, (agg: GameLoopTickInfo) => {
       const money = world.getMoney();
       const economyDirty = this.lastSyncedMoney !== null && money !== this.lastSyncedMoney;
+      const elapsedDays = world.getElapsedDays();
+      const calendarDirty = this.lastSyncedElapsedDays !== null && elapsedDays !== this.lastSyncedElapsedDays;
       if (agg.changed > 0) {
         this.pixiApp?.getTileRenderer()?.markDirty();
         this.scheduleSave();
       }
-      // Tax-only money change still persists, debounced; guard by changed===0 to avoid double-schedule.
-      if (agg.changed === 0 && economyDirty) {
+      // Tax-only/date-only change still persists, debounced; guard by changed===0 to avoid double-schedule.
+      if (agg.changed === 0 && (economyDirty || calendarDirty)) {
         this.scheduleSave();
       }
-      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money);
+      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money, world.getDate());
       this.lastSyncedMoney = money;
+      this.lastSyncedElapsedDays = elapsedDays;
     });
     // Sync HUD to the world's current state before the first tick, so a
     // hydrated/reused world with persisted DIRT shows the real count instead
     // of staying at 0 until the first tick heals it away.
-    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney());
+    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney(), world.getDate());
     this.lastSyncedMoney = world.getMoney();
+    this.lastSyncedElapsedDays = world.getElapsedDays();
     gameLoop.start();
     this.gameLoop = gameLoop;
   }

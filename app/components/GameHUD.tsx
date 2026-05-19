@@ -6,6 +6,7 @@
  */
 
 import type { TileCoord } from '@/game/types/coordinates';
+import type { WorldDate } from '@/game/core/World';
 import { Tool } from '@/game/tools';
 
 const TOOL_LABELS: Record<Tool, string> = {
@@ -24,6 +25,7 @@ export interface GameHUDProps {
   dirt: number;
   population: number;
   money: number;
+  date: WorldDate;
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
@@ -37,6 +39,7 @@ export function GameHUD({
   dirt,
   population,
   money,
+  date,
   cameraX,
   cameraY,
   cameraZoom,
@@ -60,6 +63,9 @@ export function GameHUD({
     >
       <div>
         <strong>FPS:</strong> {fps}
+      </div>
+      <div>
+        <strong>Date:</strong> Year {date.year}, Month {date.month}, Day {date.day}
       </div>
       <div>
         <strong>Tick:</strong> {tick}
