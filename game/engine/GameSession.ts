@@ -21,6 +21,7 @@ import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
 import { TILE_COLORS } from '../render/visuals/palette';
+import { installDevApi, uninstallDevApi } from './devApi';
 
 // Drag-preview colors sourced from the shared palette so there's one source of truth.
 const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
@@ -196,6 +197,10 @@ export class GameSession {
     });
     this.pixiApp = pixiApp;
 
+    // Dev-only injection surface for Playwright / browser-console testing.
+    // No-op in production builds (see devApi.ts).
+    installDevApi(world, pixiApp);
+
     // Keyboard listener was attached above for race-safety; if Pixi init fails or returns
     // early, detach it so the dead session does not intercept window keystrokes.
     try {
@@ -341,6 +346,9 @@ export class GameSession {
     this.pointerHandler?.detach();
     this.cameraController?.detach();
     this.keyboardHandler?.detach();
+    // Clear the dev injection BEFORE destroying pixiApp so any in-flight
+    // browser-console reference is severed cleanly.
+    uninstallDevApi();
     this.pixiApp?.destroy();
 
     this.pixiApp = null;

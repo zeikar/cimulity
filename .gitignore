@@ -43,3 +43,7 @@ next-env.d.ts
 # claude code / hyperclaude (local workflow artifacts)
 .claude/
 .hyperclaude/
+.playwright-mcp/
+
+# Playwright visual-test screenshots (see .claude/skills/cimulity-visual-test/)
+/cube-*.png
