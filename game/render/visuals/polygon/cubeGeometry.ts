@@ -4,11 +4,9 @@
  */
 
 import { tileToScreen, ISO_CONFIG } from '@/game/render/IsoTransform';
+import { cubeLiftPx } from './cubeLift';
 
 export type Point = { x: number; y: number };
-
-/** Vertical pixel offset per level step. */
-export const CUBE_STEP_PX = 8;
 
 /**
  * Returns a position-independent shape token for a building footprint.
@@ -40,6 +38,7 @@ export function normalizeFootprint(
  */
 export function cubeFacePolygons(
   level: number,
+  density: 0 | 1 | 2,
   footprint: ReadonlyArray<{ x: number; y: number }>,
   anchor: { x: number; y: number },
 ): { top: Point[]; left: Point[]; right: Point[] } | null {
@@ -48,7 +47,7 @@ export function cubeFacePolygons(
   const anchorScreen = tileToScreen(anchor);
   const hw = ISO_CONFIG.TILE_WIDTH / 2;
   const hh = ISO_CONFIG.TILE_HEIGHT / 2;
-  const lift = level * CUBE_STEP_PX;
+  const lift = cubeLiftPx(level, density);
 
   // Compute anchor-local screen corners for every footprint cell.
   // Each tile contributes 4 corners of its isometric diamond.

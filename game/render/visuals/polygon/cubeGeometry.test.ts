@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeFootprint, cubeFacePolygons, CUBE_STEP_PX } from './cubeGeometry';
+import { normalizeFootprint, cubeFacePolygons } from './cubeGeometry';
+import { cubeLiftPx } from './cubeLift';
 
 // ---------------------------------------------------------------------------
 // normalizeFootprint
@@ -66,35 +67,45 @@ describe('cubeFacePolygons', () => {
   it('returns null for level === 0', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    expect(cubeFacePolygons(0, fp, anchor)).toBeNull();
+    expect(cubeFacePolygons(0, 0, fp, anchor)).toBeNull();
   });
 
   it('returns null for negative level', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    expect(cubeFacePolygons(-1, fp, anchor)).toBeNull();
+    expect(cubeFacePolygons(-1, 0, fp, anchor)).toBeNull();
   });
 
   it('returns polygon arrays for level > 0', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    const result = cubeFacePolygons(1, fp, anchor);
+    const result = cubeFacePolygons(1, 0, fp, anchor);
     expect(result).not.toBeNull();
     expect(result!.top.length).toBeGreaterThan(0);
     expect(result!.left.length).toBeGreaterThan(0);
     expect(result!.right.length).toBeGreaterThan(0);
   });
 
-  it('shifts top face up by N * CUBE_STEP_PX compared to level 1', () => {
+  it('top face shifts by exactly cubeLiftPx(2,0)-cubeLiftPx(1,0) between level 1 and 2', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    const r1 = cubeFacePolygons(1, fp, anchor)!;
-    const r2 = cubeFacePolygons(2, fp, anchor)!;
+    const r1 = cubeFacePolygons(1, 0, fp, anchor)!;
+    const r2 = cubeFacePolygons(2, 0, fp, anchor)!;
 
-    // The topmost vertex (top[0]) should be higher (lower Y) by exactly CUBE_STEP_PX.
     const topY1 = Math.min(...r1.top.map((p) => p.y));
     const topY2 = Math.min(...r2.top.map((p) => p.y));
-    expect(topY2).toBeCloseTo(topY1 - CUBE_STEP_PX, 5);
+    expect(topY2 - topY1).toBe(-(cubeLiftPx(2, 0) - cubeLiftPx(1, 0)));
+  });
+
+  it('top face at level 2 is higher (smaller Y) than at level 1 — monotonic', () => {
+    const fp = [{ x: 0, y: 0 }];
+    const anchor = { x: 0, y: 0 };
+    const r1 = cubeFacePolygons(1, 0, fp, anchor)!;
+    const r2 = cubeFacePolygons(2, 0, fp, anchor)!;
+
+    const topY1 = Math.min(...r1.top.map((p) => p.y));
+    const topY2 = Math.min(...r2.top.map((p) => p.y));
+    expect(topY2).toBeLessThan(topY1);
   });
 
   it('2x2 footprint produces a wider top polygon than 1x1', () => {
@@ -106,8 +117,8 @@ describe('cubeFacePolygons', () => {
       { x: 1, y: 1 },
     ];
     const anchor = { x: 0, y: 0 };
-    const r1x1 = cubeFacePolygons(1, fp1x1, anchor)!;
-    const r2x2 = cubeFacePolygons(1, fp2x2, anchor)!;
+    const r1x1 = cubeFacePolygons(1, 0, fp1x1, anchor)!;
+    const r2x2 = cubeFacePolygons(1, 0, fp2x2, anchor)!;
 
     const width1x1 = Math.max(...r1x1.top.map((p) => p.x)) - Math.min(...r1x1.top.map((p) => p.x));
     const width2x2 = Math.max(...r2x2.top.map((p) => p.x)) - Math.min(...r2x2.top.map((p) => p.x));
@@ -121,8 +132,8 @@ describe('cubeFacePolygons', () => {
     const fp10 = [{ x: 10, y: 10 }, { x: 11, y: 10 }];
     const anchor10 = { x: 10, y: 10 };
 
-    const r0 = cubeFacePolygons(2, fp0, anchor0)!;
-    const r10 = cubeFacePolygons(2, fp10, anchor10)!;
+    const r0 = cubeFacePolygons(2, 0, fp0, anchor0)!;
+    const r10 = cubeFacePolygons(2, 0, fp10, anchor10)!;
 
     // All polygon points should be numerically equal in anchor-local space.
     const toStr = (pts: { x: number; y: number }[]) =>
@@ -140,7 +151,7 @@ describe('cubeFacePolygons', () => {
       { x: 2, y: 1 },
       { x: 1, y: 2 },
     ];
-    const result = cubeFacePolygons(1, lShape, anchor)!;
+    const result = cubeFacePolygons(1, 0, lShape, anchor)!;
 
     // The anchor cell's top corner in anchor-local coords should be (0, 0).
     // tileToScreen(anchor) - tileToScreen(anchor) = (0, 0), which is the top-corner of the anchor tile.
@@ -151,5 +162,26 @@ describe('cubeFacePolygons', () => {
       expect(Number.isFinite(p.x)).toBe(true);
       expect(Number.isFinite(p.y)).toBe(true);
     }
+  });
+
+  it('density integration: density=2 lifts top face and extends side faces relative to density=0', () => {
+    const L = 3;
+    const fp = [{ x: 0, y: 0 }];
+    const anchor = { x: 0, y: 0 };
+    const r0 = cubeFacePolygons(L, 0, fp, anchor)!;
+    const r2 = cubeFacePolygons(L, 2, fp, anchor)!;
+
+    const liftDiff = cubeLiftPx(L, 2) - cubeLiftPx(L, 0);
+
+    // Top face: higher density → smaller minY (higher on screen).
+    const topMinY0 = Math.min(...r0.top.map((p) => p.y));
+    const topMinY2 = Math.min(...r2.top.map((p) => p.y));
+    expect(topMinY2 - topMinY0).toBe(-liftDiff);
+
+    const heightOf = (pts: { x: number; y: number }[]) =>
+      Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y));
+
+    expect(heightOf(r2.left) - heightOf(r0.left)).toBe(liftDiff);
+    expect(heightOf(r2.right) - heightOf(r0.right)).toBe(liftDiff);
   });
 });
