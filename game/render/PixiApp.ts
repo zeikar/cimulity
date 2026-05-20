@@ -105,7 +105,7 @@ export class PixiApp {
     this.gridRenderer = new GridRenderer(this.gridContainer, map);
 
     // Render initial frame
-    this.tileRenderer.render(map);
+    this.tileRenderer.render(this.world);
     this.gridRenderer.render();
 
     // Center camera on map
@@ -114,7 +114,7 @@ export class PixiApp {
     // Setup render loop
     this.app.ticker.add(() => {
       if (this.tileRenderer && this.world) {
-        this.tileRenderer.render(this.world.getMap());
+        this.tileRenderer.render(this.world);
       }
     });
 

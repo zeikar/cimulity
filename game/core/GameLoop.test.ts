@@ -62,7 +62,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [], changedBuildingIds: [] });
   });
 
   // (c) Bounded catch-up: 5 * tickMs → exactly MAX_CATCHUP_TICKS ticks in one notification
@@ -72,7 +72,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(MAX_CATCHUP_TICKS);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: MAX_CATCHUP_TICKS, changed: 0, changedTiles: [] });
+    expect(onTick).toHaveBeenCalledWith({ tick: MAX_CATCHUP_TICKS, changed: 0, changedTiles: [], changedBuildingIds: [] });
   });
 
   // (d) Catch-up capped (spiral guard): 100x tickMs → at most 5 ticks, backlog discarded
@@ -222,7 +222,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [], changedBuildingIds: [] });
   });
 
   // (n) setPaused(true) then setPaused(false) without further elapsed time produces no tick
@@ -244,7 +244,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [], changedBuildingIds: [] });
 
     fakeNow += TICK_MS * 0.5;
     pump();
@@ -259,7 +259,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(3);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 3, changed: 0, changedTiles: [] });
+    expect(onTick).toHaveBeenCalledWith({ tick: 3, changed: 0, changedTiles: [], changedBuildingIds: [] });
   });
 
   // (q) MAX_CATCHUP_TICKS still caps at higher speed
@@ -294,7 +294,7 @@ describe('GameLoop', () => {
     pump(); // old 0.5 unscaled + new 0.5 scaled = 1.0 * TICK_MS → exactly 1 tick
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [], changedBuildingIds: [] });
   });
 
   // (s) setSpeedMultiplier rejects invalid values without mutating

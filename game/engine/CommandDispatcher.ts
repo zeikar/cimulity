@@ -64,22 +64,31 @@ function commandCost(cmd: ToolCommand): number {
  * Insufficient funds → silent no-op, empty changedTiles.
  */
 function applyCommands(commands: ToolCommand[], world: World): ToolResult {
-  if (commands.length === 0) return { changedTiles: [] };
+  if (commands.length === 0) return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
 
   const total = commands.reduce((s, c) => s + commandCost(c), 0);
   // Never call trySpend(0) — only charge when there is an actual cost.
   if (total > 0 && !world.trySpend(total)) {
-    return { changedTiles: [] };
+    return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
   }
 
   const map = world.getMap();
   const changedTiles: TileCoord[] = [];
+  const affectedTiles: TileCoord[] = [];
+  const removedBuildingIds: number[] = [];
   for (const cmd of commands) {
-    if (map.setTile(cmd.x, cmd.y, cmd.tile)) {
+    const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
+    if (rec.changed) {
       changedTiles.push({ x: cmd.x, y: cmd.y });
     }
+    if (rec.removedBuilding !== null) {
+      removedBuildingIds.push(rec.removedBuilding.id);
+      for (const coord of rec.removedBuilding.footprint) {
+        affectedTiles.push(coord);
+      }
+    }
   }
-  return { changedTiles };
+  return { changedTiles, affectedTiles, removedBuildingIds };
 }
 
 export function executeClick(
@@ -100,7 +109,7 @@ export function executeDrag(
     world.getMap().getTile(t.x, t.y)
   );
   if (tiles.length === 0) {
-    return { changedTiles: [] };
+    return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
   }
   return applyCommands(buildToolCommands(tool, tiles, world), world);
 }

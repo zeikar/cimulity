@@ -109,6 +109,11 @@ export class GameSession {
   private markIfChanged(result: ToolResult): void {
     if (result.changedTiles.length === 0) return;
     this.pixiApp?.getTileRenderer()?.markDirty();
+    const tr = this.pixiApp?.getTileRenderer();
+    if (tr) {
+      tr.markBuildingsChanged(result.removedBuildingIds);
+      tr.markTilesChanged(result.affectedTiles);
+    }
     this.scheduleSave();
     // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
     const money = this.world!.getMoney();
@@ -265,7 +270,11 @@ export class GameSession {
       if (agg.changedTiles.length > 0) {
         // Incremental update: only re-render the tiles that changed this pump.
         // Tool-driven changes still call markDirty() for a full redraw.
-        this.pixiApp?.getTileRenderer()?.markTilesChanged(agg.changedTiles);
+        const tr = this.pixiApp?.getTileRenderer();
+        if (tr) {
+          tr.markTilesChanged(agg.changedTiles);
+          tr.markBuildingsChanged(agg.changedBuildingIds);
+        }
         this.scheduleSave();
       }
       // Tax-only/date-only change still persists, debounced. Guard by changedTiles.length to avoid

@@ -10,7 +10,7 @@ import { Container } from 'pixi.js';
 import { VisualRegistry } from './visuals/visualRegistry';
 import { DiamondTileVisual } from './visuals/polygon/DiamondTileVisual';
 import { TileType } from '../core/Tile';
-import type { GameMap } from '../core/Map';
+import type { World } from '../core/World';
 
 function buildRegistry(): VisualRegistry {
   const registry = new VisualRegistry();
@@ -51,7 +51,8 @@ export class TileRenderer {
     this.registry = registry ?? buildRegistry();
   }
 
-  render(map: GameMap): void {
+  render(world: World): void {
+    const map = world.getMap();
     if (this.fullDirty) {
       const mapWidth = map.getWidth();
       for (const tile of map.iterateTiles()) {
@@ -74,6 +75,12 @@ export class TileRenderer {
       this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
     }
     this.pendingTileChanges = [];
+  }
+
+  /** No-op stub: Task 12 will use building ids to re-render building visuals. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  markBuildingsChanged(_ids: ReadonlyArray<number>): void {
+    // intentionally empty — building visual rendering not yet wired
   }
 
   /**

@@ -2,8 +2,8 @@
  * 2D grid map structure with efficient access patterns
  */
 
-import { type Tile, createTile } from './Tile';
-import { BuildingMap } from './Building';
+import { type Tile, createTile, isZoneType } from './Tile';
+import { BuildingMap, type Building } from './Building';
 
 export class GameMap {
   private readonly width: number;
@@ -54,6 +54,35 @@ export class GameMap {
     // For MVP-1+, implement immutable updates
     this.tiles[y * this.width + x] = tile;
     return true;
+  }
+
+  /**
+   * Atomic tile write + building reconciliation.
+   *
+   * If the incoming tile type matches the current type, returns { changed: false, removedBuilding: null } — no write, no cost.
+   * If the current tile is zoned AND the new type differs, snapshots the owning Building (if any) BEFORE
+   * removing it, then writes the new tile. Returns the snapshot so callers can emit the removed id + footprint.
+   * For non-zoned → non-zoned rewrites (e.g. ROAD→DIRT bulldoze) no building removal occurs.
+   */
+  setTileAndReconcile(x: number, y: number, tile: Tile): { changed: boolean; removedBuilding: Building | null } {
+    const current = this.getTile(x, y);
+    if (!current) return { changed: false, removedBuilding: null };
+    // Same-type: no write needed
+    if (current.type === tile.type) return { changed: false, removedBuilding: null };
+
+    let removedBuilding: Building | null = null;
+    // If current tile is zoned and the type is changing, remove any owning building first
+    if (isZoneType(current.type)) {
+      const existing = this.buildingMap.getBuildingAt(x, y);
+      if (existing !== null) {
+        // Snapshot before removal so caller gets the full footprint + id
+        removedBuilding = existing;
+        this.buildingMap.removeBuilding(existing.id);
+      }
+    }
+
+    this.tiles[y * this.width + x] = tile;
+    return { changed: true, removedBuilding };
   }
 
   /**

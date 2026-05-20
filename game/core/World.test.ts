@@ -130,7 +130,7 @@ describe('World.tick() — zone growth', () => {
     expect(map.getTile(1, 0)?.level).toBe(0);
   });
 
-  it('ROAD-adjacent zone grows 0→1 exactly on tick N; returned changed includes the level-up', () => {
+  it('ROAD-adjacent zone creates a building (level 0) on tick N; returned changed includes the creation', () => {
     const world = new World(4, 4);
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
@@ -139,7 +139,8 @@ describe('World.tick() — zone growth', () => {
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     const result = world.tick(); // tick N
 
-    expect(map.getTile(1, 0)?.level).toBe(1);
+    // Growth creates a building at level 0; tile.level is legacy (never written by growth).
+    expect(map.getBuildings().getBuildingAt(1, 0)?.level).toBe(0);
     expect(result.changed).toBeGreaterThanOrEqual(1);
   });
 
@@ -166,23 +167,32 @@ describe('World.tick() — zone growth', () => {
     expect(map.getTile(1, 1)?.level).toBe(0);
   });
 
-  it('zone level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
+  it('zone building level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
     const world = new World(4, 4);
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
 
-    // Run enough intervals to exceed the cap
+    // Run enough intervals: 1 to create building + ZONE_MAX_LEVEL to level it up + 1 more for cap guard
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * (ZONE_MAX_LEVEL + 2); i++) world.tick();
 
-    expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
   });
 
   it('at cap, zone no longer contributes to changed', () => {
     const world = new World(4, 4);
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, ZONE_MAX_LEVEL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    // Seed a building already at max level so the first growth tick should not level it up
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: 0,
+    });
 
     // Run exactly one growth tick
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) {
@@ -192,7 +202,7 @@ describe('World.tick() — zone growth', () => {
         expect(result.changed).toBe(0);
       }
     }
-    expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
   });
 });
 
@@ -450,12 +460,20 @@ describe('World.tick() — monthly tax settlement', () => {
     const world = new World(4, 4);
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
 
     // Next tick: tickCount = 8*30 = 240 (240 % 8 === 0 → growth) and
     // day = 240 (240 % 30 === 0 → month boundary).
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
-    // Place a road-adjacent residential zone at level 4 just before that tick.
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, ZONE_MAX_LEVEL - 1));
+    // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 so it will level up on the growth tick.
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL - 1,
+      density: 0,
+      age: 0,
+    });
 
     const moneyBefore = world.getMoney();
     const level4Pop = world.getPopulation();
@@ -464,7 +482,7 @@ describe('World.tick() — monthly tax settlement', () => {
     expect(world.getMoney()).toBe(
       moneyBefore + Math.floor(level4Pop * TAX_PER_POP) * DAYS_PER_MONTH,
     );
-    expect(map.getTile(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
   });
 
   it('money is unchanged even on a month-boundary tick when population is 0', () => {
@@ -502,23 +520,29 @@ describe('World.getPopulation()', () => {
     expect(world.getPopulation()).toBe(0);
   });
 
-  it('sums levels across all zone tiles and multiplies by POPULATION_PER_LEVEL', () => {
+  it('sums building levels and multiplies by POPULATION_PER_LEVEL', () => {
     const world = new World(4, 4);
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 3));
-    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 2));
-    map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL, 1));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
+    // Seed buildings with levels 3, 2, 1 respectively; sum = 6
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0 });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0 });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0 });
     // sum = 3+2+1 = 6; population = 6 * POPULATION_PER_LEVEL
     expect(world.getPopulation()).toBe(6 * POPULATION_PER_LEVEL);
   });
 
-  it('non-zone tiles (ROAD, GRASS, etc.) contribute 0 to population', () => {
+  it('non-zone buildings (ROAD, GRASS, etc. tiles) contribute 0 to population', () => {
     const world = new World(4, 4);
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
     map.setTile(1, 0, createTile(1, 0, TileType.WATER));
     map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
-    map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL, 2));
+    map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
+    // Only the zone at (3,0) has a building
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0 });
     expect(world.getPopulation()).toBe(2 * POPULATION_PER_LEVEL);
   });
 
@@ -586,5 +610,140 @@ describe('WorldTickResult.changedTiles — canonical delta', () => {
     );
     // Hard contract: changed is always changedTiles.length
     expect(result.changed).toBe(result.changedTiles.length);
+  });
+});
+
+describe('World.tick() — building creation and changedBuildingIds', () => {
+  it('zone-grows-creates-building: first growth tick on a road-adjacent zone creates a building at level 0', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const building = map.getBuildings().getBuildingAt(0, 0);
+    expect(building).not.toBeNull();
+    expect(building?.level).toBe(0);
+    expect(building?.type).toBe('residential');
+  });
+
+  it('changedBuildingIds emission: growth tick emits the created building id in WorldTickResult', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    const result = world.tick();
+
+    expect(result.changedBuildingIds.length).toBeGreaterThanOrEqual(1);
+    const building = map.getBuildings().getBuildingAt(0, 0);
+    expect(building).not.toBeNull();
+    expect(result.changedBuildingIds).toContain(building!.id);
+  });
+
+  it('second growth tick levels the building from 0 to 1', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // First interval: building created at level 0
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(0);
+
+    // Second interval: building levels up to 1
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(1);
+  });
+});
+
+describe('World — bulldoze and repaint remove buildings', () => {
+  it('bulldoze-developed-zone: bulldozing a zone tile with a building removes the building from BuildingMap', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 3,
+      density: 0,
+      age: 0,
+    });
+    expect(building).not.toBeNull();
+
+    // Bulldoze replaces ZONE_RESIDENTIAL with DIRT via setTileAndReconcile
+    const rec = map.setTileAndReconcile(2, 2, createTile(2, 2, TileType.DIRT));
+
+    expect(rec.changed).toBe(true);
+    expect(rec.removedBuilding).not.toBeNull();
+    expect(rec.removedBuilding?.id).toBe(building!.id);
+    expect(map.getBuildings().getBuildingAt(2, 2)).toBeNull();
+  });
+
+  it('repaint zone type: painting a different zone over an existing zone removes the building', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 2,
+      density: 0,
+      age: 0,
+    });
+    expect(building).not.toBeNull();
+
+    // Repaint with a different zone type
+    const rec = map.setTileAndReconcile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+
+    expect(rec.changed).toBe(true);
+    expect(rec.removedBuilding).not.toBeNull();
+    expect(rec.removedBuilding?.id).toBe(building!.id);
+    expect(map.getBuildings().getBuildingAt(1, 1)).toBeNull();
+    expect(map.getTile(1, 1)?.type).toBe(TileType.ZONE_COMMERCIAL);
+  });
+
+  it('same-zone repaint: setTileAndReconcile returns changed=false and keeps building', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+    });
+
+    const rec = map.setTileAndReconcile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+
+    expect(rec.changed).toBe(false);
+    expect(rec.removedBuilding).toBeNull();
+    expect(map.getBuildings().getBuildingAt(0, 0)?.id).toBe(building!.id);
+  });
+});
+
+describe('World.getPopulation() — building-based formula', () => {
+  it('returns 0 when no buildings exist (tiles alone do not contribute)', () => {
+    const world = new World(4, 4);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 3));
+    // No building in BuildingMap → population is 0
+    expect(world.getPopulation()).toBe(0);
+  });
+
+  it('sum(building.level) × POPULATION_PER_LEVEL formula across multiple buildings', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0 });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0 });
+    // sum = 2+3 = 5
+    expect(world.getPopulation()).toBe(5 * POPULATION_PER_LEVEL);
   });
 });

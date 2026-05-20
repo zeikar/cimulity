@@ -5,6 +5,7 @@
 
 import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
+import type { BuildingType } from './Building';
 
 /** Ticks between each zone growth step. tickCount is post-increment (≥1), so first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0. */
 export const ZONE_GROWTH_INTERVAL = 8;
@@ -42,6 +43,8 @@ export interface WorldTickResult {
   changedTiles: ReadonlyArray<{ x: number; y: number }>;
   /** Count-only convenience — always equals `changedTiles.length`. */
   changed: number;
+  /** IDs of buildings created or levelled-up this tick (from the zone growth pass). */
+  changedBuildingIds: ReadonlyArray<number>;
 }
 
 export interface WorldDate {
@@ -135,13 +138,11 @@ export class World {
     return count;
   }
 
-  /** Sum of (level × POPULATION_PER_LEVEL) across all zone tiles. Defensive ?? 0 for HMR singletons that may predate the level field. */
+  /** Sum of (building.level × POPULATION_PER_LEVEL) across all buildings. Population now lives on buildings, not tiles. */
   getPopulation(): number {
     let sum = 0;
-    for (const tile of this.map.iterateTiles()) {
-      if (isZoneType(tile.type)) {
-        sum += (tile.level ?? 0);
-      }
+    for (const building of this.map.getBuildings().iterBuildings()) {
+      sum += building.level;
     }
     return sum * POPULATION_PER_LEVEL;
   }
@@ -174,6 +175,7 @@ export class World {
     this.tickCount++;
     this.day++; // 1 tick = 1 day
     const changedTiles: { x: number; y: number }[] = [];
+    const changedBuildingIds: number[] = [];
 
     // Pass 1: DIRT→GRASS heal (unchanged behavior).
     for (const tile of this.map.iterateTiles()) {
@@ -193,12 +195,16 @@ export class World {
 
     // Pass 2: Zone growth — only on growth ticks.
     if (this.tickCount % ZONE_GROWTH_INTERVAL === 0) {
+      // processedBuildingIds guards multi-tile footprints so each building is
+      // levelled at most once per tick even if the loop visits multiple of its tiles.
+      const processedBuildingIds = new Set<number>();
+      const buildings = this.map.getBuildings();
+
       for (const tile of this.map.iterateTiles()) {
         if (!isZoneType(tile.type)) continue;
-        const currentLevel = tile.level ?? 0;
-        if (currentLevel >= ZONE_MAX_LEVEL) continue;
-        // Grow only if at least one orthogonal neighbor is a ROAD tile.
         const { x, y } = tile;
+
+        // Grow only if at least one orthogonal neighbor is a ROAD tile.
         const neighbors = [
           this.map.getTile(x + 1, y),
           this.map.getTile(x - 1, y),
@@ -206,13 +212,44 @@ export class World {
           this.map.getTile(x, y - 1),
         ];
         const hasRoad = neighbors.some(n => n !== null && n.type === TileType.ROAD);
-        if (hasRoad) {
-          this.map.setTile(x, y, createTile(x, y, tile.type, currentLevel + 1));
-          changedTiles.push({ x, y });
+        if (!hasRoad) continue;
+
+        const existing = buildings.getBuildingAt(x, y);
+
+        if (existing === null) {
+          // Branch A: no building yet — create a level-0 building at this single tile.
+          const bType = tile.type.replace('zone_', '') as BuildingType;
+          const created = buildings.addBuilding({
+            type: bType,
+            footprint: [{ x, y }],
+            anchor: { x, y },
+            level: 0,
+            density: 0,
+            age: 0,
+          });
+          if (created !== null) {
+            changedBuildingIds.push(created.id);
+            changedTiles.push({ x, y });
+          }
+          continue;
+        }
+
+        // Branch B: building exists — de-duplicate multi-tile footprints.
+        if (processedBuildingIds.has(existing.id)) continue;
+        processedBuildingIds.add(existing.id);
+
+        if (existing.level >= ZONE_MAX_LEVEL) continue;
+
+        // Level up: mutate the building record in-place (Building is stored by reference in Map).
+        // tile.level is no longer written from growth — the field stays on Tile for v4 deserialize.
+        existing.level += 1;
+        changedBuildingIds.push(existing.id);
+        for (const coord of existing.footprint) {
+          changedTiles.push({ x: coord.x, y: coord.y });
         }
       }
     }
 
-    return { changedTiles, changed: changedTiles.length };
+    return { changedTiles, changed: changedTiles.length, changedBuildingIds };
   }
 }
