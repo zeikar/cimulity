@@ -16,6 +16,7 @@ export default defineConfig({
       // gameplay/manual testing, not brittle headless mocks — keeping
       // them out of the denominator keeps the % honest.
       include: [
+        'game/core/Building.ts',
         'game/core/GameLoop.ts',
         'game/core/Map.ts',
         'game/core/World.ts',
