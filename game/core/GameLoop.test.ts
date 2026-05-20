@@ -62,7 +62,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
   });
 
   // (c) Bounded catch-up: 5 * tickMs → exactly MAX_CATCHUP_TICKS ticks in one notification
@@ -72,7 +72,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(MAX_CATCHUP_TICKS);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: MAX_CATCHUP_TICKS, changed: 0 });
+    expect(onTick).toHaveBeenCalledWith({ tick: MAX_CATCHUP_TICKS, changed: 0, changedTiles: [] });
   });
 
   // (d) Catch-up capped (spiral guard): 100x tickMs → at most 5 ticks, backlog discarded
@@ -222,7 +222,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
   });
 
   // (n) setPaused(true) then setPaused(false) without further elapsed time produces no tick
@@ -244,7 +244,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
 
     fakeNow += TICK_MS * 0.5;
     pump();
@@ -259,7 +259,7 @@ describe('GameLoop', () => {
     pump();
     expect(world.getTick()).toBe(3);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 3, changed: 0 });
+    expect(onTick).toHaveBeenCalledWith({ tick: 3, changed: 0, changedTiles: [] });
   });
 
   // (q) MAX_CATCHUP_TICKS still caps at higher speed
@@ -294,7 +294,7 @@ describe('GameLoop', () => {
     pump(); // old 0.5 unscaled + new 0.5 scaled = 1.0 * TICK_MS → exactly 1 tick
     expect(world.getTick()).toBe(1);
     expect(onTick).toHaveBeenCalledOnce();
-    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0 });
+    expect(onTick).toHaveBeenCalledWith({ tick: 1, changed: 0, changedTiles: [] });
   });
 
   // (s) setSpeedMultiplier rejects invalid values without mutating
@@ -319,5 +319,38 @@ describe('GameLoop', () => {
   it('(u) DEFAULT_SPEED_MULTIPLIER and ALLOWED_SPEED_MULTIPLIERS exports', () => {
     expect(DEFAULT_SPEED_MULTIPLIER).toBe(1);
     expect(ALLOWED_SPEED_MULTIPLIERS).toEqual([1, 2, 3]);
+  });
+
+  // (v) changedTiles aggregation across catch-up ticks
+  it('(v) changedTiles contains the union of both ticks when two DIRT tiles heal on different ticks', () => {
+    // Tile (0,0) starts as DIRT — heals on tick 1.
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.DIRT));
+    loop.start();
+
+    // Advance exactly one tick so (0,0) heals; onTick fires once (tick 1, changedTiles [{x:0,y:0}]).
+    fakeNow += TICK_MS;
+    pump();
+    expect(world.getTick()).toBe(1);
+
+    // Now plant a second DIRT tile at (1,1).
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
+
+    // Advance TWO more ticks in one pump so catch-up drains both:
+    //   tick 2: heals (1,1)  → changedTiles [{x:1,y:1}]
+    //   tick 3: nothing      → changedTiles []
+    // Aggregated for this pump: [{x:1,y:1}].
+    fakeNow += TICK_MS * 2;
+    pump();
+    expect(world.getTick()).toBe(3);
+    expect(onTick).toHaveBeenCalledTimes(2);
+
+    const agg = onTick.mock.calls[1][0] as GameLoopTickInfo;
+    // The second pump aggregates both ticks; (1,1) must appear.
+    expect(agg.changedTiles).toContainEqual({ x: 1, y: 1 });
+    expect(agg.changed).toBe(1);
+
+    // Verify that the first pump's changedTiles contained (0,0).
+    const first = onTick.mock.calls[0][0] as GameLoopTickInfo;
+    expect(first.changedTiles).toContainEqual({ x: 0, y: 0 });
   });
 });

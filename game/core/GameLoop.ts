@@ -19,6 +19,8 @@ export interface GameLoopTickInfo {
   tick: number;
   /** Sum of WorldTickResult.changed across all ticks drained this pump */
   changed: number;
+  /** Flat union of per-tile coords changed across all ticks drained this pump */
+  changedTiles: ReadonlyArray<{ x: number; y: number }>;
 }
 
 export class GameLoop {
@@ -73,10 +75,13 @@ export class GameLoop {
 
     let drained = 0;
     let changedSum = 0;
+    // Renderer is idempotent on repeated coords; not deduping.
+    const changedTiles: { x: number; y: number }[] = [];
     while (this.accumulator >= this.tickMs && drained < MAX_CATCHUP_TICKS) {
       this.accumulator -= this.tickMs;
       const r = this.world.tick();
       changedSum += r.changed;
+      for (const c of r.changedTiles) changedTiles.push(c);
       drained++;
     }
 
@@ -86,7 +91,7 @@ export class GameLoop {
     }
 
     if (drained > 0) {
-      this.onTick?.({ tick: this.world.getTick(), changed: changedSum });
+      this.onTick?.({ tick: this.world.getTick(), changed: changedSum, changedTiles });
     }
   }
 

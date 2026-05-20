@@ -39,7 +39,10 @@ export class TileRenderer {
   private registry: VisualRegistry;
   /** tileIndex → mounted entry */
   private tiles: Map<number, TileEntry> = new Map();
-  private isDirty: boolean = true;
+  /** Set by markDirty() — triggers a full redraw of all tiles on next render(). */
+  private fullDirty: boolean = true;
+  /** Incremental queue populated by markTilesChanged(); drained when fullDirty is false. */
+  private pendingTileChanges: { x: number; y: number }[] = [];
 
   constructor(stageContainer: Container) {
     this.terrainContainer = new Container();
@@ -48,18 +51,50 @@ export class TileRenderer {
   }
 
   render(map: GameMap): void {
-    if (!this.isDirty) return;
+    if (this.fullDirty) {
+      const mapWidth = map.getWidth();
+
+      for (const tile of map.iterateTiles()) {
+        const index = tile.y * mapWidth + tile.x;
+        const existing = this.tiles.get(index);
+        const visual = this.registry.getTerrain(tile.type);
+        const input = { x: tile.x, y: tile.y, type: tile.type, level: tile.level };
+
+        if (!existing) {
+          // First mount
+          const displayObject = visual.mount(input, this.terrainContainer);
+          this.tiles.set(index, { type: tile.type, displayObject });
+        } else if (existing.type !== tile.type) {
+          // Type changed: unmount old, mount new
+          const oldVisual = this.registry.getTerrain(existing.type);
+          oldVisual.unmount(existing.displayObject);
+          const displayObject = visual.mount(input, this.terrainContainer);
+          this.tiles.set(index, { type: tile.type, displayObject });
+        } else {
+          // Same type: update in place
+          visual.update(input, existing.displayObject);
+        }
+      }
+
+      this.fullDirty = false;
+      // Clear the pending queue: full redraw already covered those coords.
+      this.pendingTileChanges = [];
+      return;
+    }
+
+    if (this.pendingTileChanges.length === 0) return;
 
     const mapWidth = map.getWidth();
 
-    for (const tile of map.iterateTiles()) {
-      const index = tile.y * mapWidth + tile.x;
+    for (const { x, y } of this.pendingTileChanges) {
+      const tile = map.getTile(x, y);
+      if (!tile) continue;
+      const index = y * mapWidth + x;
       const existing = this.tiles.get(index);
       const visual = this.registry.getTerrain(tile.type);
       const input = { x: tile.x, y: tile.y, type: tile.type, level: tile.level };
 
       if (!existing) {
-        // First mount
         const displayObject = visual.mount(input, this.terrainContainer);
         this.tiles.set(index, { type: tile.type, displayObject });
       } else if (existing.type !== tile.type) {
@@ -69,16 +104,21 @@ export class TileRenderer {
         const displayObject = visual.mount(input, this.terrainContainer);
         this.tiles.set(index, { type: tile.type, displayObject });
       } else {
-        // Same type: update in place
         visual.update(input, existing.displayObject);
       }
     }
 
-    this.isDirty = false;
+    this.pendingTileChanges = [];
   }
 
   markDirty(): void {
-    this.isDirty = true;
+    this.fullDirty = true;
+  }
+
+  /** Accumulate tick-driven per-tile changes for incremental rendering. No-op when coords is empty or fullDirty is already pending. */
+  markTilesChanged(coords: ReadonlyArray<{ x: number; y: number }>): void {
+    if (coords.length === 0 || this.fullDirty) return;
+    for (const c of coords) this.pendingTileChanges.push(c);
   }
 
   destroy(): void {

@@ -262,12 +262,15 @@ export class GameSession {
       const economyDirty = this.lastSyncedMoney !== null && money !== this.lastSyncedMoney;
       const elapsedDays = world.getElapsedDays();
       const calendarDirty = this.lastSyncedElapsedDays !== null && elapsedDays !== this.lastSyncedElapsedDays;
-      if (agg.changed > 0) {
-        this.pixiApp?.getTileRenderer()?.markDirty();
+      if (agg.changedTiles.length > 0) {
+        // Incremental update: only re-render the tiles that changed this pump.
+        // Tool-driven changes still call markDirty() for a full redraw.
+        this.pixiApp?.getTileRenderer()?.markTilesChanged(agg.changedTiles);
         this.scheduleSave();
       }
-      // Tax-only/date-only change still persists, debounced; guard by changed===0 to avoid double-schedule.
-      if (agg.changed === 0 && (economyDirty || calendarDirty)) {
+      // Tax-only/date-only change still persists, debounced. Guard by changedTiles.length to avoid
+      // double-schedule (WorldTickResult contract from Task 4: changed === changedTiles.length).
+      if (agg.changedTiles.length === 0 && (economyDirty || calendarDirty)) {
         this.scheduleSave();
       }
       this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money, world.getDate());
