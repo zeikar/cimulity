@@ -33,6 +33,7 @@ export default defineConfig({
         'game/render/visuals/polygon/cubeGeometry.ts',
         'game/render/visuals/polygon/cubeLift.ts',
         'game/render/visuals/polygon/cubeTypeRatios.ts',
+        'game/render/visuals/polygon/cubeRoofAccent.ts',
       ],
       thresholds: {
         lines: 80,
