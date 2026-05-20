@@ -37,25 +37,57 @@ function readSave(): string | null {
 }
 
 /**
- * A singleton that survived HMR/Fast Refresh may predate the economy API
- * (`getMoney`/`trySpend`/`setMoney`) or the calendar API
- * (`getDate`/`getElapsedDays`/`setElapsedDays`); the session/dispatcher now
- * call those, so a stale instance would crash. Treat such an instance as
- * absent and rebuild (re-hydrating from the save) instead of returning it.
+ * A singleton that survived HMR/Fast Refresh may predate any API surface
+ * the session/dispatcher/render layer relies on. We check every
+ * load-bearing method on `World`, `GameMap`, and `BuildingMap` — checking
+ * only a subset leaves stale singletons that have e.g. `iterBuildings`
+ * but lack `addExistingBuilding`, which would silently no-op save-hydration.
+ *
+ * **Update this guard whenever a load-bearing method is added to `World`,
+ * `GameMap`, or `BuildingMap` — stale HMR singletons missing the method
+ * break the app.**
  */
-function hasEconomyApi(world: World): boolean {
-  return (
-    typeof world.getMoney === 'function' &&
-    typeof world.trySpend === 'function' &&
-    typeof world.setMoney === 'function' &&
-    typeof world.getDate === 'function' &&
-    typeof world.getElapsedDays === 'function' &&
-    typeof world.setElapsedDays === 'function'
-  );
+function hasCurrentWorldApi(world: World): boolean {
+  // World economy + calendar APIs (existing).
+  if (
+    typeof world.getMoney !== 'function' ||
+    typeof world.trySpend !== 'function' ||
+    typeof world.setMoney !== 'function' ||
+    typeof world.getDate !== 'function' ||
+    typeof world.getElapsedDays !== 'function' ||
+    typeof world.setElapsedDays !== 'function'
+  ) {
+    return false;
+  }
+  // GameMap (added in Task 10): atomic tile/building reconcile + buildings access.
+  if (typeof world.getMap !== 'function') return false;
+  const map = world.getMap();
+  if (
+    typeof map.getBuildings !== 'function' ||
+    typeof map.setTileAndReconcile !== 'function'
+  ) {
+    return false;
+  }
+  // BuildingMap (added in Task 9): all load-bearing methods used by render/save/growth.
+  const buildings = map.getBuildings();
+  if (
+    typeof buildings.getBuildingAt !== 'function' ||
+    typeof buildings.getBuilding !== 'function' ||
+    typeof buildings.iterBuildings !== 'function' ||
+    typeof buildings.getAllBuildings !== 'function' ||
+    typeof buildings.addBuilding !== 'function' ||
+    typeof buildings.addExistingBuilding !== 'function' ||
+    typeof buildings.removeBuilding !== 'function' ||
+    typeof buildings.setNextIdFloor !== 'function' ||
+    typeof buildings.clear !== 'function'
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export function getWorld(): World {
-  if (!store.__cimulityWorld || !hasEconomyApi(store.__cimulityWorld)) {
+  if (!store.__cimulityWorld || !hasCurrentWorldApi(store.__cimulityWorld)) {
     const world = new World(MAP_WIDTH, MAP_HEIGHT);
     const saved = readSave();
     if (saved) {
