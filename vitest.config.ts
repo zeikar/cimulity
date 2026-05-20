@@ -31,6 +31,7 @@ export default defineConfig({
         'game/render/cameraConstraints.ts',
         'game/render/visuals/visualRegistry.ts',
         'game/render/visuals/polygon/cubeGeometry.ts',
+        'game/render/visuals/polygon/cubeLift.ts',
       ],
       thresholds: {
         lines: 80,
