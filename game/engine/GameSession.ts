@@ -20,12 +20,13 @@ import { STARTING_FUNDS } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
+import { TILE_COLORS } from '../render/visuals/palette';
 
-// Mirrors TileRenderer TILE_COLORS; may drift if the tile palette changes.
+// Drag-preview colors sourced from the shared palette so there's one source of truth.
 const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
-  [Tool.ZONE_RESIDENTIAL]: 0x3cc44b,
-  [Tool.ZONE_COMMERCIAL]: 0x2f8fd6,
-  [Tool.ZONE_INDUSTRIAL]: 0xe8c531,
+  [Tool.ZONE_RESIDENTIAL]: TILE_COLORS['zone_residential'],
+  [Tool.ZONE_COMMERCIAL]: TILE_COLORS['zone_commercial'],
+  [Tool.ZONE_INDUSTRIAL]: TILE_COLORS['zone_industrial'],
   [Tool.BULLDOZE]: 0xff3b30,
 };
 
