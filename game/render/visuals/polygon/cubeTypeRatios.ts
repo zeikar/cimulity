@@ -11,7 +11,7 @@ export const CUBE_TYPE_HEIGHT_MULT: Readonly<Record<BuildingType, number>> = {
 // Domain: 0 <= inset < 0.5. Rendered span is spanX * (1 - 2 * inset), so 0 = full width, 0.5 = collapsed to a vertical line.
 export const CUBE_TYPE_INSET_RATIO: Readonly<Record<BuildingType, number>> = {
   residential: 0.0,
-  commercial: 0.25,
+  commercial: 0.12,
   industrial: 0.0,
 };
 
