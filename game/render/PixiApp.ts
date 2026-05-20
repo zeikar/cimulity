@@ -25,6 +25,10 @@ export class PixiApp {
   private tileRenderer: TileRenderer | null = null;
   private selectionRenderer: SelectionRenderer | null = null;
   private gridRenderer: GridRenderer | null = null;
+  private terrainContainer: Container | null = null;
+  private buildingContainer: Container | null = null;
+  private gridContainer: Container | null = null;
+  private selectionContainer: Container | null = null;
   private world: World;
   private callbacks: PixiAppCallbacks;
   private fpsUpdateInterval: number = 0;
@@ -78,27 +82,27 @@ export class PixiApp {
 
     // Create explicit layer containers in draw order: terrain → building → grid → selection.
     // addChild order enforces z-layering; no zIndex tricks needed for cross-layer ordering.
-    const terrainContainer = new Container();
-    terrainContainer.sortableChildren = false;
+    this.terrainContainer = new Container();
+    this.terrainContainer.sortableChildren = false;
 
-    const buildingContainer = new Container();
-    buildingContainer.sortableChildren = true; // buildings sort within their own layer
+    this.buildingContainer = new Container();
+    this.buildingContainer.sortableChildren = true; // buildings sort within their own layer
 
-    const gridContainer = new Container();
-    gridContainer.sortableChildren = false;
+    this.gridContainer = new Container();
+    this.gridContainer.sortableChildren = false;
 
-    const selectionContainer = new Container();
-    selectionContainer.sortableChildren = false;
+    this.selectionContainer = new Container();
+    this.selectionContainer.sortableChildren = false;
 
-    this.app.stage.addChild(terrainContainer);
-    this.app.stage.addChild(buildingContainer);
-    this.app.stage.addChild(gridContainer);
-    this.app.stage.addChild(selectionContainer);
+    this.app.stage.addChild(this.terrainContainer);
+    this.app.stage.addChild(this.buildingContainer);
+    this.app.stage.addChild(this.gridContainer);
+    this.app.stage.addChild(this.selectionContainer);
 
     // Initialize renderers, each bound to its own container
-    this.tileRenderer = new TileRenderer(terrainContainer, buildingContainer);
-    this.selectionRenderer = new SelectionRenderer(selectionContainer);
-    this.gridRenderer = new GridRenderer(gridContainer, map);
+    this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer);
+    this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
+    this.gridRenderer = new GridRenderer(this.gridContainer, map);
 
     // Render initial frame
     this.tileRenderer.render(map);
@@ -214,6 +218,18 @@ export class PixiApp {
     this.selectionRenderer?.destroy();
     this.gridRenderer?.destroy();
 
+    // Explicitly destroy each layer container before app.destroy().
+    // Pixi 8 app.destroy({ children: true }) does cascade to app.stage children,
+    // so this is a defensive double-cleanup — it ensures any shared-cache
+    // scenarios (e.g. visuals holding refs to these containers) are released
+    // deterministically, before the renderer context is torn down.
+    this.terrainContainer?.destroy({ children: true });
+    this.buildingContainer?.destroy({ children: true });
+    this.gridContainer?.destroy({ children: true });
+    this.selectionContainer?.destroy({ children: true });
+    // When sprite-based visuals land, destroy spritesheets here with
+    // `destroy({ texture: true, textureSource: true })`.
+
     if (this.app) {
       // removeView: true — Pixi owns this canvas; remove it so the next
       // init() creates a fresh canvas with a fresh WebGL context.
@@ -225,5 +241,9 @@ export class PixiApp {
     this.tileRenderer = null;
     this.selectionRenderer = null;
     this.gridRenderer = null;
+    this.terrainContainer = null;
+    this.buildingContainer = null;
+    this.gridContainer = null;
+    this.selectionContainer = null;
   }
 }

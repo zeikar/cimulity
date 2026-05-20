@@ -110,10 +110,16 @@ export class TileRenderer {
   }
 
   destroy(): void {
-    for (const { type, displayObject } of this.tiles.values()) {
-      this.registry.getTerrain(type).unmount(displayObject);
+    // Destroy each tile's DisplayObject directly — TileRenderer owns the instances,
+    // not the visual. visual.unmount() is for in-flight type-changes, not teardown.
+    for (const { displayObject } of this.tiles.values()) {
+      displayObject.destroy({ children: true });
     }
     this.tiles.clear();
+    // Let each registered visual destroy its own internal cache (e.g. shared
+    // Graphics objects, texture atlases). TileRenderer must not reach into
+    // visual internals — that is the registry contract.
+    this.registry.disposeAll();
     // Containers are owned by PixiApp — destroyed via app.destroy() cascade.
   }
 }
