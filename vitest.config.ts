@@ -29,6 +29,7 @@ export default defineConfig({
         'game/engine/CommandDispatcher.ts',
         'game/render/IsoTransform.ts',
         'game/render/cameraConstraints.ts',
+        'game/render/viewportCulling.ts',
         'game/render/visuals/visualRegistry.ts',
         'game/render/visuals/polygon/cubeGeometry.ts',
         'game/render/visuals/polygon/cubeLift.ts',
