@@ -40,6 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# claude code / hyperclaude (local workflow artifacts)
-.claude/
+# hyperclaude (local workflow artifacts)
 .hyperclaude/
