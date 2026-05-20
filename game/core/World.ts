@@ -20,6 +20,24 @@ export const ZONE_GROWTH_INTERVAL = 8;
 export const LAND_VALUE_INTERVAL = 16;
 /** Maximum zone growth level a tile may reach. */
 export const ZONE_MAX_LEVEL = 5;
+/**
+ * Land-value thresholds for level-up gating. Index 0 is reserved/unused —
+ * level-0 building creation is unconditional. Indices 1–5 gate upgrade from
+ * level (i-1) to level i.
+ */
+export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
+/** Land-value threshold required to advance density (0→1 or 1→2). */
+export const HIGH_DENSITY_THRESHOLD = 0.7;
+/**
+ * Minimum growth-opportunity count (age) before a building may level up.
+ * Unit: growth opportunities (Branch B increments). Stagger adds 0–6 on top.
+ */
+export const GROWTH_COOLDOWN_INTERVALS = 8;
+/**
+ * Minimum growth-opportunity count (age) before a building may gain density.
+ * Unit: growth opportunities (same as GROWTH_COOLDOWN_INTERVALS).
+ */
+export const DENSITY_COOLDOWN_INTERVALS = 24;
 /** Population contribution per zone level point. */
 export const POPULATION_PER_LEVEL = 10;
 /** Initial city treasury balance. */
@@ -38,21 +56,36 @@ export const DAYS_PER_MONTH = 30;
 export const MONTHS_PER_YEAR = 12;
 
 /**
+ * Deterministic per-building stagger: Knuth multiplicative hash producing a
+ * value in [0, 6]. Yields 0–6 extra growth-opportunity intervals of cooldown
+ * jitter so buildings of the same type don't all level up in lockstep.
+ * Deterministic by id — save/replay safe.
+ */
+export function stagger(id: number): number {
+  return ((id ^ (id >>> 16)) * 2654435761 >>> 0) % 7;
+}
+
+/**
  * Result returned by World.tick().
  *
  * Invariant: `changed === changedTiles.length` — always. `changed` is derived at
  * construction as `changedTiles.length`; it is never independently assigned.
  *
- * Every state mutation that should trigger save-scheduling and render-invalidation
- * MUST push at least one entry into `changedTiles`. `changed` is a count-only
+ * Every state mutation (tile write, building create, building level-up, building
+ * density bump) MUST push at least one entry into `changedTiles` so that
+ * save-scheduling and render-invalidation stay correct. `changed` is a count-only
  * convenience; `changedTiles` is the canonical delta.
+ *
+ * Corollary: if `changedBuildingIds.length > 0` then `changedTiles.length > 0`.
+ * `changedBuildingIds` is an additional channel for building-keyed render lookup —
+ * it is NEVER the sole signal of change.
  */
 export interface WorldTickResult {
-  /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups). */
+  /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups + density bumps). */
   changedTiles: ReadonlyArray<{ x: number; y: number }>;
   /** Count-only convenience — always equals `changedTiles.length`. */
   changed: number;
-  /** IDs of buildings created or levelled-up this tick (from the zone growth pass). */
+  /** IDs of buildings created, levelled-up, or density-bumped this tick (from the zone growth pass). */
   changedBuildingIds: ReadonlyArray<number>;
 }
 
@@ -246,9 +279,10 @@ export class World {
     // Pass 2: Zone growth — only on growth ticks.
     if (this.tickCount % ZONE_GROWTH_INTERVAL === 0) {
       // processedBuildingIds guards multi-tile footprints so each building is
-      // levelled at most once per tick even if the loop visits multiple of its tiles.
+      // processed at most once per tick even if the loop visits multiple of its tiles.
       const processedBuildingIds = new Set<number>();
       const buildings = this.map.getBuildings();
+      const lv = this.getLandValue();
 
       for (const tile of this.map.iterateTiles()) {
         if (!isZoneType(tile.type)) continue;
@@ -268,6 +302,8 @@ export class World {
 
         if (existing === null) {
           // Branch A: no building yet — create a level-0 building at this single tile.
+          // landValue/cooldown gating applies only to existing buildings — a tile with
+          // no building yet always creates one (subject to road-adjacency only).
           const bType = tile.type.replace('zone_', '') as BuildingType;
           const created = buildings.addBuilding({
             type: bType,
@@ -288,14 +324,37 @@ export class World {
         if (processedBuildingIds.has(existing.id)) continue;
         processedBuildingIds.add(existing.id);
 
-        if (existing.level >= ZONE_MAX_LEVEL) continue;
+        // Age every building once per growth-opportunity (this tick).
+        existing.age += 1;
 
-        // Level up: mutate the building record in-place (Building is stored by reference in Map).
-        // tile.level is no longer written from growth — the field stays on Tile for v4 deserialize.
-        existing.level += 1;
-        changedBuildingIds.push(existing.id);
-        for (const coord of existing.footprint) {
-          changedTiles.push({ x: coord.x, y: coord.y });
+        const anchorLandValue = lv.getValue(existing.anchor.x, existing.anchor.y);
+
+        if (existing.level < ZONE_MAX_LEVEL) {
+          // Level-up branch: gated on land value threshold + age cooldown.
+          const threshold = LEVEL_THRESHOLDS[existing.level + 1];
+          const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
+          if (anchorLandValue >= threshold && existing.age >= cooldown) {
+            existing.level += 1;
+            existing.age = 0;
+            changedBuildingIds.push(existing.id);
+            for (const coord of existing.footprint) {
+              changedTiles.push({ x: coord.x, y: coord.y });
+            }
+          }
+        } else {
+          // Density-bump branch: building is at max level; advance density tier.
+          if (
+            anchorLandValue >= HIGH_DENSITY_THRESHOLD &&
+            existing.age >= DENSITY_COOLDOWN_INTERVALS &&
+            existing.density < 2
+          ) {
+            existing.density += 1 as 0 | 1 | 2;
+            existing.age = 0;
+            changedBuildingIds.push(existing.id);
+            for (const coord of existing.footprint) {
+              changedTiles.push({ x: coord.x, y: coord.y });
+            }
+          }
         }
       }
     }

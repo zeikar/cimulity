@@ -14,6 +14,17 @@ export const ALLOWED_SPEED_MULTIPLIERS = [1, 2, 3] as const;
 
 export type SpeedMultiplier = typeof ALLOWED_SPEED_MULTIPLIERS[number];
 
+/**
+ * Aggregated result for a single pump (may cover multiple catch-up ticks).
+ *
+ * Invariant: `changed === changedTiles.length` (derived from summing WorldTickResult).
+ * Every state mutation (tile write, building create, building level-up, building
+ * density bump) pushes at least one entry into `changedTiles`.
+ *
+ * Corollary: if `changedBuildingIds.length > 0` then `changedTiles.length > 0`.
+ * `changedBuildingIds` is an additional channel for building-keyed render lookup —
+ * it is NEVER the sole signal of change.
+ */
 export interface GameLoopTickInfo {
   /** Final world.getTick() after this pump's drain */
   tick: number;
@@ -21,7 +32,7 @@ export interface GameLoopTickInfo {
   changed: number;
   /** Flat union of per-tile coords changed across all ticks drained this pump */
   changedTiles: ReadonlyArray<{ x: number; y: number }>;
-  /** Flat union of building ids created or levelled across all ticks drained this pump */
+  /** Flat union of building ids created, levelled, or density-bumped across all ticks drained this pump */
   changedBuildingIds: ReadonlyArray<number>;
 }
 

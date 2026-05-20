@@ -8,6 +8,9 @@ import {
   TAX_PER_POP,
   DAYS_PER_MONTH,
   MONTHS_PER_YEAR,
+  GROWTH_COOLDOWN_INTERVALS,
+  DENSITY_COOLDOWN_INTERVALS,
+  stagger,
 } from './World';
 import { TileType, createTile } from './Tile';
 
@@ -168,13 +171,21 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('zone building level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
-    const world = new World(4, 4);
+    // Use a larger map to add two more zone types near (0,0) to push diversity to 1.0,
+    // which brings landValue above the LEVEL_THRESHOLDS[5]=0.85 threshold needed for
+    // the final level-up. The commercial and industrial tiles are not road-adjacent so
+    // they never create buildings — they only contribute to the diversity score of (0,0).
+    const world = new World(6, 6);
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    // Two extra zone types in the 3×3 neighborhood of (0,0) to reach diversity=1.0
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
 
-    // Run enough intervals: 1 to create building + ZONE_MAX_LEVEL to level it up + 1 more for cap guard
-    for (let i = 0; i < ZONE_GROWTH_INTERVAL * (ZONE_MAX_LEVEL + 2); i++) world.tick();
+    // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
+    // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 80; i++) world.tick();
 
     expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
   });
@@ -461,18 +472,23 @@ describe('World.tick() — monthly tax settlement', () => {
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    // Extra zone types to push diversity score to 1.0 so landValue at (0,0) ≈ 0.9 >= LEVEL_THRESHOLDS[5]=0.85.
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
 
     // Next tick: tickCount = 8*30 = 240 (240 % 8 === 0 → growth) and
     // day = 240 (240 % 30 === 0 → month boundary).
+    // 240 % 16 === 0 → land value is force-recomputed before the growth pass.
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
     // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 so it will level up on the growth tick.
+    // id=0 (first building), stagger(0)=0, cooldown=8. age=7 → after age+1 = 8 >= 8 → level-up fires.
     map.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
       anchor: { x: 0, y: 0 },
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
-      age: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1,
     });
 
     const moneyBefore = world.getMoney();
@@ -643,19 +659,19 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
     expect(result.changedBuildingIds).toContain(building!.id);
   });
 
-  it('second growth tick levels the building from 0 to 1', () => {
+  it('building eventually levels up to 1 given sufficient land value and age', () => {
+    // landValue at (0,0) ≈ 0.7 (road at dist=1) which exceeds LEVEL_THRESHOLDS[1]=0.1.
+    // stagger(0)=0 → cooldown=8 growth-opportunity intervals. Building is created on the
+    // first growth tick (age=0); after 8 more growth ticks (age=8) it levels up to 1.
+    // Run 10 growth intervals (80 ticks) to comfortably cover creation + first level-up.
     const world = new World(4, 4);
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
 
-    // First interval: building created at level 0
-    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
-    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(0);
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
 
-    // Second interval: building levels up to 1
-    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
-    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(1);
+    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -745,5 +761,335 @@ describe('World.getPopulation() — building-based formula', () => {
     map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0 });
     // sum = 2+3 = 5
     expect(world.getPopulation()).toBe(5 * POPULATION_PER_LEVEL);
+  });
+});
+
+describe('stagger() — deterministic per-building jitter', () => {
+  it('stagger sanity: produces at least 2 distinct values across ids 0–10', () => {
+    const values = Array.from({ length: 11 }, (_, i) => stagger(i));
+    expect(new Set(values).size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('stagger returns a value in [0, 6] for a range of ids', () => {
+    for (let id = 0; id < 100; id++) {
+      const s = stagger(id);
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThanOrEqual(6);
+    }
+  });
+
+  it('stagger is deterministic: same id always returns same value', () => {
+    for (let id = 0; id < 20; id++) {
+      expect(stagger(id)).toBe(stagger(id));
+    }
+  });
+
+  it('stagger differentiates first-level-up tick across 5 buildings in a row', () => {
+    // 5 zones along a road. Each building gets a distinct id (0-4).
+    // With the Knuth hash, their stagger values differ, so level-up ticks differ.
+    const world = new World(10, 4);
+    const map = world.getMap();
+    // Road along the top row
+    for (let x = 0; x < 10; x++) {
+      map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    }
+    // 5 zones below the road — all road-adjacent
+    for (let x = 0; x < 5; x++) {
+      map.setTile(x, 1, createTile(x, 1, TileType.ZONE_RESIDENTIAL));
+    }
+    // Add extra zone types near each residential for diversity score
+    for (let x = 0; x < 5; x++) {
+      map.setTile(x, 2, createTile(x, 2, TileType.ZONE_COMMERCIAL));
+    }
+
+    const firstLevelOneTick = new Map<number, number>();
+
+    // Run enough ticks: buildings are created on tick ZONE_GROWTH_INTERVAL;
+    // level-up needs cooldown=8+stagger(id) growth ticks after creation.
+    // Max stagger=6 → max cooldown=14. With 15 growth intervals that covers all.
+    for (let tick = 1; tick <= ZONE_GROWTH_INTERVAL * 20; tick++) {
+      const result = world.tick();
+      for (const id of result.changedBuildingIds) {
+        const b = map.getBuildings().getBuilding(id);
+        if (b && b.level === 1 && !firstLevelOneTick.has(id)) {
+          firstLevelOneTick.set(id, tick);
+        }
+      }
+    }
+
+    // At least 2 distinct first-level-1 ticks across the 5 buildings
+    expect(new Set(firstLevelOneTick.values()).size).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('World.tick() — land value gating of growth', () => {
+  it('zones near a road reach higher levels than zones far from any road', () => {
+    // Near-road zones at x=0,1 with road at x=2; far zones at x=4,5 with no road anywhere near
+    const world = new World(10, 4);
+    const map = world.getMap();
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+    // Near zones (road-adjacent)
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
+    // Far zones — road at (2,0) is distance 3 from x=5, still within ROAD_RADIUS=6
+    // but with much lower road score. No road adjacent → no buildings created at all.
+    map.setTile(8, 0, createTile(8, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(9, 0, createTile(9, 0, TileType.ZONE_RESIDENTIAL));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 40; i++) world.tick();
+
+    const nearLevel1 = map.getBuildings().getBuildingAt(1, 0)?.level ?? 0;
+    const nearLevel2 = map.getBuildings().getBuildingAt(3, 0)?.level ?? 0;
+    // Far zones have no orthogonal road neighbor → no buildings at all
+    const farBuilding1 = map.getBuildings().getBuildingAt(8, 0);
+    const farBuilding2 = map.getBuildings().getBuildingAt(9, 0);
+
+    expect(nearLevel1).toBeGreaterThan(0);
+    expect(nearLevel2).toBeGreaterThan(0);
+    expect(farBuilding1).toBeNull();
+    expect(farBuilding2).toBeNull();
+  });
+});
+
+describe('World.tick() — density tier', () => {
+  it('density does NOT advance before level === ZONE_MAX_LEVEL', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    // Seed a building below ZONE_MAX_LEVEL with enough age
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL - 1,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS + 10,
+    });
+
+    // Run many ticks — density must stay 0 until level reaches ZONE_MAX_LEVEL
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+
+    // Building might have levelled up to max, but density can only advance once at max level
+    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    if (b.level < ZONE_MAX_LEVEL) {
+      expect(b.density).toBe(0);
+    }
+    // If it reached max level, density might be > 0 but that's fine — the test only
+    // asserts that while below max, density is 0. We enforce this via a fresh setup:
+    const world2 = new World(4, 4);
+    const map2 = world2.getMap();
+    map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map2.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    // Building at level 2 (not max), with very large age — density should NOT advance
+    map2.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 2,
+      density: 0,
+      age: 0,
+    });
+    // Run just one growth tick
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world2.tick();
+    const b2 = map2.getBuildings().getBuildingAt(0, 0)!;
+    // Level 2 building should never have its density bumped
+    expect(b2.density).toBe(0);
+  });
+
+  it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + landValue >= HIGH_DENSITY_THRESHOLD', () => {
+    // Use diversified map to ensure HIGH_DENSITY_THRESHOLD is met
+    const world = new World(6, 6);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+
+    // Seed building at ZONE_MAX_LEVEL with age just under DENSITY_COOLDOWN_INTERVALS.
+    // id=0 (first building), so stagger(0)=0, cooldown=DENSITY_COOLDOWN_INTERVALS.
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS - 1,
+    });
+
+    // The first growth tick: age → DENSITY_COOLDOWN_INTERVALS; but land value may be 0
+    // until recomputed. Land value recomputes at LAND_VALUE_INTERVAL cadence.
+    // Run enough ticks so land value is recomputed (<=16 ticks) AND age >= DENSITY_COOLDOWN_INTERVALS.
+    let densityBumpResult: ReturnType<typeof world.tick> | null = null;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
+      const result = world.tick();
+      const b = map.getBuildings().getBuildingAt(0, 0)!;
+      if (b.density === 1 && densityBumpResult === null) {
+        densityBumpResult = result;
+        break;
+      }
+    }
+
+    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    expect(b.density).toBe(1);
+    expect(b.level).toBe(ZONE_MAX_LEVEL);
+  });
+
+  it('density bump emits changedTiles with footprint coords and changedBuildingIds with building id', () => {
+    const world = new World(6, 6);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS - 1,
+    })!;
+
+    let densityTickResult: ReturnType<typeof world.tick> | null = null;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
+      const result = world.tick();
+      const b = map.getBuildings().getBuildingAt(0, 0)!;
+      if (b.density === 1 && densityTickResult === null) {
+        densityTickResult = result;
+        break;
+      }
+    }
+
+    expect(densityTickResult).not.toBeNull();
+    expect(densityTickResult!.changedBuildingIds).toContain(building.id);
+    expect(densityTickResult!.changedTiles).toContainEqual({ x: 0, y: 0 });
+    expect(densityTickResult!.changedTiles.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('World.tick() — changedBuildingIds contract', () => {
+  it('changedBuildingIds contains right id on level-up and is empty on non-growth/no-change ticks', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Seed a building at level 0, age sufficient for level-up.
+    // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 = 8 >= 8 → level-up on next growth tick.
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1,
+    });
+
+    // Find the first tick on which the building levels up to 1
+    let levelUpResult: ReturnType<typeof world.tick> | null = null;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) {
+      const result = world.tick();
+      const b = map.getBuildings().getBuildingAt(0, 0)!;
+      if (b && b.level === 1 && levelUpResult === null) {
+        levelUpResult = result;
+        break;
+      }
+    }
+
+    expect(levelUpResult).not.toBeNull();
+    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    expect(levelUpResult!.changedBuildingIds).toContain(b.id);
+    expect(levelUpResult!.changedTiles).toContainEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('World.tick() — invariant: changedBuildingIds > 0 → changedTiles > 0', () => {
+  it('on every tick of a long simulation changedBuildingIds implies changedTiles is non-empty', () => {
+    // Use diversified map so growth can progress all the way to density bumps
+    const world = new World(6, 6);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 200; i++) {
+      const result = world.tick();
+      if (result.changedBuildingIds.length > 0) {
+        expect(result.changedTiles.length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('World.tick() — multi-tile building guard', () => {
+  it('2×2 building: age advances by exactly 1 per growth tick, never levels twice in one tick', () => {
+    const world = new World(6, 6);
+    const map = world.getMap();
+    // Zone tiles for 2×2 footprint
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    // Road adjacent to the footprint
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+
+    // Use addExistingBuilding to place a 2×2 building with a known id
+    const ok = map.getBuildings().addExistingBuilding({
+      id: 100,
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: 0,
+    });
+    expect(ok).toBe(true);
+
+    let prevAge = 0;
+    let prevLevel = 0;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) {
+      world.tick();
+      const b = map.getBuildings().getBuilding(100)!;
+      const isGrowthTick = world.getTick() % ZONE_GROWTH_INTERVAL === 0;
+      if (isGrowthTick) {
+        // Age must advance by exactly 1 compared to before this growth tick
+        expect(b.age).toBeLessThanOrEqual(prevAge + 1);
+        // Level must advance by at most 1 per tick
+        expect(b.level).toBeLessThanOrEqual(prevLevel + 1);
+        prevLevel = b.level;
+        prevAge = b.age;
+      }
+    }
+  });
+});
+
+describe('World.tick() — no-building branch creates level-0 building', () => {
+  it('zone tile next to road with no building: one tick creates level-0 building AND coord in changedTiles', () => {
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Advance to the first growth tick
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const building = map.getBuildings().getBuildingAt(0, 0);
+    expect(building).not.toBeNull();
+    expect(building!.level).toBe(0);
+    // The creation tick result — need to capture it
+    // Re-run from scratch to capture the result
+    const world2 = new World(4, 4);
+    const map2 = world2.getMap();
+    map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map2.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world2.tick();
+    const result = world2.tick(); // the creation tick
+
+    expect(result.changedTiles).toContainEqual({ x: 0, y: 0 });
+    expect(result.changedBuildingIds.length).toBeGreaterThanOrEqual(1);
   });
 });

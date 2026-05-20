@@ -353,4 +353,56 @@ describe('GameLoop', () => {
     const first = onTick.mock.calls[0][0] as GameLoopTickInfo;
     expect(first.changedTiles).toContainEqual({ x: 0, y: 0 });
   });
+
+  // (w) catch-up ≥2 ticks including a density bump: aggregated changedTiles + changedBuildingIds
+  it('(w) catch-up drain with density bump: aggregated changedTiles contains footprint coord and changedBuildingIds contains building id', () => {
+    // Use a larger world with diversified zones so land value >= HIGH_DENSITY_THRESHOLD.
+    const bigWorld = new World(6, 6);
+    const bigMap = bigWorld.getMap();
+    bigMap.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    bigMap.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    bigMap.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    bigMap.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+
+    // Import needed constants inline to avoid polluting test scope
+    // DENSITY_COOLDOWN_INTERVALS=24, ZONE_GROWTH_INTERVAL=8.
+    // Seed a ZONE_MAX_LEVEL building with age DENSITY_COOLDOWN_INTERVALS-1
+    // so that the NEXT growth tick bumps density (age → 24 >= 24).
+    // id=0 (first building), stagger(0)=0.
+    const b = bigMap.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 5, // ZONE_MAX_LEVEL
+      density: 0,
+      age: 23, // DENSITY_COOLDOWN_INTERVALS - 1
+    })!;
+
+    // Advance the world to just before the next growth tick
+    // so that one more growth tick fires during catch-up.
+    // Current tick is 0; next growth tick = ZONE_GROWTH_INTERVAL (8).
+    // Pre-advance to 7 ticks so the next tick is 8 (a growth tick).
+    // Land value is recomputed at tick 16 or when dirty; we force a dirty mark.
+    bigWorld.markLandValueDirty();
+    for (let i = 0; i < 7; i++) bigWorld.tick();
+
+    // Create the loop with bigWorld
+    const bigOnTick = vi.fn();
+    const bigLoop = new GameLoop(bigWorld, bigOnTick, TICK_MS, () => fakeNow);
+    bigLoop.start();
+
+    // Advance fakeNow by 2 * TICK_MS to drain 2 world ticks in one pump.
+    // tick 8  (growth tick): density bump fires → changedTiles + changedBuildingIds
+    // tick 9  (non-growth):  nothing
+    fakeNow += TICK_MS * 2;
+    pump();
+
+    bigLoop.stop();
+
+    expect(bigOnTick).toHaveBeenCalledOnce();
+    const agg = bigOnTick.mock.calls[0][0] as GameLoopTickInfo;
+    expect(agg.changedBuildingIds).toContain(b.id);
+    expect(agg.changedTiles).toContainEqual({ x: 0, y: 0 });
+    expect(agg.changed).toBeGreaterThanOrEqual(1);
+  });
 });
