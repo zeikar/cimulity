@@ -197,10 +197,6 @@ export class GameSession {
     });
     this.pixiApp = pixiApp;
 
-    // Dev-only injection surface for Playwright / browser-console testing.
-    // No-op in production builds (see devApi.ts).
-    installDevApi(world, pixiApp);
-
     // Keyboard listener was attached above for race-safety; if Pixi init fails or returns
     // early, detach it so the dead session does not intercept window keystrokes.
     try {
@@ -223,6 +219,12 @@ export class GameSession {
       this.keyboardHandler = null;
       return;
     }
+
+    // Dev-only injection surface for Playwright / browser-console testing.
+    // Installed AFTER pixiApp.init() succeeds and camera/canvas are confirmed
+    // present — otherwise `setCameraTile` / `markDirty` would silently no-op.
+    // No-op in production builds (see devApi.ts).
+    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld() });
 
     // Setup input handlers
     const pointerHandler = new PointerHandler(canvas, camera, world.getMap(), {

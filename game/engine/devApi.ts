@@ -45,13 +45,30 @@ export interface DevApi {
   dev: {
     /** Seed the world from a declarative spec. Returns counts for verification. */
     seedScene(spec: SeedSceneSpec): { tilesPlaced: number; buildingsAdded: number };
-    /** Pan the camera so the given world tile is at viewport center. */
+    /** Pan the camera so the given world tile is at viewport center (zoom-aware). */
     setCameraTile(tileX: number, tileY: number): void;
     /** Force a full renderer redraw on the next frame. */
     markDirty(): void;
-    /** Wipe the world (`world.reset()`) and force a redraw. */
-    clear(): void;
+    /**
+     * Full "New City" reset — delegates to `GameSession.resetWorld()` so the
+     * save key, debounced save timer, HUD sync, selection/hover, and GameLoop
+     * accumulator are all cleaned up alongside `world.reset()`. Use this in
+     * e2e tests when you need a guaranteed-fresh world (a plain `world.reset()`
+     * leaves session state behind, including a localStorage save that would
+     * re-hydrate on the next page reload).
+     */
+    resetWorld(): void;
   };
+}
+
+/**
+ * Hooks the dev API needs from `GameSession`. Keeping the dependency direction
+ * one-way — devApi.ts doesn't import GameSession (would be a cycle); the
+ * caller passes the hooks it needs.
+ */
+export interface DevApiHooks {
+  /** Triggers the full `GameSession.resetWorld()` flow. */
+  resetWorld: () => void;
 }
 
 declare global {
@@ -60,7 +77,7 @@ declare global {
   var __cimulity: DevApi | undefined;
 }
 
-export function installDevApi(world: World, pixiApp: PixiApp): void {
+export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks): void {
   if (process.env.NODE_ENV !== 'development') return;
 
   globalThis.__cimulity = {
@@ -113,17 +130,24 @@ export function installDevApi(world: World, pixiApp: PixiApp): void {
       setCameraTile(tileX: number, tileY: number): void {
         const camera = pixiApp.getCamera();
         if (!camera) return;
-        const screen = tileToScreen({ x: tileX, y: tileY });
+        // Compute the world point's CURRENT screen position (zoom-aware via
+        // camera.worldToScreen), then pan so it lands at viewport center.
+        // Doing it as a screen-space delta means we don't have to re-derive the
+        // zoom math here — Camera.worldToScreen already encodes `world * zoom + pos`.
+        const worldPos = tileToScreen({ x: tileX, y: tileY });
+        const currentScreen = camera.worldToScreen(worldPos);
         const vp = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-        const pos = camera.getPosition();
-        camera.pan(vp.x - screen.x - pos.x, vp.y - screen.y - pos.y);
+        camera.pan(vp.x - currentScreen.x, vp.y - currentScreen.y);
       },
       markDirty(): void {
         pixiApp.getTileRenderer()?.markDirty();
       },
-      clear(): void {
-        world.reset();
-        pixiApp.getTileRenderer()?.markDirty();
+      resetWorld(): void {
+        // Delegate to GameSession.resetWorld() — clears the localStorage save,
+        // debounced save timer, HUD sync, selection/hover, GameLoop accumulator,
+        // and resets pause/speed defaults. A bare `world.reset()` would leak
+        // session state and a stale save would re-hydrate on next page reload.
+        hooks.resetWorld();
       },
     },
   };
