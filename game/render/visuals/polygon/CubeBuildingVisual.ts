@@ -15,6 +15,7 @@ import { Graphics, GraphicsContext } from 'pixi.js';
 import type { Container } from 'pixi.js';
 import { tileToScreen } from '@/game/render/IsoTransform';
 import { normalizeFootprint, cubeFacePolygons } from './cubeGeometry';
+import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 
 // ---------------------------------------------------------------------------
@@ -33,11 +34,20 @@ function baseColor(type: BuildingVisualInput['type']): number {
   }
 }
 
+const ROOF_ACCENT_BRIGHTEN = 0.12;
+
 // Multiply an RGB color channel-wise by `k`, clamped to [0, 255].
 function shadeColor(rgb: number, k: number): number {
   const r = Math.max(0, Math.min(255, Math.round(((rgb >> 16) & 0xff) * k)));
   const g = Math.max(0, Math.min(255, Math.round(((rgb >> 8) & 0xff) * k)));
   const b = Math.max(0, Math.min(255, Math.round((rgb & 0xff) * k)));
+  return (r << 16) | (g << 8) | b;
+}
+
+function lerpToWhite(rgb: number, t: number): number {
+  const r = ((rgb >> 16) & 0xff) + Math.round((255 - ((rgb >> 16) & 0xff)) * t);
+  const g = ((rgb >> 8)  & 0xff) + Math.round((255 - ((rgb >> 8)  & 0xff)) * t);
+  const b = (rgb & 0xff)         + Math.round((255 - (rgb & 0xff))         * t);
   return (r << 16) | (g << 8) | b;
 }
 
@@ -132,6 +142,43 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
   ctx.closePath();
   ctx.fill({ color: topColor(input) });
   ctx.stroke({ color: 0x000000, width: 1, alpha: 0.55 });
+
+  if (shouldShowRoofAccent(input.level)) {
+    const mainLift = faces.left[2].y - faces.left[1].y;
+    const accent = roofAccentFaces(faces.top, mainLift);
+    if (accent !== null) {
+      const accentLeftColor  = lerpToWhite(leftColor(input),  ROOF_ACCENT_BRIGHTEN);
+      const accentRightColor = lerpToWhite(rightColor(input), ROOF_ACCENT_BRIGHTEN);
+      const accentTopColor   = lerpToWhite(topColor(input),   ROOF_ACCENT_BRIGHTEN);
+
+      ctx.beginPath();
+      ctx.moveTo(accent.left[0].x, accent.left[0].y);
+      for (let i = 1; i < accent.left.length; i++) {
+        ctx.lineTo(accent.left[i].x, accent.left[i].y);
+      }
+      ctx.closePath();
+      ctx.fill({ color: accentLeftColor });
+      ctx.stroke({ color: 0x000000, width: 1, alpha: 0.5 });
+
+      ctx.beginPath();
+      ctx.moveTo(accent.right[0].x, accent.right[0].y);
+      for (let i = 1; i < accent.right.length; i++) {
+        ctx.lineTo(accent.right[i].x, accent.right[i].y);
+      }
+      ctx.closePath();
+      ctx.fill({ color: accentRightColor });
+      ctx.stroke({ color: 0x000000, width: 1, alpha: 0.5 });
+
+      ctx.beginPath();
+      ctx.moveTo(accent.top[0].x, accent.top[0].y);
+      for (let i = 1; i < accent.top.length; i++) {
+        ctx.lineTo(accent.top[i].x, accent.top[i].y);
+      }
+      ctx.closePath();
+      ctx.fill({ color: accentTopColor });
+      ctx.stroke({ color: 0x000000, width: 1, alpha: 0.55 });
+    }
+  }
 
   return ctx;
 }
