@@ -6,9 +6,18 @@
 import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
+import { LandValueMap } from './LandValueMap';
 
 /** Ticks between each zone growth step. tickCount is post-increment (≥1), so first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0. */
 export const ZONE_GROWTH_INTERVAL = 8;
+/**
+ * Periodic force-recompute cadence for land value.
+ * Future-proof conservative cadence: today the dirty-mark covers every input
+ * that changes the influence map (roads/zones via CommandDispatcher). A periodic
+ * force-recompute is a defense-in-depth catch for any future influence input we
+ * forget to dirty-mark.
+ */
+export const LAND_VALUE_INTERVAL = 16;
 /** Maximum zone growth level a tile may reach. */
 export const ZONE_MAX_LEVEL = 5;
 /** Population contribution per zone level point. */
@@ -59,6 +68,10 @@ export class World {
   private money: number = STARTING_FUNDS;
   /** 0-based elapsed days; incremented once per tick() (1 tick = 1 day). */
   private day: number = 0;
+  /** Lazily allocated on first getLandValue() call. */
+  private landValue: LandValueMap | null = null;
+  /** True when the influence map inputs have changed since last recompute. */
+  private landValueDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -129,6 +142,32 @@ export class World {
     return true;
   }
 
+  /** Lazy-allocate and return the LandValueMap instance. */
+  getLandValue(): LandValueMap {
+    if (this.landValue === null) {
+      this.landValue = new LandValueMap(this.map.getWidth(), this.map.getHeight());
+    }
+    return this.landValue;
+  }
+
+  /** Recompute land value only if dirty; clears the flag. */
+  recomputeLandValueIfDirty(): void {
+    if (!this.landValueDirty) return;
+    this.recomputeLandValue();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputeLandValue(): void {
+    const lv = this.getLandValue();
+    lv.recompute(this.map, this.map.getBuildings());
+    this.landValueDirty = false;
+  }
+
+  /** Mark land value as needing recomputation on the next recomputeLandValueIfDirty() call. */
+  markLandValueDirty(): void {
+    this.landValueDirty = true;
+  }
+
   /** Count DIRT tiles currently on the map. */
   countDirt(): number {
     let count = 0;
@@ -155,6 +194,7 @@ export class World {
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
+    this.landValueDirty = false;
   }
 
   /**
@@ -162,20 +202,30 @@ export class World {
    * Rules:
    *   1. tickCount is incremented first (post-increment means first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0).
    *   2. day is incremented too (1 tick = 1 day).
-   *   3. DIRT heals to GRASS; each heal contributes to `changed`.
-   *   4. Monthly tax settlement: on a month-boundary day (day % DAYS_PER_MONTH === 0),
+   *   3. Land value is recomputed if dirty (or on LAND_VALUE_INTERVAL cadence) BEFORE growth.
+   *   4. DIRT heals to GRASS; each heal contributes to `changed`.
+   *   5. Monthly tax settlement: on a month-boundary day (day % DAYS_PER_MONTH === 0),
    *      tax is settled pre-growth, so a tick that is both a growth tick and a month
    *      boundary taxes the pre-level-up population (that level-up is taxed next month).
-   *   5. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
-   *      No snapshot needed — growth reads only ROAD type; heal never produces/removes ROAD
-   *      and growth only writes `level`, so ROAD adjacency is invariant within the tick,
-   *      making the pass order-independent.
+   *   6. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
+   *      Growth reads `landValue` as a frozen snapshot recomputed at the start of this
+   *      tick (when dirty or on cadence). The growth pass mutates Building.level/density/age
+   *      but NOT `landValue` or any influence input. If a future rule mutates influence
+   *      inputs (roads/zones) MID-TICK, this invariant breaks — recompute or split into
+   *      two passes.
    */
   tick(): WorldTickResult {
     this.tickCount++;
     this.day++; // 1 tick = 1 day
     const changedTiles: { x: number; y: number }[] = [];
     const changedBuildingIds: number[] = [];
+
+    // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % LAND_VALUE_INTERVAL === 0) {
+      this.recomputeLandValue();
+    } else {
+      this.recomputeLandValueIfDirty();
+    }
 
     // Pass 1: DIRT→GRASS heal (unchanged behavior).
     for (const tile of this.map.iterateTiles()) {

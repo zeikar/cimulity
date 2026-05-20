@@ -18,6 +18,7 @@ export default defineConfig({
       include: [
         'game/core/Building.ts',
         'game/core/GameLoop.ts',
+        'game/core/LandValueMap.ts',
         'game/core/Map.ts',
         'game/core/World.ts',
         'game/core/Tile.ts',

@@ -83,6 +83,15 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // LandValueMap integration (added in Task 14): derived influence field + dirty-mark.
+  if (
+    typeof world.getLandValue !== 'function' ||
+    typeof world.markLandValueDirty !== 'function' ||
+    typeof world.recomputeLandValueIfDirty !== 'function' ||
+    typeof world.recomputeLandValue !== 'function'
+  ) {
+    return false;
+  }
   return true;
 }
 

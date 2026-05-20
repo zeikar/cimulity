@@ -356,6 +356,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   // This converts old tile-level data into the new building-centric model.
   migrateV1ToV4Buildings(world);
 
+  // Land value is not persisted — mark dirty so the first tick after load recomputes.
+  world.markLandValueDirty();
+
   return true;
 }
 
@@ -541,6 +544,9 @@ function deserializeV5(
 
   world.setMoney(resolvedMoney);
   world.setElapsedDays(resolvedDay);
+
+  // Land value is not persisted — mark dirty so the first tick after load recomputes.
+  world.markLandValueDirty();
 
   return true;
 }
