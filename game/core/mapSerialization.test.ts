@@ -1280,4 +1280,56 @@ describe('v5 Building persistence', () => {
     expect(deserializeWorldInto(world, payload)).toBe(false);
     expect(world.getMoney()).toBe(before.money);
   });
+
+  it('v5 rejection — w/h mismatch against world dimensions', () => {
+    // World is 4×4 but payload claims 2×2 — must reject before any mutation.
+    const world = new World(4, 4);
+    world.setMoney(999);
+    const before = snapshotWorld(world);
+
+    const payload = JSON.stringify({
+      v: 5,
+      w: 2,
+      h: 2,
+      t: Array(4).fill(TileType.GRASS),
+      l: Array(4).fill(0),
+      m: 1,
+      d: 0,
+      b: [],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+    expect(world.getMap().getWidth()).toBe(4);
+  });
+
+  it('v4 load into world with pre-existing buildings clears stale buildings', () => {
+    // Pre-load a world with a synthetic building, then overwrite with a v4 payload
+    // that has no levelled zones. The stale building must not survive.
+    const world = new World(2, 1);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+    });
+    expect(world.getMap().getBuildings().getAllBuildings().length).toBe(1);
+
+    const payload = JSON.stringify({
+      v: 4,
+      w: 2,
+      h: 1,
+      t: [TileType.GRASS, TileType.GRASS],
+      l: [0, 0],
+      m: 500,
+      d: 0,
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    // No levelled zones in payload → migration produces zero buildings.
+    expect(world.getMap().getBuildings().getAllBuildings().length).toBe(0);
+  });
 });

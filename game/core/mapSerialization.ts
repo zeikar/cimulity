@@ -352,6 +352,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.setMoney(resolvedMoney);
   world.setElapsedDays(resolvedDay); // also restores tickCount (1 tick = 1 day)
 
+  // Clear any pre-existing buildings before migration so stale state can't survive a load.
+  world.getMap().getBuildings().clear();
+
   // v1–v4 migration: synthesize 1×1 buildings for zone tiles with level > 0.
   // This converts old tile-level data into the new building-centric model.
   migrateV1ToV4Buildings(world);
@@ -405,6 +408,11 @@ function deserializeV5(
   resolvedMoney: number,
   resolvedDay: number,
 ): boolean {
+  const mapDims = world.getMap();
+  if (data.w !== mapDims.getWidth() || data.h !== mapDims.getHeight()) {
+    return false;
+  }
+
   const w = data.w;
   const h = data.h;
 
