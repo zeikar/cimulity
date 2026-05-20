@@ -427,6 +427,37 @@ describe('build costs', () => {
     }
   });
 
+  it('bulldozing a zone tile deducts BULLDOZE_COST from the treasury', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    const before = world.getMoney();
+    const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST);
+  });
+
+  it('bulldoze drag over zone tiles deducts BULLDOZE_COST per tile cleared', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+    const before = world.getMoney();
+    const result = executeDrag(Tool.BULLDOZE, { x: 0, y: 0 }, { x: 1, y: 0 }, world);
+    expect(result.changedTiles).toHaveLength(2);
+    expect(world.getMoney()).toBe(before - 2 * BULLDOZE_COST);
+  });
+
+  it('insufficient funds: zone bulldoze is rejected and tiles stay unchanged', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.setMoney(BULLDOZE_COST - 1); // one short
+    const before = world.getMoney();
+    const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(world.getMoney()).toBe(before);
+  });
+
   it('previewDrag does not spend money', () => {
     const world = makeWorld(5);
     const before = world.getMoney();

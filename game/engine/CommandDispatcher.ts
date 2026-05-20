@@ -43,7 +43,9 @@ function pathForTool(
 
 /**
  * Cost for a single command, keyed on the tile type being written.
- * DIRT is the tile bulldoze writes; zone types share ZONE_COST.
+ * DIRT is the tile bulldoze writes for both ROAD→DIRT and ZONE→DIRT clears,
+ * so BULLDOZE_COST is charged for any bulldoze command regardless of the
+ * source tile type. Zone types share ZONE_COST when being placed.
  */
 function commandCost(cmd: ToolCommand): number {
   const t = cmd.tile.type;

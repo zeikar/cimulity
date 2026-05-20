@@ -115,6 +115,63 @@ describe('buildToolCommands - Tool.ROAD', () => {
   }
 });
 
+describe('buildToolCommands - Tool.BULLDOZE', () => {
+  it('emits DIRT command on a ROAD tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ x: 2, y: 2, tile: createTile(2, 2, TileType.DIRT) });
+  });
+
+  const zoneTypes: [TileType, string][] = [
+    [TileType.ZONE_RESIDENTIAL, 'ZONE_RESIDENTIAL'],
+    [TileType.ZONE_COMMERCIAL,  'ZONE_COMMERCIAL'],
+    [TileType.ZONE_INDUSTRIAL,  'ZONE_INDUSTRIAL'],
+  ];
+
+  for (const [zoneType, label] of zoneTypes) {
+    it(`emits DIRT command on a ${label} tile`, () => {
+      world.getMap().setTile(3, 3, createTile(3, 3, zoneType));
+      const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 3, y: 3 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ x: 3, y: 3, tile: createTile(3, 3, TileType.DIRT) });
+    });
+  }
+
+  it('returns [] on a GRASS tile', () => {
+    // default tile is GRASS
+    const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 1, y: 1 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('returns [] on a WATER tile', () => {
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+    const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 1, y: 1 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('returns [] on a DIRT tile', () => {
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
+    const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 1, y: 1 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('mixed batch: only ROAD and zone tiles emit commands, others skipped', () => {
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    // (2,0) is default GRASS — should be skipped
+    world.getMap().setTile(3, 0, createTile(3, 0, TileType.WATER));
+    const commands = buildToolCommands(
+      Tool.BULLDOZE,
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }],
+      world
+    );
+    expect(commands).toHaveLength(2);
+    expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.DIRT) });
+    expect(commands[1]).toEqual({ x: 1, y: 0, tile: createTile(1, 0, TileType.DIRT) });
+  });
+});
+
 describe('buildToolCommands - no-op tools still return []', () => {
   it('Tool.SELECT returns empty', () => {
     const commands = buildToolCommands(Tool.SELECT, [{ x: 0, y: 0 }], world);
