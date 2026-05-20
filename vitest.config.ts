@@ -28,6 +28,7 @@ export default defineConfig({
         'game/engine/CommandDispatcher.ts',
         'game/render/IsoTransform.ts',
         'game/render/cameraConstraints.ts',
+        'game/render/visuals/visualRegistry.ts',
       ],
       thresholds: {
         lines: 80,
