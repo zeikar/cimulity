@@ -9,6 +9,11 @@
  * both layers coexist.  For level 0 buildings, CubeBuildingVisual returns an
  * empty Graphics, so the terrain diamond is the sole visible element.  As the
  * building levels up the cube graphics context is swapped in-place via update().
+ *
+ * When render() receives visibleBounds, only tiles inside visibleBounds.terrain
+ * and buildings inside visibleBounds.buildings are kept mounted. Without
+ * visibleBounds, mounts every in-bounds tile (fallback). Mode transitions
+ * trigger a full rebuild via the signature compare.
  */
 
 import { Container } from 'pixi.js';
@@ -19,6 +24,8 @@ import { TileType } from '../core/Tile';
 import { BuildingType } from '../core/Building';
 import type { World } from '../core/World';
 import type { Building } from '../core/Building';
+import type { VisibleTileBounds } from './viewportCulling';
+import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
 
 function buildRegistry(): VisualRegistry {
   const registry = new VisualRegistry();
@@ -69,6 +76,8 @@ export class TileRenderer {
   private pendingTileChanges: { x: number; y: number }[] = [];
   /** Incremental queue populated by markBuildingsChanged(); drained when fullDirty is false. */
   private pendingBuildingChanges: number[] = [];
+  /** Cached signature of the last visibleBounds passed to render(); null means no-bounds (full-map) mode. */
+  private lastSig: string | null = null;
 
   constructor(terrainContainer: Container, buildingContainer: Container, registry?: VisualRegistry) {
     this.terrainContainer = terrainContainer;
@@ -76,63 +85,99 @@ export class TileRenderer {
     this.registry = registry ?? buildRegistry();
   }
 
-  render(world: World): void {
+  render(world: World, visibleBounds?: VisibleTileBounds): void {
     const map = world.getMap();
-    if (this.fullDirty) {
-      // ---- Terrain pass ----
-      const mapWidth = map.getWidth();
-      for (const tile of map.iterateTiles()) {
-        const index = tile.y * mapWidth + tile.x;
-        this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
+    const mapWidth = map.getWidth();
+
+    const newSig = this.sigOf(visibleBounds);
+    const sigChanged = newSig !== this.lastSig;
+    const fullPass = this.fullDirty || sigChanged;
+
+    if (fullPass) {
+      // ---- Terrain pass (full) ----
+      if (visibleBounds) {
+        for (const { x, y } of iterateVisibleTiles(visibleBounds.terrain)) {
+          const tile = map.getTile(x, y);
+          if (!tile) continue;
+          const index = y * mapWidth + x;
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
+        }
+        for (const [idx, entry] of this.tiles) {
+          const x = idx % mapWidth;
+          const y = Math.floor(idx / mapWidth);
+          const b = visibleBounds.terrain;
+          if (x < b.minX || x >= b.maxX || y < b.minY || y >= b.maxY) {
+            this.unmountTile(idx, entry);
+          }
+        }
+      } else {
+        for (const tile of map.iterateTiles()) {
+          const index = tile.y * mapWidth + tile.x;
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
+        }
       }
 
-      // ---- Building pass (full) ----
-      const seenIds = new Set<number>();
-      for (const building of map.getBuildings().iterBuildings()) {
-        seenIds.add(building.id);
-        this.syncBuilding(building);
+      // ---- Building pass (full) — single visibleIds set ----
+      const visibleIds = new Set<number>();
+      for (const b of map.getBuildings().iterBuildings()) {
+        if (visibleBounds && !isBuildingVisible(b.footprint, visibleBounds.buildings)) continue;
+        visibleIds.add(b.id);
+        this.syncBuilding(b);
       }
-      // Unmount buildings no longer present.
       for (const [id, entry] of this.buildingById) {
-        if (!seenIds.has(id)) {
-          this.unmountBuilding(id, entry);
-        }
+        if (!visibleIds.has(id)) this.unmountBuilding(id, entry);
       }
 
       this.fullDirty = false;
-      // Clear pending queues: full redraw already covered those changes.
       this.pendingTileChanges = [];
       this.pendingBuildingChanges = [];
-      return;
-    }
-
-    // ---- Incremental tile pass ----
-    if (this.pendingTileChanges.length > 0) {
-      const mapWidth = map.getWidth();
-      for (const { x, y } of this.pendingTileChanges) {
-        const tile = map.getTile(x, y);
-        if (!tile) continue;
-        const index = y * mapWidth + x;
-        this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
-      }
-      this.pendingTileChanges = [];
-    }
-
-    // ---- Incremental building pass ----
-    if (this.pendingBuildingChanges.length > 0) {
-      const buildings = map.getBuildings();
-      for (const id of this.pendingBuildingChanges) {
-        const building = buildings.getBuilding(id);
-        if (building === null) {
-          // Building was removed — unmount if we have it.
-          const entry = this.buildingById.get(id);
-          if (entry) this.unmountBuilding(id, entry);
-        } else {
-          this.syncBuilding(building);
+    } else {
+      // ---- Incremental tile pass ----
+      if (this.pendingTileChanges.length > 0) {
+        for (const { x, y } of this.pendingTileChanges) {
+          if (visibleBounds) {
+            const b = visibleBounds.terrain;
+            if (x < b.minX || x >= b.maxX || y < b.minY || y >= b.maxY) continue;
+          }
+          const tile = map.getTile(x, y);
+          if (!tile) continue;
+          const index = y * mapWidth + x;
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
         }
+        this.pendingTileChanges = [];
       }
-      this.pendingBuildingChanges = [];
+
+      // ---- Incremental building pass ----
+      if (this.pendingBuildingChanges.length > 0) {
+        const buildings = map.getBuildings();
+        for (const id of this.pendingBuildingChanges) {
+          const building = buildings.getBuilding(id);
+          if (building === null) {
+            // Building was removed — unmount if we have it.
+            const entry = this.buildingById.get(id);
+            if (entry) this.unmountBuilding(id, entry);
+          } else if (!visibleBounds || isBuildingVisible(building.footprint, visibleBounds.buildings)) {
+            this.syncBuilding(building);
+          } else {
+            const entry = this.buildingById.get(id);
+            if (entry) this.unmountBuilding(id, entry);
+          }
+        }
+        this.pendingBuildingChanges = [];
+      }
     }
+
+    this.lastSig = newSig;
+  }
+
+  private sigOf(b: VisibleTileBounds | undefined): string | null {
+    if (!b) return null;
+    return `${b.terrain.minX},${b.terrain.maxX},${b.terrain.minY},${b.terrain.maxY}|${b.buildings.minX},${b.buildings.maxX},${b.buildings.minY},${b.buildings.maxY}`;
+  }
+
+  private unmountTile(index: number, entry: TileEntry): void {
+    this.registry.getTerrain(entry.type).unmount(entry.displayObject);
+    this.tiles.delete(index);
   }
 
   /**

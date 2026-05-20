@@ -25,6 +25,9 @@ export interface VisibleTileBoundsResult {
   buildings: TileBounds;
 }
 
+// Alias used by TileRenderer and PixiApp — same type, friendlier name.
+export type VisibleTileBounds = VisibleTileBoundsResult;
+
 export interface VisibleTileBoundsArgs {
   cameraX: number;
   cameraY: number;
