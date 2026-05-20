@@ -88,11 +88,12 @@ export function cubeFacePolygons(
   const spanY = (maxY - minY) / 2;
   const inset = cubeTypeInsetRatio(type);
   const drawSpanX = spanX * (1 - 2 * inset);
+  const drawSpanY = spanY * (1 - 2 * inset);
 
   const top: Point[] = [
-    { x: midX, y: midY - spanY - lift },           // top vertex
+    { x: midX, y: midY - drawSpanY - lift },       // top vertex
     { x: midX + drawSpanX, y: midY - lift },       // right vertex
-    { x: midX, y: midY + spanY - lift },           // bottom vertex
+    { x: midX, y: midY + drawSpanY - lift },       // bottom vertex
     { x: midX - drawSpanX, y: midY - lift },       // left vertex
   ];
 
