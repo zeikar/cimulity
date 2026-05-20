@@ -29,6 +29,7 @@ export default defineConfig({
         'game/render/IsoTransform.ts',
         'game/render/cameraConstraints.ts',
         'game/render/visuals/visualRegistry.ts',
+        'game/render/visuals/polygon/cubeGeometry.ts',
       ],
       thresholds: {
         lines: 80,
