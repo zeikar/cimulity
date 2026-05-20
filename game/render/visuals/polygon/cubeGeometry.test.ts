@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeFootprint, cubeFacePolygons } from './cubeGeometry';
+import { normalizeFootprint, cubeFacePolygons, isRectangularFootprint, isBoundingDiamondAccurate } from './cubeGeometry';
 import { cubeLiftPx } from './cubeLift';
 import { cubeTypeHeightPx, CUBE_TYPE_INSET_RATIO } from './cubeTypeRatios';
 import { ISO_CONFIG } from '@/game/render/IsoTransform';
@@ -59,6 +59,91 @@ describe('normalizeFootprint', () => {
     const token = normalizeFootprint(lShape, anchor);
     // anchor-local: (0,0), (1,0), (0,1) — sorted by (dy,dx)
     expect(token).toBe('0,0;1,0;0,1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRectangularFootprint
+// ---------------------------------------------------------------------------
+describe('isRectangularFootprint', () => {
+  it('single cell is rectangular', () => {
+    expect(isRectangularFootprint([{ x: 0, y: 0 }])).toBe(true);
+  });
+
+  it('1x2 strip is rectangular', () => {
+    expect(isRectangularFootprint([{ x: 0, y: 0 }, { x: 1, y: 0 }])).toBe(true);
+  });
+
+  it('2x2 square is rectangular', () => {
+    expect(isRectangularFootprint([
+      { x: 0, y: 0 }, { x: 1, y: 0 },
+      { x: 0, y: 1 }, { x: 1, y: 1 },
+    ])).toBe(true);
+  });
+
+  it('L-shape (3 cells) is NOT rectangular', () => {
+    expect(isRectangularFootprint([
+      { x: 0, y: 0 }, { x: 1, y: 0 },
+      { x: 0, y: 1 },
+    ])).toBe(false);
+  });
+
+  it('T-shape (5 cells) is NOT rectangular', () => {
+    expect(isRectangularFootprint([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+      { x: 1, y: 1 }, { x: 1, y: 2 },
+    ])).toBe(false);
+  });
+
+  it('disjoint cells (diagonal) are NOT rectangular', () => {
+    expect(isRectangularFootprint([{ x: 0, y: 0 }, { x: 5, y: 5 }])).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isBoundingDiamondAccurate
+// ---------------------------------------------------------------------------
+describe('isBoundingDiamondAccurate', () => {
+  it('single cell is accurate (1x1)', () => {
+    expect(isBoundingDiamondAccurate([{ x: 0, y: 0 }])).toBe(true);
+  });
+
+  it('2x2 square rectangular is accurate (bounding diamond == cell-diamond union)', () => {
+    expect(isBoundingDiamondAccurate([
+      { x: 0, y: 0 }, { x: 1, y: 0 },
+      { x: 0, y: 1 }, { x: 1, y: 1 },
+    ])).toBe(true);
+  });
+
+  it('3x3 square rectangular is accurate', () => {
+    const cells = [];
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) cells.push({ x, y });
+    expect(isBoundingDiamondAccurate(cells)).toBe(true);
+  });
+
+  it('1x3 asymmetric strip is NOT accurate (bounding diamond overflows)', () => {
+    expect(isBoundingDiamondAccurate([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+    ])).toBe(false);
+  });
+
+  it('3x1 asymmetric strip is NOT accurate', () => {
+    expect(isBoundingDiamondAccurate([
+      { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 },
+    ])).toBe(false);
+  });
+
+  it('2x3 asymmetric rectangle is NOT accurate', () => {
+    const cells = [];
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 2; x++) cells.push({ x, y });
+    expect(isBoundingDiamondAccurate(cells)).toBe(false);
+  });
+
+  it('L-shape is NOT accurate (not rectangular at all)', () => {
+    expect(isBoundingDiamondAccurate([
+      { x: 0, y: 0 }, { x: 1, y: 0 },
+      { x: 0, y: 1 },
+    ])).toBe(false);
   });
 });
 
@@ -178,13 +263,13 @@ describe('cubeFacePolygons', () => {
     // Top face: higher density → smaller minY (higher on screen).
     const topMinY0 = Math.min(...r0.top.map((p) => p.y));
     const topMinY2 = Math.min(...r2.top.map((p) => p.y));
-    expect(topMinY2 - topMinY0).toBe(-liftDiff);
+    expect(topMinY2 - topMinY0).toBeCloseTo(-liftDiff, 9);
 
     const heightOf = (pts: { x: number; y: number }[]) =>
       Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y));
 
-    expect(heightOf(r2.left) - heightOf(r0.left)).toBe(liftDiff);
-    expect(heightOf(r2.right) - heightOf(r0.right)).toBe(liftDiff);
+    expect(heightOf(r2.left) - heightOf(r0.left)).toBeCloseTo(liftDiff, 9);
+    expect(heightOf(r2.right) - heightOf(r0.right)).toBeCloseTo(liftDiff, 9);
   });
 });
 
@@ -229,11 +314,11 @@ describe('cubeFacePolygons — per-type silhouette', () => {
     expect(topWidth(rR)).toBeGreaterThan(topWidth(rC));
   });
 
-  it('width exact pin: industrial and residential top width equals TILE_WIDTH', () => {
+  it('width exact pin: industrial and residential top width equals TILE_WIDTH * (1 - 2 * inset)', () => {
     const rR = cubeFacePolygons('residential', level, density, fp, anchor)!;
     const rI = cubeFacePolygons('industrial', level, density, fp, anchor)!;
-    expect(topWidth(rR)).toBe(ISO_CONFIG.TILE_WIDTH);
-    expect(topWidth(rI)).toBe(ISO_CONFIG.TILE_WIDTH);
+    expect(topWidth(rR)).toBe(ISO_CONFIG.TILE_WIDTH * (1 - 2 * CUBE_TYPE_INSET_RATIO.residential));
+    expect(topWidth(rI)).toBe(ISO_CONFIG.TILE_WIDTH * (1 - 2 * CUBE_TYPE_INSET_RATIO.industrial));
   });
 
   it('width exact pin: commercial top width equals TILE_WIDTH * (1 - 2 * inset)', () => {

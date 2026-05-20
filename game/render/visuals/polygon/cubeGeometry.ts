@@ -26,6 +26,46 @@ export function normalizeFootprint(
   return offsets.map((o) => `${o.dx},${o.dy}`).join(';');
 }
 
+// True iff the footprint exactly fills its axis-aligned bounding rectangle
+// (i.e. every cell in [minX..maxX] × [minY..maxY] is present). L-shapes and
+// other holed shapes return false so callers can switch from a single
+// bounding-diamond cube to per-cell cubes.
+export function isRectangularFootprint(
+  footprint: ReadonlyArray<{ x: number; y: number }>,
+): boolean {
+  if (footprint.length <= 1) return true;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const c of footprint) {
+    if (c.x < minX) minX = c.x;
+    if (c.x > maxX) maxX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.y > maxY) maxY = c.y;
+  }
+  const expectedCount = (maxX - minX + 1) * (maxY - minY + 1);
+  return footprint.length === expectedCount;
+}
+
+// True iff `cubeFacePolygons`'s bounding-diamond approximation exactly equals
+// the union of the footprint's cell diamonds in iso space. This holds for
+// 1×1 cells and N×N square rectangles only. Asymmetric rectangles (1×N, N×M
+// with N≠M) and irregular shapes have a bounding diamond strictly larger
+// than the cell union, so a single bounding cube would overflow into
+// neighbouring tiles — callers should fall back to per-cell rendering.
+export function isBoundingDiamondAccurate(
+  footprint: ReadonlyArray<{ x: number; y: number }>,
+): boolean {
+  if (footprint.length <= 1) return true;
+  if (!isRectangularFootprint(footprint)) return false;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const c of footprint) {
+    if (c.x < minX) minX = c.x;
+    if (c.x > maxX) maxX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.y > maxY) maxY = c.y;
+  }
+  return maxX - minX === maxY - minY;
+}
+
 /**
  * Compute the three visible cube faces (top diamond, left quad, right quad)
  * in anchor-local screen coordinates.

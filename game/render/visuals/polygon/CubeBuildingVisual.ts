@@ -14,7 +14,8 @@
 import { Graphics, GraphicsContext } from 'pixi.js';
 import type { Container } from 'pixi.js';
 import { tileToScreen } from '@/game/render/IsoTransform';
-import { normalizeFootprint, cubeFacePolygons } from './cubeGeometry';
+import type { Point } from './cubeGeometry';
+import { normalizeFootprint, cubeFacePolygons, isBoundingDiamondAccurate } from './cubeGeometry';
 import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 
@@ -107,80 +108,78 @@ function computeZIndex(footprint: ReadonlyArray<{ x: number; y: number }>): numb
 // Context builder
 // ---------------------------------------------------------------------------
 
-function buildContext(input: BuildingVisualInput): GraphicsContext | null {
-  const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
-  if (faces === null) return null;
-
-  const ctx = new GraphicsContext();
-
-  // Left face (draw first so top face renders on top).
+function drawPoly(
+  ctx: GraphicsContext,
+  points: ReadonlyArray<Point>,
+  fillColor: number,
+  strokeAlpha: number,
+  ox: number,
+  oy: number,
+): void {
   ctx.beginPath();
-  ctx.moveTo(faces.left[0].x, faces.left[0].y);
-  for (let i = 1; i < faces.left.length; i++) {
-    ctx.lineTo(faces.left[i].x, faces.left[i].y);
+  ctx.moveTo(points[0].x + ox, points[0].y + oy);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x + ox, points[i].y + oy);
   }
   ctx.closePath();
-  ctx.fill({ color: leftColor(input) });
-  ctx.stroke({ color: 0x000000, width: 1, alpha: 0.5 });
+  ctx.fill({ color: fillColor });
+  ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
+}
 
-  // Right face.
-  ctx.beginPath();
-  ctx.moveTo(faces.right[0].x, faces.right[0].y);
-  for (let i = 1; i < faces.right.length; i++) {
-    ctx.lineTo(faces.right[i].x, faces.right[i].y);
-  }
-  ctx.closePath();
-  ctx.fill({ color: rightColor(input) });
-  ctx.stroke({ color: 0x000000, width: 1, alpha: 0.5 });
-
-  // Top face.
-  ctx.beginPath();
-  ctx.moveTo(faces.top[0].x, faces.top[0].y);
-  for (let i = 1; i < faces.top.length; i++) {
-    ctx.lineTo(faces.top[i].x, faces.top[i].y);
-  }
-  ctx.closePath();
-  ctx.fill({ color: topColor(input) });
-  ctx.stroke({ color: 0x000000, width: 1, alpha: 0.55 });
+function drawCubeAt(
+  ctx: GraphicsContext,
+  faces: NonNullable<ReturnType<typeof cubeFacePolygons>>,
+  input: BuildingVisualInput,
+  ox: number,
+  oy: number,
+): void {
+  drawPoly(ctx, faces.left, leftColor(input), 0.5, ox, oy);
+  drawPoly(ctx, faces.right, rightColor(input), 0.5, ox, oy);
+  drawPoly(ctx, faces.top, topColor(input), 0.55, ox, oy);
 
   if (shouldShowRoofAccent(input.level)) {
     const mainLift = faces.left[2].y - faces.left[1].y;
     const accent = roofAccentFaces(faces.top, mainLift);
     if (accent !== null) {
-      const accentLeftColor  = lerpToWhite(leftColor(input),  ROOF_ACCENT_BRIGHTEN);
-      const accentRightColor = lerpToWhite(rightColor(input), ROOF_ACCENT_BRIGHTEN);
-      const accentTopColor   = lerpToWhite(topColor(input),   ROOF_ACCENT_BRIGHTEN);
-
-      ctx.beginPath();
-      ctx.moveTo(accent.left[0].x, accent.left[0].y);
-      for (let i = 1; i < accent.left.length; i++) {
-        ctx.lineTo(accent.left[i].x, accent.left[i].y);
-      }
-      ctx.closePath();
-      ctx.fill({ color: accentLeftColor });
-      ctx.stroke({ color: 0x000000, width: 1, alpha: 0.5 });
-
-      ctx.beginPath();
-      ctx.moveTo(accent.right[0].x, accent.right[0].y);
-      for (let i = 1; i < accent.right.length; i++) {
-        ctx.lineTo(accent.right[i].x, accent.right[i].y);
-      }
-      ctx.closePath();
-      ctx.fill({ color: accentRightColor });
-      ctx.stroke({ color: 0x000000, width: 1, alpha: 0.5 });
-
-      ctx.beginPath();
-      ctx.moveTo(accent.top[0].x, accent.top[0].y);
-      for (let i = 1; i < accent.top.length; i++) {
-        ctx.lineTo(accent.top[i].x, accent.top[i].y);
-      }
-      ctx.closePath();
-      ctx.fill({ color: accentTopColor });
-      ctx.stroke({ color: 0x000000, width: 1, alpha: 0.55 });
+      drawPoly(ctx, accent.left, lerpToWhite(leftColor(input), ROOF_ACCENT_BRIGHTEN), 0.5, ox, oy);
+      drawPoly(ctx, accent.right, lerpToWhite(rightColor(input), ROOF_ACCENT_BRIGHTEN), 0.5, ox, oy);
+      drawPoly(ctx, accent.top, lerpToWhite(topColor(input), ROOF_ACCENT_BRIGHTEN), 0.55, ox, oy);
     }
   }
+}
 
-  return ctx;
+function buildContext(input: BuildingVisualInput): GraphicsContext | null {
+  if (input.level <= 0) return null;
+
+  const ctx = new GraphicsContext();
+
+  if (isBoundingDiamondAccurate(input.footprint)) {
+    const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
+    if (faces === null) return null;
+    drawCubeAt(ctx, faces, input, 0, 0);
+    return ctx;
+  }
+
+  // Irregular footprint (L-shape, T, etc.): render one small cube per cell
+  // so the silhouette follows the actual footprint, not its bounding rect.
+  // Back-most cells (smaller x+y) draw first so iso depth reads correctly.
+  const anchorScreen = tileToScreen(input.anchor);
+  const sorted = [...input.footprint].sort((a, b) => {
+    const da = a.x + a.y;
+    const db = b.x + b.y;
+    return da !== db ? da - db : a.y - b.y;
+  });
+  let drew = false;
+  for (const cell of sorted) {
+    const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
+    if (faces === null) continue;
+    const cellScreen = tileToScreen(cell);
+    const ox = cellScreen.x - anchorScreen.x;
+    const oy = cellScreen.y - anchorScreen.y;
+    drawCubeAt(ctx, faces, input, ox, oy);
+    drew = true;
+  }
+  return drew ? ctx : null;
 }
 
 // ---------------------------------------------------------------------------

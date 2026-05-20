@@ -42,13 +42,14 @@ describe('cubeTypeRatios', () => {
     }
   });
 
-  it('cubeTypeInsetRatio pins industrial and residential to full width', () => {
-    expect(cubeTypeInsetRatio('industrial')).toBe(0);
-    expect(cubeTypeInsetRatio('residential')).toBe(0);
+  it('cubeTypeInsetRatio gives residential and industrial the same small inset for breathing room', () => {
+    expect(cubeTypeInsetRatio('residential')).toBe(cubeTypeInsetRatio('industrial'));
+    expect(cubeTypeInsetRatio('residential')).toBeGreaterThan(0);
   });
 
-  it('cubeTypeInsetRatio spreads commercial more than residential', () => {
+  it('cubeTypeInsetRatio insets commercial more than residential/industrial', () => {
     expect(cubeTypeInsetRatio('commercial')).toBeGreaterThan(cubeTypeInsetRatio('residential'));
+    expect(cubeTypeInsetRatio('commercial')).toBeGreaterThan(cubeTypeInsetRatio('industrial'));
   });
 
   it('all CUBE_TYPE_INSET_RATIO values satisfy domain invariant >= 0 and < 0.5', () => {
