@@ -3,7 +3,7 @@
  * Handles initialization, cleanup, and React integration
  */
 
-import { Application } from 'pixi.js';
+import { Application, Container } from 'pixi.js';
 import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
@@ -76,10 +76,29 @@ export class PixiApp {
 
     this.camera = new Camera(this.app.stage, constraints);
 
-    // Initialize renderers
-    this.tileRenderer = new TileRenderer(this.app.stage);
-    this.selectionRenderer = new SelectionRenderer(this.app.stage);
-    this.gridRenderer = new GridRenderer(this.app.stage, map);
+    // Create explicit layer containers in draw order: terrain → building → grid → selection.
+    // addChild order enforces z-layering; no zIndex tricks needed for cross-layer ordering.
+    const terrainContainer = new Container();
+    terrainContainer.sortableChildren = false;
+
+    const buildingContainer = new Container();
+    buildingContainer.sortableChildren = true; // buildings sort within their own layer
+
+    const gridContainer = new Container();
+    gridContainer.sortableChildren = false;
+
+    const selectionContainer = new Container();
+    selectionContainer.sortableChildren = false;
+
+    this.app.stage.addChild(terrainContainer);
+    this.app.stage.addChild(buildingContainer);
+    this.app.stage.addChild(gridContainer);
+    this.app.stage.addChild(selectionContainer);
+
+    // Initialize renderers, each bound to its own container
+    this.tileRenderer = new TileRenderer(terrainContainer, buildingContainer);
+    this.selectionRenderer = new SelectionRenderer(selectionContainer);
+    this.gridRenderer = new GridRenderer(gridContainer, map);
 
     // Render initial frame
     this.tileRenderer.render(map);

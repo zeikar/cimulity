@@ -36,6 +36,7 @@ interface TileEntry {
 
 export class TileRenderer {
   private terrainContainer: Container;
+  private buildingContainer: Container;
   private registry: VisualRegistry;
   /** tileIndex → mounted entry */
   private tiles: Map<number, TileEntry> = new Map();
@@ -44,38 +45,19 @@ export class TileRenderer {
   /** Incremental queue populated by markTilesChanged(); drained when fullDirty is false. */
   private pendingTileChanges: { x: number; y: number }[] = [];
 
-  constructor(stageContainer: Container) {
-    this.terrainContainer = new Container();
-    stageContainer.addChild(this.terrainContainer);
-    this.registry = buildRegistry();
+  constructor(terrainContainer: Container, buildingContainer: Container, registry?: VisualRegistry) {
+    this.terrainContainer = terrainContainer;
+    this.buildingContainer = buildingContainer;
+    this.registry = registry ?? buildRegistry();
   }
 
   render(map: GameMap): void {
     if (this.fullDirty) {
       const mapWidth = map.getWidth();
-
       for (const tile of map.iterateTiles()) {
         const index = tile.y * mapWidth + tile.x;
-        const existing = this.tiles.get(index);
-        const visual = this.registry.getTerrain(tile.type);
-        const input = { x: tile.x, y: tile.y, type: tile.type, level: tile.level };
-
-        if (!existing) {
-          // First mount
-          const displayObject = visual.mount(input, this.terrainContainer);
-          this.tiles.set(index, { type: tile.type, displayObject });
-        } else if (existing.type !== tile.type) {
-          // Type changed: unmount old, mount new
-          const oldVisual = this.registry.getTerrain(existing.type);
-          oldVisual.unmount(existing.displayObject);
-          const displayObject = visual.mount(input, this.terrainContainer);
-          this.tiles.set(index, { type: tile.type, displayObject });
-        } else {
-          // Same type: update in place
-          visual.update(input, existing.displayObject);
-        }
+        this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
       }
-
       this.fullDirty = false;
       // Clear the pending queue: full redraw already covered those coords.
       this.pendingTileChanges = [];
@@ -85,30 +67,36 @@ export class TileRenderer {
     if (this.pendingTileChanges.length === 0) return;
 
     const mapWidth = map.getWidth();
-
     for (const { x, y } of this.pendingTileChanges) {
       const tile = map.getTile(x, y);
       if (!tile) continue;
       const index = y * mapWidth + x;
-      const existing = this.tiles.get(index);
-      const visual = this.registry.getTerrain(tile.type);
-      const input = { x: tile.x, y: tile.y, type: tile.type, level: tile.level };
-
-      if (!existing) {
-        const displayObject = visual.mount(input, this.terrainContainer);
-        this.tiles.set(index, { type: tile.type, displayObject });
-      } else if (existing.type !== tile.type) {
-        // Type changed: unmount old, mount new
-        const oldVisual = this.registry.getTerrain(existing.type);
-        oldVisual.unmount(existing.displayObject);
-        const displayObject = visual.mount(input, this.terrainContainer);
-        this.tiles.set(index, { type: tile.type, displayObject });
-      } else {
-        visual.update(input, existing.displayObject);
-      }
+      this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
     }
-
     this.pendingTileChanges = [];
+  }
+
+  /**
+   * Mount, update, or unmount-and-remount a single tile based on current state.
+   * Single point of layer routing — Task 12 will branch terrain vs building visuals here.
+   */
+  private syncTile(index: number, x: number, y: number, type: TileType, level: number): void {
+    const existing = this.tiles.get(index);
+    const visual = this.registry.getTerrain(type);
+    const input = { x, y, type, level };
+
+    if (!existing) {
+      const displayObject = visual.mount(input, this.terrainContainer);
+      this.tiles.set(index, { type, displayObject });
+    } else if (existing.type !== type) {
+      // Type changed: unmount old, mount new
+      const oldVisual = this.registry.getTerrain(existing.type);
+      oldVisual.unmount(existing.displayObject);
+      const displayObject = visual.mount(input, this.terrainContainer);
+      this.tiles.set(index, { type, displayObject });
+    } else {
+      visual.update(input, existing.displayObject);
+    }
   }
 
   markDirty(): void {
@@ -126,6 +114,6 @@ export class TileRenderer {
       this.registry.getTerrain(type).unmount(displayObject);
     }
     this.tiles.clear();
-    this.terrainContainer.destroy();
+    // Containers are owned by PixiApp — destroyed via app.destroy() cascade.
   }
 }
