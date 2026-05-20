@@ -9,6 +9,7 @@ import { TileRenderer } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { GridRenderer } from './GridRenderer';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
+import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 
@@ -105,16 +106,14 @@ export class PixiApp {
     this.gridRenderer = new GridRenderer(this.gridContainer, map);
 
     // Render initial frame
-    this.tileRenderer.render(this.world);
     this.gridRenderer.render();
-
-    // Center camera on map
     this.centerCameraOnMap();
+    this.tileRenderer.render(this.world, this.computeVisibleBounds());
 
     // Setup render loop
     this.app.ticker.add(() => {
       if (this.tileRenderer && this.world) {
-        this.tileRenderer.render(this.world);
+        this.tileRenderer.render(this.world, this.computeVisibleBounds());
       }
     });
 
@@ -139,6 +138,21 @@ export class PixiApp {
     // pan-delta from current pos because Camera has no setPosition; clamping is centralized in pan.
     const cur = this.camera.getPosition();
     this.camera.pan(offset.x - cur.x, offset.y - cur.y);
+  }
+
+  private computeVisibleBounds(): VisibleTileBounds | undefined {
+    if (!this.camera || !this.app || !this.world) return undefined;
+    const pos = this.camera.getPosition();
+    const map = this.world.getMap();
+    return visibleTileBounds({
+      cameraX: pos.x,
+      cameraY: pos.y,
+      zoom: this.camera.getZoom(),
+      viewportW: this.app.screen.width,
+      viewportH: this.app.screen.height,
+      mapWidth: map.getWidth(),
+      mapHeight: map.getHeight(),
+    });
   }
 
   /**
@@ -202,6 +216,7 @@ export class PixiApp {
       this.centerCameraOnMap();
       this.notifyCameraUpdate();
     }
+    this.tileRenderer?.markDirty();
   }
 
   /**
