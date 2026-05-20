@@ -10,6 +10,7 @@ import {
   SAVE_VERSION,
   WORLD_SAVE_VERSION,
 } from './mapSerialization';
+import { BuildingMap } from './Building';
 
 describe('serializeMap / deserializeMapInto', () => {
   it('round-trips tile types onto a same-sized map', () => {
@@ -327,7 +328,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
     const json = serializeWorld(src);
     const parsed = JSON.parse(json);
     expect(parsed.v).toBe(WORLD_SAVE_VERSION);
-    expect(parsed.v).toBe(4);
+    expect(parsed.v).toBe(5);
     expect(parsed.d).toBe(expectedDays);
     expect('tk' in parsed).toBe(false);
 
@@ -669,11 +670,11 @@ describe('serializeWorld / deserializeWorldInto', () => {
 
   // --- unsupported envelope version ---
 
-  it('(envelope v:5) → reject (unsupported)', () => {
+  it('(envelope v:99) → reject (unsupported)', () => {
     const world = new World(2, 1);
     const before = world.getMoney();
     const payload = JSON.stringify({
-      v: 5,
+      v: 99,
       w: 2,
       h: 1,
       t: [TileType.GRASS, TileType.GRASS],
@@ -683,5 +684,600 @@ describe('serializeWorld / deserializeWorldInto', () => {
     });
     expect(deserializeWorldInto(world, payload)).toBe(false);
     expect(world.getMoney()).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v5 Building persistence: serializeWorld / deserializeWorldInto
+// ---------------------------------------------------------------------------
+
+describe('v5 Building persistence', () => {
+  /** Build a minimal valid v5 JSON payload for tests. */
+  function makeV5(overrides: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      v: 5,
+      w: 4,
+      h: 4,
+      t: Array(16).fill(TileType.GRASS),
+      l: Array(16).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+      ...overrides,
+    });
+  }
+
+  /** Snapshot world state to verify it was not mutated on a rejected load. */
+  function snapshotWorld(world: World) {
+    return {
+      money: world.getMoney(),
+      days: world.getElapsedDays(),
+      tile00: world.getMap().getTile(0, 0)?.type,
+    };
+  }
+
+  it('WORLD_SAVE_VERSION is 5', () => {
+    expect(WORLD_SAVE_VERSION).toBe(5);
+  });
+
+  // --- empty world v5 round-trip ---
+
+  it('empty world v5 round-trip: save → load → identical empty state', () => {
+    const src = new World(4, 4);
+    const json = serializeWorld(src);
+    const parsed = JSON.parse(json);
+    expect(parsed.v).toBe(5);
+    expect(Array.isArray(parsed.b)).toBe(true);
+    expect(parsed.b.length).toBe(0);
+
+    const dst = new World(4, 4);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+    expect(dst.getMoney()).toBe(src.getMoney());
+    expect(dst.getElapsedDays()).toBe(0);
+    expect(dst.getMap().getBuildings().getAllBuildings().length).toBe(0);
+  });
+
+  // --- v5 round-trip with preserved non-zero ids ---
+
+  it('v5 round-trip preserves non-zero building ids (skipped ids via addBuilding+removeBuilding)', () => {
+    const src = new World(4, 4);
+    const map = src.getMap();
+
+    // Place zone tiles.
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ZONE_COMMERCIAL));
+
+    const buildings = map.getBuildings();
+
+    // addBuilding then removeBuilding to consume id=0.
+    const tmp = buildings.addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+    });
+    expect(tmp).not.toBeNull();
+    expect(tmp!.id).toBe(0);
+    buildings.removeBuilding(0);
+
+    // Now add again — will get id=1.
+    const b1 = buildings.addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 2,
+      density: 0,
+      age: 5,
+    });
+    expect(b1).not.toBeNull();
+    expect(b1!.id).toBe(1);
+
+    // Second building — id=2.
+    const b2 = buildings.addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 2, y: 0 }],
+      anchor: { x: 2, y: 0 },
+      level: 1,
+      density: 1,
+      age: 3,
+    });
+    expect(b2).not.toBeNull();
+    expect(b2!.id).toBe(2);
+
+    const json = serializeWorld(src);
+    const parsed = JSON.parse(json);
+    // b[] sorted by id ascending
+    expect(parsed.b[0].id).toBe(1);
+    expect(parsed.b[1].id).toBe(2);
+
+    const dst = new World(4, 4);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+
+    const dstBuildings = dst.getMap().getBuildings();
+    const loaded = [...dstBuildings.getAllBuildings()].sort((a, b) => a.id - b.id);
+    expect(loaded.length).toBe(2);
+
+    expect(loaded[0].id).toBe(1);
+    expect(loaded[0].type).toBe('residential');
+    expect(loaded[0].level).toBe(2);
+    expect(loaded[0].density).toBe(0);
+    expect(loaded[0].age).toBe(5);
+    expect(loaded[0].footprint[0]).toEqual({ x: 0, y: 0 });
+    expect(loaded[0].anchor).toEqual({ x: 0, y: 0 });
+
+    expect(loaded[1].id).toBe(2);
+    expect(loaded[1].type).toBe('commercial');
+    expect(loaded[1].level).toBe(1);
+    expect(loaded[1].density).toBe(1);
+    expect(loaded[1].age).toBe(3);
+  });
+
+  it('v5 round-trip: save → load → save produces byte-identical JSON (deterministic b[] ordering)', () => {
+    const src = new World(4, 4);
+    const map = src.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+    });
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 1, y: 0 }],
+      anchor: { x: 1, y: 0 },
+      level: 2,
+      density: 0,
+      age: 0,
+    });
+
+    const json1 = serializeWorld(src);
+    const dst = new World(4, 4);
+    deserializeWorldInto(dst, json1);
+    const json2 = serializeWorld(dst);
+    expect(json2).toBe(json1);
+  });
+
+  // --- setNextIdFloor: new buildings after load don't collide with loaded ids ---
+
+  it('v5 round-trip: addBuilding after load gets a fresh id (setNextIdFloor respected)', () => {
+    const src = new World(4, 4);
+    const map = src.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_INDUSTRIAL));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+    });
+    // id=0 was used
+
+    const json = serializeWorld(src);
+    const dst = new World(4, 4);
+    deserializeWorldInto(dst, json);
+
+    // New building on a free zone tile should get id=1, not reuse 0.
+    const newB = dst.getMap().getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [{ x: 1, y: 0 }],
+      anchor: { x: 1, y: 0 },
+      level: 0,
+      density: 0,
+      age: 0,
+    });
+    expect(newB).not.toBeNull();
+    expect(newB!.id).toBe(1);
+  });
+
+  // --- v4 → v5 migration ---
+
+  it('v4 → v5 migration: level-2 zone in v4 save produces synthetic building (level=2, density=0, age=0)', () => {
+    const world = new World(4, 4);
+    const payload = JSON.stringify({
+      v: 4,
+      w: 4,
+      h: 4,
+      t: [
+        TileType.ZONE_RESIDENTIAL, TileType.GRASS, TileType.GRASS, TileType.GRASS,
+        TileType.GRASS, TileType.GRASS, TileType.GRASS, TileType.GRASS,
+        TileType.GRASS, TileType.GRASS, TileType.GRASS, TileType.GRASS,
+        TileType.GRASS, TileType.GRASS, TileType.GRASS, TileType.GRASS,
+      ],
+      l: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      m: 1000,
+      d: 5,
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMoney()).toBe(1000);
+    expect(world.getElapsedDays()).toBe(5);
+
+    const buildings = world.getMap().getBuildings().getAllBuildings();
+    expect(buildings.length).toBe(1);
+    expect(buildings[0].type).toBe('residential');
+    expect(buildings[0].level).toBe(2);
+    expect(buildings[0].density).toBe(0);
+    expect(buildings[0].age).toBe(0);
+    expect(buildings[0].footprint).toHaveLength(1);
+    expect(buildings[0].footprint[0]).toEqual({ x: 0, y: 0 });
+    expect(buildings[0].anchor).toEqual({ x: 0, y: 0 });
+  });
+
+  it('v4 → v5 migration: zone tile with level=0 does NOT get a synthetic building', () => {
+    const world = new World(2, 1);
+    const payload = JSON.stringify({
+      v: 4,
+      w: 2,
+      h: 1,
+      t: [TileType.ZONE_COMMERCIAL, TileType.GRASS],
+      l: [0, 0],
+      m: 500,
+      d: 0,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getMap().getBuildings().getAllBuildings().length).toBe(0);
+  });
+
+  it('v3 → v5 migration: level-1 zone in v3 save produces synthetic building', () => {
+    const world = new World(2, 1);
+    const payload = JSON.stringify({
+      v: 3,
+      w: 2,
+      h: 1,
+      t: [TileType.ZONE_INDUSTRIAL, TileType.GRASS],
+      l: [1, 0],
+      m: 300,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    const buildings = world.getMap().getBuildings().getAllBuildings();
+    expect(buildings.length).toBe(1);
+    expect(buildings[0].type).toBe('industrial');
+    expect(buildings[0].level).toBe(1);
+    expect(buildings[0].density).toBe(0);
+    expect(buildings[0].age).toBe(0);
+  });
+
+  // --- staging rejections: world untouched ---
+
+  it('v5 rejection — building on water: footprint cell is WATER in t[]', () => {
+    const world = new World(4, 4);
+    world.setMoney(9999);
+    const before = snapshotWorld(world);
+
+    // The first tile is WATER but building claims it as residential.
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.WATER;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{
+        id: 0,
+        type: 'residential',
+        foot: [[0, 0]],
+        anc: [0, 0],
+        lvl: 0,
+        den: 0,
+        age: 0,
+      }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  it('v5 rejection — type mismatch: residential building over ZONE_COMMERCIAL', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_COMMERCIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      l: Array(16).fill(0),
+      b: [{
+        id: 0,
+        type: 'residential', // mismatch — should be 'commercial'
+        foot: [[0, 0]],
+        anc: [0, 0],
+        lvl: 0,
+        den: 0,
+        age: 0,
+      }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  it('v5 rejection — overlap: two buildings claim same cell', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [
+        { id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0 },
+        { id: 1, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0 },
+      ],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+  });
+
+  it('v5 rejection — duplicate id: two buildings with same id', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+    tiles[1] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [
+        { id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0 },
+        { id: 0, type: 'residential', foot: [[1, 0]], anc: [1, 0], lvl: 0, den: 0, age: 0 },
+      ],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — anchor not in footprint', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{
+        id: 0,
+        type: 'residential',
+        foot: [[0, 0]],
+        anc: [1, 0], // not in footprint
+        lvl: 0,
+        den: 0,
+        age: 0,
+      }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — fractional id', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 1.5, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — fractional level', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 2.7, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — fractional age', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0.1 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — fractional coord in footprint', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 0, type: 'residential', foot: [[0, 1.5]], anc: [0, 0], lvl: 0, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — fractional density', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 1.5, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — negative id', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: -1, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — duplicate cell within one footprint', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{
+        id: 0,
+        type: 'residential',
+        foot: [[0, 0], [0, 0]], // duplicate cell
+        anc: [0, 0],
+        lvl: 0,
+        den: 0,
+        age: 0,
+      }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — missing b[] field', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const payload = JSON.stringify({
+      v: 5,
+      w: 4,
+      h: 4,
+      t: Array(16).fill(TileType.GRASS),
+      l: Array(16).fill(0),
+      m: 500,
+      d: 0,
+      // b is missing
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — invalid building type string', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 0, type: 'lava', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — lvl exceeds ZONE_MAX_LEVEL', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{
+        id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0],
+        lvl: ZONE_MAX_LEVEL + 1,
+        den: 0,
+        age: 0,
+      }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — density not in {0,1,2}', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const tiles = Array(16).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.ZONE_RESIDENTIAL;
+
+    const payload = makeV5({
+      t: tiles,
+      b: [{ id: 0, type: 'residential', foot: [[0, 0]], anc: [0, 0], lvl: 0, den: 3, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — footprint cell out of bounds', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const payload = makeV5({
+      b: [{ id: 0, type: 'residential', foot: [[10, 0]], anc: [10, 0], lvl: 0, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
+  });
+
+  it('v5 rejection — empty footprint', () => {
+    const world = new World(4, 4);
+    const before = snapshotWorld(world);
+
+    const payload = makeV5({
+      b: [{ id: 0, type: 'residential', foot: [], anc: [0, 0], lvl: 0, den: 0, age: 0 }],
+    });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(before.money);
   });
 });

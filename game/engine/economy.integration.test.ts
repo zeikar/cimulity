@@ -127,7 +127,9 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     // Place some tiles and spend money deterministically via direct map writes
     // (bypass cost accounting for setup — the important thing is the money value).
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
-    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 2));
+    // Level is intentionally 0: tile.level without a backing building is not preserved in v5
+    // (the building record is the source of truth for zone level).
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 0));
     world.getMap().setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL, 0));
     world.getMap().setTile(3, 0, createTile(3, 0, TileType.WATER));
 
@@ -147,7 +149,7 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     expect(fresh.getDate()).toEqual(world.getDate());
     expect(fresh.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
     expect(fresh.getMap().getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
-    expect(fresh.getMap().getTile(1, 0)?.level).toBe(2);
+    expect(fresh.getMap().getTile(1, 0)?.level).toBe(0);
     expect(fresh.getMap().getTile(2, 0)?.type).toBe(TileType.ZONE_INDUSTRIAL);
     expect(fresh.getMap().getTile(2, 0)?.level).toBe(0);
     expect(fresh.getMap().getTile(3, 0)?.type).toBe(TileType.WATER);

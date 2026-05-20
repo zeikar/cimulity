@@ -18,7 +18,7 @@
  *   && typeof parsed.v === 'number'
  *
  * ENVELOPE VERSION TABLE:
- *   v ∉ {1,2,3,4}   → reject
+ *   v ∉ {1,2,3,4,5} → reject
  *   v === 1, no m   → legacy accept; money = STARTING_FUNDS; map via v1 rules
  *   v === 1, m key  → reject (strict symmetry with map-level v1+stray-l rejection)
  *   v === 2, no m   → backward-compat; money = STARTING_FUNDS; map via v2 rules
@@ -28,14 +28,16 @@
  *   v === 4         → m required (validated exactly as v3) AND d required,
  *                     must satisfy Number.isInteger(d) && d >= 0
  *                     map rules are identical to v2/v3 (envelope only adds d)
+ *   v === 5         → m + d required (same rules as v4) AND b required (building array);
+ *                     all building fields validated before any mutation.
  *   v1/v2/v3 default d = 0 (backward-compat — calendar restarts at Year 1 M1 D1 /
  *     Tick 0; v3 money still preserved, v1/v2 money still STARTING_FUNDS;
  *     existing v3/v2/v1 behavior otherwise fully preserved).
  *
  * V → MAP-VIEW TRANSLATION:
- *   deserializeMapInto only understands v1/v2. For a v3 or v4 envelope we build a
+ *   deserializeMapInto only understands v1/v2. For a v3/v4/v5 envelope we build a
  *   temporary map-view object with v rewritten to 2 and pass that to
- *   deserializeMapInto — map-level code needs no v3/v4 awareness.
+ *   deserializeMapInto — map-level code needs no v3/v4/v5 awareness.
  *   For v1/v2 envelopes we pass the original JSON string unchanged.
  *
  * MONEY VALIDATION:
@@ -45,12 +47,15 @@
  * ALL-OR-NOTHING:
  *   shape-guard → validate money → validate day → apply map → set money → set day (which also sets tick).
  *   If any step fails nothing is mutated (neither map nor money nor day/tick).
+ *   For v5 the full staging-then-commit pattern is used: parse → validate all → reset → commit.
  */
 
 import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import { ZONE_MAX_LEVEL, STARTING_FUNDS } from './World';
 import type { World } from './World';
+import { isBuildingType, tileTypeFromBuildingType } from './Building';
+import type { Building, BuildingType } from './Building';
 
 /** Map schema version — owned by serializeMap/deserializeMapInto. Internal only; the persisted file uses WORLD_SAVE_VERSION. */
 export const SAVE_VERSION = 2;
@@ -62,8 +67,9 @@ export const SAVE_VERSION = 2;
  * v4 adds a single `d` (whole non-negative integer elapsed-day counter;
  * tickCount is restored from the same `d` on the World side — no separate
  * persisted tick field).
+ * v5 adds `b` (building array with preserved ids and footprints).
  */
-export const WORLD_SAVE_VERSION = 4;
+export const WORLD_SAVE_VERSION = 5;
 
 interface SaveData {
   v: number;
@@ -179,21 +185,71 @@ interface WorldSaveData {
   l?: number[];
   m?: number;
   d?: number;
+  b?: unknown[];
 }
 
 /**
- * Serialize the full world state (map + money) to a JSON string.
- * Reuses serializeMap's field construction to keep t/l as single source of truth:
- * we parse the map JSON, then override v to WORLD_SAVE_VERSION and add m.
+ * Wire format for one building entry in v5 `b[]`.
+ * Compact tuple-array style matching `t`/`l` v4 compactness:
+ *   { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age }
+ */
+interface BuildingSaveEntry {
+  id: number;
+  type: string;
+  foot: [number, number][];
+  anc: [number, number];
+  lvl: number;
+  den: number;
+  age: number;
+}
+
+/**
+ * Serialize the full world state (map + money + buildings) to a JSON string.
+ * Reuses serializeMap's field construction to keep t/l as single source of truth.
+ *
+ * l[] for v5 saves: derived from buildings (level = building.level for owned zone tiles,
+ * else 0). Redundant with b[] — kept for external-tooling compat; may be dropped in a
+ * future version.
+ *
+ * b[] is sorted by id ascending to ensure deterministic byte-equality in round-trips.
  */
 export function serializeWorld(world: World): string {
-  // Parse the map-level JSON and augment it — avoids duplicating the t/l mapping logic.
-  const mapFields = JSON.parse(serializeMap(world.getMap())) as WorldSaveData;
-  const data: WorldSaveData = {
-    ...mapFields,
+  const map = world.getMap();
+  const buildings = map.getBuildings();
+
+  // Build the l[] array from building data (for v5, this is redundant with b[]
+  // but kept for backward compat with external tooling that may read l[]).
+  const w = map.getWidth();
+  const h = map.getHeight();
+  const tiles = [...map.iterateTiles()];
+  const t = tiles.map((tile) => tile.type);
+  const l = tiles.map((tile) => {
+    if (!isZoneType(tile.type)) return 0;
+    const building = buildings.getBuildingAt(tile.x, tile.y);
+    return building !== null ? building.level : 0;
+  });
+
+  // Build b[] sorted by id ascending.
+  const allBuildings = [...buildings.getAllBuildings()].sort((a, b) => a.id - b.id);
+  const b: BuildingSaveEntry[] = allBuildings.map((building) => ({
+    id: building.id,
+    type: building.type,
+    foot: building.footprint.map(({ x, y }) => [x, y] as [number, number]),
+    anc: [building.anchor.x, building.anchor.y],
+    lvl: building.level,
+    den: building.density,
+    age: building.age,
+  }));
+
+  const data = {
     v: WORLD_SAVE_VERSION,
+    w,
+    h,
+    t,
+    l,
     m: world.getMoney(),
     d: world.getElapsedDays(),
+    b,
   };
   return JSON.stringify(data);
 }
@@ -204,6 +260,8 @@ export function serializeWorld(world: World): string {
  *
  * Ordering: shape-guard → validate money → validate day → apply map → set money → set day (which also sets tick).
  * If map application fails, money and day/tick are never changed.
+ *
+ * For v5: full staging-then-commit — parse → validate ALL → reset → commit (in that order).
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
   let data: WorldSaveData;
@@ -226,7 +284,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   const v = data.v;
 
   // Reject unsupported envelope versions.
-  if (v !== 1 && v !== 2 && v !== 3 && v !== 4) {
+  if (v !== 1 && v !== 2 && v !== 3 && v !== 4 && v !== 5) {
     return false;
   }
 
@@ -253,7 +311,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
     }
     resolvedMoney = data.m as number;
   } else {
-    // v === 4: m validated exactly as v3, AND d required as a whole non-negative integer.
+    // v === 4 or v === 5: m validated exactly as v3, AND d required as a whole non-negative integer.
     if (
       !('m' in data) ||
       !Number.isInteger(data.m) ||
@@ -266,6 +324,11 @@ export function deserializeWorldInto(world: World, json: string): boolean {
     }
     resolvedMoney = data.m as number;
     resolvedDay = data.d as number;
+  }
+
+  // v5 path: staging-then-commit with full building validation.
+  if (v === 5) {
+    return deserializeV5(world, data, resolvedMoney, resolvedDay);
   }
 
   // Build the map-view JSON to pass to deserializeMapInto.
@@ -288,5 +351,196 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   // were already validated immediately above with the identical guard.
   world.setMoney(resolvedMoney);
   world.setElapsedDays(resolvedDay); // also restores tickCount (1 tick = 1 day)
+
+  // v1–v4 migration: synthesize 1×1 buildings for zone tiles with level > 0.
+  // This converts old tile-level data into the new building-centric model.
+  migrateV1ToV4Buildings(world);
+
+  return true;
+}
+
+/**
+ * v1–v4 migration: for each zone tile with level > 0, synthesize a 1×1 building.
+ * level = tile.level, density = 0, age = 0. ids allocated sequentially.
+ * Only called after a successful v1–v4 map apply.
+ */
+function migrateV1ToV4Buildings(world: World): void {
+  const map = world.getMap();
+  const buildings = map.getBuildings();
+  let maxSynthesizedId = -1;
+
+  for (const tile of map.iterateTiles()) {
+    if (!isZoneType(tile.type) || tile.level === 0) continue;
+
+    const bType = tile.type.replace('zone_', '') as BuildingType;
+    const created = buildings.addBuilding({
+      type: bType,
+      footprint: [{ x: tile.x, y: tile.y }],
+      anchor: { x: tile.x, y: tile.y },
+      level: tile.level,
+      density: 0,
+      age: 0,
+    });
+    if (created !== null) {
+      maxSynthesizedId = Math.max(maxSynthesizedId, created.id);
+    }
+  }
+
+  if (maxSynthesizedId >= 0) {
+    buildings.setNextIdFloor(maxSynthesizedId);
+  }
+}
+
+/**
+ * v5 staging-then-commit deserialization.
+ * Validates ALL invariants before any world mutation.
+ * Returns false (no mutation) on any failure.
+ */
+function deserializeV5(
+  world: World,
+  data: WorldSaveData,
+  resolvedMoney: number,
+  resolvedDay: number,
+): boolean {
+  const w = data.w;
+  const h = data.h;
+
+  // Validate t[] — same rules as v2 map layer.
+  if (
+    !Array.isArray(data.t) ||
+    data.t.length !== w * h ||
+    !data.t.every((type) => VALID_TYPES.has(type))
+  ) {
+    return false;
+  }
+
+  // Validate l[] — required for v5, same rules as v2.
+  const size = w * h;
+  if (
+    !Array.isArray(data.l) ||
+    data.l.length !== size
+  ) {
+    return false;
+  }
+  for (let i = 0; i < size; i++) {
+    const lvl = data.l[i];
+    const typ = data.t[i];
+    if (!Number.isInteger(lvl)) return false;
+    if (isZoneType(typ as TileType)) {
+      if (lvl < 0 || lvl > ZONE_MAX_LEVEL) return false;
+    } else {
+      if (lvl !== 0) return false;
+    }
+  }
+
+  // b[] is required for v5.
+  if (!Array.isArray(data.b)) return false;
+
+  // Validate each building entry. Track occupied tile indices to detect overlaps.
+  const occupiedIndices = new Set<number>();
+  const seenIds = new Set<number>();
+  const stagingBuildings: Building[] = [];
+
+  for (const entry of data.b) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const e = entry as BuildingSaveEntry;
+
+    // id: integer >= 0 and unique
+    if (!Number.isInteger(e.id) || e.id < 0) return false;
+    if (seenIds.has(e.id)) return false;
+    seenIds.add(e.id);
+
+    // type: must pass isBuildingType
+    if (typeof e.type !== 'string' || !isBuildingType(e.type)) return false;
+
+    // lvl: integer in [0, ZONE_MAX_LEVEL]
+    if (!Number.isInteger(e.lvl) || e.lvl < 0 || e.lvl > ZONE_MAX_LEVEL) return false;
+
+    // den: must be 0, 1, or 2 (integer)
+    if (!Number.isInteger(e.den) || (e.den !== 0 && e.den !== 1 && e.den !== 2)) return false;
+
+    // age: integer >= 0
+    if (!Number.isInteger(e.age) || e.age < 0) return false;
+
+    // foot: non-empty array of [x, y] integer coordinate pairs
+    if (!Array.isArray(e.foot) || e.foot.length === 0) return false;
+
+    const footprintIndices = new Set<number>();
+    const footprint: { x: number; y: number }[] = [];
+    for (const coord of e.foot) {
+      if (!Array.isArray(coord) || coord.length < 2) return false;
+      const cx = coord[0];
+      const cy = coord[1];
+      // Integer check — rejects fractional coords
+      if (!Number.isInteger(cx) || !Number.isInteger(cy)) return false;
+      // Bounds check
+      if (cx < 0 || cx >= w || cy < 0 || cy >= h) return false;
+      // Duplicate cell within this footprint
+      const idx = cy * w + cx;
+      if (footprintIndices.has(idx)) return false;
+      footprintIndices.add(idx);
+      footprint.push({ x: cx, y: cy });
+    }
+
+    // anc: [x, y] integer pair, must be one of the footprint cells
+    if (!Array.isArray(e.anc) || e.anc.length < 2) return false;
+    const ax = e.anc[0];
+    const ay = e.anc[1];
+    if (!Number.isInteger(ax) || !Number.isInteger(ay)) return false;
+    const ancInFootprint = footprint.some((c) => c.x === ax && c.y === ay);
+    if (!ancInFootprint) return false;
+
+    // Zone type match: every footprint cell must be the matching zone type in t[]
+    const expectedTileType = tileTypeFromBuildingType(e.type);
+    for (const c of footprint) {
+      const tileType = data.t[c.y * w + c.x];
+      if (tileType !== expectedTileType) return false;
+    }
+
+    // No overlap with other buildings
+    for (const idx of footprintIndices) {
+      if (occupiedIndices.has(idx)) return false;
+      occupiedIndices.add(idx);
+    }
+
+    stagingBuildings.push({
+      id: e.id,
+      type: e.type,
+      footprint,
+      anchor: { x: ax, y: ay },
+      level: e.lvl,
+      density: e.den as 0 | 1 | 2,
+      age: e.age,
+    });
+  }
+
+  // All validation passed — now commit (reset then apply staged data).
+  world.reset();
+
+  const map = world.getMap();
+  const buildings = map.getBuildings();
+
+  // Apply tiles via setTile (NOT setTileAndReconcile — buildings come from b[]).
+  for (let i = 0; i < size; i++) {
+    const x = i % w;
+    const y = Math.floor(i / w);
+    map.setTile(x, y, createTile(x, y, data.t[i], data.l![i]));
+  }
+
+  // Hydrate buildings using addExistingBuilding to preserve ids.
+  let maxId = -1;
+  for (const building of stagingBuildings) {
+    buildings.addExistingBuilding(building);
+    if (building.id > maxId) maxId = building.id;
+  }
+
+  // Advance nextId floor so new buildings won't reuse any existing ids.
+  if (maxId >= 0) {
+    buildings.setNextIdFloor(maxId);
+  }
+
+  world.setMoney(resolvedMoney);
+  world.setElapsedDays(resolvedDay);
+
   return true;
 }
