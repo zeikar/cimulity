@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeFootprint, cubeFacePolygons } from './cubeGeometry';
 import { cubeLiftPx } from './cubeLift';
+import { cubeTypeHeightPx, CUBE_TYPE_INSET_RATIO } from './cubeTypeRatios';
+import { ISO_CONFIG } from '@/game/render/IsoTransform';
 
 // ---------------------------------------------------------------------------
 // normalizeFootprint
@@ -183,5 +185,82 @@ describe('cubeFacePolygons', () => {
 
     expect(heightOf(r2.left) - heightOf(r0.left)).toBe(liftDiff);
     expect(heightOf(r2.right) - heightOf(r0.right)).toBe(liftDiff);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cubeFacePolygons — per-type silhouette
+// ---------------------------------------------------------------------------
+describe('cubeFacePolygons — per-type silhouette', () => {
+  const fp = [{ x: 0, y: 0 }];
+  const anchor = { x: 0, y: 0 };
+  const level = 4;
+  const density = 1 as const;
+
+  const liftHeight = (result: NonNullable<ReturnType<typeof cubeFacePolygons>>) =>
+    result.left[2].y - result.left[1].y;
+
+  const topWidth = (result: NonNullable<ReturnType<typeof cubeFacePolygons>>) =>
+    Math.max(...result.top.map((p) => p.x)) - Math.min(...result.top.map((p) => p.x));
+
+  it('height ordering: commercial > residential > industrial', () => {
+    const rC = cubeFacePolygons('commercial', level, density, fp, anchor)!;
+    const rR = cubeFacePolygons('residential', level, density, fp, anchor)!;
+    const rI = cubeFacePolygons('industrial', level, density, fp, anchor)!;
+    expect(liftHeight(rC)).toBeGreaterThan(liftHeight(rR));
+    expect(liftHeight(rR)).toBeGreaterThan(liftHeight(rI));
+  });
+
+  it('height exact pin: side edge equals cubeTypeHeightPx(cubeLiftPx(level, density), type)', () => {
+    const baseLift = cubeLiftPx(level, density);
+    const rC = cubeFacePolygons('commercial', level, density, fp, anchor)!;
+    const rR = cubeFacePolygons('residential', level, density, fp, anchor)!;
+    const rI = cubeFacePolygons('industrial', level, density, fp, anchor)!;
+    expect(liftHeight(rC)).toBe(cubeTypeHeightPx(baseLift, 'commercial'));
+    expect(liftHeight(rR)).toBe(cubeTypeHeightPx(baseLift, 'residential'));
+    expect(liftHeight(rI)).toBe(cubeTypeHeightPx(baseLift, 'industrial'));
+  });
+
+  it('width ordering: industrial === residential > commercial', () => {
+    const rC = cubeFacePolygons('commercial', level, density, fp, anchor)!;
+    const rR = cubeFacePolygons('residential', level, density, fp, anchor)!;
+    const rI = cubeFacePolygons('industrial', level, density, fp, anchor)!;
+    expect(topWidth(rI)).toBe(topWidth(rR));
+    expect(topWidth(rR)).toBeGreaterThan(topWidth(rC));
+  });
+
+  it('width exact pin: industrial and residential top width equals TILE_WIDTH', () => {
+    const rR = cubeFacePolygons('residential', level, density, fp, anchor)!;
+    const rI = cubeFacePolygons('industrial', level, density, fp, anchor)!;
+    expect(topWidth(rR)).toBe(ISO_CONFIG.TILE_WIDTH);
+    expect(topWidth(rI)).toBe(ISO_CONFIG.TILE_WIDTH);
+  });
+
+  it('width exact pin: commercial top width equals TILE_WIDTH * (1 - 2 * inset)', () => {
+    const rC = cubeFacePolygons('commercial', level, density, fp, anchor)!;
+    expect(topWidth(rC)).toBe(ISO_CONFIG.TILE_WIDTH * (1 - 2 * CUBE_TYPE_INSET_RATIO.commercial));
+  });
+
+  it('level=0 returns null for all types', () => {
+    expect(cubeFacePolygons('residential', 0, density, fp, anchor)).toBeNull();
+    expect(cubeFacePolygons('commercial', 0, density, fp, anchor)).toBeNull();
+    expect(cubeFacePolygons('industrial', 0, density, fp, anchor)).toBeNull();
+  });
+
+  it('position independence for commercial: (0,0) vs (10,10) anchor produces equal polygons', () => {
+    const fp10 = [{ x: 10, y: 10 }, { x: 11, y: 10 }];
+    const anchor10 = { x: 10, y: 10 };
+    const fp0 = [{ x: 0, y: 0 }, { x: 1, y: 0 }];
+    const anchor0 = { x: 0, y: 0 };
+
+    const r0 = cubeFacePolygons('commercial', level, density, fp0, anchor0)!;
+    const r10 = cubeFacePolygons('commercial', level, density, fp10, anchor10)!;
+
+    const toStr = (pts: { x: number; y: number }[]) =>
+      pts.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).join('|');
+
+    expect(toStr(r0.top)).toBe(toStr(r10.top));
+    expect(toStr(r0.left)).toBe(toStr(r10.left));
+    expect(toStr(r0.right)).toBe(toStr(r10.right));
   });
 });
