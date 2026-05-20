@@ -3,16 +3,19 @@
  */
 
 import { type Tile, createTile } from './Tile';
+import { BuildingMap } from './Building';
 
 export class GameMap {
   private readonly width: number;
   private readonly height: number;
   private readonly tiles: Tile[];
+  private readonly buildingMap: BuildingMap;
 
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.tiles = new Array(width * height);
+    this.buildingMap = new BuildingMap(width, height);
 
     // Initialize all tiles
     for (let y = 0; y < height; y++) {
@@ -62,6 +65,11 @@ export class GameMap {
         this.tiles[y * this.width + x] = createTile(x, y);
       }
     }
+    this.buildingMap.clear();
+  }
+
+  getBuildings(): BuildingMap {
+    return this.buildingMap;
   }
 
   get totalTiles(): number {

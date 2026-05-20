@@ -60,6 +60,23 @@ describe('GameMap', () => {
     });
   });
 
+  it('reset() clears all buildings from the BuildingMap', () => {
+    const map = new GameMap(5, 5);
+    map.getBuildings().addExistingBuilding({
+      id: 0,
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 1,
+      density: 0,
+      age: 0,
+    });
+
+    map.reset();
+
+    expect([...map.getBuildings().iterBuildings()]).toHaveLength(0);
+  });
+
   it('iterates all tiles in row-major order', () => {
     const map = new GameMap(2, 2);
     const coords = [...map.iterateTiles()].map((t) => [t.x, t.y]);
