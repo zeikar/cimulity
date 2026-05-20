@@ -89,21 +89,25 @@ export function cubeFacePolygons(
     { x: midX - spanX, y: midY - lift },           // left vertex
   ];
 
-  // Left face: connects top-left and bottom-left edges of the top face down to
-  // the original (un-lifted) base.
+  // Side faces share the FRONT (south) vertex `top[2]` and drop to the base.
+  // This is the standard iso cube where the two visible side faces meet at the
+  // front-center vertical edge — that shared edge is what gives the cube its
+  // recognisable 3D silhouette.
+
+  // Left face: SOUTH-WEST quad — from front to left, dropping to base.
   const left: Point[] = [
-    top[0],                                        // top of left edge (top vertex)
-    top[3],                                        // left vertex of top face
-    { x: top[3].x, y: top[3].y + lift },           // left vertex at base level
-    { x: top[0].x, y: top[0].y + lift },           // top vertex at base level
+    top[2],                                        // south/front vertex of top
+    top[3],                                        // west/left vertex of top
+    { x: top[3].x, y: top[3].y + lift },           // west/left vertex at base level
+    { x: top[2].x, y: top[2].y + lift },           // south/front vertex at base level
   ];
 
-  // Right face: connects top-right and bottom-right edges of the top face down.
+  // Right face: SOUTH-EAST quad — from right to front, dropping to base.
   const right: Point[] = [
-    top[0],                                        // top vertex
-    top[1],                                        // right vertex of top face
-    { x: top[1].x, y: top[1].y + lift },           // right vertex at base level
-    { x: top[0].x, y: top[0].y + lift },           // top vertex at base level
+    top[1],                                        // east/right vertex of top
+    top[2],                                        // south/front vertex of top
+    { x: top[2].x, y: top[2].y + lift },           // south/front vertex at base level
+    { x: top[1].x, y: top[1].y + lift },           // east/right vertex at base level
   ];
 
   return { top, left, right };
