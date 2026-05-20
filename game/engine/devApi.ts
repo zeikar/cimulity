@@ -6,7 +6,7 @@
  *   - seed a controlled scene with `dev.seedScene(...)`
  *   - center the camera on a tile with `dev.setCameraTile(x, y)`
  *   - force a renderer refresh with `dev.markDirty()`
- *   - reset the world with `dev.clear()`
+ *   - reset the world with `dev.resetWorld()` (delegates to `GameSession.resetWorld()`)
  *
  * Prod builds strip this entirely via the `NODE_ENV === 'development'` gate +
  * tree-shaking of the namespace assignment. The legacy `__cimulityWorld`
