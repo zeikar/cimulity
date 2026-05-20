@@ -27,8 +27,20 @@ export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */
 export const MONTHS_PER_YEAR = 12;
 
+/**
+ * Result returned by World.tick().
+ *
+ * Invariant: `changed === changedTiles.length` — always. `changed` is derived at
+ * construction as `changedTiles.length`; it is never independently assigned.
+ *
+ * Every state mutation that should trigger save-scheduling and render-invalidation
+ * MUST push at least one entry into `changedTiles`. `changed` is a count-only
+ * convenience; `changedTiles` is the canonical delta.
+ */
 export interface WorldTickResult {
-  /** Number of tiles changed this tick (DIRT→GRASS heals + zone level-ups). */
+  /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups). */
+  changedTiles: ReadonlyArray<{ x: number; y: number }>;
+  /** Count-only convenience — always equals `changedTiles.length`. */
   changed: number;
 }
 
@@ -161,13 +173,13 @@ export class World {
   tick(): WorldTickResult {
     this.tickCount++;
     this.day++; // 1 tick = 1 day
-    let changed = 0;
+    const changedTiles: { x: number; y: number }[] = [];
 
     // Pass 1: DIRT→GRASS heal (unchanged behavior).
     for (const tile of this.map.iterateTiles()) {
       if (tile.type === TileType.DIRT) {
         this.map.setTile(tile.x, tile.y, createTile(tile.x, tile.y, TileType.GRASS));
-        changed++;
+        changedTiles.push({ x: tile.x, y: tile.y });
       }
     }
 
@@ -196,11 +208,11 @@ export class World {
         const hasRoad = neighbors.some(n => n !== null && n.type === TileType.ROAD);
         if (hasRoad) {
           this.map.setTile(x, y, createTile(x, y, tile.type, currentLevel + 1));
-          changed++;
+          changedTiles.push({ x, y });
         }
       }
     }
 
-    return { changed };
+    return { changedTiles, changed: changedTiles.length };
   }
 }

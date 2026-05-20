@@ -47,22 +47,22 @@ describe('World', () => {
 });
 
 describe('World.tick() — heal rule', () => {
-  it('converts a DIRT tile to GRASS and returns { changed: 1 }', () => {
+  it('converts a DIRT tile to GRASS and returns changed === 1', () => {
     const world = new World(4, 4);
     world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
 
     const result = world.tick();
 
-    expect(result).toEqual({ changed: 1 });
+    expect(result.changed).toBe(1);
     expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
   });
 
-  it('returns { changed: 0 } and leaves map untouched when no DIRT present', () => {
+  it('returns changed === 0 and leaves map untouched when no DIRT present', () => {
     const world = new World(4, 4);
 
     const result = world.tick();
 
-    expect(result).toEqual({ changed: 0 });
+    expect(result.changed).toBe(0);
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
   });
 
@@ -91,7 +91,7 @@ describe('World.tick() — permanence guard', () => {
 
     const result = world.tick();
 
-    expect(result).toEqual({ changed: 1 });
+    expect(result.changed).toBe(1);
     expect(map.getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
     expect(map.getTile(1, 0)?.type).toBe(TileType.ZONE_COMMERCIAL);
     expect(map.getTile(2, 0)?.type).toBe(TileType.ZONE_INDUSTRIAL);
@@ -532,5 +532,59 @@ describe('World.getPopulation()', () => {
 
     expect(world.getTick()).toBe(0);
     expect(world.getPopulation()).toBe(0);
+  });
+});
+
+describe('WorldTickResult.changedTiles — canonical delta', () => {
+  it('changedTiles contains the exact coord for a single DIRT heal', () => {
+    const world = new World(4, 4);
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.DIRT));
+
+    const result = world.tick();
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 3 }]);
+    expect(result.changed).toBe(result.changedTiles.length);
+  });
+
+  it('changedTiles is empty when no mutations occur', () => {
+    const world = new World(4, 4);
+
+    const result = world.tick();
+
+    expect(result.changedTiles).toEqual([]);
+    expect(result.changed).toBe(0);
+  });
+
+  it('tick with both DIRT-heal AND zone-growth mutations reports all changed coords; changed === changedTiles.length', () => {
+    // Arrange a map where:
+    //   (0,0) = ZONE_RESIDENTIAL (level 0), road-adjacent → will grow on tick ZONE_GROWTH_INTERVAL
+    //   (1,0) = ROAD
+    //   (2,0) = DIRT → will heal on every tick
+    // We advance to tick ZONE_GROWTH_INTERVAL - 1 without the DIRT tile, then place
+    // the DIRT tile just before the final tick so it heals on the same tick that
+    // growth fires.
+    const world = new World(4, 4);
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    // Advance to one tick before the first growth tick.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+
+    // Now place the DIRT tile; it will heal on the very next tick (= tick ZONE_GROWTH_INTERVAL).
+    map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
+
+    const result = world.tick(); // tick ZONE_GROWTH_INTERVAL: dirt heals + zone grows
+
+    // Exactly 2 mutations: the DIRT heal at (2,0) and the zone level-up at (0,0).
+    expect(result.changedTiles.length).toBe(2);
+    expect(result.changedTiles).toEqual(
+      expect.arrayContaining([
+        { x: 2, y: 0 },
+        { x: 0, y: 0 },
+      ]),
+    );
+    // Hard contract: changed is always changedTiles.length
+    expect(result.changed).toBe(result.changedTiles.length);
   });
 });
