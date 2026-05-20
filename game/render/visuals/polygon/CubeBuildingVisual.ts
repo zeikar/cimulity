@@ -98,7 +98,7 @@ function computeZIndex(footprint: ReadonlyArray<{ x: number; y: number }>): numb
 // ---------------------------------------------------------------------------
 
 function buildContext(input: BuildingVisualInput): GraphicsContext | null {
-  const faces = cubeFacePolygons(input.level, input.density, input.footprint, input.anchor);
+  const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
   if (faces === null) return null;
 
   const ctx = new GraphicsContext();

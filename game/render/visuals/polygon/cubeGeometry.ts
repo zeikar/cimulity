@@ -5,6 +5,8 @@
 
 import { tileToScreen, ISO_CONFIG } from '@/game/render/IsoTransform';
 import { cubeLiftPx } from './cubeLift';
+import type { BuildingType } from '@/game/core/Building';
+import { cubeTypeHeightPx, cubeTypeInsetRatio } from './cubeTypeRatios';
 
 export type Point = { x: number; y: number };
 
@@ -35,8 +37,11 @@ export function normalizeFootprint(
  *
  * Returns `null` for level === 0 (caller renders nothing; terrain diamond handles
  * the flat-zone appearance).
+ *
+ * Per-type height multiplier and horizontal inset are applied (see `cubeTypeRatios`). The footprint cells passed in are unchanged; the rendered cube may narrow inward of the footprint when the type has a non-zero inset (industrial and residential do not inset).
  */
 export function cubeFacePolygons(
+  type: BuildingType,
   level: number,
   density: 0 | 1 | 2,
   footprint: ReadonlyArray<{ x: number; y: number }>,
@@ -47,7 +52,8 @@ export function cubeFacePolygons(
   const anchorScreen = tileToScreen(anchor);
   const hw = ISO_CONFIG.TILE_WIDTH / 2;
   const hh = ISO_CONFIG.TILE_HEIGHT / 2;
-  const lift = cubeLiftPx(level, density);
+  const baseLift = cubeLiftPx(level, density);
+  const lift = cubeTypeHeightPx(baseLift, type);
 
   // Compute anchor-local screen corners for every footprint cell.
   // Each tile contributes 4 corners of its isometric diamond.
@@ -80,12 +86,14 @@ export function cubeFacePolygons(
   const midY = (minY + maxY) / 2;
   const spanX = (maxX - minX) / 2;
   const spanY = (maxY - minY) / 2;
+  const inset = cubeTypeInsetRatio(type);
+  const drawSpanX = spanX * (1 - 2 * inset);
 
   const top: Point[] = [
-    { x: midX, y: midY - spanY - lift },          // top vertex
-    { x: midX + spanX, y: midY - lift },           // right vertex
+    { x: midX, y: midY - spanY - lift },           // top vertex
+    { x: midX + drawSpanX, y: midY - lift },       // right vertex
     { x: midX, y: midY + spanY - lift },           // bottom vertex
-    { x: midX - spanX, y: midY - lift },           // left vertex
+    { x: midX - drawSpanX, y: midY - lift },       // left vertex
   ];
 
   // Side faces share the FRONT (south) vertex `top[2]` and drop to the base.

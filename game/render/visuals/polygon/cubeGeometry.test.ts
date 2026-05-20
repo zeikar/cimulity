@@ -67,19 +67,19 @@ describe('cubeFacePolygons', () => {
   it('returns null for level === 0', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    expect(cubeFacePolygons(0, 0, fp, anchor)).toBeNull();
+    expect(cubeFacePolygons('residential', 0, 0, fp, anchor)).toBeNull();
   });
 
   it('returns null for negative level', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    expect(cubeFacePolygons(-1, 0, fp, anchor)).toBeNull();
+    expect(cubeFacePolygons('residential', -1, 0, fp, anchor)).toBeNull();
   });
 
   it('returns polygon arrays for level > 0', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    const result = cubeFacePolygons(1, 0, fp, anchor);
+    const result = cubeFacePolygons('residential', 1, 0, fp, anchor);
     expect(result).not.toBeNull();
     expect(result!.top.length).toBeGreaterThan(0);
     expect(result!.left.length).toBeGreaterThan(0);
@@ -89,8 +89,8 @@ describe('cubeFacePolygons', () => {
   it('top face shifts by exactly cubeLiftPx(2,0)-cubeLiftPx(1,0) between level 1 and 2', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    const r1 = cubeFacePolygons(1, 0, fp, anchor)!;
-    const r2 = cubeFacePolygons(2, 0, fp, anchor)!;
+    const r1 = cubeFacePolygons('residential', 1, 0, fp, anchor)!;
+    const r2 = cubeFacePolygons('residential', 2, 0, fp, anchor)!;
 
     const topY1 = Math.min(...r1.top.map((p) => p.y));
     const topY2 = Math.min(...r2.top.map((p) => p.y));
@@ -100,8 +100,8 @@ describe('cubeFacePolygons', () => {
   it('top face at level 2 is higher (smaller Y) than at level 1 — monotonic', () => {
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    const r1 = cubeFacePolygons(1, 0, fp, anchor)!;
-    const r2 = cubeFacePolygons(2, 0, fp, anchor)!;
+    const r1 = cubeFacePolygons('residential', 1, 0, fp, anchor)!;
+    const r2 = cubeFacePolygons('residential', 2, 0, fp, anchor)!;
 
     const topY1 = Math.min(...r1.top.map((p) => p.y));
     const topY2 = Math.min(...r2.top.map((p) => p.y));
@@ -117,8 +117,8 @@ describe('cubeFacePolygons', () => {
       { x: 1, y: 1 },
     ];
     const anchor = { x: 0, y: 0 };
-    const r1x1 = cubeFacePolygons(1, 0, fp1x1, anchor)!;
-    const r2x2 = cubeFacePolygons(1, 0, fp2x2, anchor)!;
+    const r1x1 = cubeFacePolygons('residential', 1, 0, fp1x1, anchor)!;
+    const r2x2 = cubeFacePolygons('residential', 1, 0, fp2x2, anchor)!;
 
     const width1x1 = Math.max(...r1x1.top.map((p) => p.x)) - Math.min(...r1x1.top.map((p) => p.x));
     const width2x2 = Math.max(...r2x2.top.map((p) => p.x)) - Math.min(...r2x2.top.map((p) => p.x));
@@ -132,8 +132,8 @@ describe('cubeFacePolygons', () => {
     const fp10 = [{ x: 10, y: 10 }, { x: 11, y: 10 }];
     const anchor10 = { x: 10, y: 10 };
 
-    const r0 = cubeFacePolygons(2, 0, fp0, anchor0)!;
-    const r10 = cubeFacePolygons(2, 0, fp10, anchor10)!;
+    const r0 = cubeFacePolygons('residential', 2, 0, fp0, anchor0)!;
+    const r10 = cubeFacePolygons('residential', 2, 0, fp10, anchor10)!;
 
     // All polygon points should be numerically equal in anchor-local space.
     const toStr = (pts: { x: number; y: number }[]) =>
@@ -151,7 +151,7 @@ describe('cubeFacePolygons', () => {
       { x: 2, y: 1 },
       { x: 1, y: 2 },
     ];
-    const result = cubeFacePolygons(1, 0, lShape, anchor)!;
+    const result = cubeFacePolygons('residential', 1, 0, lShape, anchor)!;
 
     // The anchor cell's top corner in anchor-local coords should be (0, 0).
     // tileToScreen(anchor) - tileToScreen(anchor) = (0, 0), which is the top-corner of the anchor tile.
@@ -168,8 +168,8 @@ describe('cubeFacePolygons', () => {
     const L = 3;
     const fp = [{ x: 0, y: 0 }];
     const anchor = { x: 0, y: 0 };
-    const r0 = cubeFacePolygons(L, 0, fp, anchor)!;
-    const r2 = cubeFacePolygons(L, 2, fp, anchor)!;
+    const r0 = cubeFacePolygons('residential', L, 0, fp, anchor)!;
+    const r2 = cubeFacePolygons('residential', L, 2, fp, anchor)!;
 
     const liftDiff = cubeLiftPx(L, 2) - cubeLiftPx(L, 0);
 
