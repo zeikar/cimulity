@@ -244,3 +244,188 @@ describe("getRenderHeight", () => {
     expect(t.getRenderHeight(2, 2)).toBe(t.getTileElevation(2, 2));
   });
 });
+
+describe("getSlopeMask", () => {
+  const noWater = () => false;
+
+  it("OOB center returns 0", () => {
+    const t = new Terrain(5, 5);
+    expect(t.getSlopeMask(-1, 0)).toBe(0);
+    expect(t.getSlopeMask(10, 10)).toBe(0);
+  });
+
+  it("flat map — all-zero elevations — every tile has mask 0", () => {
+    const t = new Terrain(5, 5);
+    expect(t.getSlopeMask(2, 2)).toBe(0);
+    expect(t.getSlopeMask(0, 0)).toBe(0);
+  });
+
+  it("1×1 raised tile has non-zero mask", () => {
+    const t = new Terrain(5, 5);
+    t.unsafeSetElevation(1, 1, 1);
+    expect(t.getSlopeMask(1, 1)).not.toBe(0);
+  });
+
+  it("OOB neighbors treated as equal — map-edge tile on all-zero map has mask 0", () => {
+    const t = new Terrain(5, 5);
+    // (0,0) has OOB N and W neighbors; they are treated as equal, so mask stays 0
+    expect(t.getSlopeMask(0, 0)).toBe(0);
+  });
+
+  it("cliff case: diff=3 still sets LOWER_* bits", () => {
+    const t = new Terrain(5, 5);
+    t.unsafeSetElevation(2, 2, 3);
+    // Neighbors at 0, diff = 3 — bits must still be set
+    expect(t.getSlopeMask(2, 2)).not.toBe(0);
+    expect(t.isFlatTile(2, 2, noWater)).toBe(false);
+  });
+});
+
+describe("getTerrainShape", () => {
+  it("OOB returns flat", () => {
+    const t = new Terrain(5, 5);
+    expect(t.getTerrainShape(-1, 0)).toBe("flat");
+  });
+
+  it("all-zero map — center returns flat", () => {
+    const t = new Terrain(5, 5);
+    expect(t.getTerrainShape(2, 2)).toBe("flat");
+  });
+});
+
+describe("isFlatTile", () => {
+  const noWater = () => false;
+
+  it("1×1 raised tile in all-zero map is NOT flat", () => {
+    const t = new Terrain(5, 5);
+    t.unsafeSetElevation(1, 1, 1);
+    expect(t.isFlatTile(1, 1, noWater)).toBe(false);
+  });
+
+  it("flat ground tile is flat when water predicate returns false", () => {
+    const t = new Terrain(5, 5);
+    expect(t.isFlatTile(2, 2, noWater)).toBe(true);
+  });
+
+  it("water predicate rejects an otherwise-flat tile", () => {
+    const t = new Terrain(5, 5);
+    expect(t.isFlatTile(2, 2, (x, y) => x === 2 && y === 2)).toBe(false);
+  });
+
+  it("OOB tile is not flat", () => {
+    const t = new Terrain(5, 5);
+    expect(t.isFlatTile(-1, 0, noWater)).toBe(false);
+  });
+
+  it("interior of 3×3 plateau is flat", () => {
+    // 5×5 map, 3×3 plateau at (0..2)×(0..2) all at elevation 1
+    const t = new Terrain(5, 5);
+    for (let py = 0; py < 3; py++) {
+      for (let px = 0; px < 3; px++) {
+        t.unsafeSetElevation(px, py, 1);
+      }
+    }
+    // Interior tile (1,1): all 4 orthogonal neighbors are also elevation 1 → mask 0
+    expect(t.getSlopeMask(1, 1)).toBe(0);
+    expect(t.isFlatTile(1, 1, noWater)).toBe(true);
+  });
+
+  it("edge tile of 3×3 plateau is NOT flat (sees lower neighbor outside)", () => {
+    // 5×5 map, 3×3 plateau at (0..2)×(0..2) all at elevation 1
+    // (0,0) is a map-corner: OOB N and W are treated as equal, but S and E ARE in-bounds.
+    // Pick (2,1): in-bounds on all sides, E neighbor (3,1) = 0 < 1 → mask non-zero
+    const t = new Terrain(5, 5);
+    for (let py = 0; py < 3; py++) {
+      for (let px = 0; px < 3; px++) {
+        t.unsafeSetElevation(px, py, 1);
+      }
+    }
+    expect(t.getSlopeMask(2, 1)).not.toBe(0);
+    expect(t.isFlatTile(2, 1, noWater)).toBe(false);
+  });
+});
+
+describe("isFlatArea", () => {
+  const noWater = () => false;
+
+  it("2×2 with one corner raised returns false", () => {
+    const t = new Terrain(5, 5);
+    t.unsafeSetElevation(1, 1, 1);
+    expect(t.isFlatArea(0, 0, 2, 2, noWater)).toBe(false);
+  });
+
+  it("interior 3×3 of a 5×5 plateau at elevation 1 returns true", () => {
+    // 5×5 map with full 5×5 plateau at elevation 1
+    // Interior rect (1,1) 3×3: all cells have elevation-1 neighbors → mask 0
+    const t = new Terrain(5, 5);
+    for (let py = 0; py < 5; py++) {
+      for (let px = 0; px < 5; px++) {
+        t.unsafeSetElevation(px, py, 1);
+      }
+    }
+    expect(t.isFlatArea(1, 1, 3, 3, noWater)).toBe(true);
+  });
+
+  it("OOB rect returns false", () => {
+    const t = new Terrain(5, 5);
+    expect(t.isFlatArea(4, 4, 2, 2, noWater)).toBe(false);
+  });
+
+  it("water inside the rect causes false", () => {
+    const t = new Terrain(5, 5);
+    // (1,1) is flat elevation-0 but water predicate marks it as water
+    expect(t.isFlatArea(0, 0, 3, 3, (x, y) => x === 1 && y === 1)).toBe(false);
+  });
+});
+
+describe("canBuildAt", () => {
+  const noWater = () => false;
+
+  it("1×1 raised tile rejects", () => {
+    const t = new Terrain(5, 5);
+    t.unsafeSetElevation(1, 1, 1);
+    expect(t.canBuildAt(1, 1, 1, 1, noWater)).toBe(false);
+  });
+
+  it("flat 1×1 tile accepts", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canBuildAt(0, 0, 1, 1, noWater)).toBe(true);
+  });
+
+  it("water predicate injection: canBuildAt rejects water tile", () => {
+    const t = new Terrain(10, 10);
+    expect(t.canBuildAt(5, 5, 1, 1, (x, y) => x === 5 && y === 5)).toBe(false);
+  });
+
+  it("water predicate injection: canBuildAt accepts non-water flat tile", () => {
+    const t = new Terrain(10, 10);
+    expect(t.canBuildAt(0, 0, 1, 1, (x, y) => x === 5 && y === 5)).toBe(true);
+  });
+});
+
+describe("canBuildRoadAt", () => {
+  const noWater = () => false;
+
+  it("1×1 raised tile rejects", () => {
+    const t = new Terrain(5, 5);
+    t.unsafeSetElevation(1, 1, 1);
+    expect(t.canBuildRoadAt(1, 1, noWater)).toBe(false);
+  });
+
+  it("flat tile accepts", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canBuildRoadAt(0, 0, noWater)).toBe(true);
+  });
+
+  it("water predicate: water tile (3,3) rejects", () => {
+    const t = new Terrain(5, 5);
+    const water33 = (x: number, y: number) => x === 3 && y === 3;
+    expect(t.canBuildRoadAt(3, 3, water33)).toBe(false);
+  });
+
+  it("water predicate: non-water flat tile accepts", () => {
+    const t = new Terrain(5, 5);
+    const water33 = (x: number, y: number) => x === 3 && y === 3;
+    expect(t.canBuildRoadAt(0, 0, water33)).toBe(true);
+  });
+});

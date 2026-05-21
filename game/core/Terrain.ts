@@ -1,3 +1,5 @@
+import { slopeMaskFor, terrainShapeFor, TerrainShape } from "./terrainSlope";
+
 export type HeightMode = "tile-step" | "vertex-smooth";
 
 export type BaseTerrain = "grass" | "water" | "sand" | "rock";
@@ -157,5 +159,88 @@ export class Terrain {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isBelowWaterLevel(x: number, y: number): boolean {
     return false;
+  }
+
+  /**
+   * Returns a bitmask of which orthogonal neighbors are lower than this tile.
+   * OOB center returns 0. OOB neighbors are treated as equal to center (bit unset).
+   */
+  getSlopeMask(x: number, y: number): number {
+    if (!this.inBounds(x, y)) return 0;
+    const center = this.getTileElevation(x, y);
+    const n = this.inBounds(x, y - 1) ? this.getTileElevation(x, y - 1) : center;
+    const e = this.inBounds(x + 1, y) ? this.getTileElevation(x + 1, y) : center;
+    const s = this.inBounds(x, y + 1) ? this.getTileElevation(x, y + 1) : center;
+    const w = this.inBounds(x - 1, y) ? this.getTileElevation(x - 1, y) : center;
+    return slopeMaskFor(center, n, e, s, w);
+  }
+
+  /** Returns "flat" for OOB; otherwise maps the slope mask to a named shape. */
+  getTerrainShape(x: number, y: number): TerrainShape {
+    if (!this.inBounds(x, y)) return "flat";
+    return terrainShapeFor(this.getSlopeMask(x, y));
+  }
+
+  /**
+   * A tile is flat/buildable iff it is in-bounds, has slope mask 0,
+   * and the injected water predicate returns false.
+   */
+  isFlatTile(
+    x: number,
+    y: number,
+    isWater: (x: number, y: number) => boolean
+  ): boolean {
+    return this.inBounds(x, y) && this.getSlopeMask(x, y) === 0 && !isWater(x, y);
+  }
+
+  /**
+   * True iff the entire w×h rect is in-bounds, all cells share the same elevation,
+   * and every cell passes isFlatTile (catches edge cells whose lower neighbor sits
+   * outside the rect).
+   */
+  isFlatArea(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    isWater: (x: number, y: number) => boolean
+  ): boolean {
+    // Rect must be fully in-bounds
+    if (
+      !this.inBounds(x, y) ||
+      !this.inBounds(x + w - 1, y + h - 1)
+    ) return false;
+
+    const e0 = this.getTileElevation(x, y);
+    for (let cy = y; cy < y + h; cy++) {
+      for (let cx = x; cx < x + w; cx++) {
+        if (this.getTileElevation(cx, cy) !== e0) return false;
+        if (!this.isFlatTile(cx, cy, isWater)) return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * V1: a w×h footprint is buildable iff the area is uniformly flat.
+   * Exists so future slope-build rules can be added without breaking callers.
+   */
+  canBuildAt(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    isWater: (x: number, y: number) => boolean
+  ): boolean {
+    return this.isFlatArea(x, y, w, h, isWater);
+  }
+
+  /** V1: a road tile is buildable iff the single tile is flat. */
+  canBuildRoadAt(
+    x: number,
+    y: number,
+    isWater: (x: number, y: number) => boolean
+  ): boolean {
+    return this.isFlatTile(x, y, isWater);
   }
 }
