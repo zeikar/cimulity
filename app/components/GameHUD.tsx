@@ -11,6 +11,8 @@ import { Tool } from '@/game/tools';
 
 const TOOL_LABELS: Record<Tool, string> = {
   [Tool.SELECT]: 'Select',
+  [Tool.PAINT_WATER]: 'Paint Water',
+  [Tool.PAINT_GRASS]: 'Paint Grass',
   [Tool.ROAD]: 'Road',
   [Tool.BULLDOZE]: 'Bulldoze',
   [Tool.ZONE_RESIDENTIAL]: 'Residential',
