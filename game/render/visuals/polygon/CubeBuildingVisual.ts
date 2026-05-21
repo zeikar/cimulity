@@ -105,8 +105,12 @@ function computeZIndex(footprint: ReadonlyArray<{ x: number; y: number }>): numb
   return maxDepth * 1000 + tiebreakY;
 }
 
+// All shadows must draw before any face — large negative offset puts every shadow zIndex
+// below any computeZIndex(footprint) value while preserving relative depth among shadows.
+export const SHADOW_Z_OFFSET = -1_000_000;
+
 // ---------------------------------------------------------------------------
-// Context builder
+// Context builders
 // ---------------------------------------------------------------------------
 
 function drawPoly(
@@ -169,7 +173,7 @@ function drawCubeFaces(
   }
 }
 
-function buildContext(input: BuildingVisualInput): GraphicsContext | null {
+function buildShadowContext(input: BuildingVisualInput): GraphicsContext | null {
   if (input.level <= 0) return null;
 
   const ctx = new GraphicsContext();
@@ -177,15 +181,11 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
   if (isBoundingDiamondAccurate(input.footprint)) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
     if (faces === null) return null;
-    // shadow geometry is a deterministic function of faces (level/density/type/footprint) — existing cache key covers it
     drawCubeShadow(ctx, faces, 0, 0);
-    drawCubeFaces(ctx, faces, input, 0, 0);
     return ctx;
   }
 
-  // Irregular footprint (L-shape, T, etc.): render one small cube per cell
-  // so the silhouette follows the actual footprint, not its bounding rect.
-  // Back-most cells (smaller x+y) draw first so iso depth reads correctly.
+  // Irregular footprint: one shadow polygon per cell, back-to-front.
   const anchorScreen = tileToScreen(input.anchor);
   const sorted = [...input.footprint].sort((a, b) => {
     const da = a.x + a.y;
@@ -193,25 +193,43 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
     return da !== db ? da - db : a.y - b.y;
   });
 
-  // Shadow pass first — back-cell shadows must not paint over front-cell faces in this context.
-  for (const cell of sorted) {
-    const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
-    if (faces === null) continue;
-    const cellScreen = tileToScreen(cell);
-    const ox = cellScreen.x - anchorScreen.x;
-    const oy = cellScreen.y - anchorScreen.y;
-    drawCubeShadow(ctx, faces, ox, oy);
-  }
-
-  // Faces pass — drew tracks whether anything visible was committed.
   let drew = false;
   for (const cell of sorted) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
     if (faces === null) continue;
     const cellScreen = tileToScreen(cell);
-    const ox = cellScreen.x - anchorScreen.x;
-    const oy = cellScreen.y - anchorScreen.y;
-    drawCubeFaces(ctx, faces, input, ox, oy);
+    drawCubeShadow(ctx, faces, cellScreen.x - anchorScreen.x, cellScreen.y - anchorScreen.y);
+    drew = true;
+  }
+  return drew ? ctx : null;
+}
+
+function buildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
+  if (input.level <= 0) return null;
+
+  const ctx = new GraphicsContext();
+
+  if (isBoundingDiamondAccurate(input.footprint)) {
+    const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
+    if (faces === null) return null;
+    drawCubeFaces(ctx, faces, input, 0, 0);
+    return ctx;
+  }
+
+  // Irregular footprint: one cube per cell, back-to-front.
+  const anchorScreen = tileToScreen(input.anchor);
+  const sorted = [...input.footprint].sort((a, b) => {
+    const da = a.x + a.y;
+    const db = b.x + b.y;
+    return da !== db ? da - db : a.y - b.y;
+  });
+
+  let drew = false;
+  for (const cell of sorted) {
+    const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
+    if (faces === null) continue;
+    const cellScreen = tileToScreen(cell);
+    drawCubeFaces(ctx, faces, input, cellScreen.x - anchorScreen.x, cellScreen.y - anchorScreen.y);
     drew = true;
   }
   return drew ? ctx : null;
@@ -224,64 +242,111 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
 export class CubeBuildingVisual implements BuildingVisual {
   readonly layer = 'building' as const;
 
-  /** Cache keyed by `${type}:${level}:${density}:${normalizedFootprint}`. */
-  private cache: Map<string, GraphicsContext> = new Map();
+  /** Separate caches — shadow and faces share the same key but are distinct GraphicsContexts. */
+  private shadowCache: Map<string, GraphicsContext> = new Map();
+  private facesCache: Map<string, GraphicsContext> = new Map();
 
   /** Singleton empty context for level-0 / downgrade — avoids leaking a fresh
-   *  GraphicsContext on every level→0 transition. NOT entered into `cache` so
+   *  GraphicsContext on every level→0 transition. NOT entered into caches so
    *  dispose() doesn't double-free it; the static instance is intentional and
    *  lives until module unload. */
   private static readonly emptyContext: GraphicsContext = new GraphicsContext();
 
-  private getOrBuildContext(input: BuildingVisualInput): GraphicsContext | null {
+  /** Maps the tracked facesGfx → its sibling shadowGfx so update/unmount can reach both. */
+  private shadowByFaces: WeakMap<Graphics, Graphics> = new WeakMap();
+
+  private getOrBuildShadowContext(input: BuildingVisualInput): GraphicsContext | null {
     if (input.level === 0) return null;
     const key = cacheKey(input);
-    let ctx = this.cache.get(key);
+    let ctx = this.shadowCache.get(key);
     if (!ctx) {
-      ctx = buildContext(input) ?? undefined;
-      if (ctx) this.cache.set(key, ctx);
+      ctx = buildShadowContext(input) ?? undefined;
+      if (ctx) this.shadowCache.set(key, ctx);
+    }
+    return ctx ?? null;
+  }
+
+  private getOrBuildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
+    if (input.level === 0) return null;
+    const key = cacheKey(input);
+    let ctx = this.facesCache.get(key);
+    if (!ctx) {
+      ctx = buildFacesContext(input) ?? undefined;
+      if (ctx) this.facesCache.set(key, ctx);
     }
     return ctx ?? null;
   }
 
   mount(input: BuildingVisualInput, parent: Container): Container {
-    const gfx = new Graphics();
+    const facesGfx = new Graphics();
+    const facesCtx = this.getOrBuildFacesContext(input);
+    if (facesCtx) facesGfx.context = facesCtx;
 
-    const ctx = this.getOrBuildContext(input);
-    if (ctx) {
-      gfx.context = ctx;
-    }
-    // Always position at anchor's screen coordinates (anchor-local geometry is relative here).
     const screen = tileToScreen(input.anchor);
-    gfx.position.set(screen.x, screen.y);
-    gfx.zIndex = computeZIndex(input.footprint);
+    const zIndex = computeZIndex(input.footprint);
+    facesGfx.position.set(screen.x, screen.y);
+    facesGfx.zIndex = zIndex;
+    parent.addChild(facesGfx);
 
-    parent.addChild(gfx);
-    return gfx;
+    const shadowCtx = this.getOrBuildShadowContext(input);
+    if (shadowCtx) {
+      const shadowGfx = new Graphics();
+      shadowGfx.context = shadowCtx;
+      shadowGfx.position.set(screen.x, screen.y);
+      // SHADOW_Z_OFFSET ensures every shadow draws before every face in the sorted building layer.
+      shadowGfx.zIndex = SHADOW_Z_OFFSET + zIndex;
+      parent.addChild(shadowGfx);
+      this.shadowByFaces.set(facesGfx, shadowGfx);
+    }
+
+    return facesGfx;
   }
 
   update(input: BuildingVisualInput, displayObject: Container): void {
-    const gfx = displayObject as Graphics;
-    const newCtx = this.getOrBuildContext(input);
+    const facesGfx = displayObject as Graphics;
+    const newFacesCtx = this.getOrBuildFacesContext(input);
 
-    // Swap context if the shape/level/density changed, or clear if now level 0.
-    // Reuse the shared empty context for level-0 transitions to avoid leaking.
-    gfx.context = newCtx ?? CubeBuildingVisual.emptyContext;
+    // Swap context if shape/level/density changed, or clear on level→0.
+    facesGfx.context = newFacesCtx ?? CubeBuildingVisual.emptyContext;
 
     const screen = tileToScreen(input.anchor);
-    gfx.position.set(screen.x, screen.y);
-    gfx.zIndex = computeZIndex(input.footprint);
+    const zIndex = computeZIndex(input.footprint);
+    facesGfx.position.set(screen.x, screen.y);
+    facesGfx.zIndex = zIndex;
+
+    const newShadowCtx = this.getOrBuildShadowContext(input);
+    const existingShadowGfx = this.shadowByFaces.get(facesGfx);
+
+    if (existingShadowGfx) {
+      existingShadowGfx.context = newShadowCtx ?? CubeBuildingVisual.emptyContext;
+      existingShadowGfx.position.set(screen.x, screen.y);
+      existingShadowGfx.zIndex = SHADOW_Z_OFFSET + zIndex;
+    } else if (newShadowCtx) {
+      // Level rose from 0: create the shadow sibling now.
+      const shadowGfx = new Graphics();
+      shadowGfx.context = newShadowCtx;
+      shadowGfx.position.set(screen.x, screen.y);
+      shadowGfx.zIndex = SHADOW_Z_OFFSET + zIndex;
+      // update() is only called while the object is mounted, so parent is non-null
+      facesGfx.parent!.addChild(shadowGfx);
+      this.shadowByFaces.set(facesGfx, shadowGfx);
+    }
   }
 
   unmount(displayObject: Container): void {
-    // Only destroy the instance — cache stays alive (disposed via dispose()).
-    displayObject.destroy();
+    const facesGfx = displayObject as Graphics;
+    const shadowGfx = this.shadowByFaces.get(facesGfx);
+    if (shadowGfx) {
+      shadowGfx.destroy();
+      this.shadowByFaces.delete(facesGfx);
+    }
+    facesGfx.destroy();
   }
 
   dispose(): void {
-    for (const ctx of this.cache.values()) {
-      ctx.destroy();
-    }
-    this.cache.clear();
+    for (const ctx of this.shadowCache.values()) ctx.destroy();
+    this.shadowCache.clear();
+    for (const ctx of this.facesCache.values()) ctx.destroy();
+    this.facesCache.clear();
   }
 }

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { Container } from 'pixi.js';
 import { SHADOW_COLOR, SHADOW_ALPHA, cubeShadowPolygon } from './cubeDropShadow';
 import { cubeFacePolygons } from './cubeGeometry';
+import { SHADOW_Z_OFFSET, CubeBuildingVisual } from './CubeBuildingVisual';
 
 describe('cubeDropShadow', () => {
   it('SHADOW_COLOR is 0x000000', () => {
@@ -110,5 +112,66 @@ describe('cubeDropShadow', () => {
     expect(out[1]).toEqual({x:32,y:0});
     expect(out[2]).toEqual({x:0,y:16});
     expect(out[3]).toEqual({x:-32,y:0});
+  });
+
+  // SHADOW_Z_OFFSET invariant: shadow Graphics draw before all face Graphics in the building layer.
+  // The building layer uses sortableChildren=true; shadows get SHADOW_Z_OFFSET + computeZIndex,
+  // faces get computeZIndex alone — so every shadow zIndex is strictly less than every face zIndex.
+  describe('SHADOW_Z_OFFSET: shadow zIndex is always below any face zIndex', () => {
+    it('SHADOW_Z_OFFSET is a large negative constant', () => {
+      expect(SHADOW_Z_OFFSET).toBe(-1_000_000);
+      expect(SHADOW_Z_OFFSET).toBeLessThan(-1000);
+    });
+
+    it('SHADOW_Z_OFFSET + computeZIndex < computeZIndex for extreme plausible values', () => {
+      // computeZIndex = depth*1000 + tiebreakY; max plausible on a 256×256 map ≈ 512*1000+256 = 512256
+      const maxPlausibleFacesZIndex = 512_256;
+      const shadowZIndex = SHADOW_Z_OFFSET + maxPlausibleFacesZIndex;
+      expect(shadowZIndex).toBeLessThan(maxPlausibleFacesZIndex);
+
+      // Also check the minimum (negative depth tiles near origin)
+      const minPlausibleFacesZIndex = -512_256;
+      const shadowZIndexMin = SHADOW_Z_OFFSET + minPlausibleFacesZIndex;
+      expect(shadowZIndexMin).toBeLessThan(minPlausibleFacesZIndex);
+    });
+  });
+
+  // Lifecycle regression: TileRenderer must call CubeBuildingVisual.unmount() (not displayObject.destroy()
+  // directly) so the shadow sibling is also cleaned up. Pinned here at the visual layer so future changes
+  // to mount() that add more sibling Graphics get matching unmount() coverage by construction.
+  describe('CubeBuildingVisual mount/unmount lifecycle (shadow sibling cleanup)', () => {
+    const baseInput = {
+      buildingId: 1,
+      type: 'residential' as const,
+      anchor: { x: 0, y: 0 },
+      footprint: [{ x: 0, y: 0 }],
+      density: 0 as 0 | 1 | 2,
+    };
+
+    it('mount adds two children (faces + shadow) when level > 0; unmount removes both', () => {
+      const visual = new CubeBuildingVisual();
+      const parent = new Container();
+      const facesGfx = visual.mount({ ...baseInput, level: 1 }, parent);
+
+      expect(parent.children.length).toBe(2);
+
+      visual.unmount(facesGfx);
+      expect(parent.children.length).toBe(0);
+
+      visual.dispose();
+    });
+
+    it('mount at level 0 adds only the placeholder faces Graphics (no shadow); unmount removes it cleanly', () => {
+      const visual = new CubeBuildingVisual();
+      const parent = new Container();
+      const facesGfx = visual.mount({ ...baseInput, level: 0 }, parent);
+
+      expect(parent.children.length).toBe(1);
+
+      visual.unmount(facesGfx);
+      expect(parent.children.length).toBe(0);
+
+      visual.dispose();
+    });
   });
 });

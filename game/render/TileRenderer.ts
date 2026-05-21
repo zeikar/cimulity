@@ -24,6 +24,7 @@ import { TileType } from '../core/Tile';
 import { BuildingType } from '../core/Building';
 import type { World } from '../core/World';
 import type { Building } from '../core/Building';
+import type { BuildingVisual } from './visuals/TileVisual';
 import type { VisibleTileBounds } from './viewportCulling';
 import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
 
@@ -60,6 +61,8 @@ interface TileEntry {
 
 interface BuildingEntry {
   displayObject: Container;
+  // Tracked so unmount routes through the visual's lifecycle (cleans up shadow sibling Graphics).
+  visual: BuildingVisual;
 }
 
 export class TileRenderer {
@@ -229,7 +232,7 @@ export class TileRenderer {
     const existing = this.buildingById.get(building.id);
     if (!existing) {
       const displayObject = visual.mount(input, this.buildingContainer);
-      this.buildingById.set(building.id, { displayObject });
+      this.buildingById.set(building.id, { displayObject, visual });
     } else {
       visual.update(input, existing.displayObject);
     }
@@ -237,11 +240,8 @@ export class TileRenderer {
 
   /** Unmount a building by id and remove from the map. */
   private unmountBuilding(id: number, entry: BuildingEntry): void {
-    // We don't know the type here, but all building types share the same
-    // CubeBuildingVisual instance, so any registered visual will do.
-    // We can get the type from the registry if needed, but unmount only
-    // calls destroy() on the displayObject — type is irrelevant.
-    entry.displayObject.destroy();
+    // Route through visual.unmount so sibling Graphics (e.g. drop-shadow) are cleaned up too.
+    entry.visual.unmount(entry.displayObject);
     this.buildingById.delete(id);
   }
 
@@ -263,9 +263,9 @@ export class TileRenderer {
     }
     this.tiles.clear();
 
-    // Destroy building display objects.
-    for (const { displayObject } of this.buildingById.values()) {
-      displayObject.destroy({ children: true });
+    // Route through visual.unmount so sibling Graphics (e.g. drop-shadow) are cleaned up too.
+    for (const { displayObject, visual } of this.buildingById.values()) {
+      visual.unmount(displayObject);
     }
     this.buildingById.clear();
 
