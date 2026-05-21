@@ -172,6 +172,96 @@ describe('buildToolCommands - Tool.BULLDOZE', () => {
   });
 });
 
+describe('buildToolCommands - paint tools', () => {
+  const paintTable: [Tool, TileType, string][] = [
+    [Tool.PAINT_WATER, TileType.WATER, 'PAINT_WATER'],
+    [Tool.PAINT_GRASS, TileType.GRASS, 'PAINT_GRASS'],
+  ];
+
+  for (const [tool, targetType, label] of paintTable) {
+    describe(`Tool.${label}`, () => {
+      it('(a) emits one command on default GRASS; same-type is a no-op', () => {
+        if (tool === Tool.PAINT_WATER) {
+          // Default tile is GRASS → PAINT_WATER should emit
+          const commands = buildToolCommands(tool, [{ x: 2, y: 3 }], world);
+          expect(commands).toHaveLength(1);
+          expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, targetType) });
+
+          // WATER tile → PAINT_WATER is same-type no-op
+          world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+          const noopCommands = buildToolCommands(tool, [{ x: 1, y: 1 }], world);
+          expect(noopCommands).toHaveLength(0);
+        } else {
+          // PAINT_GRASS: DIRT → should emit
+          world.getMap().setTile(2, 3, createTile(2, 3, TileType.DIRT));
+          const commands = buildToolCommands(tool, [{ x: 2, y: 3 }], world);
+          expect(commands).toHaveLength(1);
+          expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, targetType) });
+
+          // GRASS tile → PAINT_GRASS is same-type no-op
+          const noopCommands = buildToolCommands(tool, [{ x: 0, y: 0 }], world);
+          expect(noopCommands).toHaveLength(0);
+        }
+      });
+
+      it('(b) emits one command on a DIRT tile', () => {
+        world.getMap().setTile(4, 4, createTile(4, 4, TileType.DIRT));
+        const commands = buildToolCommands(tool, [{ x: 4, y: 4 }], world);
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toEqual({ x: 4, y: 4, tile: createTile(4, 4, targetType) });
+      });
+
+      it('(c) returns [] on a ROAD tile', () => {
+        world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+        const commands = buildToolCommands(tool, [{ x: 2, y: 2 }], world);
+        expect(commands).toHaveLength(0);
+      });
+
+      it('(d) returns [] on each zone type', () => {
+        const zoneTypes: TileType[] = [
+          TileType.ZONE_RESIDENTIAL,
+          TileType.ZONE_COMMERCIAL,
+          TileType.ZONE_INDUSTRIAL,
+        ];
+        for (const zoneType of zoneTypes) {
+          world.getMap().setTile(3, 3, createTile(3, 3, zoneType));
+          const commands = buildToolCommands(tool, [{ x: 3, y: 3 }], world);
+          expect(commands).toHaveLength(0);
+        }
+      });
+
+      it('(e) returns [] for out-of-bounds {x:99,y:99}', () => {
+        const commands = buildToolCommands(tool, [{ x: 99, y: 99 }], world);
+        expect(commands).toHaveLength(0);
+      });
+
+      it('(f/g) mixed batch [WATER, ROAD, GRASS, DIRT]: only accepted source tiles emit commands', () => {
+        world.getMap().setTile(0, 0, createTile(0, 0, TileType.WATER));
+        world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+        // tile at (2,0) is default GRASS
+        world.getMap().setTile(3, 0, createTile(3, 0, TileType.DIRT));
+
+        const commands = buildToolCommands(
+          tool,
+          [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }],
+          world
+        );
+
+        if (tool === Tool.PAINT_WATER) {
+          // PAINT_WATER: WATER skipped (same-type), ROAD blocked, GRASS accepted, DIRT accepted
+          expect(commands).toHaveLength(2);
+          expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, targetType) });
+          expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
+        } else {
+          // PAINT_GRASS: WATER blocked (not in allowlist), ROAD blocked, GRASS skipped (same-type), DIRT accepted
+          expect(commands).toHaveLength(1);
+          expect(commands[0]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
+        }
+      });
+    });
+  }
+});
+
 describe('buildToolCommands - no-op tools still return []', () => {
   it('Tool.SELECT returns empty', () => {
     const commands = buildToolCommands(Tool.SELECT, [{ x: 0, y: 0 }], world);
