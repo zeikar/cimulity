@@ -1096,6 +1096,50 @@ describe('World.tick() — no-building branch creates level-0 building', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 7: zone-growth terrain buildability gate
+// ---------------------------------------------------------------------------
+
+describe('World.tick() — zone-growth blocked on slope edge tile', () => {
+  it('zone tile on slope edge does NOT grow even after ZONE_GROWTH_INTERVAL ticks', () => {
+    // Tile (1,0) is raised to elevation 1; its east/west neighbors are at 0 → slope mask non-zero.
+    // canBuildAt(1,0,1,1) = false → Branch A skips building creation.
+    // Road placed at (1,1) (elevation 0, flat) to satisfy road-adjacency requirement for the zone.
+    const world = new World(6, 6);
+    const map = world.getMap();
+    world.getTerrain().unsafeSetElevation(1, 0, 1);
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ROAD)); // orthogonal neighbor (south)
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    expect(map.getBuildings().getBuildingAt(1, 0)).toBeNull();
+  });
+});
+
+describe('World.tick() — zone-growth proceeds on plateau interior tile', () => {
+  it('zone tile on 5×5 plateau interior DOES grow when it has a road neighbor inside the plateau', () => {
+    // 5×5 plateau at (2,2)–(6,6): all tiles at elevation 1.
+    // Interior cells (not on the plateau edge) are (3,3)–(5,5) — all have elevation-1 orthogonal neighbors.
+    // Zone at (3,3), road at (4,3) — both interior flat tiles at the same elevation.
+    // canBuildAt(3,3,1,1) = true → building is created on the first growth tick.
+    const world = new World(10, 10);
+    const map = world.getMap();
+    for (let py = 2; py <= 6; py++) {
+      for (let px = 2; px <= 6; px++) {
+        world.getTerrain().unsafeSetElevation(px, py, 1);
+      }
+    }
+    map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
+    map.setTile(4, 3, createTile(4, 3, TileType.ROAD)); // orthogonal neighbor (east), inside plateau
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    expect(map.getBuildings().getBuildingAt(3, 3)).not.toBeNull();
+    expect(map.getBuildings().getBuildingAt(3, 3)?.level).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Terrain integration tests (Task 4)
 // ---------------------------------------------------------------------------
 

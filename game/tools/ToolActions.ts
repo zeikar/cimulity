@@ -63,9 +63,14 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
     }
 
     // Cannot place roads on water or zoned land
+    // Belt-and-suspenders: world.canBuildRoadAt already injects isWater, but the tile-type
+    // guard below also keeps roads off zone tiles (which canBuildRoadAt does not check).
     if (currentTile.type === TileType.WATER || isZoneType(currentTile.type)) {
       continue;
     }
+
+    // Skip slope/water tiles — terrain buildability gate.
+    if (!world.canBuildRoadAt(coord.x, coord.y)) continue;
 
     commands.push({
       x: coord.x,
@@ -125,6 +130,8 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
       currentTile.type === TileType.DIRT ||
       isZoneType(currentTile.type);
     if (!paintable) continue;
+    // Skip slope/water tiles — terrain buildability gate.
+    if (!world.canBuildAt(coord.x, coord.y, 1, 1)) continue;
     commands.push({
       x: coord.x,
       y: coord.y,
@@ -141,6 +148,8 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
  * GRASS/DIRT/WATER (so water painted by PAINT_WATER can be restored).
  * Roads and zones always require bulldoze first. Same-type is a no-op.
  * Reads world only to decide intent; never mutates core.
+ *
+ * v1: water lives on tile layer; terrain.baseTiles is RESERVED (all-grass). PAINT_WATER does not touch terrain.
  */
 function buildPaintTerrainCommands(
   targetType: TileType.WATER | TileType.GRASS,

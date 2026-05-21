@@ -280,3 +280,80 @@ describe('buildToolCommands - no-op tools still return []', () => {
     expect(commands).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Terrain buildability gates (Task 7)
+// ---------------------------------------------------------------------------
+
+describe('buildToolCommands — terrain buildability gates', () => {
+  describe('raised single tile (cliff): 2×2 map with (1,1) at elevation 1', () => {
+    it('road at raised (1,1) is REJECTED; road at flat (0,0) is ACCEPTED', () => {
+      // (1,1) raised: its flat neighbors are at 0 → slope mask non-zero → canBuildRoadAt = false
+      world.getTerrain().unsafeSetElevation(1, 1, 1);
+      const commands = buildToolCommands(
+        Tool.ROAD,
+        [{ x: 1, y: 1 }, { x: 0, y: 0 }],
+        world
+      );
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) });
+    });
+
+    it('zone at raised (1,1) is REJECTED; zone at flat (0,0) is ACCEPTED', () => {
+      world.getTerrain().unsafeSetElevation(1, 1, 1);
+      const commands = buildToolCommands(
+        Tool.ZONE_RESIDENTIAL,
+        [{ x: 1, y: 1 }, { x: 0, y: 0 }],
+        world
+      );
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.ZONE_RESIDENTIAL) });
+    });
+  });
+
+  describe('3×3 plateau: interior tile flat, edge tile on slope rejected', () => {
+    beforeEach(() => {
+      // Raise a 3×3 block at (2,2)-(4,4) to elevation 1.
+      // Interior tile (3,3): all 4 orthogonal neighbors inside plateau → same elevation → flat.
+      // Edge tile (2,2): neighbor (1,2) at elevation 0 → slope mask non-zero → not flat.
+      for (let py = 2; py < 5; py++) {
+        for (let px = 2; px < 5; px++) {
+          world.getTerrain().unsafeSetElevation(px, py, 1);
+        }
+      }
+    });
+
+    it('road tool ACCEPTS interior plateau tile (3,3)', () => {
+      const commands = buildToolCommands(Tool.ROAD, [{ x: 3, y: 3 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ x: 3, y: 3, tile: createTile(3, 3, TileType.ROAD) });
+    });
+
+    it('road tool REJECTS edge plateau tile (2,2) which has a lower neighbor at (1,2)', () => {
+      const commands = buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world);
+      expect(commands).toHaveLength(0);
+    });
+
+    it('road tool ACCEPTS flat surrounding tile (0,0)', () => {
+      const commands = buildToolCommands(Tool.ROAD, [{ x: 0, y: 0 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) });
+    });
+  });
+
+  describe('water tile on tile layer rejects road and zone via World.isWater wire', () => {
+    beforeEach(() => {
+      world.getMap().setTile(5, 5, createTile(5, 5, TileType.WATER));
+    });
+
+    it('road at WATER tile (5,5) is REJECTED', () => {
+      const commands = buildToolCommands(Tool.ROAD, [{ x: 5, y: 5 }], world);
+      expect(commands).toHaveLength(0);
+    });
+
+    it('zone at WATER tile (5,5) is REJECTED', () => {
+      const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 5, y: 5 }], world);
+      expect(commands).toHaveLength(0);
+    });
+  });
+});
