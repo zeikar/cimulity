@@ -143,18 +143,19 @@ export class GameSession {
     if (this.world) saveWorld(this.world);
   }
 
-  /**
-   * "New City": wipe the world and its saved state, drop any pending
-   * autosave, and force a redraw + clear selection/hover highlights.
-   */
-  resetWorld(): void {
+  private performDestructiveReset(opts: { seed?: number; clearSaveAfter: boolean }): void {
+    // Step 1: cancel pending save timer.
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    this.world?.reset();
-    clearSave();
-    // Reset accumulator so no catch-up burst fires, and sync HUD to tick 0 + dirt 0 immediately.
+    // Step 2: regenerate world (seed falls back to DEFAULT_NEWCITY_SEED inside world.reset).
+    this.world?.reset({ regenerate: true, seed: opts.seed });
+    // Step 3: conditionally clear the persisted save.
+    if (opts.clearSaveAfter) {
+      clearSave();
+    }
+    // Step 4: reset loop/pause/speed mirrors.
     this.gameLoop?.reset();
     // Drop any queued pause/speed commands so a "New City" pressed during the
     // pre-`gameLoop` window cannot replay stale toggles after defaults are restored.
@@ -162,6 +163,7 @@ export class GameSession {
     this.pendingPauseToggleCount = 0;
     this.gameLoop?.setPaused(false);
     this.gameLoop?.setSpeedMultiplier(DEFAULT_SPEED_MULTIPLIER);
+    // Step 5: emit tick HUD sync.
     // Mirror callbacks fire even when gameLoop is null so React HUD/Toolbar snap back to defaults immediately.
     this.callbacks.onPauseChange?.(false);
     this.callbacks.onSpeedChange?.(DEFAULT_SPEED_MULTIPLIER);
@@ -170,9 +172,27 @@ export class GameSession {
     this.callbacks.onTickUpdate?.(0, 0, 0, m, this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 });
     this.lastSyncedMoney = m;
     this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
+    // Step 6: clear selected/hover.
     this.pixiApp?.setSelectedTile(null);
     this.pixiApp?.setHoverTile(null);
+    // Step 7: mark renderer dirty.
     this.pixiApp?.getTileRenderer()?.markDirty();
+  }
+
+  /**
+   * New-city semantics — clears the save so getWorld() will regenerate from default seed on reload.
+   */
+  resetWorld(): void {
+    this.performDestructiveReset({ clearSaveAfter: true });
+  }
+
+  /**
+   * Destructive reset — terrain is foundational; shares cleanup with resetWorld().
+   * Policy diff: regenerated state is saved immediately, not cleared.
+   */
+  regenerateTerrain(seed?: number): void {
+    this.performDestructiveReset({ seed, clearSaveAfter: false });
+    this.saveNow();
   }
 
   async start(container: HTMLElement, width: number, height: number): Promise<void> {
@@ -235,7 +255,7 @@ export class GameSession {
     // Installed AFTER pixiApp.init() succeeds and camera/canvas are confirmed
     // present — otherwise `setCameraTile` / `markDirty` would silently no-op.
     // No-op in production builds (see devApi.ts).
-    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow() });
+    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow(), regenerateTerrain: (seed?: number) => this.regenerateTerrain(seed) });
 
     // Setup input handlers
     const pointerHandler = new PointerHandler(canvas, camera, world, {

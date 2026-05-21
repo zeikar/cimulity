@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { GameMap } from './Map';
 import { TileType, createTile } from './Tile';
 import { World, ZONE_MAX_LEVEL, STARTING_FUNDS, DAYS_PER_MONTH } from './World';
@@ -12,6 +12,7 @@ import {
 } from './mapSerialization';
 import { BuildingMap } from './Building';
 import { MAX_ELEVATION } from './Terrain';
+import * as terrainGeneratorModule from './terrainGenerator';
 
 describe('serializeMap / deserializeMapInto', () => {
   it('round-trips tile types onto a same-sized map', () => {
@@ -1763,5 +1764,146 @@ describe('v6 terrain save/load', () => {
     expect(world.getMap().getBuildings().getAllBuildings().map((b) => b.id)).toEqual(prevBuildingIds);
     expect(world.getTerrain().getTileElevation(5, 5)).toBe(prevElevation);
     expect(world.getTerrainRevision()).toBe(prevRev);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 8: legacy-hydration tests (a)-(e) + generator-spy assertions
+// ---------------------------------------------------------------------------
+
+describe('Task 8: hydration + generator-spy tests', () => {
+  const W = 8;
+  const H = 6;
+
+  // (a) v6 round-trip: procedural world A serialized and deserialized into world B
+  // preserves the terrain snapshot byte-for-byte.
+  it('(a) v6 round-trip: procedural world terrain survives serialize → deserialize', () => {
+    const worldA = new World(W, H, { regenerate: true });
+    const snapshot = JSON.stringify(worldA.getTerrain().toJSON());
+    const s = serializeWorld(worldA);
+
+    const worldB = new World(W, H, { regenerate: true });
+    expect(deserializeWorldInto(worldB, s)).toBe(true);
+    expect(JSON.stringify(worldB.getTerrain().toJSON())).toBe(snapshot);
+    expect(worldB.getMap().getWidth()).toBe(W);
+    expect(worldB.getMap().getHeight()).toBe(H);
+  });
+
+  // (b) v5 legacy hydration: all elevations reset to 0; tile-layer water preserved.
+  it('(b) v5 legacy hydration: all elevations are 0, water tile preserved on tile layer', () => {
+    const tiles = Array(W * H).fill(TileType.GRASS) as TileType[];
+    const waterX = 2;
+    const waterY = 1;
+    tiles[waterY * W + waterX] = TileType.WATER;
+
+    const v5JsonStr = JSON.stringify({
+      v: 5,
+      w: W,
+      h: H,
+      t: tiles,
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+    });
+
+    const world = new World(W, H, { regenerate: true });
+    expect(deserializeWorldInto(world, v5JsonStr)).toBe(true);
+
+    // All elevations must be 0 after v5 legacy hydration.
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+      }
+    }
+    // Water tile preserved on the tile layer.
+    expect(world.isWater(waterX, waterY)).toBe(true);
+  });
+
+  // (c) v1 legacy hydration: all elevations reset to 0.
+  it('(c) v1 legacy hydration: all elevations are 0', () => {
+    const v1JsonStr = JSON.stringify({
+      v: 1,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+    });
+
+    const world = new World(W, H, { regenerate: true });
+    expect(deserializeWorldInto(world, v1JsonStr)).toBe(true);
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+      }
+    }
+  });
+
+  // (d) Generator NOT invoked during deserialization for v6, v5, and v1 paths.
+  it('(d) generateTerrain NOT called during v6 deserialization', () => {
+    const world = new World(W, H, { regenerate: true });
+    const s = serializeWorld(world);
+
+    const target = new World(W, H, { regenerate: true });
+    const spy = vi.spyOn(terrainGeneratorModule, 'generateTerrain');
+    try {
+      expect(deserializeWorldInto(target, s)).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('(d) generateTerrain NOT called during v5 deserialization', () => {
+    const world = new World(W, H, { regenerate: true });
+    const v5Str = JSON.stringify({
+      v: 5,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+    });
+
+    const spy = vi.spyOn(terrainGeneratorModule, 'generateTerrain');
+    try {
+      expect(deserializeWorldInto(world, v5Str)).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('(d) generateTerrain NOT called during v1 deserialization', () => {
+    const world = new World(W, H, { regenerate: true });
+    const v1Str = JSON.stringify({
+      v: 1,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+    });
+
+    const spy = vi.spyOn(terrainGeneratorModule, 'generateTerrain');
+    try {
+      expect(deserializeWorldInto(world, v1Str)).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // (e) Save round-trip across procedural worlds: sA === sB after loading sA into B and re-serializing.
+  it('(e) save round-trip across procedural worlds: sA === sB (byte-identical)', () => {
+    const worldA = new World(W, H, { regenerate: true });
+    const sA = serializeWorld(worldA);
+
+    const worldB = new World(W, H, { regenerate: true });
+    worldB.regenerateTerrain(99);
+    expect(deserializeWorldInto(worldB, sA)).toBe(true);
+    const sB = serializeWorld(worldB);
+
+    expect(sA).toBe(sB);
   });
 });

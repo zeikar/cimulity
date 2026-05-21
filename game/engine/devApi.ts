@@ -62,6 +62,11 @@ export interface DevApi {
     resetWorld(): void;
     /** Forces an immediate save (debounce-bypass). Use after seedScene(...) so a hard-reload sees the seeded state in localStorage. */
     saveNow(): void;
+    /**
+     * Destructive reset — clears world state and regenerates terrain with the given seed (or default).
+     * Used by QA / manual smoke.
+     */
+    regenerateTerrain(seed?: number): void;
   };
 }
 
@@ -75,6 +80,8 @@ export interface DevApiHooks {
   resetWorld: () => void;
   /** Bypasses the debounce and writes the world to localStorage immediately. */
   saveNow: () => void;
+  /** Triggers the full `GameSession.regenerateTerrain()` flow. */
+  regenerateTerrain: (seed?: number) => void;
 }
 
 declare global {
@@ -161,6 +168,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
       },
       saveNow(): void {
         hooks.saveNow();
+      },
+      regenerateTerrain(seed?: number): void {
+        hooks.regenerateTerrain(seed);
       },
     },
   };
