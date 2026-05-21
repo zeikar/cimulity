@@ -82,6 +82,8 @@ export class TileRenderer {
   private pendingBuildingChanges: number[] = [];
   /** Cached signature of the last visibleBounds passed to render(); null means no-bounds (full-map) mode. */
   private lastSig: string | null = null;
+  /** Last observed terrain revision; triggers a full re-sync when it changes. */
+  private lastTerrainRev: number = -1;
 
   constructor(terrainContainer: Container, buildingContainer: Container, registry?: VisualRegistry) {
     this.terrainContainer = terrainContainer;
@@ -96,7 +98,10 @@ export class TileRenderer {
 
     const newSig = this.sigOf(visibleBounds);
     const sigChanged = newSig !== this.lastSig;
-    const fullPass = this.fullDirty || sigChanged;
+    const currentRev = world.getTerrainRevision();
+    const terrainDirty = currentRev !== this.lastTerrainRev;
+    if (terrainDirty) this.lastTerrainRev = currentRev;
+    const fullPass = this.fullDirty || sigChanged || terrainDirty;
 
     if (fullPass) {
       // ---- Terrain pass (full) ----
