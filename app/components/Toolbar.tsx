@@ -55,7 +55,7 @@ const TOOL_GROUPS = CATEGORY_ORDER.map(cat => ({
 export function Toolbar({ currentTool, onToolChange, paused, speedMultiplier, onPauseToggle, onSpeedChange }: ToolbarProps) {
   function renderGroup({ label, tools }: { label: string; tools: ToolButton[] }) {
     return (
-      <div key={label} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
+      <div key={label} style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
         <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
           {label}
         </span>
@@ -119,7 +119,7 @@ export function Toolbar({ currentTool, onToolChange, paused, speedMultiplier, on
         {TOOL_GROUPS.map(group => renderGroup(group))}
       </div>
       {/* Row 2: Time controls */}
-      <div style={{ display: 'flex', flexDirection: 'row', gap: '8px', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
         <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
           Time
         </span>
