@@ -37,6 +37,10 @@ export function buildToolCommands(
       return buildZoneCommands(TileType.ZONE_COMMERCIAL, tiles, world);
     case Tool.ZONE_INDUSTRIAL:
       return buildZoneCommands(TileType.ZONE_INDUSTRIAL, tiles, world);
+    case Tool.PAINT_WATER:
+      return buildPaintTerrainCommands(TileType.WATER, tiles, world);
+    case Tool.PAINT_GRASS:
+      return buildPaintTerrainCommands(TileType.GRASS, tiles, world);
     default:
       return [];
   }
@@ -125,6 +129,38 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, zoneType),
+    });
+  }
+
+  return commands;
+}
+
+/**
+ * Build terrain-paint commands for WATER or GRASS.
+ * Only GRASS and DIRT source tiles are accepted (roads, zones, and water as
+ * source are all rejected by the allowlist). Painting the same type onto itself
+ * is a no-op and is skipped. Reads world only to decide intent; never mutates core.
+ */
+function buildPaintTerrainCommands(
+  targetType: TileType.WATER | TileType.GRASS,
+  tiles: TileCoord[],
+  world: World
+): ToolCommand[] {
+  const map = world.getMap();
+  const commands: ToolCommand[] = [];
+
+  for (const coord of tiles) {
+    const currentTile = map.getTile(coord.x, coord.y);
+    if (!currentTile) continue;
+    if (currentTile.type === targetType) continue;
+    const paintable =
+      currentTile.type === TileType.GRASS ||
+      currentTile.type === TileType.DIRT;
+    if (!paintable) continue;
+    commands.push({
+      x: coord.x,
+      y: coord.y,
+      tile: createTile(coord.x, coord.y, targetType),
     });
   }
 
