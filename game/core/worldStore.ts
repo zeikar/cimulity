@@ -46,6 +46,15 @@ function readSave(): string | null {
  * **Update this guard whenever a load-bearing method is added to `World`,
  * `GameMap`, or `BuildingMap` — stale HMR singletons missing the method
  * break the app.**
+ *
+ * Checked methods (as of Task 7):
+ *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
+ *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
+ *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
+ *          isWater, canBuildAt, canBuildRoadAt, regenerateTerrain
+ *   GameMap: getBuildings, setTileAndReconcile
+ *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
+ *                addBuilding, addExistingBuilding, removeBuilding, setNextIdFloor, clear
  */
 function hasCurrentWorldApi(world: World): boolean {
   // World economy + calendar APIs (existing).
@@ -103,15 +112,28 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // Procedural terrain API (added in Task 7): full regeneration entry-point.
+  if (typeof world.regenerateTerrain !== 'function') {
+    return false;
+  }
   return true;
 }
 
 export function getWorld(): World {
   if (!store.__cimulityWorld || !hasCurrentWorldApi(store.__cimulityWorld)) {
-    const world = new World(MAP_WIDTH, MAP_HEIGHT);
-    const saved = readSave();
-    if (saved) {
-      deserializeWorldInto(world, saved);
+    const save = readSave();
+    let world: World;
+    if (save) {
+      // Save present: construct without procedural generation, then hydrate.
+      world = new World(MAP_WIDTH, MAP_HEIGHT, { regenerate: false });
+      const ok = deserializeWorldInto(world, save);
+      if (!ok) {
+        // Bad/corrupt save — fall back to procedural generation.
+        world.reset({ regenerate: true });
+      }
+    } else {
+      // No save — fresh procedural world.
+      world = new World(MAP_WIDTH, MAP_HEIGHT, { regenerate: true });
     }
     store.__cimulityWorld = world;
   }

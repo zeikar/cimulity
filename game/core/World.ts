@@ -8,9 +8,9 @@ import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
 import { Terrain } from './Terrain';
-import { generateTerrain, DEFAULT_NEWCITY_SEED } from './terrainGenerator';
+import * as terrainGenerator from './terrainGenerator';
 
-export { DEFAULT_NEWCITY_SEED };
+export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
 
 /** Ticks between each zone growth step. tickCount is post-increment (≥1), so first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0. */
 export const ZONE_GROWTH_INTERVAL = 8;
@@ -310,7 +310,7 @@ export class World {
    */
   reset(opts?: { regenerate?: boolean; seed?: number }): void {
     const regenerate = opts?.regenerate ?? true;
-    const seed = opts?.seed ?? DEFAULT_NEWCITY_SEED;
+    const seed = opts?.seed ?? terrainGenerator.DEFAULT_NEWCITY_SEED;
 
     this.map.reset();
     this.tickCount = 0;
@@ -327,7 +327,7 @@ export class World {
     // Procedural terrain generation.
     const W = this.map.getWidth();
     const H = this.map.getHeight();
-    const { elevations, waterMask } = generateTerrain(W, H, seed);
+    const { elevations, waterMask } = terrainGenerator.generateTerrain(W, H, seed);
     const terrain = new Terrain(W, H);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
@@ -351,7 +351,7 @@ export class World {
    * @param seed - RNG seed; defaults to DEFAULT_NEWCITY_SEED.
    */
   regenerateTerrain(seed?: number): void {
-    this.reset({ regenerate: true, seed: seed ?? DEFAULT_NEWCITY_SEED });
+    this.reset({ regenerate: true, seed: seed ?? terrainGenerator.DEFAULT_NEWCITY_SEED });
   }
 
   /**
