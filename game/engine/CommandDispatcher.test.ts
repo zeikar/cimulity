@@ -480,3 +480,169 @@ describe('build costs', () => {
     expect(world.getMoney()).toBe(before - 2 * BULLDOZE_COST);
   });
 });
+
+describe('executeClick - paint terrain', () => {
+  it('PAINT_WATER on GRASS writes WATER', () => {
+    const world = makeWorld();
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.WATER);
+  });
+
+  it('PAINT_GRASS on DIRT writes GRASS', () => {
+    const world = makeWorld();
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
+
+    const result = executeClick(Tool.PAINT_GRASS, { x: 1, y: 1 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 1, y: 1 }]);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+  });
+
+  it('PAINT_WATER on ROAD reports [] and leaves ROAD intact', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
+  });
+});
+
+describe('executeDrag/previewDrag - paint terrain rectangle', () => {
+  it('(a) PAINT_WATER: 2x2 drag over default GRASS paints all 4 to WATER', () => {
+    const world = makeWorld(5);
+
+    const result = executeDrag(Tool.PAINT_WATER, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    expect(result.changedTiles).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+  });
+
+  it('(a) PAINT_GRASS: 2x2 drag over DIRT seed paints all 4 to GRASS', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.DIRT));
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.DIRT));
+    world.getMap().setTile(0, 1, createTile(0, 1, TileType.DIRT));
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
+
+    const result = executeDrag(Tool.PAINT_GRASS, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    expect(result.changedTiles).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+  });
+
+  it('(b) reversed corners {1,1}→{0,0} yields same 4 tiles as forward drag', () => {
+    const world = makeWorld(5);
+
+    const result = executeDrag(Tool.PAINT_WATER, { x: 1, y: 1 }, { x: 0, y: 0 }, world);
+
+    expect(result.changedTiles).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+  });
+
+  it('(c) previewDrag returns the rect without mutating', () => {
+    const world = makeWorld(5);
+
+    const path = previewDrag(Tool.PAINT_WATER, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    expect(path).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+    // No tiles were written
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.GRASS);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+  });
+
+  it('(d) out-of-bounds left column clipped — x=-1 column dropped from preview and paint', () => {
+    const world = makeWorld(5);
+
+    const path = previewDrag(Tool.PAINT_WATER, { x: -1, y: 0 }, { x: 1, y: 1 }, world);
+    expect(path).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+
+    const result = executeDrag(Tool.PAINT_WATER, { x: -1, y: 0 }, { x: 1, y: 1 }, world);
+    expect(result.changedTiles).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+  });
+});
+
+describe('paint terrain - cost', () => {
+  it('PAINT_WATER click on GRASS leaves money unchanged (free)', () => {
+    const world = makeWorld();
+    const before = world.getMoney();
+
+    executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(world.getMoney()).toBe(before);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.WATER);
+  });
+
+  it('PAINT_GRASS drag over a 1x5 row of DIRT leaves money unchanged', () => {
+    const world = makeWorld(5);
+    for (let x = 0; x < 5; x++) {
+      world.getMap().setTile(x, 0, createTile(x, 0, TileType.DIRT));
+    }
+    const before = world.getMoney();
+
+    const result = executeDrag(Tool.PAINT_GRASS, { x: 0, y: 0 }, { x: 4, y: 0 }, world);
+
+    expect(result.changedTiles).toHaveLength(5);
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('PAINT_WATER on a ROAD tile is a no-op — no cost charged, money unchanged', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const before = world.getMoney();
+
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
+    expect(world.getMoney()).toBe(before);
+  });
+});
