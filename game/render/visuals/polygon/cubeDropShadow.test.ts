@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Container } from 'pixi.js';
-import { SHADOW_COLOR, SHADOW_ALPHA, cubeShadowPolygon } from './cubeDropShadow';
+import { SHADOW_COLOR, SHADOW_ALPHA, SHADOW_LIFT_FACTOR_X, SHADOW_MIN_OFFSET_X, cubeShadowPolygon } from './cubeDropShadow';
 import { cubeFacePolygons } from './cubeGeometry';
 import { SHADOW_Z_OFFSET, CubeBuildingVisual } from './CubeBuildingVisual';
 
@@ -9,11 +9,19 @@ describe('cubeDropShadow', () => {
     expect(SHADOW_COLOR).toBe(0x000000);
   });
 
-  it('SHADOW_ALPHA is 0.25', () => {
-    expect(SHADOW_ALPHA).toBe(0.25);
+  it('SHADOW_ALPHA is 0.35', () => {
+    expect(SHADOW_ALPHA).toBe(0.35);
   });
 
-  // Fixture A: full-width synthetic, mainLift = 40
+  it('SHADOW_LIFT_FACTOR_X is 0.22 (shadow offset scales with building lift)', () => {
+    expect(SHADOW_LIFT_FACTOR_X).toBe(0.22);
+  });
+
+  it('SHADOW_MIN_OFFSET_X is 4 (floor so low cubes still cast a visible shadow)', () => {
+    expect(SHADOW_MIN_OFFSET_X).toBe(4);
+  });
+
+  // Fixture A: full-width synthetic, mainLift = 40, un-inset base half-spans X=32 Y=16 at center y=0
   const facesA = {
     top:   [{x:0,y:-56},{x:32,y:-40},{x:0,y:-24},{x:-32,y:-40}],
     left:  [{x:0,y:-24},{x:-32,y:-40},{x:-32,y:0},{x:0,y:16}],
@@ -27,20 +35,42 @@ describe('cubeDropShadow', () => {
     right: [{x:24,y:-40},{x:0,y:-28},{x:0,y:12},{x:24,y:0}],
   };
 
-  it('fixture A: mainLift = 40 → shadow at ground level [{0,-16},{32,0},{0,16},{-32,0}]', () => {
+  it('fixture A (mainLift=40, factor 0.22 → 8.8 X, 4.4 Y): base diamond translated south-east, length proportional to lift', () => {
     const out = cubeShadowPolygon(facesA);
-    expect(out[0]).toEqual({x:0,y:-16});
-    expect(out[1]).toEqual({x:32,y:0});
-    expect(out[2]).toEqual({x:0,y:16});
-    expect(out[3]).toEqual({x:-32,y:0});
+    const ox = 40 * 0.22;  // 8.8
+    const oy = ox / 2;     // 4.4
+    expect(out[0].x).toBeCloseTo(0 + ox, 6);
+    expect(out[0].y).toBeCloseTo(-16 + oy, 6);
+    expect(out[1].x).toBeCloseTo(32 + ox, 6);
+    expect(out[1].y).toBeCloseTo(0 + oy, 6);
+    expect(out[2].x).toBeCloseTo(0 + ox, 6);
+    expect(out[2].y).toBeCloseTo(16 + oy, 6);
+    expect(out[3].x).toBeCloseTo(-32 + ox, 6);
+    expect(out[3].y).toBeCloseTo(0 + oy, 6);
   });
 
-  it('fixture B: mainLift = 40, inset=0.125 stand-in → [{0,-12},{24,0},{0,12},{-24,0}]', () => {
+  it('fixture B (12% inset, mainLift=40): inset base diamond translated by lift-proportional offset', () => {
     const out = cubeShadowPolygon(facesB);
-    expect(out[0]).toEqual({x:0,y:-12});
-    expect(out[1]).toEqual({x:24,y:0});
-    expect(out[2]).toEqual({x:0,y:12});
-    expect(out[3]).toEqual({x:-24,y:0});
+    const ox = 40 * 0.22;
+    const oy = ox / 2;
+    expect(out[0].x).toBeCloseTo(0 + ox, 6);
+    expect(out[0].y).toBeCloseTo(-12 + oy, 6);
+    expect(out[1].x).toBeCloseTo(24 + ox, 6);
+    expect(out[2].y).toBeCloseTo(12 + oy, 6);
+    expect(out[3].x).toBeCloseTo(-24 + ox, 6);
+  });
+
+  it('low-lift clamp: when mainLift × factor < SHADOW_MIN_OFFSET_X, falls back to floor', () => {
+    // mainLift = 5 → 5 * 0.22 = 1.1, clamped up to MIN_OFFSET_X = 4
+    const facesLow = {
+      top:   [{x:0,y:-21},{x:32,y:-5},{x:0,y:11},{x:-32,y:-5}],
+      left:  [{x:0,y:11},{x:-32,y:-5},{x:-32,y:0},{x:0,y:16}],   // left[2].y - left[1].y = 0 - (-5) = 5
+      right: [{x:32,y:-5},{x:0,y:11},{x:0,y:16},{x:32,y:0}],
+    };
+    const out = cubeShadowPolygon(facesLow);
+    // expected offset = max(4, 5 * 0.22) = 4 X, 2 Y
+    expect(out[0].x).toBeCloseTo(0 + 4, 6);
+    expect(out[0].y).toBeCloseTo(-16 + 2, 6);   // top[0].y + mainLift(5) + offY(2) = -21 + 5 + 2 = -14, baseY=-16+offY=-14 ✓
   });
 
   it('source-aligned live test: cubeFacePolygons commercial level 3', () => {
@@ -51,12 +81,21 @@ describe('cubeDropShadow', () => {
 
     expect(out.length).toBe(4);
 
-    // shadow center Y = base-plane Y (not top center Y)
+    const mainLift = f.left[2].y - f.left[1].y;
+    const expectedOX = Math.max(SHADOW_MIN_OFFSET_X, mainLift * SHADOW_LIFT_FACTOR_X);
+    const expectedOY = expectedOX / 2;
+
+    // Shadow center Y = base-plane Y + expected offset
     const basePlaneY = (f.left[2].y + f.right[3].y) / 2;
     const shadowCenterY = (out[0].y + out[2].y) / 2;
-    expect(shadowCenterY).toBeCloseTo(basePlaneY, 6);
+    expect(shadowCenterY).toBeCloseTo(basePlaneY + expectedOY, 6);
 
-    // ISO 2:1 ratio preserved — toBeCloseTo because real geometry has float rounding
+    // Shadow center X = top center X + expected offset
+    const topCenterX = (f.top[1].x + f.top[3].x) / 2;
+    const shadowCenterX = (out[1].x + out[3].x) / 2;
+    expect(shadowCenterX).toBeCloseTo(topCenterX + expectedOX, 6);
+
+    // ISO 2:1 ratio preserved (translation does not skew shape)
     const ratio = (out[1].x - out[3].x) / (out[2].y - out[0].y);
     expect(ratio).toBeCloseTo(2, 6);
   });
@@ -68,50 +107,53 @@ describe('cubeDropShadow', () => {
     expect(cubeShadowPolygon(faces).length).toBe(4);
   });
 
-  it('Y placement is the un-lifted base: center Y ≈ 0 for fixtures A and B', () => {
-    const outA = cubeShadowPolygon(facesA);
-    expect((outA[0].y + outA[2].y) / 2).toBeCloseTo(0, 6);
-    expect((outA[1].y + outA[3].y) / 2).toBeCloseTo(0, 6);
-
-    const outB = cubeShadowPolygon(facesB);
-    expect((outB[0].y + outB[2].y) / 2).toBeCloseTo(0, 6);
-    expect((outB[1].y + outB[3].y) / 2).toBeCloseTo(0, 6);
+  it('shadow centroid is base centroid translated by (offsetX, offsetX/2) where offsetX scales with mainLift', () => {
+    for (const f of [facesA, facesB]) {
+      const out = cubeShadowPolygon(f);
+      const mainLift = f.left[2].y - f.left[1].y;
+      const expectedOX = Math.max(SHADOW_MIN_OFFSET_X, mainLift * SHADOW_LIFT_FACTOR_X);
+      const expectedOY = expectedOX / 2;
+      const baseCx = (f.top[0].x + f.top[1].x + f.top[2].x + f.top[3].x) / 4;
+      const baseCy = (f.left[2].y + f.right[3].y) / 2;
+      const outCx = (out[1].x + out[3].x) / 2;
+      const outCy = (out[0].y + out[2].y) / 2;
+      expect(outCx).toBeCloseTo(baseCx + expectedOX, 6);
+      expect(outCy).toBeCloseTo(baseCy + expectedOY, 6);
+    }
   });
 
-  it('ISO 2:1 ratio preserved for hand-built fixtures', () => {
+  it('ISO 2:1 ratio preserved for hand-built fixtures (translation does not skew aspect)', () => {
     const outA = cubeShadowPolygon(facesA);
-    expect((outA[1].x - outA[3].x) / (outA[2].y - outA[0].y)).toBe(2);
+    expect((outA[1].x - outA[3].x) / (outA[2].y - outA[0].y)).toBeCloseTo(2, 6);
 
     const outB = cubeShadowPolygon(facesB);
-    expect((outB[1].x - outB[3].x) / (outB[2].y - outB[0].y)).toBe(2);
+    expect((outB[1].x - outB[3].x) / (outB[2].y - outB[0].y)).toBeCloseTo(2, 6);
   });
 
-  it('south vertex matches faces.left[3] and faces.right[2] for hand-built fixtures', () => {
-    const outA = cubeShadowPolygon(facesA);
-    expect(outA[2].x).toBe(facesA.left[3].x);
-    expect(outA[2].y).toBe(facesA.left[3].y);
-    expect(outA[2].x).toBe(facesA.right[2].x);
-    expect(outA[2].y).toBe(facesA.right[2].y);
-
-    const outB = cubeShadowPolygon(facesB);
-    expect(outB[2].x).toBe(facesB.left[3].x);
-    expect(outB[2].y).toBe(facesB.left[3].y);
-    expect(outB[2].x).toBe(facesB.right[2].x);
-    expect(outB[2].y).toBe(facesB.right[2].y);
+  it('shadow is congruent to the inset base diamond: span equals base span (no scaling)', () => {
+    for (const f of [facesA, facesB]) {
+      const baseSpanX = (f.top[1].x - f.top[3].x) / 2;
+      const baseSpanY = (f.top[2].y - f.top[0].y) / 2;
+      const out = cubeShadowPolygon(f);
+      const shadowSpanX = (out[1].x - out[3].x) / 2;
+      const shadowSpanY = (out[2].y - out[0].y) / 2;
+      expect(shadowSpanX).toBeCloseTo(baseSpanX, 6);
+      expect(shadowSpanY).toBeCloseTo(baseSpanY, 6);
+    }
   });
 
-  it('mainLift = 0 degenerate: output equals top diamond unchanged', () => {
+  it('mainLift = 0 degenerate: clamped offset = MIN_OFFSET_X applies, shadow stays at top diamond plane', () => {
     const facesZeroLift = {
       top:   [{x:0,y:-16},{x:32,y:0},{x:0,y:16},{x:-32,y:0}],
-      left:  [{x:0,y:16},{x:-32,y:0},{x:-32,y:0},{x:0,y:16}],  // base at same Y as top base
+      left:  [{x:0,y:16},{x:-32,y:0},{x:-32,y:0},{x:0,y:16}],
       right: [{x:32,y:0},{x:0,y:16},{x:0,y:16},{x:32,y:0}],
     };
-    // mainLift = left[2].y - left[1].y = 0 - 0 = 0
+    // mainLift = 0 ⇒ offset = max(4, 0) = 4 X, 2 Y
     const out = cubeShadowPolygon(facesZeroLift);
-    expect(out[0]).toEqual({x:0,y:-16});
-    expect(out[1]).toEqual({x:32,y:0});
-    expect(out[2]).toEqual({x:0,y:16});
-    expect(out[3]).toEqual({x:-32,y:0});
+    expect(out[0]).toEqual({x:0+4, y:-16+2});
+    expect(out[1]).toEqual({x:32+4, y:0+2});
+    expect(out[2]).toEqual({x:0+4, y:16+2});
+    expect(out[3]).toEqual({x:-32+4, y:0+2});
   });
 
   // SHADOW_Z_OFFSET invariant: shadow Graphics draw before all face Graphics in the building layer.
