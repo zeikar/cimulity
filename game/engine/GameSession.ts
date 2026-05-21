@@ -134,6 +134,15 @@ export class GameSession {
     }, 500);
   }
 
+  /** Bypasses the debounce and writes the world to localStorage immediately. */
+  saveNow(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    if (this.world) saveWorld(this.world);
+  }
+
   /**
    * "New City": wipe the world and its saved state, drop any pending
    * autosave, and force a redraw + clear selection/hover highlights.
@@ -226,7 +235,7 @@ export class GameSession {
     // Installed AFTER pixiApp.init() succeeds and camera/canvas are confirmed
     // present — otherwise `setCameraTile` / `markDirty` would silently no-op.
     // No-op in production builds (see devApi.ts).
-    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld() });
+    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow() });
 
     // Setup input handlers
     const pointerHandler = new PointerHandler(canvas, camera, world, {

@@ -37,6 +37,8 @@ export interface SeedSceneSpec {
   buildings?: ReadonlyArray<SeedBuildingSpec>;
   /** When true (default), `BuildingMap.clear()` runs before seeding. */
   clearExisting?: boolean;
+  /** Elevation overrides via `terrain.unsafeSetElevation`. Out-of-bounds or invalid entries are silently skipped. */
+  elevations?: ReadonlyArray<{ x: number; y: number; elevation: number }>;
 }
 
 export interface DevApi {
@@ -44,7 +46,7 @@ export interface DevApi {
   pixiApp: PixiApp;
   dev: {
     /** Seed the world from a declarative spec. Returns counts for verification. */
-    seedScene(spec: SeedSceneSpec): { tilesPlaced: number; buildingsAdded: number };
+    seedScene(spec: SeedSceneSpec): { tilesPlaced: number; buildingsAdded: number; elevationsApplied: number };
     /** Pan the camera so the given world tile is at viewport center (zoom-aware). */
     setCameraTile(tileX: number, tileY: number): void;
     /** Force a full renderer redraw on the next frame. */
@@ -58,6 +60,8 @@ export interface DevApi {
      * re-hydrate on the next page reload).
      */
     resetWorld(): void;
+    /** Forces an immediate save (debounce-bypass). Use after seedScene(...) so a hard-reload sees the seeded state in localStorage. */
+    saveNow(): void;
   };
 }
 
@@ -69,6 +73,8 @@ export interface DevApi {
 export interface DevApiHooks {
   /** Triggers the full `GameSession.resetWorld()` flow. */
   resetWorld: () => void;
+  /** Bypasses the debounce and writes the world to localStorage immediately. */
+  saveNow: () => void;
 }
 
 declare global {
@@ -84,7 +90,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
     world,
     pixiApp,
     dev: {
-      seedScene(spec: SeedSceneSpec): { tilesPlaced: number; buildingsAdded: number } {
+      seedScene(spec: SeedSceneSpec): { tilesPlaced: number; buildingsAdded: number; elevationsApplied: number } {
         const map = world.getMap();
         const buildings = map.getBuildings();
         if (spec.clearExisting !== false) buildings.clear();
@@ -123,8 +129,13 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
           if (maxId >= 0) buildings.setNextIdFloor(maxId);
         }
 
+        let elevationsApplied = 0;
+        for (const e of spec.elevations ?? []) {
+          if (world.getTerrain().unsafeSetElevation(e.x, e.y, e.elevation)) elevationsApplied++;
+        }
+
         pixiApp.getTileRenderer()?.markDirty();
-        return { tilesPlaced, buildingsAdded };
+        return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {
         const camera = pixiApp.getCamera();
@@ -147,6 +158,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         // and resets pause/speed defaults. A bare `world.reset()` would leak
         // session state and a stale save would re-hydrate on next page reload.
         hooks.resetWorld();
+      },
+      saveNow(): void {
+        hooks.saveNow();
       },
     },
   };
