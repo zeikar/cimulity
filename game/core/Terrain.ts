@@ -34,6 +34,7 @@ export const MAX_ELEVATION = 8 as const;
 
 export class Terrain {
   private readonly data: TerrainData;
+  private onMutate: (() => void) | null = null;
 
   constructor(width: number, height: number) {
     const tileElevations: number[][] = Array.from({ length: height }, () =>
@@ -66,5 +67,95 @@ export class Terrain {
 
   getMode(): HeightMode {
     return this.data.mode;
+  }
+
+  getTileElevation(x: number, y: number): number {
+    if (!this.inBounds(x, y)) return 0;
+    return this.data.tileElevations[y][x];
+  }
+
+  /**
+   * Render-height projection seam. In tile-step mode this equals getTileElevation;
+   * vertex-smooth mode will average corner heights.
+   */
+  getRenderHeight(x: number, y: number): number {
+    return this.getTileElevation(x, y);
+  }
+
+  canSetElevation(x: number, y: number, newElevation: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    if (!Number.isInteger(newElevation)) return false;
+    if (newElevation < 0) return false;
+    if (newElevation > MAX_ELEVATION) return false;
+
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        // OOB neighbors are skipped — not treated as 0
+        if (!this.inBounds(nx, ny)) continue;
+        const neighborElevation = this.data.tileElevations[ny][nx];
+        if (Math.abs(neighborElevation - newElevation) > 1) return false;
+      }
+    }
+
+    return true;
+  }
+
+  setElevation(x: number, y: number, newElevation: number): boolean {
+    if (!this.canSetElevation(x, y, newElevation)) return false;
+    this.data.tileElevations[y][x] = newElevation;
+    this.onMutate?.();
+    return true;
+  }
+
+  /**
+   * Dev-only / save-load only. Cliffs are legal data; the editor cannot reach
+   * them via setElevation. Used by devApi.seedScene and Terrain.fromData internals.
+   */
+  unsafeSetElevation(x: number, y: number, newElevation: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    if (!Number.isInteger(newElevation)) return false;
+    if (newElevation < 0) return false;
+    if (newElevation > MAX_ELEVATION) return false;
+    this.data.tileElevations[y][x] = newElevation;
+    this.onMutate?.();
+    return true;
+  }
+
+  setOnMutate(cb: (() => void) | null): void {
+    this.onMutate = cb;
+  }
+
+  getBaseTerrain(x: number, y: number): BaseTerrain {
+    if (!this.inBounds(x, y)) return "grass";
+    return this.data.baseTiles[y][x];
+  }
+
+  /**
+   * v1 RESERVED SLOT: tile-step mode only accepts "grass" — non-grass values are
+   * rejected with a dev console.warn. baseTiles becomes authoritative in a future
+   * round (v7 save migration).
+   */
+  setBaseTerrain(x: number, y: number, base: BaseTerrain): boolean {
+    if (!this.inBounds(x, y)) return false;
+    if (base !== "grass") {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          `Terrain.setBaseTerrain: v1 reserved slot — only "grass" accepted in tile-step mode, got "${base}" at (${x},${y})`
+        );
+      }
+      return false;
+    }
+    this.data.baseTiles[y][x] = base;
+    this.onMutate?.();
+    return true;
+  }
+
+  /** v1 placeholder. Real implementation lands when sea-level / flooding simulation arrives. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isBelowWaterLevel(x: number, y: number): boolean {
+    return false;
   }
 }
