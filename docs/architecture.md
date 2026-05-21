@@ -194,6 +194,20 @@ Each tick (`World.tick`, 1 tick = 1 day):
 
    The growth pass reads `landValue` as a frozen snapshot taken at step 2.
 
+### Procedural terrain generation
+
+Pipeline: `createRng(seed)` → `fbm2d` (fractional Brownian motion via `valueNoise`) → `shapeHeightmap` → `buildWaterMask` → `generateTerrain` composes all four into a fully populated `GameMap`.
+
+Default seed: `DEFAULT_NEWCITY_SEED = 0xC1A1E11`.
+
+Invocation rule: `new World(W, H)` and `World.reset({ regenerate: true })` invoke the generator. Save-hydration callsites (`worldStore.getWorld` when a save exists, `deserializeV5`/`deserializeV6`) construct/reset with `{ regenerate: false }` so the generator does NOT run on load.
+
+Failure fallback: `worldStore.getWorld` invokes `world.reset({ regenerate: true })` if `deserializeWorldInto` fails on a corrupt save, producing a fresh procedural map.
+
+HMR guard: `hasCurrentWorldApi` requires `regenerateTerrain` on the world singleton — stale pre-change singletons are discarded and a new one is created.
+
+Dev hook: `window.__cimulity.dev.regenerateTerrain(seed?)` routes through `GameSession.regenerateTerrain` (full destructive-reset cleanup of Pixi containers and input state) before calling `world.regenerateTerrain`.
+
 ### Rendering Strategy
 
 - **Per-tile Graphics**: each visible tile/building owns its own Pixi `Graphics` (no shared batch). `DiamondTileVisual` and `CubeBuildingVisual` mount on demand.

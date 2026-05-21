@@ -38,6 +38,11 @@ export default defineConfig({
         'game/render/visuals/polygon/cubeDropShadow.ts',
         'game/core/Terrain.ts',
         'game/core/terrainSlope.ts',
+        'game/core/prng.ts',
+        'game/core/valueNoise.ts',
+        'game/core/heightShaping.ts',
+        'game/core/waterMask.ts',
+        'game/core/terrainGenerator.ts',
       ],
       thresholds: {
         lines: 80,
