@@ -8,6 +8,7 @@
 import type { Container } from 'pixi.js';
 import type { TileType } from '@/game/core/Tile';
 import type { BuildingType } from '@/game/core/Building';
+import type { NeighborRenderHeights } from './polygon/tileSideWalls';
 
 export interface TileVisualInput {
   x: number;
@@ -16,6 +17,12 @@ export interface TileVisualInput {
   level: number;
   /** Pre-projected elevation height. Renderer populates via world.getTerrain().getRenderHeight(x,y). Test fixtures may omit (treated as 0). */
   renderHeight?: number;
+  /**
+   * Per-direction render heights from Terrain.getRenderHeight(nx,ny).
+   * undefined per-direction = OOB (helper clamps to 1 step).
+   * undefined whole object = legacy/test fixture; visual draws no side walls.
+   */
+  neighborRenderHeights?: NeighborRenderHeights;
 }
 
 export interface BuildingVisualInput {
