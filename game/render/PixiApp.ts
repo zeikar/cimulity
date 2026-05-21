@@ -102,7 +102,9 @@ export class PixiApp {
 
     // Initialize renderers, each bound to its own container.
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer);
-    this.gridRenderer = new GridRenderer(this.gridContainer, this.world);
+    // GridRenderer is disabled — per-tile outlines live inside DiamondTileVisual where iso draw order
+    // correctly interleaves them with neighbor fills. Re-enabling GridRenderer as a separate layer
+    // breaks z-order on uneven terrain (Codex code-review iter 1).
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
@@ -114,7 +116,6 @@ export class PixiApp {
       if (this.tileRenderer && this.world) {
         this.tileRenderer.render(this.world, this.computeVisibleBounds());
       }
-      this.gridRenderer?.render();
       if (this.selectionRenderer && this.world) {
         const rev = this.world.getTerrainRevision();
         const terrain = this.world.getTerrain();
