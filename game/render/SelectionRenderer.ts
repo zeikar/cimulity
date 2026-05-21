@@ -3,7 +3,7 @@
  */
 
 import { Container, Graphics } from 'pixi.js';
-import { tileToScreen, ISO_CONFIG } from './IsoTransform';
+import { tileToScreenWithHeight, ISO_CONFIG } from './IsoTransform';
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
 
 export class SelectionRenderer {
@@ -15,6 +15,10 @@ export class SelectionRenderer {
   private currentSelected: TileCoord | null = null;
   private currentDragPreview: TileCoord[] = [];
   private dragPreviewColor = 0x4a4a4a;
+  /** Latest height callback injected by refreshIfDirty. Null until first call — falls back to height=0. */
+  private cachedGetHeight: ((x: number, y: number) => number) | null = null;
+  /** Last terrain revision seen; -1 means never synced. */
+  private lastRev: number = -1;
 
   constructor(container: Container) {
     this.container = container;
@@ -67,11 +71,34 @@ export class SelectionRenderer {
     this.dragPreviewGraphics.clear();
   }
 
+  /**
+   * Unconditionally re-renders all three highlight layers.
+   * Bypasses equality guards — use when terrain revision changes.
+   */
+  forceRedraw(): void {
+    this.renderSelected();
+    this.renderDragPreview();
+    this.renderHover();
+  }
+
+  /**
+   * Update the cached height callback on every call; redraw only when revision changes.
+   * Keeps selection highlights aligned with terrain elevation each frame.
+   */
+  refreshIfDirty(rev: number, getHeight: (x: number, y: number) => number): void {
+    this.cachedGetHeight = getHeight;
+    if (rev !== this.lastRev) {
+      this.lastRev = rev;
+      this.forceRedraw();
+    }
+  }
+
   private renderHover(): void {
     this.hoverGraphics.clear();
     if (!this.currentHover) return;
 
-    const screen = tileToScreen(this.currentHover);
+    const h = this.cachedGetHeight?.(this.currentHover.x, this.currentHover.y) ?? 0;
+    const screen = tileToScreenWithHeight(this.currentHover, h);
     this.drawHighlight(this.hoverGraphics, screen, 0xffffff, 0.3);
   }
 
@@ -79,7 +106,8 @@ export class SelectionRenderer {
     this.selectedGraphics.clear();
     if (!this.currentSelected) return;
 
-    const screen = tileToScreen(this.currentSelected);
+    const h = this.cachedGetHeight?.(this.currentSelected.x, this.currentSelected.y) ?? 0;
+    const screen = tileToScreenWithHeight(this.currentSelected, h);
     this.drawHighlight(this.selectedGraphics, screen, 0xffff00, 0.5);
   }
 
@@ -88,7 +116,8 @@ export class SelectionRenderer {
     if (this.currentDragPreview.length === 0) return;
 
     for (const tile of this.currentDragPreview) {
-      const screen = tileToScreen(tile);
+      const h = this.cachedGetHeight?.(tile.x, tile.y) ?? 0;
+      const screen = tileToScreenWithHeight(tile, h);
       // Draw filled semi-transparent tile
       this.dragPreviewGraphics.beginPath();
       this.dragPreviewGraphics.moveTo(screen.x, screen.y);

@@ -3,6 +3,7 @@ import {
   visibleTileBounds,
   iterateVisibleTiles,
   isBuildingVisible,
+  MAX_TERRAIN_LIFT_PX,
 } from './viewportCulling';
 
 describe('viewportCulling', () => {
@@ -12,22 +13,23 @@ describe('viewportCulling', () => {
     // mapWorldExtent for 64x64: minX=-2048, maxX=2048, minY=0, maxY=2048.
     // midX = 0, midY = 1024. centerOffset = (720, -574).
     // Camera at (720, -574). Corners (screen -> world via (s - cam)/zoom):
-    //   tl world = (0-720, 0-(-574)) = (-720, 574)
-    //   tr world = (1440-720, 574)   = (720, 574)
-    //   bl world = (-720, 900+574)   = (-720, 1474)
-    //   br world = (720, 1474)
-    // fracInverse with HALF_W=32, HALF_H=16, divisors are 64 and 32:
-    //   tl: -720/64 + 574/32 = -11.25 + 17.9375 = 6.6875    ty: 574/32 - (-720/64) = 17.9375 + 11.25 = 29.1875
-    //   tr:  720/64 + 574/32 =  11.25 + 17.9375 = 29.1875   ty: 17.9375 - 11.25 = 6.6875
-    //   bl: -720/64 + 1474/32 = -11.25 + 46.0625 = 34.8125  ty: 46.0625 + 11.25 = 57.3125
-    //   br:  720/64 + 1474/32 =  11.25 + 46.0625 = 57.3125  ty: 46.0625 - 11.25 = 34.8125
-    // minTx=6.6875, maxTx=57.3125, minTy=6.6875, maxTy=57.3125
+    //   tl world = (-720, 574), tr world = (720, 574)
+    //   bl world = (-720, 1474), br world = (720, 1474)
+    // Terrain: BL/BR extended by MAX_TERRAIN_LIFT_PX (96):
+    //   bl_ext = (-720, 1570), br_ext = (720, 1570)
+    // fracInverse with HALF_W=32, HALF_H=16:
+    //   tl: -720/64 + 574/32 = 6.6875,    ty = 29.1875
+    //   tr:  720/64 + 574/32 = 29.1875,   ty =  6.6875
+    //   bl_ext: -720/64 + 1570/32 = 37.8125, ty = 60.3125
+    //   br_ext:  720/64 + 1570/32 = 60.3125, ty = 37.8125
+    // minTx=6.6875, maxTx=60.3125, minTy=6.6875, maxTy=60.3125
     // Pre-clamp (padding=1):
     //   minX = floor(6.6875) - 1 = 5
-    //   maxX = floor(57.3125) + 1 + 1 = 59
+    //   maxX = floor(60.3125) + 1 + 1 = 62
     //   minY = floor(6.6875) - 1 = 5
-    //   maxY = floor(57.3125) + 1 + 1 = 59
+    //   maxY = floor(60.3125) + 1 + 1 = 62
     // Clamp to [0, 64): unchanged.
+    // With maxBuildingLiftPx=0: buildings BL/BR extend by 0+96=96, same as terrain.
     const { terrain, buildings } = visibleTileBounds({
       cameraX: 720, cameraY: -574, zoom: 1,
       viewportW: 1440, viewportH: 900,
@@ -36,13 +38,13 @@ describe('viewportCulling', () => {
       maxBuildingLiftPx: 0,
     });
     expect(terrain.minX).toBe(5);
-    expect(terrain.maxX).toBe(59);
+    expect(terrain.maxX).toBe(62);
     expect(terrain.minY).toBe(5);
-    expect(terrain.maxY).toBe(59);
+    expect(terrain.maxY).toBe(62);
     expect(buildings.minX).toBe(5);
-    expect(buildings.maxX).toBe(59);
+    expect(buildings.maxX).toBe(62);
     expect(buildings.minY).toBe(5);
-    expect(buildings.maxY).toBe(59);
+    expect(buildings.maxY).toBe(62);
   });
 
   it('maxBuildingLiftPx: 0 invariant — buildings AABB equals terrain AABB', () => {
@@ -62,15 +64,17 @@ describe('viewportCulling', () => {
   it('half-open max boundary: floor(maxTx)+1 not floor or ceil (integer maxTx edge)', () => {
     // Camera=(0,0), zoom=1, vp=(640,320), paddingTiles=0.
     // Corners (screen -> world): tl=(0,0), tr=(640,0), bl=(0,320), br=(640,320).
+    // Terrain: BL/BR extended by MAX_TERRAIN_LIFT_PX (96):
+    //   bl_ext=(0,416), br_ext=(640,416)
     // fracInverse:
     //   tl: (0, 0)
-    //   tr: (640/64 + 0, 0 - 640/64) = (10, -10)
-    //   bl: (0 + 320/32, 320/32 - 0) = (10, 10)
-    //   br: (640/64 + 320/32, 320/32 - 640/64) = (10+10, 10-10) = (20, 0)
-    // minTx=0, maxTx=20, minTy=-10, maxTy=10.
+    //   tr: (640/64, -640/64) = (10, -10)
+    //   bl_ext: (0 + 416/32, 416/32 - 0) = (13, 13)
+    //   br_ext: (640/64 + 416/32, 416/32 - 640/64) = (23, 3)
+    // minTx=0, maxTx=23, minTy=-10, maxTy=13.
     // Pre-clamp (padding=0):
-    //   maxX = floor(20) + 1 + 0 = 21  (NOT 20, NOT 22)
-    //   maxY = floor(10) + 1 + 0 = 11
+    //   maxX = floor(23) + 1 + 0 = 24
+    //   maxY = floor(13) + 1 + 0 = 14
     const { terrain } = visibleTileBounds({
       cameraX: 0, cameraY: 0, zoom: 1,
       viewportW: 640, viewportH: 320,
@@ -78,8 +82,8 @@ describe('viewportCulling', () => {
       paddingTiles: 0,
       maxBuildingLiftPx: 0,
     });
-    expect(terrain.maxX).toBe(21);
-    expect(terrain.maxY).toBe(11);
+    expect(terrain.maxX).toBe(24);
+    expect(terrain.maxY).toBe(14);
   });
 
   it('negative paddingTiles: -1 clamps to same as paddingTiles: 0', () => {
@@ -160,18 +164,20 @@ describe('viewportCulling', () => {
 
   it('zoom=2 gives smaller AABB than zoom=1', () => {
     // Camera=(0,0), zoom=2, vp=1440x900, padding=1, liftPx=0.
-    // Corners: tl=(0,0), tr=(720,0), bl=(0,450), br=(720,450).
+    // World corners: tl=(0,0), tr=(720,0), bl=(0,450), br=(720,450).
+    // Terrain BL/BR extended by MAX_TERRAIN_LIFT_PX (96):
+    //   bl_ext=(0,546), br_ext=(720,546)
     // fracInverse:
     //   tl: (0, 0)
-    //   tr: (720/64 + 0, 0 - 720/64) = (11.25, -11.25)
-    //   bl: (0 + 450/32, 450/32 - 0) = (14.0625, 14.0625)
-    //   br: (720/64 + 450/32, 450/32 - 720/64) = (11.25+14.0625, 14.0625-11.25) = (25.3125, 2.8125)
-    // minTx=0, maxTx=25.3125, minTy=-11.25, maxTy=14.0625
+    //   tr: (11.25, -11.25)
+    //   bl_ext: (0 + 546/32, 546/32 - 0) = (17.0625, 17.0625)
+    //   br_ext: (720/64 + 546/32, 546/32 - 720/64) = (28.3125, 5.8125)
+    // minTx=0, maxTx=28.3125, minTy=-11.25, maxTy=17.0625
     // Pre-clamp (padding=1):
-    //   minX = floor(0) - 1 = -1 → clamped to 0
-    //   maxX = floor(25.3125) + 1 + 1 = 27
-    //   minY = floor(-11.25) - 1 = -13 → clamped to 0
-    //   maxY = floor(14.0625) + 1 + 1 = 16
+    //   minX = -1 → 0
+    //   maxX = floor(28.3125) + 1 + 1 = 30
+    //   minY = -13 → 0
+    //   maxY = floor(17.0625) + 1 + 1 = 19
     const { terrain } = visibleTileBounds({
       cameraX: 0, cameraY: 0, zoom: 2,
       viewportW: 1440, viewportH: 900,
@@ -180,9 +186,9 @@ describe('viewportCulling', () => {
       maxBuildingLiftPx: 0,
     });
     expect(terrain.minX).toBe(0);
-    expect(terrain.maxX).toBe(27);
+    expect(terrain.maxX).toBe(30);
     expect(terrain.minY).toBe(0);
-    expect(terrain.maxY).toBe(16);
+    expect(terrain.maxY).toBe(19);
   });
 
   it('zoom=0.25 zoomed-out: AABB clamps to full map', () => {
@@ -206,21 +212,20 @@ describe('viewportCulling', () => {
   });
 
   it('building bottom-edge world extension at zoom=1', () => {
-    // Camera=(0,0), zoom=1, vp=1440x900, padding=1, liftPx=MAX_BUILDING_LIFT_PX (160).
-    // Terrain corners (from cameraless-origin test): tl=(0,0), tr=(1440,0), bl=(0,900), br=(1440,900).
-    // Building corners extend bl/br by +160 world-Y:
-    //   bl_b = (0, 1060), br_b = (1440, 1060).
+    // Camera=(0,0), zoom=1, vp=1440x900, padding=1, liftPx=160.
+    // Building BL/BR extend by liftPx + MAX_TERRAIN_LIFT_PX = 160 + 96 = 256:
+    //   bl_b = (0, 900+256=1156), br_b = (1440, 1156).
     // fracInverse:
     //   tl: (0, 0)
-    //   tr: (1440/64 + 0, 0 - 1440/64) = (22.5, -22.5)
-    //   bl_b: (0 + 1060/32, 1060/32 - 0) = (33.125, 33.125)
-    //   br_b: (1440/64 + 1060/32, 1060/32 - 1440/64) = (22.5+33.125, 33.125-22.5) = (55.625, 10.625)
-    // minTx=0, maxTx=55.625, minTy=-22.5, maxTy=33.125
+    //   tr: (22.5, -22.5)
+    //   bl_b: (0 + 1156/32, 1156/32 - 0) = (36.125, 36.125)
+    //   br_b: (22.5 + 36.125, 36.125 - 22.5) = (58.625, 13.625)
+    // minTx=0, maxTx=58.625, minTy=-22.5, maxTy=36.125
     // Pre-clamp (padding=1):
-    //   minX = floor(0)-1 = -1 → 0
-    //   maxX = floor(55.625)+1+1 = 57
-    //   minY = floor(-22.5)-1 = -23-1 = -24 → 0
-    //   maxY = floor(33.125)+1+1 = 35
+    //   minX = -1 → 0
+    //   maxX = floor(58.625)+1+1 = 60
+    //   minY = -24 → 0
+    //   maxY = floor(36.125)+1+1 = 38
     const { buildings } = visibleTileBounds({
       cameraX: 0, cameraY: 0, zoom: 1,
       viewportW: 1440, viewportH: 900,
@@ -229,26 +234,26 @@ describe('viewportCulling', () => {
       maxBuildingLiftPx: 160,
     });
     expect(buildings.minX).toBe(0);
-    expect(buildings.maxX).toBe(57);
+    expect(buildings.maxX).toBe(60);
     expect(buildings.minY).toBe(0);
-    expect(buildings.maxY).toBe(35);
+    expect(buildings.maxY).toBe(38);
   });
 
   it('building bottom-edge extension is in world-space not screen-space (zoom=2)', () => {
     // Camera=(0,0), zoom=2, vp=1440x900, padding=1, liftPx=160 world-px.
-    // Terrain bl/br at world: (0, 450), (720, 450).
-    // Building bl_b/br_b at world: (0, 450+160=610), (720, 610).
+    // Building BL/BR extend by liftPx + MAX_TERRAIN_LIFT_PX = 160 + 96 = 256:
+    //   bl_b world: (0, 450+256=706), br_b: (720, 706)
     // fracInverse:
     //   tl: (0, 0)
-    //   tr: (720/64, -720/64) = (11.25, -11.25)
-    //   bl_b: (0 + 610/32, 610/32 - 0) = (19.0625, 19.0625)
-    //   br_b: (720/64 + 610/32, 610/32 - 720/64) = (11.25+19.0625, 19.0625-11.25) = (30.3125, 7.8125)
-    // minTx=0, maxTx=30.3125, minTy=-11.25, maxTy=19.0625
+    //   tr: (11.25, -11.25)
+    //   bl_b: (0 + 706/32, 706/32 - 0) = (22.0625, 22.0625)
+    //   br_b: (11.25 + 22.0625, 22.0625 - 11.25) = (33.3125, 10.8125)
+    // minTx=0, maxTx=33.3125, minTy=-11.25, maxTy=22.0625
     // Pre-clamp (padding=1):
-    //   minX = floor(0)-1 = -1 → 0
-    //   maxX = floor(30.3125)+1+1 = 32
-    //   minY = floor(-11.25)-1 = -13 → 0
-    //   maxY = floor(19.0625)+1+1 = 21
+    //   minX = -1 → 0
+    //   maxX = floor(33.3125)+1+1 = 35
+    //   minY = -13 → 0
+    //   maxY = floor(22.0625)+1+1 = 24
     const { buildings } = visibleTileBounds({
       cameraX: 0, cameraY: 0, zoom: 2,
       viewportW: 1440, viewportH: 900,
@@ -257,15 +262,14 @@ describe('viewportCulling', () => {
       maxBuildingLiftPx: 160,
     });
     expect(buildings.minX).toBe(0);
-    expect(buildings.maxX).toBe(32);
+    expect(buildings.maxX).toBe(35);
     expect(buildings.minY).toBe(0);
-    expect(buildings.maxY).toBe(21);
+    expect(buildings.maxY).toBe(24);
   });
 
   it('default MAX_BUILDING_LIFT_PX (220) widens buildings AABB beyond terrain', () => {
     // Omit maxBuildingLiftPx so the implementation uses MAX_BUILDING_LIFT_PX (220).
-    // Compare against an explicit liftPx=0 baseline: buildings.maxY must exceed terrain.maxY
-    // by the amount that 220 world-px of extension adds in tile space (at zoom=1, padding=1).
+    // Compare against an explicit liftPx=0 baseline.
     const base = visibleTileBounds({
       cameraX: 0, cameraY: 0, zoom: 1,
       viewportW: 1440, viewportH: 900,
@@ -282,8 +286,51 @@ describe('viewportCulling', () => {
     // Default lift extends building AABB further than zero lift.
     expect(withDefault.buildings.maxY).toBeGreaterThan(base.buildings.maxY);
     // Literal pin: zoom=1, vp=1440x900, cam=(0,0), pad=1, liftPx=220.
-    // bl_b world=(0,1120), fracInverse→maxTy=35, maxY=floor(35)+1+1=37.
-    expect(withDefault.buildings.maxY).toBe(37);
+    // Building BL/BR extend by liftPx + MAX_TERRAIN_LIFT_PX = 220 + 96 = 316.
+    // bl_b world=(0, 900+316=1216), fracInverse(0,1216): 1216/32=38, ty=38.
+    // maxTy=38 → maxY=floor(38)+1+1=40.
+    expect(withDefault.buildings.maxY).toBe(40);
+  });
+
+  it('terrain lift: elevated tiles near south edge are included (terrain.maxY > unlifted baseline)', () => {
+    // Camera=(0,0), zoom=1, vp=1440x900, padding=0.
+    // Without terrain lift, terrain BL/BR = (0,900) and (1440,900).
+    //   fracInverse(0,900): 0 + 900/32 = 28.125, ty=28.125 → unlifted maxY = floor(28.125)+1+0 = 29.
+    // With MAX_TERRAIN_LIFT_PX=96, BL/BR extended to 996:
+    //   fracInverse(0,996): 0 + 996/32 = 31.125, ty=31.125 → maxY = floor(31.125)+1+0 = 32.
+    const { terrain: lifted } = visibleTileBounds({
+      cameraX: 0, cameraY: 0, zoom: 1,
+      viewportW: 1440, viewportH: 900,
+      mapWidth: 64, mapHeight: 64,
+      paddingTiles: 0,
+      maxBuildingLiftPx: 0,
+    });
+    // Without terrain lift (hypothetical — we measure the actual delta).
+    // The ELEVATION_HEIGHT * MAX_ELEVATION = 96 lift adds 96/32 = 3 tile rows via fracInverse.
+    expect(lifted.maxY).toBe(32);
+    // terrain.maxY is strictly greater than it would be without the lift extension.
+    // The constant MAX_TERRAIN_LIFT_PX exported from viewportCulling drives this delta.
+    expect(MAX_TERRAIN_LIFT_PX).toBe(96);
+  });
+
+  it('building lift additivity: buildings.maxY > terrain.maxY by MAX_BUILDING_LIFT_PX contribution', () => {
+    // Same camera; buildings extend by liftPx + MAX_TERRAIN_LIFT_PX (additive).
+    // With liftPx=MAX_BUILDING_LIFT_PX (220) and terrain lift=96, total=316.
+    // terrain: maxY=32 (from test above).
+    // buildings: BL/BR at 900+316=1216 → fracInverse(0,1216)=38, ty=38 → maxY=39.
+    const { terrain, buildings } = visibleTileBounds({
+      cameraX: 0, cameraY: 0, zoom: 1,
+      viewportW: 1440, viewportH: 900,
+      mapWidth: 64, mapHeight: 64,
+      paddingTiles: 0,
+    });
+    expect(buildings.maxY).toBeGreaterThan(terrain.maxY);
+    // Pin the exact delta: MAX_BUILDING_LIFT_PX=220 adds 220/32=6.875 tile rows → delta=6 or 7.
+    // fracInverse(0, 900+96) = 31.125 → maxY=32 (terrain)
+    // fracInverse(0, 900+96+220) = fracInverse(0,1216) = 38 → maxY=39 (buildings)
+    // Delta = 39 - 32 = 7 (tied to MAX_BUILDING_LIFT_PX / fracInverse math).
+    expect(buildings.maxY).toBe(39);
+    expect(buildings.maxY - terrain.maxY).toBe(7);
   });
 
   it('camera far off-map clamps both bounds to {0,0,0,0}', () => {

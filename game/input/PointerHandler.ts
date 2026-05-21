@@ -3,9 +3,9 @@
  */
 
 import type { Camera } from '../render/Camera';
-import { screenToTile } from '../render/IsoTransform';
+import { screenToTileWithTerrain } from '../render/IsoTransform';
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
-import type { GameMap } from '../core/Map';
+import type { World } from '../core/World';
 
 export interface PointerCallbacks {
   onTileHover: (tile: TileCoord | null) => void;
@@ -17,7 +17,7 @@ export interface PointerCallbacks {
 export class PointerHandler {
   private canvas: HTMLCanvasElement;
   private camera: Camera;
-  private map: GameMap;
+  private world: World;
   private callbacks: PointerCallbacks;
   private lastHoverTile: TileCoord | null = null;
 
@@ -30,12 +30,12 @@ export class PointerHandler {
   constructor(
     canvas: HTMLCanvasElement,
     camera: Camera,
-    map: GameMap,
+    world: World,
     callbacks: PointerCallbacks
   ) {
     this.canvas = canvas;
     this.camera = camera;
-    this.map = map;
+    this.world = world;
     this.callbacks = callbacks;
 
     this.attachListeners();
@@ -49,7 +49,8 @@ export class PointerHandler {
   }
 
   /**
-   * Convert canvas coordinates to tile coordinates
+   * Convert canvas coordinates to tile coordinates using elevation-aware picking.
+   * Map dims are read per-pick (cheap; guards against HMR/reset dimension changes).
    */
   private canvasToTile(canvasX: number, canvasY: number): TileCoord | null {
     // 1. Canvas coordinates (relative to canvas element)
@@ -58,11 +59,14 @@ export class PointerHandler {
     // 2. Apply camera transform to get world coordinates
     const worldCoord = this.camera.screenToWorld(canvasCoord);
 
-    // 3. Convert world coordinates to tile coordinates
-    const tileCoord = screenToTile(worldCoord);
+    // 3. Convert world coordinates to tile coordinates (elevation-aware)
+    const map = this.world.getMap();
+    const mapWidth = map.getWidth();
+    const mapHeight = map.getHeight();
+    const tileCoord = screenToTileWithTerrain(worldCoord, this.world.getTerrain(), mapWidth, mapHeight);
 
     // 4. Validate tile is within map bounds
-    const tile = this.map.getTile(tileCoord.x, tileCoord.y);
+    const tile = map.getTile(tileCoord.x, tileCoord.y);
     return tile ? tileCoord : null;
   }
 

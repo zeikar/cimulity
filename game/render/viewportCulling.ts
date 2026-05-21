@@ -1,6 +1,7 @@
 // Pure viewport-culling helpers: derive tile-space AABBs from camera + iso projection.
 
 import { ISO_CONFIG } from './IsoTransform';
+import { ELEVATION_HEIGHT, MAX_ELEVATION } from '@/game/core';
 
 const HALF_W = ISO_CONFIG.TILE_WIDTH / 2;   // 32 px
 const HALF_H = ISO_CONFIG.TILE_HEIGHT / 2;  // 16 px
@@ -12,6 +13,10 @@ export const PADDING_TILES = 1;
 // PLUS rooftop accent height (see cubeRoofAccent.ts, per-type range ~15–75 px: industrial smokestack ~15 px → commercial antenna ~75 px) PLUS slack.
 // Revisit when any of cubeLift.ts / cubeTypeRatios.ts / cubeRoofAccent.ts change.
 export const MAX_BUILDING_LIFT_PX = 220;
+
+/** Worst-case vertical screen offset due to terrain elevation.
+ *  Used to extend the culling AABB bottom edge so elevated tiles are not clipped. */
+export const MAX_TERRAIN_LIFT_PX = MAX_ELEVATION * ELEVATION_HEIGHT;
 
 export interface TileBounds {
   minX: number;
@@ -93,20 +98,24 @@ export function visibleTileBounds(args: VisibleTileBoundsArgs): VisibleTileBound
   const bl = { wx: (0         - cameraX) / zoom, wy: (viewportH - cameraY) / zoom };
   const br = { wx: (viewportW - cameraX) / zoom, wy: (viewportH - cameraY) / zoom };
 
+  // Terrain corners: TL/TR unchanged; BL/BR extended by MAX_TERRAIN_LIFT_PX so tiles elevated
+  // near the bottom viewport edge are included in the culling AABB.
   const terrainCorners = [
     fracInverse(tl.wx, tl.wy),
     fracInverse(tr.wx, tr.wy),
-    fracInverse(bl.wx, bl.wy),
-    fracInverse(br.wx, br.wy),
+    fracInverse(bl.wx, bl.wy + MAX_TERRAIN_LIFT_PX),
+    fracInverse(br.wx, br.wy + MAX_TERRAIN_LIFT_PX),
   ];
   const terrain = clampBounds(computeAabb(terrainCorners, pad), mapWidth, mapHeight);
 
-  // Building bounds: extend BL/BR by +liftPx in world-space Y (covers anchors just below bottom).
+  // Building bounds: BL/BR extended additively — cube lift covers anchors below the bottom
+  // edge, and terrain lift covers elevated ground under those buildings.
+  // TL/TR NOT extended.
   const buildingCorners = [
     fracInverse(tl.wx, tl.wy),
     fracInverse(tr.wx, tr.wy),
-    fracInverse(bl.wx, bl.wy + liftPx),
-    fracInverse(br.wx, br.wy + liftPx),
+    fracInverse(bl.wx, bl.wy + liftPx + MAX_TERRAIN_LIFT_PX),
+    fracInverse(br.wx, br.wy + liftPx + MAX_TERRAIN_LIFT_PX),
   ];
   const buildings = clampBounds(computeAabb(buildingCorners, pad), mapWidth, mapHeight);
 

@@ -229,7 +229,7 @@ export class GameSession {
     installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld() });
 
     // Setup input handlers
-    const pointerHandler = new PointerHandler(canvas, camera, world.getMap(), {
+    const pointerHandler = new PointerHandler(canvas, camera, world, {
       onTileHover: (tile) => {
         pixiApp.setHoverTile(tile);
         this.callbacks.onTileHover?.(tile);

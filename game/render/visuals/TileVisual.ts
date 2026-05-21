@@ -14,6 +14,8 @@ export interface TileVisualInput {
   y: number;
   type: TileType;
   level: number;
+  /** Pre-projected elevation height. Renderer populates via world.getTerrain().getRenderHeight(x,y). Test fixtures may omit (treated as 0). */
+  renderHeight?: number;
 }
 
 export interface BuildingVisualInput {
@@ -23,6 +25,8 @@ export interface BuildingVisualInput {
   footprint: ReadonlyArray<{ x: number; y: number }>;
   level: number;
   density: 0 | 1 | 2;
+  /** Pre-projected elevation height. Renderer populates via world.getTerrain().getRenderHeight(x,y). Test fixtures may omit (treated as 0). */
+  renderHeight?: number;
 }
 
 export interface TerrainTileVisual {

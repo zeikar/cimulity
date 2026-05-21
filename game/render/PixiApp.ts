@@ -115,6 +115,11 @@ export class PixiApp {
       if (this.tileRenderer && this.world) {
         this.tileRenderer.render(this.world, this.computeVisibleBounds());
       }
+      if (this.selectionRenderer && this.world) {
+        const rev = this.world.getTerrainRevision();
+        const terrain = this.world.getTerrain();
+        this.selectionRenderer.refreshIfDirty(rev, (x, y) => terrain.getRenderHeight(x, y));
+      }
     });
 
     // Setup FPS counter

@@ -13,7 +13,7 @@
 
 import { Graphics, GraphicsContext } from 'pixi.js';
 import type { Container } from 'pixi.js';
-import { tileToScreen } from '@/game/render/IsoTransform';
+import { tileToScreen, tileToScreenWithHeight } from '@/game/render/IsoTransform';
 import type { Point } from './cubeGeometry';
 import { normalizeFootprint, cubeFacePolygons, isBoundingDiamondAccurate } from './cubeGeometry';
 import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
@@ -282,7 +282,10 @@ export class CubeBuildingVisual implements BuildingVisual {
     const facesCtx = this.getOrBuildFacesContext(input);
     if (facesCtx) facesGfx.context = facesCtx;
 
-    const screen = tileToScreen(input.anchor);
+    // renderHeight is NOT part of the cache key — GraphicsContext is anchor-local geometry.
+    // Position shift from terrain elevation is applied here via tileToScreenWithHeight.
+    const h = input.renderHeight ?? 0;
+    const screen = tileToScreenWithHeight(input.anchor, h);
     const zIndex = computeZIndex(input.footprint);
     facesGfx.position.set(screen.x, screen.y);
     facesGfx.zIndex = zIndex;
@@ -309,7 +312,10 @@ export class CubeBuildingVisual implements BuildingVisual {
     // Swap context if shape/level/density changed, or clear on level→0.
     facesGfx.context = newFacesCtx ?? CubeBuildingVisual.emptyContext;
 
-    const screen = tileToScreen(input.anchor);
+    // renderHeight is NOT part of the cache key — GraphicsContext is anchor-local geometry.
+    // Position shift from terrain elevation is applied here via tileToScreenWithHeight.
+    const h = input.renderHeight ?? 0;
+    const screen = tileToScreenWithHeight(input.anchor, h);
     const zIndex = computeZIndex(input.footprint);
     facesGfx.position.set(screen.x, screen.y);
     facesGfx.zIndex = zIndex;

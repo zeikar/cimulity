@@ -24,6 +24,7 @@ import { TileType } from '../core/Tile';
 import { BuildingType } from '../core/Building';
 import type { World } from '../core/World';
 import type { Building } from '../core/Building';
+import type { Terrain } from '../core/Terrain';
 import type { BuildingVisual } from './visuals/TileVisual';
 import type { VisibleTileBounds } from './viewportCulling';
 import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
@@ -91,6 +92,7 @@ export class TileRenderer {
   render(world: World, visibleBounds?: VisibleTileBounds): void {
     const map = world.getMap();
     const mapWidth = map.getWidth();
+    const terrain = world.getTerrain();
 
     const newSig = this.sigOf(visibleBounds);
     const sigChanged = newSig !== this.lastSig;
@@ -103,7 +105,7 @@ export class TileRenderer {
           const tile = map.getTile(x, y);
           if (!tile) continue;
           const index = y * mapWidth + x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain);
         }
         for (const [idx, entry] of this.tiles) {
           const x = idx % mapWidth;
@@ -116,7 +118,7 @@ export class TileRenderer {
       } else {
         for (const tile of map.iterateTiles()) {
           const index = tile.y * mapWidth + tile.x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain);
         }
       }
 
@@ -125,7 +127,7 @@ export class TileRenderer {
       for (const b of map.getBuildings().iterBuildings()) {
         if (visibleBounds && !isBuildingVisible(b.footprint, visibleBounds.buildings)) continue;
         visibleIds.add(b.id);
-        this.syncBuilding(b);
+        this.syncBuilding(b, terrain);
       }
       for (const [id, entry] of this.buildingById) {
         if (!visibleIds.has(id)) this.unmountBuilding(id, entry);
@@ -145,7 +147,7 @@ export class TileRenderer {
           const tile = map.getTile(x, y);
           if (!tile) continue;
           const index = y * mapWidth + x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain);
         }
         this.pendingTileChanges = [];
       }
@@ -160,7 +162,7 @@ export class TileRenderer {
             const entry = this.buildingById.get(id);
             if (entry) this.unmountBuilding(id, entry);
           } else if (!visibleBounds || isBuildingVisible(building.footprint, visibleBounds.buildings)) {
-            this.syncBuilding(building);
+            this.syncBuilding(building, terrain);
           } else {
             const entry = this.buildingById.get(id);
             if (entry) this.unmountBuilding(id, entry);
@@ -198,10 +200,10 @@ export class TileRenderer {
    * Terrain visual is never unmounted when a building is created on that tile —
    * both layers coexist (see file-level comment).
    */
-  private syncTile(index: number, x: number, y: number, type: TileType, level: number): void {
+  private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain): void {
     const existing = this.tiles.get(index);
     const visual = this.registry.getTerrain(type);
-    const input = { x, y, type, level };
+    const input = { x, y, type, level, renderHeight: terrain.getRenderHeight(x, y) };
 
     if (!existing) {
       const displayObject = visual.mount(input, this.terrainContainer);
@@ -218,7 +220,7 @@ export class TileRenderer {
   }
 
   /** Mount or update a building's visual. */
-  private syncBuilding(building: Building): void {
+  private syncBuilding(building: Building, terrain: Terrain): void {
     const visual = this.registry.getBuilding(building.type);
     const input = {
       buildingId: building.id,
@@ -227,6 +229,7 @@ export class TileRenderer {
       footprint: building.footprint,
       level: building.level,
       density: building.density,
+      renderHeight: terrain.getRenderHeight(building.anchor.x, building.anchor.y),
     };
 
     const existing = this.buildingById.get(building.id);

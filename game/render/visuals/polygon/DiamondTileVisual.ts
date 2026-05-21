@@ -4,12 +4,13 @@
  */
 
 import { Graphics, Container } from 'pixi.js';
-import { tileToScreen, ISO_CONFIG } from '@/game/render/IsoTransform';
+import { tileToScreenWithHeight, ISO_CONFIG } from '@/game/render/IsoTransform';
 import { tileFillColor } from '../palette';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 
 function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
-  const screen = tileToScreen({ x: input.x, y: input.y });
+  const h = input.renderHeight ?? 0;
+  const screen = tileToScreenWithHeight({ x: input.x, y: input.y }, h);
   const hw = ISO_CONFIG.TILE_WIDTH / 2;
   const hh = ISO_CONFIG.TILE_HEIGHT / 2;
   const color = tileFillColor(input.type, input.level);
