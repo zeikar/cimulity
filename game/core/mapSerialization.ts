@@ -18,7 +18,7 @@
  *   && typeof parsed.v === 'number'
  *
  * ENVELOPE VERSION TABLE:
- *   v ∉ {1,2,3,4,5} → reject
+ *   v ∉ {1,2,3,4,5,6} → reject
  *   v === 1, no m   → legacy accept; money = STARTING_FUNDS; map via v1 rules
  *   v === 1, m key  → reject (strict symmetry with map-level v1+stray-l rejection)
  *   v === 2, no m   → backward-compat; money = STARTING_FUNDS; map via v2 rules
@@ -30,9 +30,21 @@
  *                     map rules are identical to v2/v3 (envelope only adds d)
  *   v === 5         → m + d required (same rules as v4) AND b required (building array);
  *                     all building fields validated before any mutation.
+ *   v === 6         → v5 fields + terrain required; terrain must be a full TerrainData DTO
+ *                     (mode "tile-step", no vertexHeights, no waterLevel);
+ *                     terrain dims must match world map dims; all-or-nothing.
  *   v1/v2/v3 default d = 0 (backward-compat — calendar restarts at Year 1 M1 D1 /
  *     Tick 0; v3 money still preserved, v1/v2 money still STARTING_FUNDS;
  *     existing v3/v2/v1 behavior otherwise fully preserved).
+ *
+ * Legacy migration (v1–v5):
+ *   After the legacy deserializer's commit succeeds, install a fresh default
+ *   Terrain (all-zero elevations, all-grass baseTiles) regardless of the
+ *   target world's prior state. baseTiles stays all-grass — do NOT mirror
+ *   legacy TileType.WATER into baseTiles in v1 (decision #8). The tile-layer
+ *   water is preserved by the legacy map load; world.isWater() reads the
+ *   tile layer. A future v7 save migration will rebuild baseTiles from the
+ *   tile layer when base-water becomes authoritative.
  *
  * V → MAP-VIEW TRANSLATION:
  *   deserializeMapInto only understands v1/v2. For a v3/v4/v5 envelope we build a
@@ -56,6 +68,7 @@ import { ZONE_MAX_LEVEL, STARTING_FUNDS } from './World';
 import type { World } from './World';
 import { isBuildingType, tileTypeFromBuildingType } from './Building';
 import type { Building, BuildingType } from './Building';
+import { Terrain } from './Terrain';
 
 /** Map schema version — owned by serializeMap/deserializeMapInto. Internal only; the persisted file uses WORLD_SAVE_VERSION. */
 export const SAVE_VERSION = 2;
@@ -68,8 +81,9 @@ export const SAVE_VERSION = 2;
  * tickCount is restored from the same `d` on the World side — no separate
  * persisted tick field).
  * v5 adds `b` (building array with preserved ids and footprints).
+ * v6 adds `terrain` (full TerrainData DTO; mode "tile-step" only).
  */
-export const WORLD_SAVE_VERSION = 5;
+export const WORLD_SAVE_VERSION = 6;
 
 interface SaveData {
   v: number;
@@ -186,6 +200,7 @@ interface WorldSaveData {
   m?: number;
   d?: number;
   b?: unknown[];
+  terrain?: unknown;
 }
 
 /**
@@ -250,6 +265,7 @@ export function serializeWorld(world: World): string {
     m: world.getMoney(),
     d: world.getElapsedDays(),
     b,
+    terrain: world.getTerrain().toJSON(),
   };
   return JSON.stringify(data);
 }
@@ -284,7 +300,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   const v = data.v;
 
   // Reject unsupported envelope versions.
-  if (v !== 1 && v !== 2 && v !== 3 && v !== 4 && v !== 5) {
+  if (v !== 1 && v !== 2 && v !== 3 && v !== 4 && v !== 5 && v !== 6) {
     return false;
   }
 
@@ -311,7 +327,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
     }
     resolvedMoney = data.m as number;
   } else {
-    // v === 4 or v === 5: m validated exactly as v3, AND d required as a whole non-negative integer.
+    // v === 4, v === 5, or v === 6: m validated exactly as v3, AND d required as a whole non-negative integer.
     if (
       !('m' in data) ||
       !Number.isInteger(data.m) ||
@@ -326,9 +342,19 @@ export function deserializeWorldInto(world: World, json: string): boolean {
     resolvedDay = data.d as number;
   }
 
+  // v6 path: staging-then-commit with full building + terrain validation.
+  if (v === 6) {
+    return deserializeV6(world, data, resolvedMoney, resolvedDay);
+  }
+
   // v5 path: staging-then-commit with full building validation.
   if (v === 5) {
-    return deserializeV5(world, data, resolvedMoney, resolvedDay);
+    const ok = deserializeV5(world, data, resolvedMoney, resolvedDay);
+    if (ok) {
+      // Legacy migration: install a fresh default Terrain after a successful v5 commit.
+      world.installTerrain(new Terrain(world.getMap().getWidth(), world.getMap().getHeight()));
+    }
+    return ok;
   }
 
   // Build the map-view JSON to pass to deserializeMapInto.
@@ -361,6 +387,10 @@ export function deserializeWorldInto(world: World, json: string): boolean {
 
   // Land value is not persisted — mark dirty so the first tick after load recomputes.
   world.markLandValueDirty();
+
+  // Legacy migration: install a fresh default Terrain after a successful v1–v4 commit.
+  // baseTiles stays all-grass — do NOT mirror legacy TileType.WATER into baseTiles.
+  world.installTerrain(new Terrain(world.getMap().getWidth(), world.getMap().getHeight()));
 
   return true;
 }
@@ -554,6 +584,167 @@ function deserializeV5(
   world.setElapsedDays(resolvedDay);
 
   // Land value is not persisted — mark dirty so the first tick after load recomputes.
+  world.markLandValueDirty();
+
+  return true;
+}
+
+/**
+ * v6 staging-then-commit deserialization.
+ * Validates ALL invariants (including terrain DTO and dimension cross-check) BEFORE any world mutation.
+ * Returns false (no mutation) on any failure.
+ */
+function deserializeV6(
+  world: World,
+  data: WorldSaveData,
+  resolvedMoney: number,
+  resolvedDay: number,
+): boolean {
+  const mapDims = world.getMap();
+  if (data.w !== mapDims.getWidth() || data.h !== mapDims.getHeight()) {
+    return false;
+  }
+
+  const w = data.w;
+  const h = data.h;
+
+  // Validate t[] — same rules as v2 map layer.
+  if (
+    !Array.isArray(data.t) ||
+    data.t.length !== w * h ||
+    !data.t.every((type) => VALID_TYPES.has(type))
+  ) {
+    return false;
+  }
+
+  // Validate l[] — required for v6, same rules as v2.
+  const size = w * h;
+  if (
+    !Array.isArray(data.l) ||
+    data.l.length !== size
+  ) {
+    return false;
+  }
+  for (let i = 0; i < size; i++) {
+    const lvl = data.l[i];
+    const typ = data.t[i];
+    if (!Number.isInteger(lvl)) return false;
+    if (isZoneType(typ as TileType)) {
+      if (lvl < 0 || lvl > ZONE_MAX_LEVEL) return false;
+    } else {
+      if (lvl !== 0) return false;
+    }
+  }
+
+  // b[] is required for v6.
+  if (!Array.isArray(data.b)) return false;
+
+  // Validate each building entry.
+  const occupiedIndices = new Set<number>();
+  const seenIds = new Set<number>();
+  const stagingBuildings: Building[] = [];
+
+  for (const entry of data.b) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const e = entry as BuildingSaveEntry;
+
+    if (!Number.isInteger(e.id) || e.id < 0) return false;
+    if (seenIds.has(e.id)) return false;
+    seenIds.add(e.id);
+
+    if (typeof e.type !== 'string' || !isBuildingType(e.type)) return false;
+    if (!Number.isInteger(e.lvl) || e.lvl < 0 || e.lvl > ZONE_MAX_LEVEL) return false;
+    if (!Number.isInteger(e.den) || (e.den !== 0 && e.den !== 1 && e.den !== 2)) return false;
+    if (!Number.isInteger(e.age) || e.age < 0) return false;
+    if (!Array.isArray(e.foot) || e.foot.length === 0) return false;
+
+    const footprintIndices = new Set<number>();
+    const footprint: { x: number; y: number }[] = [];
+    for (const coord of e.foot) {
+      if (!Array.isArray(coord) || coord.length < 2) return false;
+      const cx = coord[0];
+      const cy = coord[1];
+      if (!Number.isInteger(cx) || !Number.isInteger(cy)) return false;
+      if (cx < 0 || cx >= w || cy < 0 || cy >= h) return false;
+      const idx = cy * w + cx;
+      if (footprintIndices.has(idx)) return false;
+      footprintIndices.add(idx);
+      footprint.push({ x: cx, y: cy });
+    }
+
+    if (!Array.isArray(e.anc) || e.anc.length < 2) return false;
+    const ax = e.anc[0];
+    const ay = e.anc[1];
+    if (!Number.isInteger(ax) || !Number.isInteger(ay)) return false;
+    const ancInFootprint = footprint.some((c) => c.x === ax && c.y === ay);
+    if (!ancInFootprint) return false;
+
+    const expectedTileType = tileTypeFromBuildingType(e.type);
+    for (const c of footprint) {
+      const tileType = data.t[c.y * w + c.x];
+      if (tileType !== expectedTileType) return false;
+    }
+
+    for (const idx of footprintIndices) {
+      if (occupiedIndices.has(idx)) return false;
+      occupiedIndices.add(idx);
+    }
+
+    stagingBuildings.push({
+      id: e.id,
+      type: e.type,
+      footprint,
+      anchor: { x: ax, y: ay },
+      level: e.lvl,
+      density: e.den as 0 | 1 | 2,
+      age: e.age,
+    });
+  }
+
+  // Validate terrain DTO (throws on any invalid field).
+  let candidate: Terrain;
+  try {
+    candidate = Terrain.fromData(data.terrain);
+  } catch {
+    return false;
+  }
+
+  // Cross-check terrain dims against target world map dims (validation phase — BEFORE reset).
+  if (
+    candidate.getWidth() !== world.getMap().getWidth() ||
+    candidate.getHeight() !== world.getMap().getHeight()
+  ) {
+    return false;
+  }
+
+  // All validation passed — commit (reset then apply staged data).
+  world.reset();
+
+  const map = world.getMap();
+  const buildings = map.getBuildings();
+
+  for (let i = 0; i < size; i++) {
+    const x = i % w;
+    const y = Math.floor(i / w);
+    map.setTile(x, y, createTile(x, y, data.t[i], data.l![i]));
+  }
+
+  let maxId = -1;
+  for (const building of stagingBuildings) {
+    buildings.addExistingBuilding(building);
+    if (building.id > maxId) maxId = building.id;
+  }
+
+  if (maxId >= 0) {
+    buildings.setNextIdFloor(maxId);
+  }
+
+  // Install validated terrain (wires onMutate callback and bumps terrainRev).
+  world.installTerrain(candidate);
+
+  world.setMoney(resolvedMoney);
+  world.setElapsedDays(resolvedDay);
+
   world.markLandValueDirty();
 
   return true;

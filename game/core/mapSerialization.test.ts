@@ -11,6 +11,7 @@ import {
   WORLD_SAVE_VERSION,
 } from './mapSerialization';
 import { BuildingMap } from './Building';
+import { MAX_ELEVATION } from './Terrain';
 
 describe('serializeMap / deserializeMapInto', () => {
   it('round-trips tile types onto a same-sized map', () => {
@@ -328,7 +329,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
     const json = serializeWorld(src);
     const parsed = JSON.parse(json);
     expect(parsed.v).toBe(WORLD_SAVE_VERSION);
-    expect(parsed.v).toBe(5);
+    expect(parsed.v).toBe(6);
     expect(parsed.d).toBe(expectedDays);
     expect('tk' in parsed).toBe(false);
 
@@ -716,8 +717,8 @@ describe('v5 Building persistence', () => {
     };
   }
 
-  it('WORLD_SAVE_VERSION is 5', () => {
-    expect(WORLD_SAVE_VERSION).toBe(5);
+  it('WORLD_SAVE_VERSION is 6', () => {
+    expect(WORLD_SAVE_VERSION).toBe(6);
   });
 
   // --- empty world v5 round-trip ---
@@ -726,7 +727,7 @@ describe('v5 Building persistence', () => {
     const src = new World(4, 4);
     const json = serializeWorld(src);
     const parsed = JSON.parse(json);
-    expect(parsed.v).toBe(5);
+    expect(parsed.v).toBe(WORLD_SAVE_VERSION);
     expect(Array.isArray(parsed.b)).toBe(true);
     expect(parsed.b.length).toBe(0);
 
@@ -1331,5 +1332,436 @@ describe('v5 Building persistence', () => {
     expect(deserializeWorldInto(world, payload)).toBe(true);
     // No levelled zones in payload → migration produces zero buildings.
     expect(world.getMap().getBuildings().getAllBuildings().length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v6 terrain save/load tests (a)–(k)
+// ---------------------------------------------------------------------------
+
+describe('v6 terrain save/load', () => {
+  const W = 10;
+  const H = 10;
+
+  /** Build a minimal valid v6 JSON for a W×H world. */
+  function makeV6(overrides: Record<string, unknown> = {}): string {
+    const defaultTerrain = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+    };
+    return JSON.stringify({
+      v: 6,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+      terrain: defaultTerrain,
+      ...overrides,
+    });
+  }
+
+  // (a) v6 round-trip with cliffs
+  it('(a) v6 round-trip with cliffs: serialize → deserialize preserves terrain state', () => {
+    const src = new World(W, H);
+    // Mutate via unsafeSetElevation (legal cliff for save/load)
+    src.getTerrain().unsafeSetElevation(5, 5, 3);
+    src.getTerrain().unsafeSetElevation(4, 5, 0);
+
+    const json = serializeWorld(src);
+    const dst = new World(W, H);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+
+    expect(JSON.stringify(dst.getTerrain().toJSON())).toBe(
+      JSON.stringify(src.getTerrain().toJSON())
+    );
+  });
+
+  // (b) Reject mode === "vertex-smooth"
+  it('(b) reject terrain.mode "vertex-smooth" — returns false, world unchanged', () => {
+    const world = new World(W, H);
+    world.setMoney(1234);
+    const prevMoney = world.getMoney();
+
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'vertex-smooth',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+    };
+    const payload = makeV6({ terrain: terrainDto });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(prevMoney);
+  });
+
+  // (c) Reject non-integer elevation
+  it('(c) reject tileElevations[0][0] = 1.5 — returns false, world unchanged', () => {
+    const world = new World(W, H);
+    const prevMoney = world.getMoney();
+
+    const elev = Array.from({ length: H }, () => new Array<number>(W).fill(0));
+    elev[0][0] = 1.5;
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: elev,
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+    };
+    const payload = makeV6({ terrain: terrainDto });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(prevMoney);
+  });
+
+  // (d) Reject elevation > MAX_ELEVATION
+  it('(d) reject tileElevations[0][0] = MAX_ELEVATION + 1 — returns false, world unchanged', () => {
+    const world = new World(W, H);
+    const prevMoney = world.getMoney();
+
+    const elev = Array.from({ length: H }, () => new Array<number>(W).fill(0));
+    elev[0][0] = MAX_ELEVATION + 1;
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: elev,
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+    };
+    const payload = makeV6({ terrain: terrainDto });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(prevMoney);
+  });
+
+  // (e) v1–v5 load installs fresh default terrain (all-zero elevations, all-grass baseTiles)
+  it('(e) v1 load installs fresh default terrain (all-zero, all-grass)', () => {
+    const world = new World(W, H);
+    const payload = JSON.stringify({
+      v: 1,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    const terrain = world.getTerrain();
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getBaseTerrain(x, y)).toBe('grass');
+      }
+    }
+  });
+
+  it('(e) v2 load installs fresh default terrain (all-zero, all-grass)', () => {
+    const world = new World(W, H);
+    const payload = JSON.stringify({
+      v: 2,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    const terrain = world.getTerrain();
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getBaseTerrain(x, y)).toBe('grass');
+      }
+    }
+  });
+
+  it('(e) v3 load installs fresh default terrain (all-zero, all-grass)', () => {
+    const world = new World(W, H);
+    const payload = JSON.stringify({
+      v: 3,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+      m: 500,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    const terrain = world.getTerrain();
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getBaseTerrain(x, y)).toBe('grass');
+      }
+    }
+  });
+
+  it('(e) v4 load installs fresh default terrain (all-zero, all-grass)', () => {
+    const world = new World(W, H);
+    const payload = JSON.stringify({
+      v: 4,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    const terrain = world.getTerrain();
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getBaseTerrain(x, y)).toBe('grass');
+      }
+    }
+  });
+
+  it('(e) v5 load installs fresh default terrain (all-zero, all-grass)', () => {
+    const world = new World(W, H);
+    const payload = JSON.stringify({
+      v: 5,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    const terrain = world.getTerrain();
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getBaseTerrain(x, y)).toBe('grass');
+      }
+    }
+  });
+
+  // (f) v5 load with WATER tile preserves tile-layer water; baseTiles stays "grass"
+  it('(f) v5 load with WATER tile: tile-layer water preserved; baseTiles stays grass', () => {
+    const world = new World(W, H);
+    const tiles = Array(W * H).fill(TileType.GRASS) as TileType[];
+    tiles[0] = TileType.WATER; // (0,0) is water
+    const payload = JSON.stringify({
+      v: 5,
+      w: W,
+      h: H,
+      t: tiles,
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.isWater(0, 0)).toBe(true);
+    expect(world.getTerrain().getBaseTerrain(0, 0)).toBe('grass');
+  });
+
+  // (g) Legacy install regression: pre-mutated terrain reset on legacy load
+  it('(g) legacy install regression: pre-mutated terrain is reset on v5 load', () => {
+    const world = new World(W, H);
+    world.getTerrain().unsafeSetElevation(5, 5, 3);
+    expect(world.getTerrain().getTileElevation(5, 5)).toBe(3);
+
+    const payload = JSON.stringify({
+      v: 5,
+      w: W,
+      h: H,
+      t: Array(W * H).fill(TileType.GRASS),
+      l: Array(W * H).fill(0),
+      m: 500,
+      d: 0,
+      b: [],
+    });
+    expect(deserializeWorldInto(world, payload)).toBe(true);
+    expect(world.getTerrain().getTileElevation(5, 5)).toBe(0);
+  });
+
+  // (h) v6 malformed terrain block: full world state unchanged on rejection
+  it('(h) v6 malformed terrain block: world state fully unchanged on rejection', () => {
+    const world = new World(W, H);
+    world.setMoney(9999);
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
+    world.getTerrain().unsafeSetElevation(5, 5, 3);
+
+    const prevMoney = world.getMoney();
+    const prevBuildingCount = world.getMap().getBuildings().getAllBuildings().length;
+    const prevElevation = world.getTerrain().getTileElevation(5, 5);
+    const prevRev = world.getTerrainRevision();
+
+    const badTerrain = {
+      width: W,
+      height: H,
+      mode: 'vertex-smooth', // invalid
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+    };
+    const payload = makeV6({ terrain: badTerrain });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+    expect(world.getMoney()).toBe(prevMoney);
+    expect(world.getMap().getBuildings().getAllBuildings().length).toBe(prevBuildingCount);
+    expect(world.getTerrain().getTileElevation(5, 5)).toBe(prevElevation);
+    expect(world.getTerrainRevision()).toBe(prevRev);
+  });
+
+  // (i) Reserved fields rejected; round-trip omits them
+  it('(i) vertexHeights: [] in terrain → reject', () => {
+    const world = new World(W, H);
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+      vertexHeights: [],
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(i) vertexHeights: [[0]] in terrain → reject', () => {
+    const world = new World(W, H);
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+      vertexHeights: [[0]],
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(i) waterLevel: 0 in terrain → reject', () => {
+    const world = new World(W, H);
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+      waterLevel: 0,
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(i) waterLevel: 3.5 in terrain → reject', () => {
+    const world = new World(W, H);
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W).fill('grass')),
+      waterLevel: 3.5,
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(i) round-trip: toJSON() omits vertexHeights and waterLevel', () => {
+    const src = new World(W, H);
+    const json = serializeWorld(src);
+    const parsed = JSON.parse(json) as { terrain: Record<string, unknown> };
+    expect('vertexHeights' in parsed.terrain).toBe(false);
+    expect('waterLevel' in parsed.terrain).toBe(false);
+
+    const dst = new World(W, H);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+    const reloadedDto = dst.getTerrain().toJSON() as Record<string, unknown>;
+    expect('vertexHeights' in reloadedDto).toBe(false);
+    expect('waterLevel' in reloadedDto).toBe(false);
+  });
+
+  // (j) baseTiles non-grass rejected; round-trip all-grass
+  it('(j) baseTiles[0][0] = "water" → reject', () => {
+    const world = new World(W, H);
+    const base = Array.from({ length: H }, () => new Array<string>(W).fill('grass'));
+    base[0][0] = 'water';
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: base,
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(j) baseTiles[0][0] = "sand" → reject', () => {
+    const world = new World(W, H);
+    const base = Array.from({ length: H }, () => new Array<string>(W).fill('grass'));
+    base[0][0] = 'sand';
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: base,
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(j) baseTiles[0][0] = "rock" → reject', () => {
+    const world = new World(W, H);
+    const base = Array.from({ length: H }, () => new Array<string>(W).fill('grass'));
+    base[0][0] = 'rock';
+    const terrainDto = {
+      width: W,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W).fill(0)),
+      baseTiles: base,
+    };
+    expect(deserializeWorldInto(world, makeV6({ terrain: terrainDto }))).toBe(false);
+  });
+
+  it('(j) round-trip: all baseTiles in reloaded terrain are "grass"', () => {
+    const src = new World(W, H);
+    const json = serializeWorld(src);
+    const dst = new World(W, H);
+    expect(deserializeWorldInto(dst, json)).toBe(true);
+    const flat = dst.getTerrain().toJSON().baseTiles.flat();
+    expect(flat.every((v) => v === 'grass')).toBe(true);
+  });
+
+  // (k) v6 terrain/map dimension mismatch — validation-phase rejection (NO world mutation)
+  it('(k) v6 terrain/map dimension mismatch rejected in validation phase — world state fully unchanged', () => {
+    const world = new World(W, H);
+
+    // Pre-populate state
+    world.setMoney(999);
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
+    world.getTerrain().unsafeSetElevation(5, 5, 3);
+
+    // Snapshot everything
+    const prevMoney = world.getMoney();
+    const prevBuildingCount = world.getMap().getBuildings().getAllBuildings().length;
+    const prevBuildingIds = world.getMap().getBuildings().getAllBuildings().map((b) => b.id);
+    const prevElevation = world.getTerrain().getTileElevation(5, 5);
+    const prevRev = world.getTerrainRevision();
+
+    // terrain.width is W+1 — dim mismatch
+    const mismatchedTerrain = {
+      width: W + 1,
+      height: H,
+      mode: 'tile-step',
+      tileElevations: Array.from({ length: H }, () => new Array<number>(W + 1).fill(0)),
+      baseTiles: Array.from({ length: H }, () => new Array<string>(W + 1).fill('grass')),
+    };
+    const payload = makeV6({ terrain: mismatchedTerrain });
+
+    expect(deserializeWorldInto(world, payload)).toBe(false);
+
+    // Assert world fully unchanged
+    expect(world.getMoney()).toBe(prevMoney);
+    expect(world.getMap().getBuildings().getAllBuildings().length).toBe(prevBuildingCount);
+    expect(world.getMap().getBuildings().getAllBuildings().map((b) => b.id)).toEqual(prevBuildingIds);
+    expect(world.getTerrain().getTileElevation(5, 5)).toBe(prevElevation);
+    expect(world.getTerrainRevision()).toBe(prevRev);
   });
 });

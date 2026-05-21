@@ -243,4 +243,130 @@ export class Terrain {
   ): boolean {
     return this.isFlatTile(x, y, isWater);
   }
+
+  /** Emit a serializable DTO. In tile-step mode strictly omits vertexHeights and waterLevel (reserved fields). */
+  toJSON(): TerrainData {
+    return {
+      width: this.data.width,
+      height: this.data.height,
+      mode: this.data.mode,
+      tileElevations: this.data.tileElevations.map((row) => [...row]),
+      baseTiles: this.data.baseTiles.map((row) => [...row]),
+    };
+  }
+
+  /**
+   * Validate a raw DTO and construct a Terrain instance.
+   * Throws descriptively on any invalid field.
+   * The returned instance has NO onMutate wired — the caller (installTerrain) wires it.
+   *
+   * After validation, arrays are cloned and assigned directly into the new instance's
+   * private data to avoid the per-cell cost of unsafeSetElevation.
+   */
+  static fromData(dto: unknown): Terrain {
+    if (dto === null || typeof dto !== "object" || Array.isArray(dto)) {
+      throw new Error("Terrain.fromData: dto must be a non-null object");
+    }
+
+    const d = dto as Record<string, unknown>;
+
+    // width
+    if (!Number.isInteger(d["width"]) || (d["width"] as number) <= 0) {
+      throw new Error("Terrain.fromData: width must be a positive integer");
+    }
+    const width = d["width"] as number;
+
+    // height
+    if (!Number.isInteger(d["height"]) || (d["height"] as number) <= 0) {
+      throw new Error("Terrain.fromData: height must be a positive integer");
+    }
+    const height = d["height"] as number;
+
+    // mode
+    if (d["mode"] !== "tile-step") {
+      throw new Error("Terrain.fromData: only mode 'tile-step' is supported in v1");
+    }
+
+    // reserved fields must be absent
+    if ("vertexHeights" in d) {
+      throw new Error(
+        "Terrain.fromData: vertexHeights is reserved for vertex-smooth mode; must be absent in tile-step"
+      );
+    }
+    if ("waterLevel" in d) {
+      throw new Error(
+        "Terrain.fromData: waterLevel is reserved for future modes; must be absent in tile-step"
+      );
+    }
+
+    // tileElevations
+    if (!Array.isArray(d["tileElevations"])) {
+      throw new Error("Terrain.fromData: tileElevations must be an array");
+    }
+    const rawElev = d["tileElevations"] as unknown[];
+    if (rawElev.length !== height) {
+      throw new Error(
+        `Terrain.fromData: tileElevations.length (${rawElev.length}) !== height (${height})`
+      );
+    }
+    const clonedElevations: number[][] = [];
+    for (let y = 0; y < height; y++) {
+      const row = rawElev[y];
+      if (!Array.isArray(row) || (row as unknown[]).length !== width) {
+        throw new Error(
+          `Terrain.fromData: tileElevations[${y}] must be an array of length ${width}`
+        );
+      }
+      const clonedRow: number[] = [];
+      for (let x = 0; x < width; x++) {
+        const v = (row as unknown[])[x];
+        if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > MAX_ELEVATION) {
+          throw new Error(
+            `Terrain.fromData: invalid elevation at (${x},${y}): ${String(v)}`
+          );
+        }
+        clonedRow.push(v as number);
+      }
+      clonedElevations.push(clonedRow);
+    }
+
+    // baseTiles
+    if (!Array.isArray(d["baseTiles"])) {
+      throw new Error("Terrain.fromData: baseTiles must be an array");
+    }
+    const rawBase = d["baseTiles"] as unknown[];
+    if (rawBase.length !== height) {
+      throw new Error(
+        `Terrain.fromData: baseTiles.length (${rawBase.length}) !== height (${height})`
+      );
+    }
+    const clonedBase: BaseTerrain[][] = [];
+    for (let y = 0; y < height; y++) {
+      const row = rawBase[y];
+      if (!Array.isArray(row) || (row as unknown[]).length !== width) {
+        throw new Error(
+          `Terrain.fromData: baseTiles[${y}] must be an array of length ${width}`
+        );
+      }
+      const clonedRow: BaseTerrain[] = [];
+      for (let x = 0; x < width; x++) {
+        const v = (row as unknown[])[x];
+        if (v !== "grass") {
+          throw new Error(
+            `Terrain.fromData: v1 tile-step requires all baseTiles to be 'grass' — got ${String(v)} at (${x},${y})`
+          );
+        }
+        clonedRow.push("grass");
+      }
+      clonedBase.push(clonedRow);
+    }
+
+    // Construct + direct-assign (bypass per-cell unsafeSetElevation cost).
+    // `t.data` is private readonly, but readonly only prevents field reassignment —
+    // mutating properties of data is fine via a cast.
+    const t = new Terrain(width, height);
+    (t as unknown as { data: TerrainData }).data.tileElevations = clonedElevations;
+    (t as unknown as { data: TerrainData }).data.baseTiles = clonedBase;
+    return t;
+  }
 }
