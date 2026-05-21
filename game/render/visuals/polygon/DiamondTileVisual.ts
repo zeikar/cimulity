@@ -81,7 +81,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   gfx.lineTo(screen.x, screen.y + ISO_CONFIG.TILE_HEIGHT);
   gfx.lineTo(screen.x - hw, screen.y + hh);
   gfx.closePath();
-  gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35 });
+  gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, pixelLine: true });
 }
 
 export const DiamondTileVisual: TerrainTileVisual = {
