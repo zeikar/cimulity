@@ -13,6 +13,12 @@ export interface KeyboardCallbacks {
   onPauseToggle?: () => void;
 }
 
+// Shift+key shortcuts for paint tools. Keys are lowercase (matching the normalized `key` variable in handleKeyDown).
+const KEY_TO_TOOL_SHIFT: Record<string, Tool> = {
+  w: Tool.PAINT_WATER,
+  g: Tool.PAINT_GRASS,
+};
+
 // Zone shortcuts moved from 1/2/3 to q/w/e so 1/2/3 are free for speed tiers (see KEY_TO_SPEED below) and Space toggles pause.
 const KEY_TO_TOOL: Record<string, Tool> = {
   r: Tool.ROAD,
@@ -75,6 +81,15 @@ export class KeyboardHandler {
       event.preventDefault();
       this.callbacks.onSpeedChange?.(speed);
       return;
+    }
+
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const shiftTool = KEY_TO_TOOL_SHIFT[key];
+      if (shiftTool !== undefined) {
+        event.preventDefault();
+        this.callbacks.onToolChange(shiftTool);
+        return;
+      }
     }
 
     const tool = KEY_TO_TOOL[key];
