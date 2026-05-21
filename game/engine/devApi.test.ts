@@ -21,14 +21,16 @@ function makeHooks(): {
     regenerateTerrain: ReturnType<typeof vi.fn>;
     resetWorld: ReturnType<typeof vi.fn>;
     saveNow: ReturnType<typeof vi.fn>;
+    resetFlat: ReturnType<typeof vi.fn>;
   };
 } {
   const regenerateTerrain = vi.fn();
   const resetWorld = vi.fn();
   const saveNow = vi.fn();
+  const resetFlat = vi.fn();
   return {
-    hooks: { regenerateTerrain, resetWorld, saveNow },
-    mocks: { regenerateTerrain, resetWorld, saveNow },
+    hooks: { regenerateTerrain, resetWorld, saveNow, resetFlat },
+    mocks: { regenerateTerrain, resetWorld, saveNow, resetFlat },
   };
 }
 
@@ -82,5 +84,14 @@ describe('installDevApi hook-dispatch', () => {
     globalThis.__cimulity!.dev.saveNow();
 
     expect(mocks.saveNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('(d) dev.resetFlat() invokes hooks.resetFlat', () => {
+    const { hooks, mocks } = makeHooks();
+    installDevApi(stubWorld, stubPixiApp, hooks);
+
+    globalThis.__cimulity!.dev.resetFlat();
+
+    expect(mocks.resetFlat).toHaveBeenCalledTimes(1);
   });
 });

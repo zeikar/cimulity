@@ -67,6 +67,11 @@ export interface DevApi {
      * Used by QA / manual smoke.
      */
     regenerateTerrain(seed?: number): void;
+    /**
+     * Reset to an all-zero, all-grass, no-water canvas. TEST/DEBUG only —
+     * production new-city uses regenerateTerrain via resetWorld.
+     */
+    resetFlat(): void;
   };
 }
 
@@ -82,6 +87,8 @@ export interface DevApiHooks {
   saveNow: () => void;
   /** Triggers the full `GameSession.regenerateTerrain()` flow. */
   regenerateTerrain: (seed?: number) => void;
+  /** Triggers the full `GameSession.resetFlat()` flow. */
+  resetFlat: () => void;
 }
 
 declare global {
@@ -171,6 +178,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
       },
       regenerateTerrain(seed?: number): void {
         hooks.regenerateTerrain(seed);
+      },
+      resetFlat(): void {
+        hooks.resetFlat();
       },
     },
   };

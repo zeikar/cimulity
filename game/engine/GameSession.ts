@@ -143,14 +143,15 @@ export class GameSession {
     if (this.world) saveWorld(this.world);
   }
 
-  private performDestructiveReset(opts: { seed?: number; clearSaveAfter: boolean }): void {
+  private performDestructiveReset(opts: { seed?: number; clearSaveAfter: boolean; regenerate?: boolean }): void {
     // Step 1: cancel pending save timer.
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    // Step 2: regenerate world (seed falls back to DEFAULT_NEWCITY_SEED inside world.reset).
-    this.world?.reset({ regenerate: true, seed: opts.seed });
+    // Step 2: reset world (regenerate defaults to true for existing callers).
+    const regenerate = opts.regenerate ?? true;
+    this.world?.reset({ regenerate, seed: regenerate ? opts.seed : undefined });
     // Step 3: conditionally clear the persisted save.
     if (opts.clearSaveAfter) {
       clearSave();
@@ -184,6 +185,14 @@ export class GameSession {
    */
   resetWorld(): void {
     this.performDestructiveReset({ clearSaveAfter: true });
+  }
+
+  /**
+   * Reset to an all-zero, all-grass, no-water canvas. TEST/DEBUG only —
+   * production new-city uses regenerateTerrain via resetWorld.
+   */
+  resetFlat(): void {
+    this.performDestructiveReset({ regenerate: false, clearSaveAfter: true });
   }
 
   /**
@@ -255,7 +264,7 @@ export class GameSession {
     // Installed AFTER pixiApp.init() succeeds and camera/canvas are confirmed
     // present — otherwise `setCameraTile` / `markDirty` would silently no-op.
     // No-op in production builds (see devApi.ts).
-    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow(), regenerateTerrain: (seed?: number) => this.regenerateTerrain(seed) });
+    installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow(), regenerateTerrain: (seed?: number) => this.regenerateTerrain(seed), resetFlat: () => this.resetFlat() });
 
     // Setup input handlers
     const pointerHandler = new PointerHandler(canvas, camera, world, {
