@@ -14,6 +14,7 @@ import { VisualRegistry } from './visuals/visualRegistry';
 import { World } from '../core/World';
 import { TileType } from '../core/Tile';
 import type { TerrainTileVisual, BuildingVisual, TileVisualInput } from './visuals/TileVisual';
+import type { NeighborRenderHeights } from './visuals/polygon/tileSideWalls';
 
 // Minimal Container stub: TileRenderer only calls addChild / removeChild on the
 // parent containers, and inspects nothing on the returned DisplayObjects.
@@ -35,20 +36,28 @@ function makeDisplayObject(): Container {
   return { destroy: vi.fn() } as unknown as Container;
 }
 
-interface UpdateRecord { renderHeight: number | undefined }
+interface UpdateRecord {
+  x: number;
+  y: number;
+  renderHeight: number | undefined;
+  neighborRenderHeights: NeighborRenderHeights | undefined;
+}
 
-function makeStubTerrainVisual(): TerrainTileVisual & { updates: UpdateRecord[] } {
+function makeStubTerrainVisual(): TerrainTileVisual & { updates: UpdateRecord[]; mounts: UpdateRecord[] } {
   const updates: UpdateRecord[] = [];
-  const visual: TerrainTileVisual & { updates: UpdateRecord[] } = {
+  const mounts: UpdateRecord[] = [];
+  const visual: TerrainTileVisual & { updates: UpdateRecord[]; mounts: UpdateRecord[] } = {
     layer: 'terrain' as const,
     updates,
-    mount: vi.fn((_input: TileVisualInput, parent: Container) => {
+    mounts,
+    mount: vi.fn((input: TileVisualInput, parent: Container) => {
+      mounts.push({ x: input.x, y: input.y, renderHeight: input.renderHeight, neighborRenderHeights: input.neighborRenderHeights });
       const obj = makeDisplayObject();
       (parent as ReturnType<typeof makeContainer>).addChild(obj);
       return obj;
     }),
     update: vi.fn((input: TileVisualInput) => {
-      updates.push({ renderHeight: input.renderHeight });
+      updates.push({ x: input.x, y: input.y, renderHeight: input.renderHeight, neighborRenderHeights: input.neighborRenderHeights });
     }),
     unmount: vi.fn((obj: Container) => { obj.destroy(); }),
   };
@@ -111,6 +120,43 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     // The tile at (1,1) must have received renderHeight = 2.
     const tile11Updates = terrainVisual.updates.filter((r) => r.renderHeight === 2);
     expect(tile11Updates.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('syncTile populates neighborRenderHeights correctly', () => {
+    const world = new World(3, 3, { regenerate: false });
+    const terrainContainer = makeContainer();
+    const buildingContainer = makeContainer();
+    const terrainVisual = makeStubTerrainVisual();
+    const registry = makeStubRegistry(terrainVisual);
+
+    const renderer = new TileRenderer(terrainContainer, buildingContainer, registry);
+
+    // First render — mount path.
+    renderer.render(world);
+
+    // Mutate center tile to elevation 2, bumping terrainRev.
+    world.getTerrain().unsafeSetElevation(1, 1, 2);
+
+    // Clear mount records so we focus on update pass.
+    terrainVisual.updates.length = 0;
+
+    // Second render — update path (terrainRev changed → full pass).
+    renderer.render(world);
+
+    // Center tile (1,1): all neighbors exist and have elevation 0.
+    const r11 = terrainVisual.updates.find((r) => r.x === 1 && r.y === 1);
+    expect(r11).toBeDefined();
+    expect(r11!.renderHeight).toBe(2);
+    expect(r11!.neighborRenderHeights).toEqual({ n: 0, e: 0, s: 0, w: 0 });
+
+    // Corner tile (0,0): n and w neighbors are OOB (undefined), e and s are in-bounds (0).
+    // (0,0) was mounted in first pass and updated in second pass.
+    const r00 = terrainVisual.updates.find((r) => r.x === 0 && r.y === 0);
+    expect(r00).toBeDefined();
+    expect(r00!.neighborRenderHeights!.n).toBeUndefined();
+    expect(r00!.neighborRenderHeights!.w).toBeUndefined();
+    expect(r00!.neighborRenderHeights!.e).toBe(0);
+    expect(r00!.neighborRenderHeights!.s).toBe(0);
   });
 
   it('does NOT trigger extra full pass when terrainRev is stable across frames', () => {

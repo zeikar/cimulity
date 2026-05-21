@@ -208,7 +208,18 @@ export class TileRenderer {
   private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain): void {
     const existing = this.tiles.get(index);
     const visual = this.registry.getTerrain(type);
-    const input = { x, y, type, level, renderHeight: terrain.getRenderHeight(x, y) };
+    const renderHeight = terrain.getRenderHeight(x, y);
+    const w = terrain.getWidth();
+    const th = terrain.getHeight();
+    const neighborRH = (nx: number, ny: number): number | undefined =>
+      nx >= 0 && nx < w && ny >= 0 && ny < th ? terrain.getRenderHeight(nx, ny) : undefined;
+    const neighborRenderHeights = {
+      n: neighborRH(x, y - 1),
+      e: neighborRH(x + 1, y),
+      s: neighborRH(x, y + 1),
+      w: neighborRH(x - 1, y),
+    };
+    const input = { x, y, type, level, renderHeight, neighborRenderHeights };
 
     if (!existing) {
       const displayObject = visual.mount(input, this.terrainContainer);
