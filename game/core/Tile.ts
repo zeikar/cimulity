@@ -16,13 +16,14 @@ export enum TileType {
 }
 
 /**
- * Immutable tile data structure
+ * Immutable tile data structure.
+ * Elevation is no longer stored here — use `Terrain.getTileElevation(x, y)`
+ * as the single source of truth for a tile's height.
  */
 export interface Tile {
   readonly x: number;
   readonly y: number;
   readonly type: TileType;
-  readonly elevation: number; // Height for future 3D visuals
   readonly level: number; // Zone growth level; non-zone tiles are always 0
 }
 
@@ -30,7 +31,7 @@ export interface Tile {
  * Factory function to create tiles
  */
 export function createTile(x: number, y: number, type: TileType = TileType.GRASS, level: number = 0): Tile {
-  return { x, y, type, elevation: 0, level };
+  return { x, y, type, level };
 }
 
 /** Zone tile types — single source of truth for zone membership checks. */

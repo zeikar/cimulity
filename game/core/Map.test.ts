@@ -11,7 +11,7 @@ describe('GameMap', () => {
     expect(map.totalTiles).toBe(6);
 
     const tile = map.getTile(2, 1);
-    expect(tile).toEqual({ x: 2, y: 1, type: TileType.GRASS, elevation: 0, level: 0 });
+    expect(tile).toEqual({ x: 2, y: 1, type: TileType.GRASS, level: 0 });
   });
 
   it('returns null for out-of-bounds reads', () => {
@@ -55,7 +55,6 @@ describe('GameMap', () => {
       x: 1,
       y: 1,
       type: TileType.GRASS,
-      elevation: 0,
       level: 0,
     });
   });

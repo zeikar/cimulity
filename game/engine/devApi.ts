@@ -97,7 +97,6 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
               y: t.y,
               type: t.type,
               level: t.level ?? 0,
-              elevation: 0,
             });
             if (ok) tilesPlaced++;
           }
