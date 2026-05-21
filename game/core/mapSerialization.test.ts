@@ -290,7 +290,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   }
 
   it('round-trips money: serialize then deserializeWorldInto restores map + money, v === WORLD_SAVE_VERSION', () => {
-    const src = new World(3, 2);
+    const src = new World(3, 2, { regenerate: false });
     src.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
     src.trySpend(3000);
     src.earn(250);
@@ -300,7 +300,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
     const parsed = JSON.parse(json);
     expect(parsed.v).toBe(WORLD_SAVE_VERSION);
 
-    const dst = new World(3, 2);
+    const dst = new World(3, 2, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
     expect(dst.getMoney()).toBe(expectedMoney);
     expect(dst.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
@@ -310,7 +310,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   // --- v4 calendar round-trip ---
 
   it('(v4) round-trip: serialize a ticked World → v === WORLD_SAVE_VERSION, d present, no tk; restores map + money + days + tick + date', () => {
-    const src = new World(3, 2);
+    const src = new World(3, 2, { regenerate: false });
     // Road-adjacent zone so ticks both spend nothing and exercise growth.
     src.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
     src.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 0));
@@ -333,7 +333,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
     expect(parsed.d).toBe(expectedDays);
     expect('tk' in parsed).toBe(false);
 
-    const dst = new World(3, 2);
+    const dst = new World(3, 2, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
     expect(dst.getMoney()).toBe(expectedMoney);
     expect(dst.getElapsedDays()).toBe(expectedDays);
@@ -346,7 +346,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   });
 
   it('(v4) serializeWorld after real tick() emits d reflecting the ticked count and round-trips with getTick() === getElapsedDays()', () => {
-    const src = new World(2, 1);
+    const src = new World(2, 1, { regenerate: false });
     const TICKS = DAYS_PER_MONTH + 5;
     for (let i = 0; i < TICKS; i++) src.tick();
 
@@ -355,7 +355,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
     expect(parsed.d).toBe(TICKS);
     expect(parsed.d).toBe(src.getElapsedDays());
 
-    const dst = new World(2, 1);
+    const dst = new World(2, 1, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
     expect(dst.getElapsedDays()).toBe(TICKS);
     expect(dst.getTick()).toBe(TICKS);
@@ -364,10 +364,10 @@ describe('serializeWorld / deserializeWorldInto', () => {
   });
 
   it('split-contract lock: serializeWorld (v4) JSON accepted by deserializeWorldInto, rejected by deserializeMapInto', () => {
-    const world = new World(2, 2);
+    const world = new World(2, 2, { regenerate: false });
     const json = serializeWorld(world);
 
-    const fresh = new World(2, 2);
+    const fresh = new World(2, 2, { regenerate: false });
     expect(deserializeWorldInto(fresh, json)).toBe(true);
 
     const map = new GameMap(2, 2);
@@ -377,21 +377,21 @@ describe('serializeWorld / deserializeWorldInto', () => {
   // --- Shape-guard ---
 
   it('shape-guard: "null" → false, world untouched', () => {
-    const world = new World(2, 2);
+    const world = new World(2, 2, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, 'null')).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('shape-guard: "[]" → false, world untouched', () => {
-    const world = new World(2, 2);
+    const world = new World(2, 2, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, '[]')).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('shape-guard: "{}" → false (no v field), world untouched', () => {
-    const world = new World(2, 2);
+    const world = new World(2, 2, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, '{}')).toBe(false);
     expect(world.getMoney()).toBe(before);
@@ -402,7 +402,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v1, no m, no l) legacy: map loads with all levels 0, money === STARTING_FUNDS', () => {
     const w = 2;
     const h = 2;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const payload = JSON.stringify({
       v: 1,
       w,
@@ -421,7 +421,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v1, stray m:{v:1,...,m:0}) → reject, world untouched', () => {
     const w = 2;
     const h = 1;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const before = world.getMoney();
     const payload = JSON.stringify({
       v: 1,
@@ -440,7 +440,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v2, valid l, no m) → map loads, money === STARTING_FUNDS', () => {
     const w = 2;
     const h = 1;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const payload = JSON.stringify({
       v: 2,
       w,
@@ -459,7 +459,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v2, valid l, stray m) → accepted, m ignored, money === STARTING_FUNDS', () => {
     const w = 2;
     const h = 1;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const payload = JSON.stringify({
       v: 2,
       w,
@@ -477,7 +477,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v3, valid l + whole ≥0 m) → map + money loaded', () => {
     const w = 2;
     const h = 1;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const payload = JSON.stringify({
       v: 3,
       w,
@@ -499,7 +499,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v3, valid l + m, stray d key) → accepted, d ignored, day/tick stay 0 (v3 has no calendar concept; lenient like v2 stray-m)', () => {
     const w = 2;
     const h = 1;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const payload = JSON.stringify({
       v: 3,
       w,
@@ -519,7 +519,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   // --- v3 m rejection cases ---
 
   it('(v3, m missing) → reject; money unchanged; map not written', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     const payload = JSON.stringify({ v: 3, w: 2, h: 1, t: [TileType.GRASS, TileType.GRASS], l: [0, 0] });
     expect(deserializeWorldInto(world, payload)).toBe(false);
@@ -528,21 +528,21 @@ describe('serializeWorld / deserializeWorldInto', () => {
   });
 
   it('(v3, m:null) → reject', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, makeV3({ m: null }))).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('(v3, m non-number "x") → reject', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, makeV3({ m: 'x' }))).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('(v3, m overflow literal 1e999 → Infinity) → reject', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     // JSON.parse("1e999") → Infinity in JS; Number.isInteger(Infinity) === false.
     const raw = '{"v":3,"w":2,"h":1,"t":["grass","grass"],"l":[0,0],"m":1e999}';
@@ -551,14 +551,14 @@ describe('serializeWorld / deserializeWorldInto', () => {
   });
 
   it('(v3, m negative) → reject', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, makeV3({ m: -1 }))).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('(v3, m fractional 12.5) → reject', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     expect(deserializeWorldInto(world, makeV3({ m: 12.5 }))).toBe(false);
     expect(world.getMoney()).toBe(before);
@@ -567,7 +567,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   // --- all-or-nothing across map + money ---
 
   it('(v3, valid m but invalid map l: non-zone ROAD level≠0) → reject; money unchanged', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     // ROAD tile with level=1 is invalid per map rules.
     const payload = JSON.stringify({
@@ -588,7 +588,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   it('(v4, valid l + m + d) → map + money + day + tick + date loaded', () => {
     const w = 2;
     const h = 1;
-    const world = new World(w, h);
+    const world = new World(w, h, { regenerate: false });
     const payload = JSON.stringify({
       v: 4,
       w,
@@ -612,7 +612,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
 
   // Builds a v4 World with placed tiles + non-default money/day so we can assert nothing moved.
   function makeDirtyWorld(): { world: World; money: number; days: number; tick: number } {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     world.setMoney(4321);
     world.setElapsedDays(7);
@@ -672,7 +672,7 @@ describe('serializeWorld / deserializeWorldInto', () => {
   // --- unsupported envelope version ---
 
   it('(envelope v:99) → reject (unsupported)', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const before = world.getMoney();
     const payload = JSON.stringify({
       v: 99,
@@ -724,14 +724,14 @@ describe('v5 Building persistence', () => {
   // --- empty world v5 round-trip ---
 
   it('empty world v5 round-trip: save → load → identical empty state', () => {
-    const src = new World(4, 4);
+    const src = new World(4, 4, { regenerate: false });
     const json = serializeWorld(src);
     const parsed = JSON.parse(json);
     expect(parsed.v).toBe(WORLD_SAVE_VERSION);
     expect(Array.isArray(parsed.b)).toBe(true);
     expect(parsed.b.length).toBe(0);
 
-    const dst = new World(4, 4);
+    const dst = new World(4, 4, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
     expect(dst.getMoney()).toBe(src.getMoney());
     expect(dst.getElapsedDays()).toBe(0);
@@ -741,7 +741,7 @@ describe('v5 Building persistence', () => {
   // --- v5 round-trip with preserved non-zero ids ---
 
   it('v5 round-trip preserves non-zero building ids (skipped ids via addBuilding+removeBuilding)', () => {
-    const src = new World(4, 4);
+    const src = new World(4, 4, { regenerate: false });
     const map = src.getMap();
 
     // Place zone tiles.
@@ -794,7 +794,7 @@ describe('v5 Building persistence', () => {
     expect(parsed.b[0].id).toBe(1);
     expect(parsed.b[1].id).toBe(2);
 
-    const dst = new World(4, 4);
+    const dst = new World(4, 4, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
 
     const dstBuildings = dst.getMap().getBuildings();
@@ -817,7 +817,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 round-trip: save → load → save produces byte-identical JSON (deterministic b[] ordering)', () => {
-    const src = new World(4, 4);
+    const src = new World(4, 4, { regenerate: false });
     const map = src.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
@@ -839,7 +839,7 @@ describe('v5 Building persistence', () => {
     });
 
     const json1 = serializeWorld(src);
-    const dst = new World(4, 4);
+    const dst = new World(4, 4, { regenerate: false });
     deserializeWorldInto(dst, json1);
     const json2 = serializeWorld(dst);
     expect(json2).toBe(json1);
@@ -848,7 +848,7 @@ describe('v5 Building persistence', () => {
   // --- setNextIdFloor: new buildings after load don't collide with loaded ids ---
 
   it('v5 round-trip: addBuilding after load gets a fresh id (setNextIdFloor respected)', () => {
-    const src = new World(4, 4);
+    const src = new World(4, 4, { regenerate: false });
     const map = src.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_INDUSTRIAL));
@@ -863,7 +863,7 @@ describe('v5 Building persistence', () => {
     // id=0 was used
 
     const json = serializeWorld(src);
-    const dst = new World(4, 4);
+    const dst = new World(4, 4, { regenerate: false });
     deserializeWorldInto(dst, json);
 
     // New building on a free zone tile should get id=1, not reuse 0.
@@ -882,7 +882,7 @@ describe('v5 Building persistence', () => {
   // --- v4 → v5 migration ---
 
   it('v4 → v5 migration: level-2 zone in v4 save produces synthetic building (level=2, density=0, age=0)', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const payload = JSON.stringify({
       v: 4,
       w: 4,
@@ -914,7 +914,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v4 → v5 migration: zone tile with level=0 does NOT get a synthetic building', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const payload = JSON.stringify({
       v: 4,
       w: 2,
@@ -929,7 +929,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v3 → v5 migration: level-1 zone in v3 save produces synthetic building', () => {
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     const payload = JSON.stringify({
       v: 3,
       w: 2,
@@ -950,7 +950,7 @@ describe('v5 Building persistence', () => {
   // --- staging rejections: world untouched ---
 
   it('v5 rejection — building on water: footprint cell is WATER in t[]', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.setMoney(9999);
     const before = snapshotWorld(world);
 
@@ -977,7 +977,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — type mismatch: residential building over ZONE_COMMERCIAL', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1003,7 +1003,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — overlap: two buildings claim same cell', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1023,7 +1023,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — duplicate id: two buildings with same id', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1043,7 +1043,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — anchor not in footprint', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1067,7 +1067,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — fractional id', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1083,7 +1083,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — fractional level', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1099,7 +1099,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — fractional age', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1115,7 +1115,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — fractional coord in footprint', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1131,7 +1131,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — fractional density', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1147,7 +1147,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — negative id', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1163,7 +1163,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — duplicate cell within one footprint', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1187,7 +1187,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — missing b[] field', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const payload = JSON.stringify({
@@ -1206,7 +1206,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — invalid building type string', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1222,7 +1222,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — lvl exceeds ZONE_MAX_LEVEL', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1243,7 +1243,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — density not in {0,1,2}', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const tiles = Array(16).fill(TileType.GRASS) as TileType[];
@@ -1259,7 +1259,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — footprint cell out of bounds', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const payload = makeV5({
@@ -1271,7 +1271,7 @@ describe('v5 Building persistence', () => {
   });
 
   it('v5 rejection — empty footprint', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = snapshotWorld(world);
 
     const payload = makeV5({
@@ -1284,7 +1284,7 @@ describe('v5 Building persistence', () => {
 
   it('v5 rejection — w/h mismatch against world dimensions', () => {
     // World is 4×4 but payload claims 2×2 — must reject before any mutation.
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.setMoney(999);
     const before = snapshotWorld(world);
 
@@ -1307,7 +1307,7 @@ describe('v5 Building persistence', () => {
   it('v4 load into world with pre-existing buildings clears stale buildings', () => {
     // Pre-load a world with a synthetic building, then overwrite with a v4 payload
     // that has no levelled zones. The stale building must not survive.
-    const world = new World(2, 1);
+    const world = new World(2, 1, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
     world.getMap().getBuildings().addBuilding({
       type: 'residential',
@@ -1368,13 +1368,13 @@ describe('v6 terrain save/load', () => {
 
   // (a) v6 round-trip with cliffs
   it('(a) v6 round-trip with cliffs: serialize → deserialize preserves terrain state', () => {
-    const src = new World(W, H);
+    const src = new World(W, H, { regenerate: false });
     // Mutate via unsafeSetElevation (legal cliff for save/load)
     src.getTerrain().unsafeSetElevation(5, 5, 3);
     src.getTerrain().unsafeSetElevation(4, 5, 0);
 
     const json = serializeWorld(src);
-    const dst = new World(W, H);
+    const dst = new World(W, H, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
 
     expect(JSON.stringify(dst.getTerrain().toJSON())).toBe(
@@ -1384,7 +1384,7 @@ describe('v6 terrain save/load', () => {
 
   // (b) Reject mode === "vertex-smooth"
   it('(b) reject terrain.mode "vertex-smooth" — returns false, world unchanged', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     world.setMoney(1234);
     const prevMoney = world.getMoney();
 
@@ -1403,7 +1403,7 @@ describe('v6 terrain save/load', () => {
 
   // (c) Reject non-integer elevation
   it('(c) reject tileElevations[0][0] = 1.5 — returns false, world unchanged', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const prevMoney = world.getMoney();
 
     const elev = Array.from({ length: H }, () => new Array<number>(W).fill(0));
@@ -1423,7 +1423,7 @@ describe('v6 terrain save/load', () => {
 
   // (d) Reject elevation > MAX_ELEVATION
   it('(d) reject tileElevations[0][0] = MAX_ELEVATION + 1 — returns false, world unchanged', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const prevMoney = world.getMoney();
 
     const elev = Array.from({ length: H }, () => new Array<number>(W).fill(0));
@@ -1443,7 +1443,7 @@ describe('v6 terrain save/load', () => {
 
   // (e) v1–v5 load installs fresh default terrain (all-zero elevations, all-grass baseTiles)
   it('(e) v1 load installs fresh default terrain (all-zero, all-grass)', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 1,
       w: W,
@@ -1461,7 +1461,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(e) v2 load installs fresh default terrain (all-zero, all-grass)', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 2,
       w: W,
@@ -1480,7 +1480,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(e) v3 load installs fresh default terrain (all-zero, all-grass)', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 3,
       w: W,
@@ -1500,7 +1500,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(e) v4 load installs fresh default terrain (all-zero, all-grass)', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 4,
       w: W,
@@ -1521,7 +1521,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(e) v5 load installs fresh default terrain (all-zero, all-grass)', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 5,
       w: W,
@@ -1544,7 +1544,7 @@ describe('v6 terrain save/load', () => {
 
   // (f) v5 load with WATER tile preserves tile-layer water; baseTiles stays "grass"
   it('(f) v5 load with WATER tile: tile-layer water preserved; baseTiles stays grass', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const tiles = Array(W * H).fill(TileType.GRASS) as TileType[];
     tiles[0] = TileType.WATER; // (0,0) is water
     const payload = JSON.stringify({
@@ -1564,7 +1564,7 @@ describe('v6 terrain save/load', () => {
 
   // (g) Legacy install regression: pre-mutated terrain reset on legacy load
   it('(g) legacy install regression: pre-mutated terrain is reset on v5 load', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     world.getTerrain().unsafeSetElevation(5, 5, 3);
     expect(world.getTerrain().getTileElevation(5, 5)).toBe(3);
 
@@ -1584,7 +1584,7 @@ describe('v6 terrain save/load', () => {
 
   // (h) v6 malformed terrain block: full world state unchanged on rejection
   it('(h) v6 malformed terrain block: world state fully unchanged on rejection', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     world.setMoney(9999);
     world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
     world.getTerrain().unsafeSetElevation(5, 5, 3);
@@ -1612,7 +1612,7 @@ describe('v6 terrain save/load', () => {
 
   // (i) Reserved fields rejected; round-trip omits them
   it('(i) vertexHeights: [] in terrain → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const terrainDto = {
       width: W,
       height: H,
@@ -1625,7 +1625,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(i) vertexHeights: [[0]] in terrain → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const terrainDto = {
       width: W,
       height: H,
@@ -1638,7 +1638,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(i) waterLevel: 0 in terrain → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const terrainDto = {
       width: W,
       height: H,
@@ -1651,7 +1651,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(i) waterLevel: 3.5 in terrain → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const terrainDto = {
       width: W,
       height: H,
@@ -1664,13 +1664,13 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(i) round-trip: toJSON() omits vertexHeights and waterLevel', () => {
-    const src = new World(W, H);
+    const src = new World(W, H, { regenerate: false });
     const json = serializeWorld(src);
     const parsed = JSON.parse(json) as { terrain: Record<string, unknown> };
     expect('vertexHeights' in parsed.terrain).toBe(false);
     expect('waterLevel' in parsed.terrain).toBe(false);
 
-    const dst = new World(W, H);
+    const dst = new World(W, H, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
     const reloadedDto = dst.getTerrain().toJSON() as Record<string, unknown>;
     expect('vertexHeights' in reloadedDto).toBe(false);
@@ -1679,7 +1679,7 @@ describe('v6 terrain save/load', () => {
 
   // (j) baseTiles non-grass rejected; round-trip all-grass
   it('(j) baseTiles[0][0] = "water" → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const base = Array.from({ length: H }, () => new Array<string>(W).fill('grass'));
     base[0][0] = 'water';
     const terrainDto = {
@@ -1693,7 +1693,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(j) baseTiles[0][0] = "sand" → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const base = Array.from({ length: H }, () => new Array<string>(W).fill('grass'));
     base[0][0] = 'sand';
     const terrainDto = {
@@ -1707,7 +1707,7 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(j) baseTiles[0][0] = "rock" → reject', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
     const base = Array.from({ length: H }, () => new Array<string>(W).fill('grass'));
     base[0][0] = 'rock';
     const terrainDto = {
@@ -1721,9 +1721,9 @@ describe('v6 terrain save/load', () => {
   });
 
   it('(j) round-trip: all baseTiles in reloaded terrain are "grass"', () => {
-    const src = new World(W, H);
+    const src = new World(W, H, { regenerate: false });
     const json = serializeWorld(src);
-    const dst = new World(W, H);
+    const dst = new World(W, H, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
     const flat = dst.getTerrain().toJSON().baseTiles.flat();
     expect(flat.every((v) => v === 'grass')).toBe(true);
@@ -1731,7 +1731,7 @@ describe('v6 terrain save/load', () => {
 
   // (k) v6 terrain/map dimension mismatch — validation-phase rejection (NO world mutation)
   it('(k) v6 terrain/map dimension mismatch rejected in validation phase — world state fully unchanged', () => {
-    const world = new World(W, H);
+    const world = new World(W, H, { regenerate: false });
 
     // Pre-populate state
     world.setMoney(999);

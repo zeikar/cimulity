@@ -17,7 +17,7 @@ import { serializeWorld, deserializeWorldInto } from '../core/mapSerialization';
 
 describe('build spend — executeClick', () => {
   it('placing a road via executeClick deducts ROAD_COST', () => {
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
     const before = world.getMoney();
 
     const result = executeClick(Tool.ROAD, { x: 3, y: 3 }, world);
@@ -28,7 +28,7 @@ describe('build spend — executeClick', () => {
   });
 
   it('placing a zone tile via executeClick deducts ZONE_COST', () => {
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
     const before = world.getMoney();
 
     const result = executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world);
@@ -38,7 +38,7 @@ describe('build spend — executeClick', () => {
   });
 
   it('bulldozing a non-grass tile via executeClick deducts BULLDOZE_COST', () => {
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
     world.getMap().setTile(4, 4, createTile(4, 4, TileType.ROAD));
     const before = world.getMoney();
 
@@ -52,7 +52,7 @@ describe('build spend — executeClick', () => {
 
 describe('build spend — executeDrag', () => {
   it('dragging road over N tiles deducts N × ROAD_COST and places tiles', () => {
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
     const before = world.getMoney();
 
     // horizontal drag x=0..4, y=0 → 5 tiles
@@ -68,7 +68,7 @@ describe('build spend — executeDrag', () => {
 
 describe('monthly tax settlement with road-adjacent zones', () => {
   it('money is unchanged on every non-boundary tick and increases exactly once at the DAYS_PER_MONTH-th tick', () => {
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
 
     // Layout: road at (1,0); zone at (0,0) adjacent to the road.
     // Set up tiles directly to avoid spending money on them.
@@ -99,7 +99,7 @@ describe('monthly tax settlement with road-adjacent zones', () => {
   });
 
   it('setElapsedDays(DAYS_PER_MONTH - 1) then one tick() settles exactly one month at the pre-growth population', () => {
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
 
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
@@ -122,7 +122,7 @@ describe('monthly tax settlement with road-adjacent zones', () => {
 
 describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () => {
   it('restores exact money and map state via serialize → fresh World → deserialize', () => {
-    const world = new World(8, 8);
+    const world = new World(8, 8, { regenerate: false });
 
     // Place some tiles and spend money deterministically via direct map writes
     // (bypass cost accounting for setup — the important thing is the money value).
@@ -139,7 +139,7 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
 
     const json = serializeWorld(world);
 
-    const fresh = new World(8, 8);
+    const fresh = new World(8, 8, { regenerate: false });
     const ok = deserializeWorldInto(fresh, json);
 
     expect(ok).toBe(true);
@@ -158,7 +158,7 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
   });
 
   it('build → tick → serialize → deserialize preserves the money earned from tax', () => {
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
 
     // Set up: road at (1,0), zone at (0,0).
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -174,7 +174,7 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     const zoneLevel = world.getMap().getTile(0, 0)?.level;
 
     const json = serializeWorld(world);
-    const dst = new World(6, 6);
+    const dst = new World(6, 6, { regenerate: false });
     expect(deserializeWorldInto(dst, json)).toBe(true);
 
     expect(dst.getMoney()).toBe(moneyAfterTicks);

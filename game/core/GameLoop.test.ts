@@ -37,7 +37,7 @@ describe('GameLoop', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fakeNow = 0;
-    world = new World(4, 4);
+    world = new World(4, 4, { regenerate: false });
     onTick = vi.fn();
     loop = makeLoop();
   });
@@ -357,7 +357,7 @@ describe('GameLoop', () => {
   // (w) catch-up ≥2 ticks including a density bump: aggregated changedTiles + changedBuildingIds
   it('(w) catch-up drain with density bump: aggregated changedTiles contains footprint coord and changedBuildingIds contains building id', () => {
     // Use a larger world with diversified zones so land value >= HIGH_DENSITY_THRESHOLD.
-    const bigWorld = new World(6, 6);
+    const bigWorld = new World(6, 6, { regenerate: false });
     const bigMap = bigWorld.getMap();
     bigMap.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     bigMap.setTile(1, 0, createTile(1, 0, TileType.ROAD));

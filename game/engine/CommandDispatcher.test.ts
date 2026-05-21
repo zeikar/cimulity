@@ -6,7 +6,7 @@ import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 
 function makeWorld(size = 5): World {
-  return new World(size, size);
+  return new World(size, size, { regenerate: false });
 }
 
 describe('executeClick', () => {

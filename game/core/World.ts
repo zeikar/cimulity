@@ -8,6 +8,9 @@ import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
 import { Terrain } from './Terrain';
+import { generateTerrain, DEFAULT_NEWCITY_SEED } from './terrainGenerator';
+
+export { DEFAULT_NEWCITY_SEED };
 
 /** Ticks between each zone growth step. tickCount is post-increment (≥1), so first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0. */
 export const ZONE_GROWTH_INTERVAL = 8;
@@ -109,10 +112,16 @@ export class World {
   /** True when the influence map inputs have changed since last recompute. */
   private landValueDirty: boolean = false;
 
-  constructor(mapWidth: number, mapHeight: number) {
+  constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
+    // Step 1: install a flat terrain so the field is never null.
     // installTerrain must come AFTER this.map is set so map.getWidth/Height() are available.
     this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
+    // Step 2: if regenerate (default true), run procedural generation via reset().
+    const regenerate = opts?.regenerate ?? true;
+    if (regenerate) {
+      this.reset({ regenerate: true });
+    }
   }
 
   getMap(): GameMap {
@@ -291,16 +300,58 @@ export class World {
   /**
    * Reset to a blank city: clear the map, the tick counter, the calendar, and the treasury.
    * installTerrain creates a fresh Terrain and bumps terrainRev — SelectionRenderer's
-   * lastRev will differ from the world rev on the next frame and forceRedraw() fires once
-   * (Task 6 wires that observation; this comment documents the contract).
+   * lastRev will differ from the world rev on the next frame and forceRedraw() fires once.
+   *
+   * @param opts.regenerate - When true (default), runs procedural terrain generation.
+   *   Pass `{ regenerate: false }` to restore a flat all-zero terrain (used by
+   *   deserialization hydration paths so loaded terrain is not overwritten).
+   * @param opts.seed - Seed for procedural generation (only used when regenerate is true).
+   *   Defaults to DEFAULT_NEWCITY_SEED.
    */
-  reset(): void {
+  reset(opts?: { regenerate?: boolean; seed?: number }): void {
+    const regenerate = opts?.regenerate ?? true;
+    const seed = opts?.seed ?? DEFAULT_NEWCITY_SEED;
+
     this.map.reset();
-    this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
     this.landValueDirty = false;
+
+    if (!regenerate) {
+      // Flat default terrain — used by deserialization paths.
+      this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
+      return;
+    }
+
+    // Procedural terrain generation.
+    const W = this.map.getWidth();
+    const H = this.map.getHeight();
+    const { elevations, waterMask } = generateTerrain(W, H, seed);
+    const terrain = new Terrain(W, H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        terrain.unsafeSetElevation(x, y, elevations[y][x]);
+      }
+    }
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (waterMask[y][x]) {
+          this.map.setTile(x, y, createTile(x, y, TileType.WATER));
+        }
+      }
+    }
+    this.installTerrain(terrain);
+  }
+
+  /**
+   * Re-run procedural terrain generation with the given seed, replacing the entire world state.
+   *
+   * @remarks This RESETS the entire world (map, buildings, treasury, calendar).
+   * @param seed - RNG seed; defaults to DEFAULT_NEWCITY_SEED.
+   */
+  regenerateTerrain(seed?: number): void {
+    this.reset({ regenerate: true, seed: seed ?? DEFAULT_NEWCITY_SEED });
   }
 
   /**

@@ -9,7 +9,7 @@ const MAP_SIZE = 10;
 let world: World;
 
 beforeEach(() => {
-  world = new World(MAP_SIZE, MAP_SIZE);
+  world = new World(MAP_SIZE, MAP_SIZE, { regenerate: false });
 });
 
 describe('buildToolCommands - zone tools', () => {

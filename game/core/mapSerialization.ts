@@ -556,7 +556,8 @@ function deserializeV5(
   }
 
   // All validation passed — now commit (reset then apply staged data).
-  world.reset();
+  // regenerate: false so procedural terrain is not run over the data we are about to hydrate.
+  world.reset({ regenerate: false });
 
   const map = world.getMap();
   const buildings = map.getBuildings();
@@ -718,7 +719,8 @@ function deserializeV6(
   }
 
   // All validation passed — commit (reset then apply staged data).
-  world.reset();
+  // regenerate: false so procedural terrain is not run over the data we are about to hydrate.
+  world.reset({ regenerate: false });
 
   const map = world.getMap();
   const buildings = map.getBuildings();

@@ -71,7 +71,7 @@ afterEach(() => {
 
 describe('saveWorld', () => {
   it('writes a v4 envelope to STORAGE_KEY with correct v, m, and d', () => {
-    const world = new World(64, 64);
+    const world = new World(64, 64, { regenerate: false });
     world.trySpend(1500); // leave 8500 in the treasury (STARTING_FUNDS=10000)
     // Advance a few ticks so d is non-zero.
     world.tick();
@@ -157,7 +157,7 @@ describe('getWorld — v1 legacy envelope (no l, no m) defaults money to STARTIN
 describe('getWorld — v4 envelope restores calendar', () => {
   it('restores getElapsedDays, getTick, and getDate from a v4 save', () => {
     // Build a world, advance N ticks, save it.
-    const src = new World(64, 64);
+    const src = new World(64, 64, { regenerate: false });
     const N = 5;
     for (let i = 0; i < N; i++) src.tick();
     saveWorld(src);
@@ -181,7 +181,7 @@ describe('getWorld — v4 envelope restores calendar', () => {
 describe('getWorld — stale singleton missing calendar API is discarded', () => {
   it('rebuilds from save when __cimulityWorld has economy API but no calendar methods', () => {
     // Build and save a v4 world so there is something to hydrate from.
-    const src = new World(64, 64);
+    const src = new World(64, 64, { regenerate: false });
     const N = 7;
     for (let i = 0; i < N; i++) src.tick();
     saveWorld(src);
@@ -208,7 +208,7 @@ describe('getWorld — stale singleton missing calendar API is discarded', () =>
 describe('getWorld — stale singleton missing getTerrain is discarded', () => {
   it('rebuilds from save when __cimulityWorld lacks getTerrain', () => {
     // Save something to hydrate from.
-    const src = new World(64, 64);
+    const src = new World(64, 64, { regenerate: false });
     saveWorld(src);
 
     // Install a fake singleton that has the full current API except getTerrain.
@@ -261,7 +261,7 @@ describe('getWorld — stale singleton missing getTerrain is discarded', () => {
 describe('clearSave', () => {
   it('removes the key; subsequent getWorld() (after singleton reset) returns a fresh world with STARTING_FUNDS', () => {
     // Save something so the key exists.
-    const world = new World(64, 64);
+    const world = new World(64, 64, { regenerate: false });
     world.trySpend(5000);
     saveWorld(world);
 

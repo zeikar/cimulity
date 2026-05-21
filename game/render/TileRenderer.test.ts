@@ -77,7 +77,7 @@ function makeStubRegistry(terrainVisual: TerrainTileVisual): VisualRegistry {
 
 describe('TileRenderer — terrain revision dirty detection', () => {
   it('re-syncs tiles when terrainRev changes after initial render', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const terrainContainer = makeContainer();
     const buildingContainer = makeContainer();
     const terrainVisual = makeStubTerrainVisual();
@@ -114,7 +114,7 @@ describe('TileRenderer — terrain revision dirty detection', () => {
   });
 
   it('does NOT trigger extra full pass when terrainRev is stable across frames', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const terrainVisual = makeStubTerrainVisual();
     const renderer = new TileRenderer(
       makeContainer(), makeContainer(), makeStubRegistry(terrainVisual)

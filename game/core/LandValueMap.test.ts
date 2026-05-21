@@ -97,7 +97,7 @@ describe('LandValueMap', () => {
 
   describe('dirty-mark integration: observable behavior only', () => {
     it('value at road tile is 0 before placement, > 0 after tick', () => {
-      const world = new World(8, 8);
+      const world = new World(8, 8, { regenerate: false });
 
       // Before placement: land value not yet computed; force initial compute.
       world.recomputeLandValue();
@@ -115,7 +115,7 @@ describe('LandValueMap', () => {
     });
 
     it('value unchanged after tick with no new changes', () => {
-      const world = new World(8, 8);
+      const world = new World(8, 8, { regenerate: false });
       executeClick(Tool.ROAD, { x: 3, y: 3 }, world);
       world.tick();
       const afterFirst = world.getLandValue().getValue(3, 3);

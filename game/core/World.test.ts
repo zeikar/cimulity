@@ -11,13 +11,14 @@ import {
   GROWTH_COOLDOWN_INTERVALS,
   DENSITY_COOLDOWN_INTERVALS,
   stagger,
+  DEFAULT_NEWCITY_SEED,
 } from './World';
 import { TileType, createTile } from './Tile';
 import { Terrain } from './Terrain';
 
 describe('World', () => {
   it('builds a map of the requested size', () => {
-    const world = new World(8, 6);
+    const world = new World(8, 6, { regenerate: false });
     const map = world.getMap();
 
     expect(map.getWidth()).toBe(8);
@@ -25,12 +26,12 @@ describe('World', () => {
   });
 
   it('returns the same map instance across calls', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.getMap()).toBe(world.getMap());
   });
 
   it('starts at tick 0 and advances one tick at a time', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
 
     expect(world.getTick()).toBe(0);
     world.tick();
@@ -39,7 +40,7 @@ describe('World', () => {
   });
 
   it('reset() clears the map and the tick counter', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
     world.tick();
 
@@ -52,7 +53,7 @@ describe('World', () => {
 
 describe('World.tick() — heal rule', () => {
   it('converts a DIRT tile to GRASS and returns changed === 1', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
 
     const result = world.tick();
@@ -62,7 +63,7 @@ describe('World.tick() — heal rule', () => {
   });
 
   it('returns changed === 0 and leaves map untouched when no DIRT present', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
 
     const result = world.tick();
 
@@ -71,7 +72,7 @@ describe('World.tick() — heal rule', () => {
   });
 
   it('does not alter ROAD or WATER tiles during a tick', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.WATER));
 
@@ -85,7 +86,7 @@ describe('World.tick() — heal rule', () => {
 
 describe('World.tick() — permanence guard', () => {
   it('leaves zone tiles unchanged and only heals the DIRT control tile', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
 
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -105,7 +106,7 @@ describe('World.tick() — permanence guard', () => {
 
 describe('World.countDirt()', () => {
   it('returns the number of DIRT tiles before a tick', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.DIRT));
     world.getMap().setTile(2, 3, createTile(2, 3, TileType.DIRT));
 
@@ -113,7 +114,7 @@ describe('World.countDirt()', () => {
   });
 
   it('returns 0 after a tick heals all DIRT', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.DIRT));
 
     world.tick();
@@ -124,7 +125,7 @@ describe('World.countDirt()', () => {
 
 describe('World.tick() — zone growth', () => {
   it('ROAD-adjacent zone does NOT grow before the Nth tick (ZONE_GROWTH_INTERVAL - 1 ticks)', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
@@ -135,7 +136,7 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('ROAD-adjacent zone creates a building (level 0) on tick N; returned changed includes the creation', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
@@ -149,7 +150,7 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('zone with no orthogonal ROAD neighbor stays level 0 across multiple growth intervals', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
     // No road anywhere near
@@ -160,7 +161,7 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('diagonal-only ROAD adjacency does NOT cause growth (orthogonal only)', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     // Zone at (1,1), ROAD only at (2,2) — diagonal, not orthogonal
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
@@ -176,7 +177,7 @@ describe('World.tick() — zone growth', () => {
     // which brings landValue above the LEVEL_THRESHOLDS[5]=0.85 threshold needed for
     // the final level-up. The commercial and industrial tiles are not road-adjacent so
     // they never create buildings — they only contribute to the diversity score of (0,0).
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -192,7 +193,7 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('at cap, zone no longer contributes to changed', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -220,21 +221,21 @@ describe('World.tick() — zone growth', () => {
 
 describe('World money — initial state', () => {
   it('new World starts with STARTING_FUNDS', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.getMoney()).toBe(STARTING_FUNDS);
   });
 });
 
 describe('World.trySpend()', () => {
   it('returns true and decrements money when amount is within balance', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const result = world.trySpend(100);
     expect(result).toBe(true);
     expect(world.getMoney()).toBe(STARTING_FUNDS - 100);
   });
 
   it('returns false and leaves money unchanged when amount exceeds balance', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     const result = world.trySpend(STARTING_FUNDS + 1);
     expect(result).toBe(false);
@@ -242,35 +243,35 @@ describe('World.trySpend()', () => {
   });
 
   it('returns true and leaves 0 when spending exactly the full balance', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const result = world.trySpend(STARTING_FUNDS);
     expect(result).toBe(true);
     expect(world.getMoney()).toBe(0);
   });
 
   it('returns false and leaves money unchanged for negative amount', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.trySpend(-1)).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('returns false and leaves money unchanged for Infinity', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.trySpend(Infinity)).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('returns false and leaves money unchanged for NaN', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.trySpend(NaN)).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('returns false and leaves money unchanged for fractional amount', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.trySpend(12.5)).toBe(false);
     expect(world.getMoney()).toBe(before);
@@ -279,33 +280,33 @@ describe('World.trySpend()', () => {
 
 describe('World.earn()', () => {
   it('increases money by a valid whole amount', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.earn(50);
     expect(world.getMoney()).toBe(STARTING_FUNDS + 50);
   });
 
   it('earn(0) is a no-op that leaves money unchanged', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.earn(0);
     expect(world.getMoney()).toBe(STARTING_FUNDS);
   });
 
   it('earn(-1) is a no-op', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     world.earn(-1);
     expect(world.getMoney()).toBe(before);
   });
 
   it('earn(NaN) is a no-op', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     world.earn(NaN);
     expect(world.getMoney()).toBe(before);
   });
 
   it('earn(12.5) is a no-op', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     world.earn(12.5);
     expect(world.getMoney()).toBe(before);
@@ -314,34 +315,34 @@ describe('World.earn()', () => {
 
 describe('World.setMoney()', () => {
   it('returns true and sets money to 500', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.setMoney(500)).toBe(true);
     expect(world.getMoney()).toBe(500);
   });
 
   it('returns false and leaves money unchanged for -1', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.setMoney(-1)).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('returns false and leaves money unchanged for Infinity', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.setMoney(Infinity)).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('returns false and leaves money unchanged for NaN', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.setMoney(NaN)).toBe(false);
     expect(world.getMoney()).toBe(before);
   });
 
   it('returns false and leaves money unchanged for 12.5', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     expect(world.setMoney(12.5)).toBe(false);
     expect(world.getMoney()).toBe(before);
@@ -350,38 +351,38 @@ describe('World.setMoney()', () => {
 
 describe('World calendar', () => {
   it('from a fresh world getDate() is {1,1,1} and getElapsedDays() is 0', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
     expect(world.getElapsedDays()).toBe(0);
   });
 
   it('after exactly 1 tick() getDate() is {1,1,2} and getElapsedDays() is 1', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.tick();
     expect(world.getDate()).toEqual({ year: 1, month: 1, day: 2 });
     expect(world.getElapsedDays()).toBe(1);
   });
 
   it('after a total of DAYS_PER_MONTH tick() calls getDate() is {1,2,1}', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
     expect(world.getDate()).toEqual({ year: 1, month: 2, day: 1 });
   });
 
   it('after a total of DAYS_PER_MONTH*MONTHS_PER_YEAR tick() calls getDate() is {2,1,1}', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     for (let i = 0; i < DAYS_PER_MONTH * MONTHS_PER_YEAR; i++) world.tick();
     expect(world.getDate()).toEqual({ year: 2, month: 1, day: 1 });
   });
 
   it('getElapsedDays() equals the total number of tick() calls', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     for (let i = 0; i < 47; i++) world.tick();
     expect(world.getElapsedDays()).toBe(47);
   });
 
   it('reset() returns a ticked world calendar to {1,1,1}, getElapsedDays() to 0, getTick() to 0', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     for (let i = 0; i < DAYS_PER_MONTH + 3; i++) world.tick();
 
     world.reset();
@@ -394,7 +395,7 @@ describe('World calendar', () => {
 
 describe('World.setElapsedDays()', () => {
   it('returns true and sets day and tick together for a valid whole ≥0 value', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.setElapsedDays(DAYS_PER_MONTH)).toBe(true);
     expect(world.getDate()).toEqual({ year: 1, month: 2, day: 1 });
     expect(world.getTick()).toBe(DAYS_PER_MONTH);
@@ -402,7 +403,7 @@ describe('World.setElapsedDays()', () => {
   });
 
   it('returns false and leaves elapsed days / tick / date unchanged for -1', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.setElapsedDays(-1)).toBe(false);
     expect(world.getElapsedDays()).toBe(0);
     expect(world.getTick()).toBe(0);
@@ -410,7 +411,7 @@ describe('World.setElapsedDays()', () => {
   });
 
   it('returns false and leaves elapsed days / tick / date unchanged for Infinity', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.setElapsedDays(Infinity)).toBe(false);
     expect(world.getElapsedDays()).toBe(0);
     expect(world.getTick()).toBe(0);
@@ -418,7 +419,7 @@ describe('World.setElapsedDays()', () => {
   });
 
   it('returns false and leaves elapsed days / tick / date unchanged for NaN', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.setElapsedDays(NaN)).toBe(false);
     expect(world.getElapsedDays()).toBe(0);
     expect(world.getTick()).toBe(0);
@@ -426,7 +427,7 @@ describe('World.setElapsedDays()', () => {
   });
 
   it('returns false and leaves elapsed days / tick / date unchanged for 12.5', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.setElapsedDays(12.5)).toBe(false);
     expect(world.getElapsedDays()).toBe(0);
     expect(world.getTick()).toBe(0);
@@ -436,7 +437,7 @@ describe('World.setElapsedDays()', () => {
 
 describe('World.tick() — monthly tax settlement', () => {
   it('money is unchanged after the 1st tick() and on every non-month-boundary tick (from a fresh world with a road-adjacent residential zone)', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -450,7 +451,7 @@ describe('World.tick() — monthly tax settlement', () => {
   });
 
   it('on the tick bringing getElapsedDays() to exactly DAYS_PER_MONTH money increases by Math.floor(popBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -469,7 +470,7 @@ describe('World.tick() — monthly tax settlement', () => {
   });
 
   it('a coincident growth + month-boundary tick taxes the PRE-growth population and still levels the zone up', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -503,7 +504,7 @@ describe('World.tick() — monthly tax settlement', () => {
   });
 
   it('money is unchanged even on a month-boundary tick when population is 0', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const before = world.getMoney();
     for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
@@ -513,7 +514,7 @@ describe('World.tick() — monthly tax settlement', () => {
 
 describe('World.reset() — treasury', () => {
   it('restores money to STARTING_FUNDS after spending and zeroes the calendar and tick', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.trySpend(5000);
     for (let i = 0; i < DAYS_PER_MONTH + 5; i++) world.tick();
     world.reset();
@@ -526,19 +527,19 @@ describe('World.reset() — treasury', () => {
 
 describe('World.getPopulation()', () => {
   it('returns 0 for a default map with no zone tiles', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.getPopulation()).toBe(0);
   });
 
   it('returns 0 when zone tiles are all at level 0', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 0));
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 0));
     expect(world.getPopulation()).toBe(0);
   });
 
   it('sums building levels and multiplies by POPULATION_PER_LEVEL', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
@@ -552,7 +553,7 @@ describe('World.getPopulation()', () => {
   });
 
   it('non-zone buildings (ROAD, GRASS, etc. tiles) contribute 0 to population', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
     map.setTile(1, 0, createTile(1, 0, TileType.WATER));
@@ -564,7 +565,7 @@ describe('World.getPopulation()', () => {
   });
 
   it('reset() zeroes tick and population returns 0 after reset', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 3));
     world.tick();
@@ -578,7 +579,7 @@ describe('World.getPopulation()', () => {
 
 describe('WorldTickResult.changedTiles — canonical delta', () => {
   it('changedTiles contains the exact coord for a single DIRT heal', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(2, 3, createTile(2, 3, TileType.DIRT));
 
     const result = world.tick();
@@ -588,7 +589,7 @@ describe('WorldTickResult.changedTiles — canonical delta', () => {
   });
 
   it('changedTiles is empty when no mutations occur', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
 
     const result = world.tick();
 
@@ -604,7 +605,7 @@ describe('WorldTickResult.changedTiles — canonical delta', () => {
     // We advance to tick ZONE_GROWTH_INTERVAL - 1 without the DIRT tile, then place
     // the DIRT tile just before the final tick so it heals on the same tick that
     // growth fires.
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -632,7 +633,7 @@ describe('WorldTickResult.changedTiles — canonical delta', () => {
 
 describe('World.tick() — building creation and changedBuildingIds', () => {
   it('zone-grows-creates-building: first growth tick on a road-adjacent zone creates a building at level 0', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -646,7 +647,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
   });
 
   it('changedBuildingIds emission: growth tick emits the created building id in WorldTickResult', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -665,7 +666,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
     // stagger(0)=0 → cooldown=8 growth-opportunity intervals. Building is created on the
     // first growth tick (age=0); after 8 more growth ticks (age=8) it levels up to 1.
     // Run 10 growth intervals (80 ticks) to comfortably cover creation + first level-up.
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -678,7 +679,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
 
 describe('World — bulldoze and repaint remove buildings', () => {
   it('bulldoze-developed-zone: bulldozing a zone tile with a building removes the building from BuildingMap', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
     const building = map.getBuildings().addBuilding({
@@ -701,7 +702,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
   });
 
   it('repaint zone type: painting a different zone over an existing zone removes the building', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     const building = map.getBuildings().addBuilding({
@@ -725,7 +726,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
   });
 
   it('same-zone repaint: setTileAndReconcile returns changed=false and keeps building', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     const building = map.getBuildings().addBuilding({
@@ -747,14 +748,14 @@ describe('World — bulldoze and repaint remove buildings', () => {
 
 describe('World.getPopulation() — building-based formula', () => {
   it('returns 0 when no buildings exist (tiles alone do not contribute)', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 3));
     // No building in BuildingMap → population is 0
     expect(world.getPopulation()).toBe(0);
   });
 
   it('sum(building.level) × POPULATION_PER_LEVEL formula across multiple buildings', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
@@ -788,7 +789,7 @@ describe('stagger() — deterministic per-building jitter', () => {
   it('stagger differentiates first-level-up tick across 5 buildings in a row', () => {
     // 5 zones along a road. Each building gets a distinct id (0-4).
     // With the Knuth hash, their stagger values differ, so level-up ticks differ.
-    const world = new World(10, 4);
+    const world = new World(10, 4, { regenerate: false });
     const map = world.getMap();
     // Road along the top row
     for (let x = 0; x < 10; x++) {
@@ -826,7 +827,7 @@ describe('stagger() — deterministic per-building jitter', () => {
 describe('World.tick() — land value gating of growth', () => {
   it('zones near a road reach higher levels than zones far from any road', () => {
     // Near-road zones at x=0,1 with road at x=2; far zones at x=4,5 with no road anywhere near
-    const world = new World(10, 4);
+    const world = new World(10, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
     // Near zones (road-adjacent)
@@ -854,7 +855,7 @@ describe('World.tick() — land value gating of growth', () => {
 
 describe('World.tick() — density tier', () => {
   it('density does NOT advance before level === ZONE_MAX_LEVEL', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -878,7 +879,7 @@ describe('World.tick() — density tier', () => {
     }
     // If it reached max level, density might be > 0 but that's fine — the test only
     // asserts that while below max, density is 0. We enforce this via a fresh setup:
-    const world2 = new World(4, 4);
+    const world2 = new World(4, 4, { regenerate: false });
     const map2 = world2.getMap();
     map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map2.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -900,7 +901,7 @@ describe('World.tick() — density tier', () => {
 
   it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + landValue >= HIGH_DENSITY_THRESHOLD', () => {
     // Use diversified map to ensure HIGH_DENSITY_THRESHOLD is met
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -937,7 +938,7 @@ describe('World.tick() — density tier', () => {
   });
 
   it('density bump emits changedTiles with footprint coords and changedBuildingIds with building id', () => {
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -972,7 +973,7 @@ describe('World.tick() — density tier', () => {
 
 describe('World.tick() — changedBuildingIds contract', () => {
   it('changedBuildingIds contains right id on level-up and is empty on non-growth/no-change ticks', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -1009,7 +1010,7 @@ describe('World.tick() — changedBuildingIds contract', () => {
 describe('World.tick() — invariant: changedBuildingIds > 0 → changedTiles > 0', () => {
   it('on every tick of a long simulation changedBuildingIds implies changedTiles is non-empty', () => {
     // Use diversified map so growth can progress all the way to density bumps
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -1027,7 +1028,7 @@ describe('World.tick() — invariant: changedBuildingIds > 0 → changedTiles > 
 
 describe('World.tick() — multi-tile building guard', () => {
   it('2×2 building: age advances by exactly 1 per growth tick, never levels twice in one tick', () => {
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     // Zone tiles for 2×2 footprint
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -1069,7 +1070,7 @@ describe('World.tick() — multi-tile building guard', () => {
 
 describe('World.tick() — no-building branch creates level-0 building', () => {
   it('zone tile next to road with no building: one tick creates level-0 building AND coord in changedTiles', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -1082,7 +1083,7 @@ describe('World.tick() — no-building branch creates level-0 building', () => {
     expect(building!.level).toBe(0);
     // The creation tick result — need to capture it
     // Re-run from scratch to capture the result
-    const world2 = new World(4, 4);
+    const world2 = new World(4, 4, { regenerate: false });
     const map2 = world2.getMap();
     map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map2.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -1104,7 +1105,7 @@ describe('World.tick() — zone-growth blocked on slope edge tile', () => {
     // Tile (1,0) is raised to elevation 1; its east/west neighbors are at 0 → slope mask non-zero.
     // canBuildAt(1,0,1,1) = false → Branch A skips building creation.
     // Road placed at (1,1) (elevation 0, flat) to satisfy road-adjacency requirement for the zone.
-    const world = new World(6, 6);
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     world.getTerrain().unsafeSetElevation(1, 0, 1);
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
@@ -1122,7 +1123,7 @@ describe('World.tick() — zone-growth proceeds on plateau interior tile', () =>
     // Interior cells (not on the plateau edge) are (3,3)–(5,5) — all have elevation-1 orthogonal neighbors.
     // Zone at (3,3), road at (4,3) — both interior flat tiles at the same elevation.
     // canBuildAt(3,3,1,1) = true → building is created on the first growth tick.
-    const world = new World(10, 10);
+    const world = new World(10, 10, { regenerate: false });
     const map = world.getMap();
     for (let py = 2; py <= 6; py++) {
       for (let px = 2; px <= 6; px++) {
@@ -1145,34 +1146,34 @@ describe('World.tick() — zone-growth proceeds on plateau interior tile', () =>
 
 describe('World.getTerrain() — initial state', () => {
   it('terrain dimensions match the map dimensions', () => {
-    const world = new World(8, 6);
+    const world = new World(8, 6, { regenerate: false });
     expect(world.getTerrain().getWidth()).toBe(8);
     expect(world.getTerrain().getHeight()).toBe(6);
   });
 
   it('terrainRev starts at >= 1 (constructor install bumps from 0 to 1)', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     expect(world.getTerrainRevision()).toBeGreaterThanOrEqual(1);
   });
 });
 
 describe('World.getTerrainRevision() — monotonicity', () => {
   it('unsafeSetElevation (accepted) increments rev by exactly 1', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
     world.getTerrain().unsafeSetElevation(0, 0, 1);
     expect(world.getTerrainRevision()).toBe(rev0 + 1);
   });
 
   it('setBaseTerrain to "grass" (accepted, same value) increments rev by 1', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
     world.getTerrain().setBaseTerrain(0, 0, 'grass');
     expect(world.getTerrainRevision()).toBe(rev0 + 1);
   });
 
   it('rejected setElevation (diff > 1 from flat neighbors) does NOT bump rev', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
     // All neighbors are at 0; setting to 5 violates the ≤1-step rule.
     const accepted = world.getTerrain().setElevation(0, 0, 5);
@@ -1181,7 +1182,7 @@ describe('World.getTerrainRevision() — monotonicity', () => {
   });
 
   it('rejected setBaseTerrain("water") does NOT bump rev', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
     // v1 reserved slot — non-grass is rejected.
     const accepted = world.getTerrain().setBaseTerrain(0, 0, 'water');
@@ -1192,7 +1193,7 @@ describe('World.getTerrainRevision() — monotonicity', () => {
 
 describe('World.installTerrain() — successful swap', () => {
   it('install always bumps rev even if new terrain is structurally identical', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const rev1 = world.getTerrainRevision();
     const second = new Terrain(world.getTerrain().getWidth(), world.getTerrain().getHeight());
     world.installTerrain(second);
@@ -1203,7 +1204,7 @@ describe('World.installTerrain() — successful swap', () => {
 
 describe('World.installTerrain() — dimension mismatch', () => {
   it('throws with "dimension mismatch" and leaves state unchanged', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const prevTerrain = world.getTerrain();
     const prevRev = world.getTerrainRevision();
     const bad = new Terrain(prevTerrain.getWidth() + 1, prevTerrain.getHeight());
@@ -1213,7 +1214,7 @@ describe('World.installTerrain() — dimension mismatch', () => {
   });
 
   it('after a rejected install the previous terrain callback is still wired', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const prevTerrain = world.getTerrain();
     const prevRev = world.getTerrainRevision();
     const bad = new Terrain(prevTerrain.getWidth() + 1, prevTerrain.getHeight());
@@ -1226,7 +1227,7 @@ describe('World.installTerrain() — dimension mismatch', () => {
 
 describe('World.installTerrain() — callback un-wiring after successful swap', () => {
   it('mutating the OLD terrain after a successful install does NOT bump terrainRev', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     const oldTerrain = world.getTerrain();
     world.installTerrain(new Terrain(world.getTerrain().getWidth(), world.getTerrain().getHeight()));
     const revAfterInstall = world.getTerrainRevision();
@@ -1238,7 +1239,7 @@ describe('World.installTerrain() — callback un-wiring after successful swap', 
 
 describe('World.reset() — terrainRev', () => {
   it('reset() bumps terrainRev strictly above its pre-reset value', () => {
-    const world = new World(4, 4);
+    const world = new World(4, 4, { regenerate: false });
     // Make at least one accepted mutation to ensure the counter has advanced.
     world.getTerrain().unsafeSetElevation(0, 0, 1);
     const prevRev = world.getTerrainRevision();
@@ -1249,7 +1250,7 @@ describe('World.reset() — terrainRev', () => {
 
 describe('World.isWater()', () => {
   it('returns true for a WATER tile and false for a GRASS tile', () => {
-    const world = new World(8, 8);
+    const world = new World(8, 8, { regenerate: false });
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
     expect(world.isWater(3, 3)).toBe(true);
     expect(world.isWater(0, 0)).toBe(false);
@@ -1258,7 +1259,7 @@ describe('World.isWater()', () => {
 
 describe('World.canBuildAt()', () => {
   it('returns false for a WATER tile and true for a flat GRASS tile', () => {
-    const world = new World(8, 8);
+    const world = new World(8, 8, { regenerate: false });
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
     expect(world.canBuildAt(3, 3, 1, 1)).toBe(false);
     expect(world.canBuildAt(0, 0, 1, 1)).toBe(true);
@@ -1267,20 +1268,121 @@ describe('World.canBuildAt()', () => {
 
 describe('World.canBuildRoadAt()', () => {
   it('returns false for a WATER tile', () => {
-    const world = new World(8, 8);
+    const world = new World(8, 8, { regenerate: false });
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
     expect(world.canBuildRoadAt(3, 3)).toBe(false);
   });
 
   it('returns false for a raised tile (slope mask non-zero in otherwise flat map)', () => {
-    const world = new World(8, 8);
+    const world = new World(8, 8, { regenerate: false });
     // Raise tile (2,2) — all its flat neighbors are at 0, so slope mask is non-zero.
     world.getTerrain().unsafeSetElevation(2, 2, 1);
     expect(world.canBuildRoadAt(2, 2)).toBe(false);
   });
 
   it('returns true for a flat GRASS tile', () => {
-    const world = new World(8, 8);
+    const world = new World(8, 8, { regenerate: false });
     expect(world.canBuildRoadAt(0, 0)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 6: procedural terrain wired into World constructor and reset()
+// ---------------------------------------------------------------------------
+
+describe('World procedural terrain — constructor default (regenerate: true)', () => {
+  it('(a) new World(32, 32) produces at least one elevation > 0 and at least one water tile', () => {
+    const world = new World(32, 32);
+    const W = 32;
+    const H = 32;
+    let hasElevation = false;
+    let hasWater = false;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (world.getTerrain().getTileElevation(x, y) > 0) hasElevation = true;
+        if (world.isWater(x, y)) hasWater = true;
+      }
+    }
+    expect(hasElevation).toBe(true);
+    expect(hasWater).toBe(true);
+  });
+
+  it('(b) new World(32, 32, { regenerate: false }) has all-zero elevations and no water tiles', () => {
+    const world = new World(32, 32, { regenerate: false });
+    const W = 32;
+    const H = 32;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+        expect(world.isWater(x, y)).toBe(false);
+      }
+    }
+  });
+
+  it('(c) new World(32, 32, {}) defaults to regenerate=true — produces non-trivial terrain', () => {
+    const world = new World(32, 32, {});
+    const W = 32;
+    const H = 32;
+    let hasElevation = false;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (world.getTerrain().getTileElevation(x, y) > 0) hasElevation = true;
+      }
+    }
+    expect(hasElevation).toBe(true);
+  });
+
+  it('(d) reset({ regenerate: false }) after a generated world zeroes all elevations and removes water', () => {
+    const world = new World(32, 32);
+    world.reset({ regenerate: false });
+    const W = 32;
+    const H = 32;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+        expect(world.isWater(x, y)).toBe(false);
+      }
+    }
+  });
+
+  it('(e) reset({ regenerate: true, seed: 42 }) is reproducible — two worlds with same seed have equal terrain', () => {
+    const world1 = new World(16, 16, { regenerate: false });
+    world1.reset({ regenerate: true, seed: 42 });
+    const world2 = new World(16, 16, { regenerate: false });
+    world2.reset({ regenerate: true, seed: 42 });
+    expect(world1.getTerrain().toJSON()).toEqual(world2.getTerrain().toJSON());
+  });
+
+  it('(f) regenerateTerrain with different seeds yields different terrain; same seed yields same terrain', () => {
+    const world = new World(16, 16);
+    world.regenerateTerrain(123);
+    const json123a = world.getTerrain().toJSON();
+    world.regenerateTerrain(456);
+    const json456 = world.getTerrain().toJSON();
+    world.regenerateTerrain(123);
+    const json123b = world.getTerrain().toJSON();
+    // Same seed → same result.
+    expect(json123a).toEqual(json123b);
+    // Different seeds → different terrain (extremely unlikely to collide by chance).
+    expect(json123a).not.toEqual(json456);
+  });
+
+  it('(g) regenerateTerrain() clears buildings', () => {
+    const world = new World(16, 16, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 2,
+      density: 0,
+      age: 0,
+    });
+    expect(map.getBuildings().getBuildingAt(0, 0)).not.toBeNull();
+
+    world.regenerateTerrain(DEFAULT_NEWCITY_SEED);
+
+    expect(map.getBuildings().getBuildingAt(0, 0)).toBeNull();
   });
 });
