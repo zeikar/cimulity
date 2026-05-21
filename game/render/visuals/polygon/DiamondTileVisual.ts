@@ -75,13 +75,15 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
 
   // Per-tile outline — drawn after the fill in the same Graphics object so
   // iso draw order correctly interleaves this tile's outline with neighbor fills.
+  // alignment: 1 keeps the stroke fully INSIDE the diamond so adjacent tiles
+  // (mounted later in row-major order) cannot overdraw it with their fill.
   gfx.beginPath();
   gfx.moveTo(screen.x, screen.y);
   gfx.lineTo(screen.x + hw, screen.y + hh);
   gfx.lineTo(screen.x, screen.y + ISO_CONFIG.TILE_HEIGHT);
   gfx.lineTo(screen.x - hw, screen.y + hh);
   gfx.closePath();
-  gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 0 });
+  gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 1 });
 }
 
 export const DiamondTileVisual: TerrainTileVisual = {
