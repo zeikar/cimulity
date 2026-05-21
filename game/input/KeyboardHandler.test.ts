@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { KeyboardHandler, KeyboardCallbacks } from './KeyboardHandler';
+import { KeyboardHandler } from './KeyboardHandler';
 import { Tool } from '../tools/Tool';
 
 // Local alias for the SpeedTier that KeyboardCallbacks uses internally (1|2|3).
