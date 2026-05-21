@@ -17,6 +17,7 @@ import { tileToScreen } from '@/game/render/IsoTransform';
 import type { Point } from './cubeGeometry';
 import { normalizeFootprint, cubeFacePolygons, isBoundingDiamondAccurate } from './cubeGeometry';
 import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
+import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 
 // ---------------------------------------------------------------------------
@@ -126,7 +127,27 @@ function drawPoly(
   ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
 }
 
-function drawCubeAt(
+// Shadows must not have outlines — drawPoly always strokes, so we need a separate path.
+function drawShadow(ctx: GraphicsContext, polygon: ReadonlyArray<Point>, ox: number, oy: number): void {
+  ctx.beginPath();
+  ctx.moveTo(polygon[0].x + ox, polygon[0].y + oy);
+  for (let i = 1; i < polygon.length; i++) {
+    ctx.lineTo(polygon[i].x + ox, polygon[i].y + oy);
+  }
+  ctx.closePath();
+  ctx.fill({ color: SHADOW_COLOR, alpha: SHADOW_ALPHA });
+}
+
+function drawCubeShadow(
+  ctx: GraphicsContext,
+  faces: NonNullable<ReturnType<typeof cubeFacePolygons>>,
+  ox: number,
+  oy: number,
+): void {
+  drawShadow(ctx, cubeShadowPolygon(faces), ox, oy);
+}
+
+function drawCubeFaces(
   ctx: GraphicsContext,
   faces: NonNullable<ReturnType<typeof cubeFacePolygons>>,
   input: BuildingVisualInput,
@@ -156,7 +177,9 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
   if (isBoundingDiamondAccurate(input.footprint)) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
     if (faces === null) return null;
-    drawCubeAt(ctx, faces, input, 0, 0);
+    // shadow geometry is a deterministic function of faces (level/density/type/footprint) — existing cache key covers it
+    drawCubeShadow(ctx, faces, 0, 0);
+    drawCubeFaces(ctx, faces, input, 0, 0);
     return ctx;
   }
 
@@ -169,6 +192,18 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
     const db = b.x + b.y;
     return da !== db ? da - db : a.y - b.y;
   });
+
+  // Shadow pass first — back-cell shadows must not paint over front-cell faces in this context.
+  for (const cell of sorted) {
+    const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
+    if (faces === null) continue;
+    const cellScreen = tileToScreen(cell);
+    const ox = cellScreen.x - anchorScreen.x;
+    const oy = cellScreen.y - anchorScreen.y;
+    drawCubeShadow(ctx, faces, ox, oy);
+  }
+
+  // Faces pass — drew tracks whether anything visible was committed.
   let drew = false;
   for (const cell of sorted) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
@@ -176,7 +211,7 @@ function buildContext(input: BuildingVisualInput): GraphicsContext | null {
     const cellScreen = tileToScreen(cell);
     const ox = cellScreen.x - anchorScreen.x;
     const oy = cellScreen.y - anchorScreen.y;
-    drawCubeAt(ctx, faces, input, ox, oy);
+    drawCubeFaces(ctx, faces, input, ox, oy);
     drew = true;
   }
   return drew ? ctx : null;
