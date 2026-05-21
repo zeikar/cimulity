@@ -139,7 +139,7 @@ function drawCubeAt(
 
   if (shouldShowRoofAccent(input.level)) {
     const mainLift = faces.left[2].y - faces.left[1].y;
-    const accent = roofAccentFaces(faces.top, mainLift);
+    const accent = roofAccentFaces(faces.top, mainLift, input.type);
     if (accent !== null) {
       drawPoly(ctx, accent.left, lerpToWhite(leftColor(input), ROOF_ACCENT_BRIGHTEN), 0.5, ox, oy);
       drawPoly(ctx, accent.right, lerpToWhite(rightColor(input), ROOF_ACCENT_BRIGHTEN), 0.5, ox, oy);

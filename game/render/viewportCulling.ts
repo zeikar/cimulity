@@ -9,9 +9,9 @@ const HALF_H = ISO_CONFIG.TILE_HEIGHT / 2;  // 16 px
 export const PADDING_TILES = 1;
 
 // Covers main cube body (cubeLiftPx(level=5, density=2) * CUBE_TYPE_HEIGHT_MULT.commercial ≈ 112 px)
-// PLUS rooftop accent height (see cubeRoofAccent.ts, adds ~25–35 px) PLUS slack.
+// PLUS rooftop accent height (see cubeRoofAccent.ts, per-type range ~15–75 px: industrial smokestack ~15 px → commercial antenna ~75 px) PLUS slack.
 // Revisit when any of cubeLift.ts / cubeTypeRatios.ts / cubeRoofAccent.ts change.
-export const MAX_BUILDING_LIFT_PX = 160;
+export const MAX_BUILDING_LIFT_PX = 220;
 
 export interface TileBounds {
   minX: number;
@@ -38,7 +38,7 @@ export interface VisibleTileBoundsArgs {
   mapHeight: number;
   // TRUSTED INTERNAL / TEST-ONLY override. Defaults to PADDING_TILES (1). Non-negative integer.
   paddingTiles?: number;
-  // TRUSTED INTERNAL / TEST-ONLY override. Defaults to MAX_BUILDING_LIFT_PX (160). World pixels, non-negative.
+  // TRUSTED INTERNAL / TEST-ONLY override. Defaults to MAX_BUILDING_LIFT_PX (220). World pixels, non-negative.
   maxBuildingLiftPx?: number;
 }
 

@@ -262,6 +262,30 @@ describe('viewportCulling', () => {
     expect(buildings.maxY).toBe(21);
   });
 
+  it('default MAX_BUILDING_LIFT_PX (220) widens buildings AABB beyond terrain', () => {
+    // Omit maxBuildingLiftPx so the implementation uses MAX_BUILDING_LIFT_PX (220).
+    // Compare against an explicit liftPx=0 baseline: buildings.maxY must exceed terrain.maxY
+    // by the amount that 220 world-px of extension adds in tile space (at zoom=1, padding=1).
+    const base = visibleTileBounds({
+      cameraX: 0, cameraY: 0, zoom: 1,
+      viewportW: 1440, viewportH: 900,
+      mapWidth: 64, mapHeight: 64,
+      paddingTiles: 1,
+      maxBuildingLiftPx: 0,
+    });
+    const withDefault = visibleTileBounds({
+      cameraX: 0, cameraY: 0, zoom: 1,
+      viewportW: 1440, viewportH: 900,
+      mapWidth: 64, mapHeight: 64,
+      paddingTiles: 1,
+    });
+    // Default lift extends building AABB further than zero lift.
+    expect(withDefault.buildings.maxY).toBeGreaterThan(base.buildings.maxY);
+    // Literal pin: zoom=1, vp=1440x900, cam=(0,0), pad=1, liftPx=220.
+    // bl_b world=(0,1120), fracInverse→maxTy=35, maxY=floor(35)+1+1=37.
+    expect(withDefault.buildings.maxY).toBe(37);
+  });
+
   it('camera far off-map clamps both bounds to {0,0,0,0}', () => {
     // cameraX=-1e6, cameraY=-1e6: world corners are large positives; fractional tile coords
     // exceed mapSize. After clamp max<=min, both bounds collapse to {0,0,0,0}.
