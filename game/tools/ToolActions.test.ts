@@ -217,6 +217,17 @@ describe('buildToolCommands - paint tools', () => {
         expect(commands).toHaveLength(0);
       });
 
+      it('(c2) PAINT_GRASS emits command on WATER; PAINT_WATER returns [] on WATER (same-type no-op)', () => {
+        world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+        const commands = buildToolCommands(tool, [{ x: 1, y: 1 }], world);
+        if (tool === Tool.PAINT_GRASS) {
+          expect(commands).toHaveLength(1);
+          expect(commands[0]).toEqual({ x: 1, y: 1, tile: createTile(1, 1, TileType.GRASS) });
+        } else {
+          expect(commands).toHaveLength(0);
+        }
+      });
+
       it('(d) returns [] on each zone type', () => {
         const zoneTypes: TileType[] = [
           TileType.ZONE_RESIDENTIAL,
@@ -253,9 +264,10 @@ describe('buildToolCommands - paint tools', () => {
           expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, targetType) });
           expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
         } else {
-          // PAINT_GRASS: WATER blocked (not in allowlist), ROAD blocked, GRASS skipped (same-type), DIRT accepted
-          expect(commands).toHaveLength(1);
-          expect(commands[0]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
+          // PAINT_GRASS: WATER accepted, ROAD blocked, GRASS skipped (same-type), DIRT accepted
+          expect(commands).toHaveLength(2);
+          expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, targetType) });
+          expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
         }
       });
     });

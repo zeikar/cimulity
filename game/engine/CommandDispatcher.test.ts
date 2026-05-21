@@ -482,6 +482,18 @@ describe('build costs', () => {
 });
 
 describe('executeClick - paint terrain', () => {
+  it('PAINT_GRASS on WATER writes GRASS (water is recoverable)', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.WATER));
+    const before = world.getMoney();
+
+    const result = executeClick(Tool.PAINT_GRASS, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getMoney()).toBe(before);
+  });
+
   it('PAINT_WATER on GRASS writes WATER', () => {
     const world = makeWorld();
     const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);

@@ -137,9 +137,10 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
 
 /**
  * Build terrain-paint commands for WATER or GRASS.
- * Only GRASS and DIRT source tiles are accepted (roads, zones, and water as
- * source are all rejected by the allowlist). Painting the same type onto itself
- * is a no-op and is skipped. Reads world only to decide intent; never mutates core.
+ * Per-target allowlists: PAINT_WATER accepts GRASS/DIRT; PAINT_GRASS accepts
+ * GRASS/DIRT/WATER (so water painted by PAINT_WATER can be restored).
+ * Roads and zones always require bulldoze first. Same-type is a no-op.
+ * Reads world only to decide intent; never mutates core.
  */
 function buildPaintTerrainCommands(
   targetType: TileType.WATER | TileType.GRASS,
@@ -154,8 +155,9 @@ function buildPaintTerrainCommands(
     if (!currentTile) continue;
     if (currentTile.type === targetType) continue;
     const paintable =
-      currentTile.type === TileType.GRASS ||
-      currentTile.type === TileType.DIRT;
+      targetType === TileType.GRASS
+        ? currentTile.type === TileType.DIRT || currentTile.type === TileType.WATER
+        : currentTile.type === TileType.GRASS || currentTile.type === TileType.DIRT;
     if (!paintable) continue;
     commands.push({
       x: coord.x,
