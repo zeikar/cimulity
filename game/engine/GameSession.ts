@@ -29,6 +29,8 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
   [Tool.ZONE_COMMERCIAL]: TILE_COLORS['zone_commercial'],
   [Tool.ZONE_INDUSTRIAL]: TILE_COLORS['zone_industrial'],
   [Tool.BULLDOZE]: 0xff3b30,
+  [Tool.PAINT_WATER]: TILE_COLORS['water'],
+  [Tool.PAINT_GRASS]: TILE_COLORS['grass'],
 };
 
 export interface GameSessionCallbacks {
