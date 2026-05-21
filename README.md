@@ -44,177 +44,24 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 - **Rendering**: PixiJS 8.5.2 (WebGL with Canvas fallback)
 - **Styling**: Tailwind CSS 4
 
-## Project Architecture
+## Architecture
 
-The codebase follows a strict layered architecture to maintain clean separation of concerns:
+Layered: input emits tile coords + active tool; engine (`CommandDispatcher`) calls pure tool helpers to build commands, then writes to core; render reads core. React is the shell.
 
-> **Boundary principle:** input emits raw drag endpoints → tools build commands & paths → engine dispatches → core mutates state → render draws from core. React is the shell.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    React Shell                               │
-│  - Minimal state (only display values)                       │
-│  - GameCanvas, GameHUD components                            │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Callbacks & Events
-                     ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Input Layer                               │
-│  - PointerHandler (tile picking)                             │
-│  - CameraController (edge-pan / wheel zoom)                  │
-│  - Emits raw drag endpoints only                             │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Raw drag endpoints
-                     ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Tools Layer                               │
-│  - Tool enum, RoadTool (path rules)                          │
-│  - ToolActions, ToolResult                                   │
-│  - Builds commands & paths from raw input                    │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Commands
-                     ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Engine Layer                              │
-│  - CommandDispatcher                                         │
-│  - GameSession                                               │
-└────────────────────┬────────────────────────────────────────┘
-                     │ State mutations
-                     ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Core Layer (state primitives)             │
-│  - World (game state container)                              │
-│  - GameMap (2D grid structure)                               │
-│  - Tile (data model)                                         │
-│  - GameLoop (tick system - placeholder)                      │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Reads state
-                     ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Render Layer                              │
-│  - PixiJS Application lifecycle                              │
-│  - Camera (edge-pan/zoom with constraints)                   │
-│  - IsoTransform (coordinate conversion)                      │
-│  - TileRenderer, GridRenderer, SelectionRenderer             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Directory Structure
-
-```
-cimulity/
-├── app/                          # Next.js App Router
-│   ├── components/               # React components
-│   │   ├── GameCanvas.tsx        # PixiJS mount point
-│   │   └── GameHUD.tsx           # HUD overlay
-│   ├── page.tsx                  # Main game page
-│   ├── layout.tsx                # Root layout
-│   └── globals.css               # Global styles
-│
-├── game/                         # Game engine code
-│   ├── input/                    # Input layer (raw drag endpoints only)
-│   │   ├── PointerHandler.ts     # Mouse/touch input
-│   │   ├── CameraController.ts   # Edge-pan / wheel zoom
-│   │   └── ToolManager.ts        # Active tool dispatch
-│   │
-│   ├── tools/                    # Tools layer (path rules + commands)
-│   │   ├── Tool.ts               # Tool enum
-│   │   ├── RoadTool.ts           # Road path rule
-│   │   ├── ToolActions.ts        # Action definitions
-│   │   ├── ToolResult.ts         # Result types
-│   │   └── index.ts
-│   │
-│   ├── engine/                   # Engine layer (dispatch + session)
-│   │   ├── CommandDispatcher.ts  # Routes commands to core
-│   │   ├── GameSession.ts        # Session lifecycle
-│   │   └── index.ts
-│   │
-│   ├── core/                     # Core layer (state primitives)
-│   │   ├── Tile.ts               # Tile data model
-│   │   ├── Map.ts                # 2D grid structure
-│   │   ├── World.ts              # World state container
-│   │   └── GameLoop.ts           # Tick system (placeholder)
-│   │
-│   ├── render/                   # Rendering layer (draws from core state)
-│   │   ├── PixiApp.ts            # PixiJS lifecycle wrapper
-│   │   ├── Camera.ts             # Camera system
-│   │   ├── IsoTransform.ts       # Coordinate transforms
-│   │   ├── TileRenderer.ts       # Tile rendering
-│   │   ├── GridRenderer.ts       # Debug grid lines
-│   │   └── SelectionRenderer.ts  # Hover/selection highlights
-│   │
-│   └── types/                    # Shared TypeScript types
-│       ├── coordinates.ts        # Coordinate types
-│       └── events.ts             # Event types
-│
-└── package.json
-```
-
-## Key Technical Details
-
-### Isometric Coordinate System
-
-The game uses **diamond isometric projection** (classic 45° rotation):
-
-```typescript
-// Tile → Screen (64x32 tile size)
-screenX = (tileX - tileY) * 32
-screenY = (tileX + tileY) * 16
-
-// Screen → Tile (inverse transform)
-tileX = (screenX/32 + screenY/16) / 2
-tileY = (screenY/16 - screenX/32) / 2
-```
-
-### Camera System
-
-- **Pan**: Move cursor within 32px of any canvas edge; speed scales with proximity (up to 600px/s)
-- **Zoom**: Mouse wheel zooms around cursor position (not center)
-- **Constraints**: Pan limited to map boundaries, zoom 0.25x - 2x
-- **Algorithm**: Uses transform matrix for efficient coordinate conversion
-
-```typescript
-// Zoom around cursor
-worldBefore = (cursorPos - cameraPos) / oldZoom
-// Update zoom
-worldAfter = (cursorPos - cameraPos) / newZoom
-cameraPos += (worldAfter - worldBefore) * newZoom
-```
-
-### Tile Picking Pipeline
-
-```
-Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.getTile() → Validate bounds
-```
-
-### Performance Optimizations
-
-- **Batched rendering**: Graphics API optimized for minimal draw calls
-- **Cached Graphics**: Tiles rendered once, not every frame
-- **React optimization**: `useCallback` prevents infinite re-renders
-- **Future**: Viewport frustum culling (render only visible tiles)
-
-### React StrictMode Safety
-
-- **Idempotent initialization**: PixiApp.init() can be called multiple times safely
-- **Ref guards**: Prevent double-initialization in development
-- **Proper cleanup**: All PixiJS resources destroyed on unmount
-- **No memory leaks**: Verified with hot reload testing
+See [docs/architecture.md](docs/architecture.md) for the full layer diagram, directory structure, coordinate math, and camera/picking details. Per-subsystem deep dives will live under `docs/systems/` as they land.
 
 ## Roadmap
 
 ### MVP-1 (Remaining)
 
-- [ ] **Expanded tile types** - Water, dirt, different terrain
+- [ ] **Expanded tile types** - Water and additional terrain variety
 - [ ] **Sprites/textures** - Replace colored shapes with actual graphics
-- [ ] **Viewport culling** - Render only visible tiles
 
 ### MVP-2 (Future)
 
-- [ ] **Citizens** - Population simulation
-- [ ] **Resources** - Money, power, water systems
+- [ ] **Power & water systems** - Utility networks
 - [ ] **Services** - Police, fire, hospitals
-- [ ] **Statistics** - Population, happiness, budget charts
+- [ ] **Happiness/statistics** - Citizen happiness, budget charts
 - [ ] **Sound effects** - Audio feedback
 
 ## Contributing

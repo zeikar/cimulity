@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Cimulity is a browser city-sim (Next.js 16 App Router + React 19 + PixiJS 8, TS strict). See README.md for the full architecture diagram, coordinate math, and roadmap — this file covers only what isn't obvious from reading it.
+Cimulity is a browser city-sim (Next.js 16 App Router + React 19 + PixiJS 8, TS strict). See [docs/architecture.md](docs/architecture.md) for the full layer diagram, directory structure, and coordinate math; [README.md](README.md) for project status and roadmap. This file covers only what isn't obvious from reading those.
 
 ## Commands
 
@@ -22,10 +22,10 @@ npx vitest run -t "snaps to 45"                   # single test by name
 
 Data flows in one direction only, and each layer's job is fixed:
 
-`input` (raw drag endpoints) → `tools` (build commands + resolve paths, **pure, never mutate core**) → `engine` (dispatch) → `core` (the only place state mutates) → `render` (draws from core). React is just the shell.
+`input` (events → tile coords + active tool) → `engine` (`CommandDispatcher` orchestrates: calls `tools` helpers for path + commands, then writes via `applyCommands` — the only path for tool-driven core mutation) → `core` (also mutated by `World.tick` simulation, save hydration, `GameSession.resetWorld`, and dev-only `devApi` seeding) → `render` (draws from core). React is just the shell.
 
 Concretely:
-- **Tools are pure.** A tool returns `ToolCommand[]`; it never touches `World`/`Map`. The *only* place tool output reaches core is `applyCommands` in [game/engine/CommandDispatcher.ts](game/engine/CommandDispatcher.ts). Adding a new tool means adding a path branch in `pathForTool` and a command builder — not reaching into core from the tool.
+- **Tools are mutation-free.** A tool's path rule + command builder may *read* `World`/`Map` (e.g. `buildToolCommands(tool, tiles, world)` reads `world.getMap()` to decide intent), but never writes to them. The *only* place tool output reaches core is `applyCommands` in [game/engine/CommandDispatcher.ts](game/engine/CommandDispatcher.ts). Adding a new tool means adding a path branch in `pathForTool` and a command builder — not reaching into core mutation from the tool.
 - **Clicks and drags share one path.** Single-tile clicks go through `executeClick`, drags through `executeDrag`/`previewDrag` — both end in `applyCommands`. Don't add a separate click mutation route.
 - **`GameSession`** ([game/engine/GameSession.ts](game/engine/GameSession.ts)) is the composition root that wires Pixi + input handlers + dispatch. React holds only mount/unmount + display state and passes stable forwarder callbacks (avoid stale prop closures here).
 - The `World` is a **process-wide singleton** via [game/core/worldStore.ts](game/core/worldStore.ts) so placed tiles survive HMR/Fast Refresh. Don't `new World()` in components.
