@@ -196,9 +196,9 @@ Each tick (`World.tick`, 1 tick = 1 day):
 
 ### Procedural terrain generation
 
-Pipeline: `createRng(seed)` → `fbm2d` (fractional Brownian motion via `valueNoise`) → `shapeHeightmap` → `buildWaterMask` → `generateTerrain` composes all four into a fully populated `GameMap`.
+Pipeline: `createRng(seed)` → `fbm2d` (raw noise) → `shapeHeightmap` (gamma + median filter + quantize) → `buildWaterMask` (exact-count selection over the noise field). `generateTerrain` returns `{ elevations, waterMask }`; `World.reset({ regenerate: true })` installs `elevations` into `Terrain` via `unsafeSetElevation` and writes WATER tiles into `GameMap.setTile`.
 
-Default seed: `DEFAULT_NEWCITY_SEED = 0xC1A1E11`.
+Default seed: `DEFAULT_NEWCITY_SEED = 0xC15A1E11`.
 
 Invocation rule: `new World(W, H)` and `World.reset({ regenerate: true })` invoke the generator. Save-hydration callsites (`worldStore.getWorld` when a save exists, `deserializeV5`/`deserializeV6`) construct/reset with `{ regenerate: false }` so the generator does NOT run on load.
 

@@ -41,8 +41,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.NODE_ENV = originalNodeEnv;
   uninstallDevApi();
+  process.env.NODE_ENV = originalNodeEnv;
 });
 
 describe('installDevApi hook-dispatch', () => {
