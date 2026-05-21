@@ -92,6 +92,17 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // Terrain integration (added in Task 4): elevation r/w, install, revision, water/build predicates.
+  if (
+    typeof world.getTerrain !== 'function' ||
+    typeof world.installTerrain !== 'function' ||
+    typeof world.getTerrainRevision !== 'function' ||
+    typeof world.isWater !== 'function' ||
+    typeof world.canBuildAt !== 'function' ||
+    typeof world.canBuildRoadAt !== 'function'
+  ) {
+    return false;
+  }
   return true;
 }
 

@@ -7,6 +7,7 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
+import { Terrain } from './Terrain';
 
 /** Ticks between each zone growth step. tickCount is post-increment (≥1), so first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0. */
 export const ZONE_GROWTH_INTERVAL = 8;
@@ -97,6 +98,8 @@ export interface WorldDate {
 
 export class World {
   private map: GameMap;
+  private terrain!: Terrain;
+  private terrainRev: number = 0;
   private tickCount: number = 0;
   private money: number = STARTING_FUNDS;
   /** 0-based elapsed days; incremented once per tick() (1 tick = 1 day). */
@@ -108,10 +111,76 @@ export class World {
 
   constructor(mapWidth: number, mapHeight: number) {
     this.map = new GameMap(mapWidth, mapHeight);
+    // installTerrain must come AFTER this.map is set so map.getWidth/Height() are available.
+    this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
   }
 
   getMap(): GameMap {
     return this.map;
+  }
+
+  getTerrain(): Terrain {
+    return this.terrain;
+  }
+
+  getTerrainRevision(): number {
+    return this.terrainRev;
+  }
+
+  /**
+   * Atomically swap in a new Terrain instance and wire the mutation callback.
+   *
+   * EXACT ordering — do NOT reorder these steps:
+   *   1. Dimension validation FIRST (throws before any state change on mismatch).
+   *   2. Clear the previous terrain's callback (if a previous terrain exists).
+   *   3. Assign the new terrain.
+   *   4. Wire the new terrain's onMutate callback to bump terrainRev.
+   *   5. Bump terrainRev once for the install itself.
+   *
+   * Callers: constructor (initial install), World.reset(), save deserialization.
+   */
+  installTerrain(t: Terrain): void {
+    // Step 1: validate dimensions BEFORE any state mutation.
+    if (t.getWidth() !== this.map.getWidth() || t.getHeight() !== this.map.getHeight()) {
+      throw new Error(
+        `installTerrain: dimension mismatch — terrain (${t.getWidth()}×${t.getHeight()}) does not match map (${this.map.getWidth()}×${this.map.getHeight()})`
+      );
+    }
+    // Step 2: clear the previous instance's callback (only if one exists — during the
+    // constructor's first call, this.terrain is undefined).
+    if (this.terrain !== undefined) {
+      this.terrain.setOnMutate(null);
+    }
+    // Step 3: assign.
+    this.terrain = t;
+    // Step 4: wire.
+    t.setOnMutate(() => { this.terrainRev++; });
+    // Step 5: bump for the install itself.
+    this.terrainRev++;
+  }
+
+  /**
+   * Water authority for v1: reads the tile layer, not the Terrain instance.
+   * TileType.WATER placed by tools is the canonical water truth in this version.
+   */
+  isWater(x: number, y: number): boolean {
+    return this.map.getTile(x, y)?.type === TileType.WATER;
+  }
+
+  /**
+   * True iff the w×h footprint at (x,y) is buildable.
+   * Delegates to Terrain, injecting this.isWater as the water predicate.
+   */
+  canBuildAt(x: number, y: number, w: number, h: number): boolean {
+    return this.terrain.canBuildAt(x, y, w, h, (xx, yy) => this.isWater(xx, yy));
+  }
+
+  /**
+   * True iff a road can be placed at (x,y).
+   * Delegates to Terrain, injecting this.isWater as the water predicate.
+   */
+  canBuildRoadAt(x: number, y: number): boolean {
+    return this.terrain.canBuildRoadAt(x, y, (xx, yy) => this.isWater(xx, yy));
   }
 
   getTick(): number {
@@ -221,9 +290,13 @@ export class World {
 
   /**
    * Reset to a blank city: clear the map, the tick counter, the calendar, and the treasury.
+   * installTerrain creates a fresh Terrain and bumps terrainRev — SelectionRenderer's
+   * lastRev will differ from the world rev on the next frame and forceRedraw() fires once
+   * (Task 6 wires that observation; this comment documents the contract).
    */
   reset(): void {
     this.map.reset();
+    this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;

@@ -13,6 +13,7 @@ import {
   stagger,
 } from './World';
 import { TileType, createTile } from './Tile';
+import { Terrain } from './Terrain';
 
 describe('World', () => {
   it('builds a map of the requested size', () => {
@@ -1091,5 +1092,151 @@ describe('World.tick() — no-building branch creates level-0 building', () => {
 
     expect(result.changedTiles).toContainEqual({ x: 0, y: 0 });
     expect(result.changedBuildingIds.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Terrain integration tests (Task 4)
+// ---------------------------------------------------------------------------
+
+describe('World.getTerrain() — initial state', () => {
+  it('terrain dimensions match the map dimensions', () => {
+    const world = new World(8, 6);
+    expect(world.getTerrain().getWidth()).toBe(8);
+    expect(world.getTerrain().getHeight()).toBe(6);
+  });
+
+  it('terrainRev starts at >= 1 (constructor install bumps from 0 to 1)', () => {
+    const world = new World(4, 4);
+    expect(world.getTerrainRevision()).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('World.getTerrainRevision() — monotonicity', () => {
+  it('unsafeSetElevation (accepted) increments rev by exactly 1', () => {
+    const world = new World(4, 4);
+    const rev0 = world.getTerrainRevision();
+    world.getTerrain().unsafeSetElevation(0, 0, 1);
+    expect(world.getTerrainRevision()).toBe(rev0 + 1);
+  });
+
+  it('setBaseTerrain to "grass" (accepted, same value) increments rev by 1', () => {
+    const world = new World(4, 4);
+    const rev0 = world.getTerrainRevision();
+    world.getTerrain().setBaseTerrain(0, 0, 'grass');
+    expect(world.getTerrainRevision()).toBe(rev0 + 1);
+  });
+
+  it('rejected setElevation (diff > 1 from flat neighbors) does NOT bump rev', () => {
+    const world = new World(4, 4);
+    const rev0 = world.getTerrainRevision();
+    // All neighbors are at 0; setting to 5 violates the ≤1-step rule.
+    const accepted = world.getTerrain().setElevation(0, 0, 5);
+    expect(accepted).toBe(false);
+    expect(world.getTerrainRevision()).toBe(rev0);
+  });
+
+  it('rejected setBaseTerrain("water") does NOT bump rev', () => {
+    const world = new World(4, 4);
+    const rev0 = world.getTerrainRevision();
+    // v1 reserved slot — non-grass is rejected.
+    const accepted = world.getTerrain().setBaseTerrain(0, 0, 'water');
+    expect(accepted).toBe(false);
+    expect(world.getTerrainRevision()).toBe(rev0);
+  });
+});
+
+describe('World.installTerrain() — successful swap', () => {
+  it('install always bumps rev even if new terrain is structurally identical', () => {
+    const world = new World(4, 4);
+    const rev1 = world.getTerrainRevision();
+    const second = new Terrain(world.getTerrain().getWidth(), world.getTerrain().getHeight());
+    world.installTerrain(second);
+    expect(world.getTerrainRevision()).toBe(rev1 + 1);
+    expect(world.getTerrain()).toBe(second);
+  });
+});
+
+describe('World.installTerrain() — dimension mismatch', () => {
+  it('throws with "dimension mismatch" and leaves state unchanged', () => {
+    const world = new World(4, 4);
+    const prevTerrain = world.getTerrain();
+    const prevRev = world.getTerrainRevision();
+    const bad = new Terrain(prevTerrain.getWidth() + 1, prevTerrain.getHeight());
+    expect(() => world.installTerrain(bad)).toThrow('dimension mismatch');
+    expect(world.getTerrain()).toBe(prevTerrain);
+    expect(world.getTerrainRevision()).toBe(prevRev);
+  });
+
+  it('after a rejected install the previous terrain callback is still wired', () => {
+    const world = new World(4, 4);
+    const prevTerrain = world.getTerrain();
+    const prevRev = world.getTerrainRevision();
+    const bad = new Terrain(prevTerrain.getWidth() + 1, prevTerrain.getHeight());
+    expect(() => world.installTerrain(bad)).toThrow();
+    // Mutation on the original terrain must still bump world's rev.
+    prevTerrain.unsafeSetElevation(0, 0, 1);
+    expect(world.getTerrainRevision()).toBe(prevRev + 1);
+  });
+});
+
+describe('World.installTerrain() — callback un-wiring after successful swap', () => {
+  it('mutating the OLD terrain after a successful install does NOT bump terrainRev', () => {
+    const world = new World(4, 4);
+    const oldTerrain = world.getTerrain();
+    world.installTerrain(new Terrain(world.getTerrain().getWidth(), world.getTerrain().getHeight()));
+    const revAfterInstall = world.getTerrainRevision();
+    oldTerrain.unsafeSetElevation(0, 0, 2);
+    // Old terrain's callback must have been cleared — rev must not change.
+    expect(world.getTerrainRevision()).toBe(revAfterInstall);
+  });
+});
+
+describe('World.reset() — terrainRev', () => {
+  it('reset() bumps terrainRev strictly above its pre-reset value', () => {
+    const world = new World(4, 4);
+    // Make at least one accepted mutation to ensure the counter has advanced.
+    world.getTerrain().unsafeSetElevation(0, 0, 1);
+    const prevRev = world.getTerrainRevision();
+    world.reset();
+    expect(world.getTerrainRevision()).toBeGreaterThan(prevRev);
+  });
+});
+
+describe('World.isWater()', () => {
+  it('returns true for a WATER tile and false for a GRASS tile', () => {
+    const world = new World(8, 8);
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
+    expect(world.isWater(3, 3)).toBe(true);
+    expect(world.isWater(0, 0)).toBe(false);
+  });
+});
+
+describe('World.canBuildAt()', () => {
+  it('returns false for a WATER tile and true for a flat GRASS tile', () => {
+    const world = new World(8, 8);
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
+    expect(world.canBuildAt(3, 3, 1, 1)).toBe(false);
+    expect(world.canBuildAt(0, 0, 1, 1)).toBe(true);
+  });
+});
+
+describe('World.canBuildRoadAt()', () => {
+  it('returns false for a WATER tile', () => {
+    const world = new World(8, 8);
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
+    expect(world.canBuildRoadAt(3, 3)).toBe(false);
+  });
+
+  it('returns false for a raised tile (slope mask non-zero in otherwise flat map)', () => {
+    const world = new World(8, 8);
+    // Raise tile (2,2) — all its flat neighbors are at 0, so slope mask is non-zero.
+    world.getTerrain().unsafeSetElevation(2, 2, 1);
+    expect(world.canBuildRoadAt(2, 2)).toBe(false);
+  });
+
+  it('returns true for a flat GRASS tile', () => {
+    const world = new World(8, 8);
+    expect(world.canBuildRoadAt(0, 0)).toBe(true);
   });
 });

@@ -205,6 +205,59 @@ describe('getWorld — stale singleton missing calendar API is discarded', () =>
   });
 });
 
+describe('getWorld — stale singleton missing getTerrain is discarded', () => {
+  it('rebuilds from save when __cimulityWorld lacks getTerrain', () => {
+    // Save something to hydrate from.
+    const src = new World(64, 64);
+    saveWorld(src);
+
+    // Install a fake singleton that has the full current API except getTerrain.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = {
+      getMoney: () => 0,
+      trySpend: () => false,
+      setMoney: () => false,
+      getDate: () => ({ year: 1, month: 1, day: 1 }),
+      getElapsedDays: () => 0,
+      setElapsedDays: () => false,
+      getMap: () => ({
+        getBuildings: () => ({
+          getBuildingAt: () => null,
+          getBuilding: () => null,
+          iterBuildings: () => [],
+          getAllBuildings: () => [],
+          addBuilding: () => null,
+          addExistingBuilding: () => false,
+          removeBuilding: () => {},
+          setNextIdFloor: () => {},
+          clear: () => {},
+        }),
+        setTileAndReconcile: () => ({ changed: false, removedBuilding: null }),
+      }),
+      getLandValue: () => null,
+      markLandValueDirty: () => {},
+      recomputeLandValueIfDirty: () => {},
+      recomputeLandValue: () => {},
+      // getTerrain intentionally absent — stale singleton.
+      installTerrain: () => {},
+      getTerrainRevision: () => 0,
+      isWater: () => false,
+      canBuildAt: () => true,
+      canBuildRoadAt: () => true,
+    };
+
+    const result = getWorld();
+
+    // The stale fake must have been discarded; real World has getTerrain.
+    expect(typeof result.getTerrain).toBe('function');
+    expect(typeof result.installTerrain).toBe('function');
+    expect(typeof result.getTerrainRevision).toBe('function');
+    expect(typeof result.isWater).toBe('function');
+    expect(typeof result.canBuildAt).toBe('function');
+    expect(typeof result.canBuildRoadAt).toBe('function');
+  });
+});
+
 describe('clearSave', () => {
   it('removes the key; subsequent getWorld() (after singleton reset) returns a fresh world with STARTING_FUNDS', () => {
     // Save something so the key exists.
