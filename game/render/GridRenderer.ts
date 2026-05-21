@@ -1,44 +1,41 @@
-/**
- * Optional grid line renderer for debugging
- */
-
 import { Container, Graphics } from 'pixi.js';
-import { tileToScreen } from './IsoTransform';
-import type { GameMap } from '../core/Map';
+import { tileToScreenWithHeight, ISO_CONFIG } from './IsoTransform';
+import type { World } from '../core/World';
 
 export class GridRenderer {
-  private container: Container;
   private graphics: Graphics;
+  private lastTerrainRev: number = -1;
 
-  constructor(container: Container, private map: GameMap) {
-    this.container = container;
+  constructor(container: Container, private world: World) {
     this.graphics = new Graphics();
-    this.container.addChild(this.graphics);
+    container.addChild(this.graphics);
   }
 
   render(): void {
+    const currentRev = this.world.getTerrainRevision();
+    if (currentRev === this.lastTerrainRev) return;
+    this.lastTerrainRev = currentRev;
+
     this.graphics.clear();
+    const map = this.world.getMap();
+    const W = map.getWidth();
+    const H = map.getHeight();
+    const terrain = this.world.getTerrain();
+    const hw = ISO_CONFIG.TILE_WIDTH / 2;
+    const hh = ISO_CONFIG.TILE_HEIGHT / 2;
 
-    // Draw horizontal grid lines
-    for (let y = 0; y <= this.map.getHeight(); y++) {
-      const start = tileToScreen({ x: 0, y });
-      const end = tileToScreen({ x: this.map.getWidth(), y });
-
-      this.graphics.beginPath();
-      this.graphics.moveTo(start.x, start.y);
-      this.graphics.lineTo(end.x, end.y);
-      this.graphics.stroke({ color: 0x333333, width: 1, alpha: 0.2 });
-    }
-
-    // Draw vertical grid lines
-    for (let x = 0; x <= this.map.getWidth(); x++) {
-      const start = tileToScreen({ x, y: 0 });
-      const end = tileToScreen({ x, y: this.map.getHeight() });
-
-      this.graphics.beginPath();
-      this.graphics.moveTo(start.x, start.y);
-      this.graphics.lineTo(end.x, end.y);
-      this.graphics.stroke({ color: 0x333333, width: 1, alpha: 0.2 });
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const h = terrain.getRenderHeight(x, y);
+        const s = tileToScreenWithHeight({ x, y }, h);
+        this.graphics.beginPath();
+        this.graphics.moveTo(s.x, s.y);
+        this.graphics.lineTo(s.x + hw, s.y + hh);
+        this.graphics.lineTo(s.x, s.y + ISO_CONFIG.TILE_HEIGHT);
+        this.graphics.lineTo(s.x - hw, s.y + hh);
+        this.graphics.closePath();
+        this.graphics.stroke({ color: 0x000000, width: 1, alpha: 0.35 });
+      }
     }
   }
 

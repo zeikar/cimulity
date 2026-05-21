@@ -81,31 +81,28 @@ export class PixiApp {
 
     this.camera = new Camera(this.app.stage, constraints);
 
-    // Create explicit layer containers in draw order: terrain → building → grid → selection.
+    // Create explicit layer containers in draw order: terrain → grid → building → selection.
     // addChild order enforces z-layering; no zIndex tricks needed for cross-layer ordering.
     this.terrainContainer = new Container();
     this.terrainContainer.sortableChildren = false;
 
-    this.buildingContainer = new Container();
-    this.buildingContainer.sortableChildren = true; // buildings sort within their own layer
-
     this.gridContainer = new Container();
     this.gridContainer.sortableChildren = false;
+
+    this.buildingContainer = new Container();
+    this.buildingContainer.sortableChildren = true; // buildings sort within their own layer
 
     this.selectionContainer = new Container();
     this.selectionContainer.sortableChildren = false;
 
     this.app.stage.addChild(this.terrainContainer);
-    this.app.stage.addChild(this.buildingContainer);
     this.app.stage.addChild(this.gridContainer);
+    this.app.stage.addChild(this.buildingContainer);
     this.app.stage.addChild(this.selectionContainer);
 
     // Initialize renderers, each bound to its own container.
-    // GridRenderer is disabled — DiamondTileVisual draws per-tile diamond
-    // outlines at lifted positions, so continuous flat-plane grid lines
-    // would overlap them on elevated terrain. v2 will reintroduce an
-    // elevation-aware grid if needed.
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer);
+    this.gridRenderer = new GridRenderer(this.gridContainer, this.world);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
@@ -117,6 +114,7 @@ export class PixiApp {
       if (this.tileRenderer && this.world) {
         this.tileRenderer.render(this.world, this.computeVisibleBounds());
       }
+      this.gridRenderer?.render();
       if (this.selectionRenderer && this.world) {
         const rev = this.world.getTerrainRevision();
         const terrain = this.world.getTerrain();
