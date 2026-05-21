@@ -1,11 +1,11 @@
 ---
 name: autopilot
-description: Schedule a fire-and-forget autonomous workflow that wakes up N hours/minutes from now and runs plan-loop → implement-loop → ff merge → push → next task → repeat, until context exhausts or a stop condition fires. Use when the user says "N시간 뒤 작업 시작", "자고 있는 동안 작업해줘", "몇시간 뒤 트리거", "set up autopilot for later", "오토파일럿", or any "leave it running while I'm away" request. Wraps `CronCreate` with a pre-built autonomous-loop prompt template; the cron fires once at the resolved time and the prompt drives the rest.
+description: Schedule a fire-and-forget autonomous workflow that wakes up N hours/minutes from now and runs plan-loop → implement-loop → ff merge → push → next task → repeat, until context exhausts or a stop condition fires. Use when the user says "start work in N hours", "work on it while I'm asleep", "trigger in a few hours", "set up autopilot for later", "autopilot", or any "leave it running while I'm away" request. Wraps `CronCreate` with a pre-built autonomous-loop prompt template; the cron fires once at the resolved time and the prompt drives the rest.
 ---
 
 # Autopilot — scheduled autonomous-loop runner
 
-Lets the user say "2시간 뒤 큐브 옥상 디테일 작업해줘" or "autopilot in 30m: viewport culling" and walk away. At the resolved time, `CronCreate` enqueues a fully-specified autonomous prompt — the same self-driving workflow used in the overnight session that produced the cube-height / silhouette / rooftop-accent / viewport-culling rounds.
+Lets the user say "in 2h, work on cube rooftop detail" or "autopilot in 30m: viewport culling" and walk away. At the resolved time, `CronCreate` enqueues a fully-specified autonomous prompt — the same self-driving workflow used in the overnight session that produced the cube-height / silhouette / rooftop-accent / viewport-culling rounds.
 
 The session this skill runs in must still be **alive and idle** when the cron fires. Closing the terminal kills the cron; locking the laptop is fine. No remote agent — everything runs in the local Claude session.
 
@@ -13,7 +13,7 @@ The session this skill runs in must still be **alive and idle** when the cron fi
 
 - User wants the work to start **later** (e.g. while they sleep / step out).
 - User has a known first task + optional follow-up candidates.
-- User explicitly says "autopilot", "오토파일럿", "스케줄", "schedule", "N시간 뒤", "자고 있을 때", "fire-and-forget", "이대로 진행 새벽에", or similar.
+- User explicitly says "autopilot", "schedule", "in N hours", "while I'm asleep", "fire-and-forget", "kick this off overnight", or similar.
 
 ## When NOT to use
 
@@ -23,7 +23,7 @@ The session this skill runs in must still be **alive and idle** when the cron fi
 
 ## Inputs the user must provide
 
-1. **When**: how long until autopilot kicks off. Natural language is fine — "2시간", "30분", "오전 9시", "in 4h", "tomorrow 8am". Resolve against the freshly-fetched current time, not the prompt-anchor time.
+1. **When**: how long until autopilot kicks off. Natural language is fine — "2 hours", "30 minutes", "9 AM", "in 4h", "tomorrow 8am". Resolve against the freshly-fetched current time, not the prompt-anchor time.
 2. **Round-1 task**: what to work on first. A short description (one paragraph is enough — autopilot's `hyper-plan-loop` will expand it).
 3. (optional) **Follow-up candidates**: ordered list of next tasks autopilot picks from after Round 1. Defaults to "pick from README MVP-1 roadmap and recent `.hyperclaude/plans/` if not supplied".
 4. (optional) **Stop conditions / extra constraints**: pushed into the prompt body alongside the standard ones.
@@ -37,7 +37,7 @@ date -u +%Y-%m-%dT%H:%M:%SZ
 date +%Y-%m-%d
 ```
 
-Read both. Parse the user's "when" against the live UTC value, NOT a remembered timestamp from earlier in the conversation. For relative phrases ("2시간 뒤"), add the delta. For absolute phrases ("내일 아침 8시"), convert from Asia/Seoul to a concrete local time. Always echo the resolved target back ("발화: 2026-05-21 04:00 KST") so the user catches a misparse.
+Read both. Parse the user's "when" against the live UTC value, NOT a remembered timestamp from earlier in the conversation. For relative phrases ("in 2 hours"), add the delta. For absolute phrases ("tomorrow 8am"), convert from Asia/Seoul to a concrete local time. Always echo the resolved target back ("fires: 2026-05-21 04:00 KST") so the user catches a misparse.
 
 ### Step 2 — Pick an off-minute and build the cron expression
 
@@ -79,12 +79,12 @@ After the `CronCreate` call returns the job id, echo:
 - Job id (for `CronDelete` if they want to cancel).
 - Local firing time.
 - One reminder: "this Claude Code session must stay alive and idle for the cron to fire — close the terminal and it's gone".
-- Optionally: "잘 자요" / "good luck" / project-appropriate signoff.
+- Optionally: "good night" / "good luck" / project-appropriate signoff.
 
 ## Failure modes to surface (don't silently swallow)
 
 - **Cron already exists with the same job**: rare for one-shots; if `CronList` shows a near-duplicate, show it to the user and ask whether to replace.
-- **Resolved time is in the past**: ask the user to clarify ("내일 0시" vs "오늘 24시" etc.).
+- **Resolved time is in the past**: ask the user to clarify ("tomorrow 00:00" vs "today 24:00", etc.).
 - **Cron skill rejects the expression** (e.g. minimum interval): surface the raw error verbatim.
 - **GitHub auth broken**: refuse to create the cron until fixed. Autopilot rounds depend on push.
 
@@ -101,34 +101,34 @@ After the `CronCreate` call returns the job id, echo:
 ## Prompt template (literal — substitute in Step 4)
 
 ```
-[자동 트리거 — 자율 워크플로우 시작]
+[Auto trigger — start autonomous workflow]
 
-## 라운드 1 작업
+## Round 1 task
 {{round1}}
 
-## 각 라운드 4단계
-1. **/hyperclaude:hyper-plan-loop** — plan ↔ Codex review 반복하여 clean 도달까지
-2. **/hyperclaude:hyper-implement-loop** — implement ↔ code-review ↔ fix 반복하여 clean 도달까지
-3. **main으로 fast-forward merge** — 작업 브랜치였다면 main 체크아웃 후 `git merge --ff-only`
-4. **git push origin main** — force push 금지, `--no-verify` 금지, hook 실패 시 원인 수정 후 새 커밋
+## Per-round 4 steps
+1. **/hyperclaude:hyper-plan-loop** — loop plan ↔ Codex review until clean
+2. **/hyperclaude:hyper-implement-loop** — loop implement ↔ code-review ↔ fix until clean
+3. **Fast-forward merge to main** — if on a work branch, checkout main then `git merge --ff-only`
+4. **git push origin main** — no force push, no `--no-verify`; on hook failure, fix the root cause and create a new commit
 
-4단계 완료 시 → 다음 작업 자율 선택해서 라운드 다시 시작.
+After step 4 completes → autonomously pick the next task and start the next round.
 
-## 다음 작업 후보 (우선순위)
+## Next-task candidates (priority order)
 {{candidates}}
 
-## 종료 조건
-- 컨텍스트 한계 근접 시 현재 라운드 완료 후 종료
-- 어느 단계든 destructive git op (force push / hard reset / branch -D 등)이 필요한 상황 만나면 즉시 멈추고 보고
-- push 실패 (원격 거부, 인증 실패 등) 시 멈추고 보고
-- hyper-plan-loop 또는 hyper-implement-loop가 cap에 도달해도 stop, 다음 라운드 진행 안 함
+## Stop conditions
+- If the context limit is near, finish the current round and stop
+- If any step requires a destructive git op (force push / hard reset / branch -D, etc.), stop immediately and report
+- If push fails (remote rejection, auth failure, etc.), stop and report
+- If hyper-plan-loop or hyper-implement-loop hits its round cap, stop — do not start the next round
 
-## 규약
-- CLAUDE.md 레이어 인변성 + 코멘트 정책 + 코드 스타일 준수
-- 커버리지 게이트 (≥80% lines/branches/functions/statements) 유지
-- 매 라운드 끝에 한 줄 요약을 `.hyperclaude/autonomous-log.md`에 append (없으면 생성)
-- 라운드 시작 전 `.hyperclaude/` 최근 artifact (plans/, code-reviews/, plan-reviews/) 확인하여 컨텍스트 흡수
-- 시각 검증 (Playwright/manual) 은 자율 모드에서 스킵 — plan에 명시되어 있으면 unverified risk로 노트하고 진행
+## Rules
+- Respect CLAUDE.md layer invariants, comment policy, and code style
+- Maintain the coverage gate (≥80% lines/branches/functions/statements)
+- At the end of each round, append a one-line summary to `.hyperclaude/autonomous-log.md` (create if missing)
+- Before starting a round, read the most recent `.hyperclaude/` artifacts (plans/, code-reviews/, plan-reviews/) for context
+- Skip visual verification (Playwright/manual) in autonomous mode — if the plan calls for it, note as unverified risk and proceed
 
 {{extra}}
 ```

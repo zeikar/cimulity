@@ -32,6 +32,10 @@ Concretely:
 
 When adding code, keep the dependency direction strictly downward — no layer imports from a layer below it in a way that reverses this flow, and no circular deps between layers.
 
+## Language
+
+All content in this repository — code, comments, identifiers, JSDoc, commit messages, Markdown docs, and skills under `.claude/` — is written in English. No exceptions.
+
 ## Testing
 
 Tests are `*.test.ts` colocated next to source under `game/`. The coverage gate (80% lines/statements/functions/branches) is **deliberately scoped** to the pure-logic files listed in [vitest.config.ts](vitest.config.ts) (core state, RoadTool, ToolActions, CommandDispatcher, IsoTransform). Pixi render glue, DOM input handlers, and `GameSession` are intentionally excluded — verify those by gameplay/manual testing, not headless mocks. New pure logic should land in (or alongside) the gated files and stay above threshold.
