@@ -100,13 +100,15 @@ export class PixiApp {
     this.app.stage.addChild(this.gridContainer);
     this.app.stage.addChild(this.selectionContainer);
 
-    // Initialize renderers, each bound to its own container
+    // Initialize renderers, each bound to its own container.
+    // GridRenderer is disabled — DiamondTileVisual draws per-tile diamond
+    // outlines at lifted positions, so continuous flat-plane grid lines
+    // would overlap them on elevated terrain. v2 will reintroduce an
+    // elevation-aware grid if needed.
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
-    this.gridRenderer = new GridRenderer(this.gridContainer, map);
 
     // Render initial frame
-    this.gridRenderer.render();
     this.centerCameraOnMap();
     this.tileRenderer.render(this.world, this.computeVisibleBounds());
 
