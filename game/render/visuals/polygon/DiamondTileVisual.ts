@@ -11,8 +11,6 @@ import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 
-const SKIRT_COLOR = 0x3a2a18;
-
 function darken(color: number, factor: number): number {
   const r = Math.round(((color >> 16) & 0xff) * factor);
   const g = Math.round(((color >> 8)  & 0xff) * factor);
@@ -89,8 +87,6 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
 
   // OOB skirt — drop a vertical quad from south/east deformed corners to a
   // floor below the world for map-edge tiles. Skip when mapBounds is unknown.
-  // Uniform earth color across all skirts so the map's bottom edge reads as a
-  // single horizon band rather than a blue/green sawtooth following tile fills.
   if (input.mapBounds) {
     const southOOB = input.y === input.mapBounds.height - 1;
     const eastOOB  = input.x === input.mapBounds.width  - 1;
@@ -100,7 +96,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.moveTo(verts[0].x, verts[0].y);
       for (let i = 1; i < verts.length; i++) gfx.lineTo(verts[i].x, verts[i].y);
       gfx.closePath();
-      gfx.fill({ color: SKIRT_COLOR });
+      gfx.fill({ color: darken(color, 0.72) });
     }
     if (eastOOB) {
       const verts = eastSkirtVertices(tile, right, bottom);
@@ -108,7 +104,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.moveTo(verts[0].x, verts[0].y);
       for (let i = 1; i < verts.length; i++) gfx.lineTo(verts[i].x, verts[i].y);
       gfx.closePath();
-      gfx.fill({ color: SKIRT_COLOR });
+      gfx.fill({ color: darken(color, 0.55) });
     }
   }
 
