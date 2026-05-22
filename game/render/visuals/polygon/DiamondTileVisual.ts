@@ -105,6 +105,11 @@ export const DiamondTileVisual: TerrainTileVisual = {
   mount(input: TileVisualInput, parent: Container): Container {
     const gfx = new Graphics();
     drawDiamond(gfx, input);
+    // Geometry lemma: deformed polygon's lower bound is the flat-unlifted-at-elevation-0
+    // diamond at this tile (every cornerH ≥ 0, so projected Y ≤ gridCornerY). NOT
+    // sufficient for z-order globally — same-height non-adjacent tiles CAN area-overlap
+    // when one tile's drops extend through another's lifted polygon. computeTerrainZIndex's
+    // secondary keys (x+y) then y resolve those cases; see slopeOcclusion.test.ts.
     gfx.zIndex = computeTerrainZIndex(input.renderHeight ?? 0, input.x, input.y);
     parent.addChild(gfx);
     return gfx;
