@@ -25,9 +25,10 @@ import { BuildingType } from '../core/Building';
 import type { World } from '../core/World';
 import type { Building } from '../core/Building';
 import type { Terrain } from '../core/Terrain';
-import type { BuildingVisual } from './visuals/TileVisual';
+import type { BuildingVisual, MapBounds } from './visuals/TileVisual';
 import type { VisibleTileBounds } from './viewportCulling';
 import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
+import { tileCornerHeights } from './terrain/tileCornerHeights';
 
 function buildRegistry(): VisualRegistry {
   const registry = new VisualRegistry();
@@ -102,6 +103,7 @@ export class TileRenderer {
     const terrainDirty = currentRev !== this.lastTerrainRev;
     if (terrainDirty) this.lastTerrainRev = currentRev;
     const fullPass = this.fullDirty || sigChanged || terrainDirty;
+    const mapBounds: MapBounds = { width: mapWidth, height: map.getHeight() };
 
     if (fullPass) {
       // ---- Terrain pass (full) ----
@@ -110,7 +112,7 @@ export class TileRenderer {
           const tile = map.getTile(x, y);
           if (!tile) continue;
           const index = y * mapWidth + x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds);
         }
         for (const [idx, entry] of this.tiles) {
           const x = idx % mapWidth;
@@ -123,7 +125,7 @@ export class TileRenderer {
       } else {
         for (const tile of map.iterateTiles()) {
           const index = tile.y * mapWidth + tile.x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds);
         }
       }
 
@@ -152,7 +154,7 @@ export class TileRenderer {
           const tile = map.getTile(x, y);
           if (!tile) continue;
           const index = y * mapWidth + x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds);
         }
         this.pendingTileChanges = [];
       }
@@ -205,21 +207,13 @@ export class TileRenderer {
    * Terrain visual is never unmounted when a building is created on that tile —
    * both layers coexist (see file-level comment).
    */
-  private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain): void {
+  private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain, mapBounds: MapBounds): void {
     const existing = this.tiles.get(index);
     const visual = this.registry.getTerrain(type);
     const renderHeight = terrain.getRenderHeight(x, y);
-    const w = terrain.getWidth();
-    const th = terrain.getHeight();
-    const neighborRH = (nx: number, ny: number): number | undefined =>
-      nx >= 0 && nx < w && ny >= 0 && ny < th ? terrain.getRenderHeight(nx, ny) : undefined;
-    const neighborRenderHeights = {
-      n: neighborRH(x, y - 1),
-      e: neighborRH(x + 1, y),
-      s: neighborRH(x, y + 1),
-      w: neighborRH(x - 1, y),
-    };
-    const input = { x, y, type, level, renderHeight, neighborRenderHeights };
+    const cornerHeights = tileCornerHeights(terrain, x, y);
+    const shape = terrain.getTerrainShape(x, y);
+    const input = { x, y, type, level, renderHeight, cornerHeights, shape, mapBounds };
 
     if (!existing) {
       const displayObject = visual.mount(input, this.terrainContainer);

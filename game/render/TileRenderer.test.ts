@@ -13,8 +13,9 @@ import { TileRenderer } from './TileRenderer';
 import { VisualRegistry } from './visuals/visualRegistry';
 import { World } from '../core/World';
 import { TileType } from '../core/Tile';
-import type { TerrainTileVisual, BuildingVisual, TileVisualInput } from './visuals/TileVisual';
-import type { NeighborRenderHeights } from './visuals/polygon/tileSideWalls';
+import type { TerrainTileVisual, BuildingVisual, TileVisualInput, MapBounds } from './visuals/TileVisual';
+import type { CornerHeights } from './terrain/tileCornerHeights';
+import type { TerrainShape } from '../core/terrainSlope';
 
 // Minimal Container stub: TileRenderer only calls addChild / removeChild on the
 // parent containers, and inspects nothing on the returned DisplayObjects.
@@ -40,7 +41,9 @@ interface UpdateRecord {
   x: number;
   y: number;
   renderHeight: number | undefined;
-  neighborRenderHeights: NeighborRenderHeights | undefined;
+  cornerHeights: CornerHeights | undefined;
+  shape: TerrainShape | undefined;
+  mapBounds: MapBounds | undefined;
 }
 
 function makeStubTerrainVisual(): TerrainTileVisual & { updates: UpdateRecord[]; mounts: UpdateRecord[] } {
@@ -51,13 +54,13 @@ function makeStubTerrainVisual(): TerrainTileVisual & { updates: UpdateRecord[];
     updates,
     mounts,
     mount: vi.fn((input: TileVisualInput, parent: Container) => {
-      mounts.push({ x: input.x, y: input.y, renderHeight: input.renderHeight, neighborRenderHeights: input.neighborRenderHeights });
+      mounts.push({ x: input.x, y: input.y, renderHeight: input.renderHeight, cornerHeights: input.cornerHeights, shape: input.shape, mapBounds: input.mapBounds });
       const obj = makeDisplayObject();
       (parent as ReturnType<typeof makeContainer>).addChild(obj);
       return obj;
     }),
     update: vi.fn((input: TileVisualInput) => {
-      updates.push({ x: input.x, y: input.y, renderHeight: input.renderHeight, neighborRenderHeights: input.neighborRenderHeights });
+      updates.push({ x: input.x, y: input.y, renderHeight: input.renderHeight, cornerHeights: input.cornerHeights, shape: input.shape, mapBounds: input.mapBounds });
     }),
     unmount: vi.fn((obj: Container) => { obj.destroy(); }),
   };
@@ -122,7 +125,7 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     expect(tile11Updates.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('syncTile populates neighborRenderHeights correctly', () => {
+  it('syncTile populates cornerHeights, shape, and mapBounds correctly', () => {
     const world = new World(3, 3, { regenerate: false });
     const terrainContainer = makeContainer();
     const buildingContainer = makeContainer();
@@ -143,20 +146,22 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     // Second render — update path (terrainRev changed → full pass).
     renderer.render(world);
 
-    // Center tile (1,1): all neighbors exist and have elevation 0.
+    // Center tile (1,1): H=2, all 8 neighbors at default elevation 0 → every corner = min(2, 0, ...) = 0.
     const r11 = terrainVisual.updates.find((r) => r.x === 1 && r.y === 1);
     expect(r11).toBeDefined();
     expect(r11!.renderHeight).toBe(2);
-    expect(r11!.neighborRenderHeights).toEqual({ n: 0, e: 0, s: 0, w: 0 });
+    // center H=2, all 8 neighbors at default elevation 0 → every corner = min(2, 0, ...) = 0
+    expect(r11!.cornerHeights).toEqual({ topH: 0, rightH: 0, bottomH: 0, leftH: 0 });
+    // slopeMask = 15 because all 4 cardinals are lower → mask is LOWER_N|LOWER_E|LOWER_S|LOWER_W = 15 → terrainShapeFor(15) === 'rough'
+    expect(r11!.shape).toBe('rough');
+    expect(r11!.mapBounds).toEqual({ width: 3, height: 3 });
 
-    // Corner tile (0,0): n and w neighbors are OOB (undefined), e and s are in-bounds (0).
-    // (0,0) was mounted in first pass and updated in second pass.
+    // Corner tile (0,0): all elevations at default 0 → flat, all corner heights 0.
     const r00 = terrainVisual.updates.find((r) => r.x === 0 && r.y === 0);
     expect(r00).toBeDefined();
-    expect(r00!.neighborRenderHeights!.n).toBeUndefined();
-    expect(r00!.neighborRenderHeights!.w).toBeUndefined();
-    expect(r00!.neighborRenderHeights!.e).toBe(0);
-    expect(r00!.neighborRenderHeights!.s).toBe(0);
+    expect(r00!.cornerHeights).toEqual({ topH: 0, rightH: 0, bottomH: 0, leftH: 0 });
+    expect(r00!.shape).toBe('flat');
+    expect(r00!.mapBounds).toEqual({ width: 3, height: 3 });
   });
 
   it('does NOT trigger extra full pass when terrainRev is stable across frames', () => {

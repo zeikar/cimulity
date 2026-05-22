@@ -5,17 +5,10 @@
 
 import { Graphics, Container } from 'pixi.js';
 import { tileToScreenWithHeight, ISO_CONFIG } from '@/game/render/IsoTransform';
-import { ELEVATION_HEIGHT } from '@/game/core';
 import { tileFillColor } from '../palette';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
-import { shouldDrawFace, wallSteps } from './tileSideWalls';
-
-function darken(color: number, factor: number): number {
-  const r = Math.round(((color >> 16) & 0xff) * factor);
-  const g = Math.round(((color >> 8) & 0xff) * factor);
-  const b = Math.round((color & 0xff) * factor);
-  return (r << 16) | (g << 8) | b;
-}
+// tileSideWalls helpers will be re-wired in Task 3 (slope rendering).
+// import { shouldDrawFace, wallSteps } from './tileSideWalls';
 
 // Elevation-aware depth sort key.
 //   primary   = renderHeight     — taller cells (and their south/east walls) draw on top of lower neighbors.
@@ -34,45 +27,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const hh = ISO_CONFIG.TILE_HEIGHT / 2;
   const color = tileFillColor(input.type, input.level);
 
-  const nh = input.neighborRenderHeights;
-  if (nh !== undefined) {
-    const drawS = shouldDrawFace('s', h, nh.s);
-    const drawE = shouldDrawFace('e', h, nh.e);
-    if (drawS || drawE) {
-      const right = { x: screen.x + hw, y: screen.y + hh };
-      const bottom = { x: screen.x, y: screen.y + ISO_CONFIG.TILE_HEIGHT };
-      const left = { x: screen.x - hw, y: screen.y + hh };
-      const southWallPx = drawS ? wallSteps(h, nh.s) * ELEVATION_HEIGHT : 0;
-      const eastWallPx = drawE ? wallSteps(h, nh.e) * ELEVATION_HEIGHT : 0;
-      if (drawS) {
-        // SW face quad: bottom → left → left+down → bottom+down, darken 0.72
-        gfx.beginPath();
-        gfx.moveTo(bottom.x, bottom.y);
-        gfx.lineTo(left.x, left.y);
-        gfx.lineTo(left.x, left.y + southWallPx);
-        gfx.lineTo(bottom.x, bottom.y + southWallPx);
-        gfx.closePath();
-        gfx.fill({ color: darken(color, 0.72) });
-      }
-      if (drawE) {
-        // SE face quad: right → bottom → bottom+down → right+down, darken 0.55
-        gfx.beginPath();
-        gfx.moveTo(right.x, right.y);
-        gfx.lineTo(bottom.x, bottom.y);
-        gfx.lineTo(bottom.x, bottom.y + eastWallPx);
-        gfx.lineTo(right.x, right.y + eastWallPx);
-        gfx.closePath();
-        gfx.fill({ color: darken(color, 0.55) });
-      }
-      const seamPx = drawS && drawE ? Math.min(southWallPx, eastWallPx) : (drawS ? southWallPx : eastWallPx);
-      if (seamPx > 0) {
-        gfx.beginPath();
-        gfx.moveTo(bottom.x, bottom.y);
-        gfx.lineTo(bottom.x, bottom.y + seamPx);
-        gfx.stroke({ color: 0x000000, width: 1, alpha: 0.25 });
-      }
-    }
-  }
+  // Side-wall drawing removed here; Task 3 will re-implement using cornerHeights + shape.
 
   // Filled diamond (top)
   gfx.beginPath();
