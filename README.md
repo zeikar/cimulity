@@ -18,6 +18,7 @@ Implemented so far:
 - ✅ Fixed-timestep simulation tick loop
 - ✅ Autosave to localStorage with a "New City" reset
 - ✅ Clean architecture with separated concerns
+- ✅ **Elevation & smooth slopes** - Shared-vertex-height ramps between tiles of different elevation (SimCity 3000-style); cliffs render as steep continuous ramps with depth shading; map-edge skirt prevents floating world
 
 ## Getting Started
 
