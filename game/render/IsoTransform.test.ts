@@ -7,6 +7,8 @@ import {
   screenToTileRaw,
   screenToTileWithTerrain,
   tileCenterToScreen,
+  projectTileCornerScreen,
+  polygonContains,
 } from './IsoTransform';
 import { Terrain, ELEVATION_HEIGHT, MAX_ELEVATION } from '@/game/core';
 
@@ -199,5 +201,123 @@ describe('screenToTileWithTerrain — picking suite', () => {
     const cursor = { x: 100000, y: 100000 };
     const result = screenToTileWithTerrain(cursor, terrain, 10, 10);
     expect(result).toEqual(screenToTile(cursor));
+  });
+});
+
+describe('projectTileCornerScreen', () => {
+  const hw = ISO_CONFIG.TILE_WIDTH / 2;
+  const hh = ISO_CONFIG.TILE_HEIGHT / 2;
+
+  it('cornerHeight=0: all four corners match tileToScreenWithHeight + per-corner offset for tile (0,0)', () => {
+    const tile = { x: 0, y: 0 };
+    const s0 = tileToScreenWithHeight(tile, 0);
+
+    expect(projectTileCornerScreen(tile, 'top',    0)).toEqual({ x: s0.x,      y: s0.y });
+    expect(projectTileCornerScreen(tile, 'right',  0)).toEqual({ x: s0.x + hw, y: s0.y + hh });
+    expect(projectTileCornerScreen(tile, 'bottom', 0)).toEqual({ x: s0.x,      y: s0.y + ISO_CONFIG.TILE_HEIGHT });
+    expect(projectTileCornerScreen(tile, 'left',   0)).toEqual({ x: s0.x - hw, y: s0.y + hh });
+  });
+
+  it('cornerHeight=0: all four corners match for tile (5,5)', () => {
+    const tile = { x: 5, y: 5 };
+    const s0 = tileToScreenWithHeight(tile, 0);
+
+    expect(projectTileCornerScreen(tile, 'top',    0)).toEqual({ x: s0.x,      y: s0.y });
+    expect(projectTileCornerScreen(tile, 'right',  0)).toEqual({ x: s0.x + hw, y: s0.y + hh });
+    expect(projectTileCornerScreen(tile, 'bottom', 0)).toEqual({ x: s0.x,      y: s0.y + ISO_CONFIG.TILE_HEIGHT });
+    expect(projectTileCornerScreen(tile, 'left',   0)).toEqual({ x: s0.x - hw, y: s0.y + hh });
+  });
+
+  it('nonzero cornerHeight shifts Y by -cornerHeight * ELEVATION_HEIGHT; X is unchanged', () => {
+    const tile = { x: 3, y: 2 };
+    const h = 4;
+
+    for (const corner of ['top', 'right', 'bottom', 'left'] as const) {
+      const flat    = projectTileCornerScreen(tile, corner, 0);
+      const lifted  = projectTileCornerScreen(tile, corner, h);
+      expect(lifted.x).toBe(flat.x);
+      expect(lifted.y).toBe(flat.y - h * ELEVATION_HEIGHT);
+    }
+  });
+});
+
+describe('polygonContains', () => {
+  // Build a flat-diamond polygon for tile (0,0) at cornerHeight=0 via projectTileCornerScreen.
+  const tile = { x: 0, y: 0 };
+  const hh = ISO_CONFIG.TILE_HEIGHT / 2;
+  const flatPoly = [
+    projectTileCornerScreen(tile, 'top',    0),
+    projectTileCornerScreen(tile, 'right',  0),
+    projectTileCornerScreen(tile, 'bottom', 0),
+    projectTileCornerScreen(tile, 'left',   0),
+  ];
+
+  it('interior point (diamond center) is inside', () => {
+    const center = tileToScreenWithHeight(tile, 0);
+    // Diamond center = top corner + (0, hh)
+    const p = { x: center.x, y: center.y + hh };
+    expect(polygonContains(flatPoly, p)).toBe(true);
+  });
+
+  it('far-outside point is not inside', () => {
+    expect(polygonContains(flatPoly, { x: 1000, y: 1000 })).toBe(false);
+  });
+
+  it('inclusive boundary pin — all 4 vertices are inside', () => {
+    for (const corner of ['top', 'right', 'bottom', 'left'] as const) {
+      const vertex = projectTileCornerScreen(tile, corner, 0);
+      expect(polygonContains(flatPoly, vertex)).toBe(true);
+    }
+  });
+
+  it('inclusive boundary pin — edge midpoint (top→right) is inside', () => {
+    const top   = projectTileCornerScreen(tile, 'top',   0);
+    const right = projectTileCornerScreen(tile, 'right', 0);
+    const mid = { x: (top.x + right.x) / 2, y: (top.y + right.y) / 2 };
+    expect(polygonContains(flatPoly, mid)).toBe(true);
+  });
+
+  // Concave deformed-quad pin: MIN-of-4 corner rule permits concave quads
+  // (here: top vertex dropped below left/right via nw=0 with everything else=8).
+  // The convex cross-product test misclassifies interior points near the concave
+  // vertex; the general winding-number algorithm in polygonContains accepts them.
+  // This pin fails loudly if anyone "simplifies" polygonContains back to convex.
+  it('concave deformed-quad: winding-number accepts interior point that convex test rejects', () => {
+    const concaveTile = { x: 5, y: 5 };
+    // topH=0 (nw=0, everything else=8) — top corner sits far below left/right/bottom
+    // producing a polygon concave at the top vertex in screen space.
+    const c = { topH: 0, rightH: 8, bottomH: 8, leftH: 8 };
+    const poly = [
+      projectTileCornerScreen(concaveTile, 'top',    c.topH),
+      projectTileCornerScreen(concaveTile, 'right',  c.rightH),
+      projectTileCornerScreen(concaveTile, 'bottom', c.bottomH),
+      projectTileCornerScreen(concaveTile, 'left',   c.leftH),
+    ];
+
+    // For tile (5,5): screen0 = (0,160).
+    // top=(0,160), right=(32,80), bottom=(0,96), left=(-32,80).
+    // The interior at the center (lower region, x=0) is e.g. (0,150).
+    // Convex test: top→right edge gives cross=(32)(150-160)-(80-160)(0-0)=-320 < 0 → false.
+    // Winding-number: wn=-1 ≠ 0 → true (inside the downward-arrowhead interior).
+    const top = poly[0]; // (0,160)
+    const sample = { x: top.x, y: top.y - 10 }; // (0,150)
+
+    expect(polygonContains(poly, sample)).toBe(true);
+
+    // Companion: convex half-plane test returns false for the same point — proves general algorithm is required.
+    function convexContains(
+      cvxPoly: Array<{ x: number; y: number }>,
+      p: { x: number; y: number },
+    ): boolean {
+      for (let i = 0; i < cvxPoly.length; i++) {
+        const v0 = cvxPoly[i];
+        const v1 = cvxPoly[(i + 1) % cvxPoly.length];
+        const cross =
+          (v1.x - v0.x) * (p.y - v0.y) - (v1.y - v0.y) * (p.x - v0.x);
+        if (cross < 0) return false;
+      }
+      return true;
+    }
+    expect(convexContains(poly as Array<{ x: number; y: number }>, sample)).toBe(false);
   });
 });

@@ -126,3 +126,112 @@ export function tileCenterToScreen(tile: TileCoord): ScreenCoord {
     y: corner.y + ISO_CONFIG.TILE_HEIGHT / 2,
   };
 }
+
+export type CornerKey = 'top' | 'right' | 'bottom' | 'left';
+
+/**
+ * Project one corner of a deformed diamond tile to screen coordinates.
+ *
+ * Single source of truth for corner projection — used by DiamondTileVisual,
+ * the picker (Task 6), and SelectionRenderer (Task 7).
+ *
+ * Derivation: start from screen0 = tileToScreenWithHeight(tile, 0), then apply
+ * per-corner offset and subtract the corner's own elevation lift.
+ *
+ * hw = TILE_WIDTH/2, hh = TILE_HEIGHT/2
+ *   top:    (screen0.x,      screen0.y - cornerHeight * ELEVATION_HEIGHT)
+ *   right:  (screen0.x + hw, screen0.y + hh - cornerHeight * ELEVATION_HEIGHT)
+ *   bottom: (screen0.x,      screen0.y + TILE_HEIGHT - cornerHeight * ELEVATION_HEIGHT)
+ *   left:   (screen0.x - hw, screen0.y + hh - cornerHeight * ELEVATION_HEIGHT)
+ */
+export function projectTileCornerScreen(
+  tile: TileCoord,
+  corner: CornerKey,
+  cornerHeight: number,
+): ScreenCoord {
+  const screen0 = tileToScreenWithHeight(tile, 0);
+  const hw = ISO_CONFIG.TILE_WIDTH / 2;
+  const hh = ISO_CONFIG.TILE_HEIGHT / 2;
+  const lift = cornerHeight * ELEVATION_HEIGHT;
+
+  switch (corner) {
+    case 'top':
+      return { x: screen0.x,      y: screen0.y - lift };
+    case 'right':
+      return { x: screen0.x + hw, y: screen0.y + hh - lift };
+    case 'bottom':
+      return { x: screen0.x,      y: screen0.y + ISO_CONFIG.TILE_HEIGHT - lift };
+    case 'left':
+      return { x: screen0.x - hw, y: screen0.y + hh - lift };
+  }
+}
+
+/**
+ * Returns true for any point inside the polygon (general polygon — convex OR concave)
+ * OR exactly on any edge/vertex (inclusive boundary).
+ *
+ * Algorithm: on-segment test for every edge first (handles inclusive boundary uniformly);
+ * fall through to winding-number for interior. The two-stage shape is required because
+ * the MIN-of-4 corner rule permits concave deformed quads, where a convex-only half-plane
+ * test misclassifies valid interior points.
+ */
+export function polygonContains(
+  poly: ReadonlyArray<ScreenCoord>,
+  point: ScreenCoord,
+): boolean {
+  const n = poly.length;
+  const p = point;
+
+  // Stage 1 — on-segment check (boundary inclusive).
+  // For each edge, check if p is collinear and within the segment bounds.
+  for (let i = 0; i < n; i++) {
+    const v0 = poly[i];
+    const v1 = poly[(i + 1) % n];
+
+    const cross =
+      (v1.x - v0.x) * (p.y - v0.y) - (v1.y - v0.y) * (p.x - v0.x);
+
+    if (cross !== 0) continue; // not collinear with this edge
+
+    // Collinear — check if p lies within the segment [v0, v1].
+    const len2 =
+      (v1.x - v0.x) * (v1.x - v0.x) + (v1.y - v0.y) * (v1.y - v0.y);
+
+    if (len2 === 0) {
+      // Degenerate zero-length edge: p is on it iff p equals v0.
+      if (p.x === v0.x && p.y === v0.y) return true;
+    } else {
+      const dot =
+        (p.x - v0.x) * (v1.x - v0.x) + (p.y - v0.y) * (v1.y - v0.y);
+      if (dot >= 0 && dot <= len2) return true;
+    }
+  }
+
+  // Stage 2 — winding-number interior check (Sunday algorithm).
+  // A nonzero winding number means p is inside the polygon.
+  // The Stage 1 on-segment check above means we don't hit the collinear edge
+  // case here (any such point already returned true).
+  let wn = 0;
+  for (let i = 0; i < n; i++) {
+    const v0 = poly[i];
+    const v1 = poly[(i + 1) % n];
+
+    if (v0.y <= p.y) {
+      if (v1.y > p.y) {
+        // Upward crossing — check if p is left of edge (v0→v1)
+        const c =
+          (v1.x - v0.x) * (p.y - v0.y) - (v1.y - v0.y) * (p.x - v0.x);
+        if (c > 0) wn++;
+      }
+    } else {
+      if (v1.y <= p.y) {
+        // Downward crossing — check if p is right of edge (v0→v1)
+        const c =
+          (v1.x - v0.x) * (p.y - v0.y) - (v1.y - v0.y) * (p.x - v0.x);
+        if (c < 0) wn--;
+      }
+    }
+  }
+
+  return wn !== 0;
+}
