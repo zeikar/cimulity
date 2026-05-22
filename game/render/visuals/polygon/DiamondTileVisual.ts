@@ -10,6 +10,7 @@ import { tileFillColor } from '../palette';
 import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
+import { planDiamondShading } from './diamondShading';
 
 function darken(color: number, factor: number): number {
   const r = Math.round(((color >> 16) & 0xff) * factor);
@@ -59,44 +60,24 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   gfx.closePath();
   gfx.fill({ color: fillColor });
 
-  // Adaptive diagonal split. Pick the diagonal whose endpoints have the
-  // smaller height difference — that diagonal stays closest to the surface
-  // ridge so the fold lies along it. (A "tent" with one corner up and three
-  // down has its fold perpendicular to the peak corner, NOT through it.)
-  // The `mean < maxH` predicate suppresses shading on any triangle whose
-  // three corners are all at maxH, so planar ridges don't get a phantom fold.
-  const maxH = Math.max(c.topH, c.rightH, c.bottomH, c.leftH);
-  const tbDiff = Math.abs(c.topH - c.bottomH);
-  const lrDiff = Math.abs(c.leftH - c.rightH);
-  const useTBSplit = tbDiff <= lrDiff;
+  // Per-triangle shading + fold-line stroke from the shading plan helper.
+  // See diamondShading.ts for the split/shade/stroke rules.
+  const plan = planDiamondShading(c);
   const shade = darken(color, 0.80);
   const a = 0.45;
-  // Planar quad (e.g. cardinal slopes, 2-step cliffs along one axis) — the
-  // two halves share a common plane, so a fold stroke would mark a phantom
-  // line on a coherent surface. Non-planar quads need the stroke when both
-  // halves shade uniformly (the tent cases).
-  const isPlanar = c.topH + c.bottomH === c.leftH + c.rightH;
-  if (useTBSplit) {
-    const westMean = (c.bottomH + c.leftH + c.topH) / 3;
-    const eastMean = (c.bottomH + c.rightH + c.topH) / 3;
-    const westShade = westMean < maxH;
-    const eastShade = eastMean < maxH;
-    if (westShade) fillTri(gfx, bottom, left, top, shade, a);
-    if (eastShade) fillTri(gfx, bottom, right, top, shade, a);
-    if (!isPlanar && westShade && eastShade) {
+  if (plan.diagonal === 'tb') {
+    if (plan.shadeWest) fillTri(gfx, bottom, left, top, shade, a);
+    if (plan.shadeEast) fillTri(gfx, bottom, right, top, shade, a);
+    if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(top.x, top.y);
       gfx.lineTo(bottom.x, bottom.y);
       gfx.stroke({ color: 0x000000, width: 1, alpha: 0.30 });
     }
   } else {
-    const northMean = (c.leftH + c.topH + c.rightH) / 3;
-    const southMean = (c.leftH + c.bottomH + c.rightH) / 3;
-    const northShade = northMean < maxH;
-    const southShade = southMean < maxH;
-    if (northShade) fillTri(gfx, left, top, right, shade, a);
-    if (southShade) fillTri(gfx, left, bottom, right, shade, a);
-    if (!isPlanar && northShade && southShade) {
+    if (plan.shadeNorth) fillTri(gfx, left, top, right, shade, a);
+    if (plan.shadeSouth) fillTri(gfx, left, bottom, right, shade, a);
+    if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(left.x, left.y);
       gfx.lineTo(right.x, right.y);
