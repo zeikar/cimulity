@@ -429,3 +429,26 @@ describe("canBuildRoadAt", () => {
     expect(t.canBuildRoadAt(0, 0, water33)).toBe(true);
   });
 });
+
+describe("canBuildAt — diagonal-only deformation is buildable (v1 policy)", () => {
+  it("NE diagonal lower (slopeMask=0, but corner drop) → tile is buildable", () => {
+    const terrain = new Terrain(5, 5);
+    // Explicit per-cell elevation so default state can't drift the test.
+    // Set (2,2)=2, (3,1)=1 (NE diagonal lower), all other 7 neighbors of (2,2) at 2.
+    terrain.unsafeSetElevation(2, 2, 2);
+    terrain.unsafeSetElevation(3, 1, 1); // ne neighbor lower
+    terrain.unsafeSetElevation(1, 1, 2); // nw
+    terrain.unsafeSetElevation(2, 1, 2); // n
+    terrain.unsafeSetElevation(1, 2, 2); // w
+    terrain.unsafeSetElevation(3, 2, 2); // e
+    terrain.unsafeSetElevation(1, 3, 2); // sw
+    terrain.unsafeSetElevation(2, 3, 2); // s
+    terrain.unsafeSetElevation(3, 3, 2); // se
+
+    expect(terrain.getSlopeMask(2, 2)).toBe(0);
+    expect(terrain.canBuildAt(2, 2, 1, 1, () => false)).toBe(true);
+    expect(terrain.canBuildRoadAt(2, 2, () => false)).toBe(true);
+    // v1 policy: diagonal-only deformations remain buildable. Buildings show a
+    // cosmetic seam; see docs/architecture.md slope section.
+  });
+});
