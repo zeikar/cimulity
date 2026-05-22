@@ -134,6 +134,41 @@ describe('planDiamondShading', () => {
     });
   });
 
+  // Concave projection cases. The MIN-of-4 corner rule lets a vertex sink so
+  // far below its neighbors that the projected polygon goes non-convex. For
+  // those cases the smaller-diff diagonal can land OUTSIDE the polygon body —
+  // shading would paint into neighbor tiles. The helper detects concavity and
+  // overrides the diagonal to the one through the concave vertex.
+  //
+  // Iso-projection asymmetry: among single-corner-drop fixtures with the
+  // others at MAX_ELEVATION, only topH/leftH/rightH drops yield concavity
+  // (always at the bottom vertex — bottom is the iso-projection's natural
+  // "interior" point when its peers lift while it stays at base offset).
+  // bottomH=0 stays convex because bottom is already the southernmost vertex
+  // and dropping it further can't create an inward dent.
+  describe('concave projected quads (override smaller-diff)', () => {
+    it('topH=0, others=8 (verified fixture from IsoTransform.test:307) → concave at bottom → TB override', () => {
+      // smaller-diff would say LR (lrDiff=0 vs tbDiff=8) but LR lies outside.
+      // TB: westMean=eastMean=(8+8+0)/3=16/3<8 → both shade.
+      expect(planDiamondShading(ch(0, 8, 8, 8))).toEqual(tb(true, true, true));
+    });
+    it('leftH=0, others=8 → concave at bottom → TB override, only west shades', () => {
+      // smaller-diff would say TB anyway (tbDiff=0). Concavity confirms TB.
+      // westMean=(8+0+8)/3=16/3<8; eastMean=(8+8+8)/3=8 (maxH) → only west shades.
+      expect(planDiamondShading(ch(8, 8, 8, 0))).toEqual(tb(true, false, true));
+    });
+    it('rightH=0, others=8 → concave at bottom → TB override, only east shades', () => {
+      // Mirror of leftH=0 case. eastMean=16/3<8; westMean=8 (maxH).
+      expect(planDiamondShading(ch(8, 0, 8, 8))).toEqual(tb(false, true, true));
+    });
+    it('bottomH=0, others=8 → CONVEX (no override) → smaller-diff picks LR, only south shades', () => {
+      // bottom is the southernmost vertex; dropping it further keeps polygon
+      // convex (arrowhead shape). Falls through to smaller-diff: lrDiff=0,
+      // tbDiff=8 → LR. northMean=8=maxH (no shade); southMean=(8+0+8)/3<8.
+      expect(planDiamondShading(ch(8, 8, 0, 8))).toEqual(lr(false, true, true));
+    });
+  });
+
   // Determinism: tie-break is TB (matches the documented contract).
   describe('split tie-break', () => {
     it('all-equal corners → TB (degenerate flat case)', () => {
