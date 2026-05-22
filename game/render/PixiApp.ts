@@ -7,7 +7,6 @@ import { Application, Container } from 'pixi.js';
 import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
-import { GridRenderer } from './GridRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
@@ -26,10 +25,8 @@ export class PixiApp {
   private camera: Camera | null = null;
   private tileRenderer: TileRenderer | null = null;
   private selectionRenderer: SelectionRenderer | null = null;
-  private gridRenderer: GridRenderer | null = null;
   private terrainContainer: Container | null = null;
   private buildingContainer: Container | null = null;
-  private gridContainer: Container | null = null;
   private selectionContainer: Container | null = null;
   private world: World;
   private callbacks: PixiAppCallbacks;
@@ -82,15 +79,12 @@ export class PixiApp {
 
     this.camera = new Camera(this.app.stage, constraints);
 
-    // Create explicit layer containers in draw order: terrain → grid → building → selection.
+    // Create explicit layer containers in draw order: terrain → building → selection.
     // addChild order enforces z-layering; no zIndex tricks needed for cross-layer ordering.
     this.terrainContainer = new Container();
     // Elevation-aware iso depth sort: higher cells (and their south/east walls)
     // must draw after lower neighbors. See DiamondTileVisual.computeTerrainZIndex.
     this.terrainContainer.sortableChildren = true;
-
-    this.gridContainer = new Container();
-    this.gridContainer.sortableChildren = false;
 
     this.buildingContainer = new Container();
     this.buildingContainer.sortableChildren = true; // buildings sort within their own layer
@@ -99,15 +93,11 @@ export class PixiApp {
     this.selectionContainer.sortableChildren = false;
 
     this.app.stage.addChild(this.terrainContainer);
-    this.app.stage.addChild(this.gridContainer);
     this.app.stage.addChild(this.buildingContainer);
     this.app.stage.addChild(this.selectionContainer);
 
     // Initialize renderers, each bound to its own container.
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer);
-    // GridRenderer is disabled — per-tile outlines live inside DiamondTileVisual where iso draw order
-    // correctly interleaves them with neighbor fills. Re-enabling GridRenderer as a separate layer
-    // breaks z-order on uneven terrain (Codex code-review iter 1).
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
@@ -244,7 +234,6 @@ export class PixiApp {
 
     this.tileRenderer?.destroy();
     this.selectionRenderer?.destroy();
-    this.gridRenderer?.destroy();
 
     // Explicitly destroy each layer container before app.destroy().
     // Pixi 8 app.destroy({ children: true }) does cascade to app.stage children,
@@ -253,7 +242,6 @@ export class PixiApp {
     // deterministically, before the renderer context is torn down.
     this.terrainContainer?.destroy({ children: true });
     this.buildingContainer?.destroy({ children: true });
-    this.gridContainer?.destroy({ children: true });
     this.selectionContainer?.destroy({ children: true });
     // When sprite-based visuals land, destroy spritesheets here with
     // `destroy({ texture: true, textureSource: true })`.
@@ -268,10 +256,8 @@ export class PixiApp {
     this.camera = null;
     this.tileRenderer = null;
     this.selectionRenderer = null;
-    this.gridRenderer = null;
     this.terrainContainer = null;
     this.buildingContainer = null;
-    this.gridContainer = null;
     this.selectionContainer = null;
   }
 }

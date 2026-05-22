@@ -53,7 +53,14 @@ function makeIdentityCamera(): Camera {
 describe('PointerHandler — elevation-aware picking', () => {
   it('cursor at lifted center of elevated tile (5,5,h=2) picks (5,5)', () => {
     const world = getWorld();
-    world.getTerrain().unsafeSetElevation(5, 5, 2);
+    // Raise (5,5) and all 8 neighbors to h=2 so that tileCornerHeights gives all corners
+    // at 2 (Math.min(H, neighbors...) = 2), placing the deformed polygon top at
+    // tileToScreenWithHeight({5,5}, 2) deterministically — independent of world state.
+    for (let ny = 4; ny <= 6; ny++) {
+      for (let nx = 4; nx <= 6; nx++) {
+        world.getTerrain().unsafeSetElevation(nx, ny, 2);
+      }
+    }
 
     const canvas = makeStubCanvas();
     const camera = makeIdentityCamera();
@@ -81,6 +88,10 @@ describe('PointerHandler — elevation-aware picking', () => {
     expect(clickedTile!.y).toBe(5);
 
     handler.detach();
-    world.getTerrain().unsafeSetElevation(5, 5, 0);
+    for (let ny = 4; ny <= 6; ny++) {
+      for (let nx = 4; nx <= 6; nx++) {
+        world.getTerrain().unsafeSetElevation(nx, ny, 0);
+      }
+    }
   });
 });

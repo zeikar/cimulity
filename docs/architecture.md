@@ -56,7 +56,7 @@ The codebase follows a strict layered architecture to maintain clean separation 
 │  - PixiApp (lifecycle + viewport culling orchestration)      │
 │  - Camera (pan/zoom transforms with bounds + zoom limits)    │
 │  - IsoTransform (coordinate conversion)                      │
-│  - TileRenderer, GridRenderer, SelectionRenderer             │
+│  - TileRenderer, SelectionRenderer                          │
 │  - visuals/ registry: DiamondTileVisual, CubeBuildingVisual  │
 │  - viewportCulling (visible-tile bounds)                     │
 └─────────────────────────────────────────────────────────────┘
@@ -113,7 +113,6 @@ cimulity/
 │   │   ├── IsoTransform.ts       # Coordinate transforms
 │   │   ├── viewportCulling.ts    # Visible-tile bounds
 │   │   ├── TileRenderer.ts       # Tile + building mounting
-│   │   ├── GridRenderer.ts       # Debug grid lines
 │   │   ├── SelectionRenderer.ts  # Hover/selection highlights
 │   │   └── visuals/              # Per-tile visual implementations
 │   │       ├── TileVisual.ts        # Visual contract
