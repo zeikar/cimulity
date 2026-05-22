@@ -6,19 +6,10 @@
 import { Graphics, Container } from 'pixi.js';
 import { tileToScreenWithHeight, ISO_CONFIG } from '@/game/render/IsoTransform';
 import { tileFillColor } from '../palette';
+import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 // tileSideWalls helpers will be re-wired in Task 3 (slope rendering).
 // import { shouldDrawFace, wallSteps } from './tileSideWalls';
-
-// Elevation-aware depth sort key.
-//   primary   = renderHeight     — taller cells (and their south/east walls) draw on top of lower neighbors.
-//   secondary = x + y            — standard iso back-to-front diagonal within one elevation band.
-//   tertiary  = y                — same-diagonal tiebreaker (matches CubeBuildingVisual.computeZIndex convention).
-// Scales: MAX_ELEVATION = 8, map dim ≲ few hundred → no collisions.
-function computeTerrainZIndex(input: TileVisualInput): number {
-  const h = input.renderHeight ?? 0;
-  return h * 1_000_000 + (input.x + input.y) * 1_000 + input.y;
-}
 
 function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const h = input.renderHeight ?? 0;
@@ -57,7 +48,7 @@ export const DiamondTileVisual: TerrainTileVisual = {
   mount(input: TileVisualInput, parent: Container): Container {
     const gfx = new Graphics();
     drawDiamond(gfx, input);
-    gfx.zIndex = computeTerrainZIndex(input);
+    gfx.zIndex = computeTerrainZIndex(input.renderHeight ?? 0, input.x, input.y);
     parent.addChild(gfx);
     return gfx;
   },
@@ -66,7 +57,7 @@ export const DiamondTileVisual: TerrainTileVisual = {
     const gfx = displayObject as Graphics;
     gfx.clear();
     drawDiamond(gfx, input);
-    gfx.zIndex = computeTerrainZIndex(input);
+    gfx.zIndex = computeTerrainZIndex(input.renderHeight ?? 0, input.x, input.y);
   },
 
   unmount(displayObject: Container): void {
