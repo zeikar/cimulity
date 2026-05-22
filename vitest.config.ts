@@ -36,7 +36,7 @@ export default defineConfig({
         'game/render/visuals/polygon/cubeTypeRatios.ts',
         'game/render/visuals/polygon/cubeRoofAccent.ts',
         'game/render/visuals/polygon/cubeDropShadow.ts',
-        'game/render/visuals/polygon/tileSideWalls.ts',
+        'game/render/visuals/polygon/DiamondOOBSkirt.ts',
         'game/core/Terrain.ts',
         'game/core/terrainSlope.ts',
         'game/core/prng.ts',

@@ -8,6 +8,7 @@ import { projectTileCornerScreen } from '@/game/render/IsoTransform';
 import { tileFillColor } from '../palette';
 import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
+import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 
 function darken(color: number, factor: number): number {
   const r = Math.round(((color >> 16) & 0xff) * factor);
@@ -60,6 +61,29 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
     gfx.lineTo(top.x, top.y);
     gfx.closePath();
     gfx.fill({ color: darken(color, 0.65), alpha: 0.55 });
+  }
+
+  // OOB skirt — drop a vertical quad from south/east deformed corners to a
+  // floor below the world for map-edge tiles. Skip when mapBounds is unknown.
+  if (input.mapBounds) {
+    const southOOB = input.y === input.mapBounds.height - 1;
+    const eastOOB  = input.x === input.mapBounds.width  - 1;
+    if (southOOB) {
+      const verts = southSkirtVertices(tile, bottom, left);
+      gfx.beginPath();
+      gfx.moveTo(verts[0].x, verts[0].y);
+      for (let i = 1; i < verts.length; i++) gfx.lineTo(verts[i].x, verts[i].y);
+      gfx.closePath();
+      gfx.fill({ color: darken(color, 0.72) });
+    }
+    if (eastOOB) {
+      const verts = eastSkirtVertices(tile, right, bottom);
+      gfx.beginPath();
+      gfx.moveTo(verts[0].x, verts[0].y);
+      for (let i = 1; i < verts.length; i++) gfx.lineTo(verts[i].x, verts[i].y);
+      gfx.closePath();
+      gfx.fill({ color: darken(color, 0.55) });
+    }
   }
 
   // Per-tile outline — drawn after fill in same Graphics object so the
