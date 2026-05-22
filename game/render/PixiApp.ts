@@ -84,7 +84,9 @@ export class PixiApp {
     // Create explicit layer containers in draw order: terrain → grid → building → selection.
     // addChild order enforces z-layering; no zIndex tricks needed for cross-layer ordering.
     this.terrainContainer = new Container();
-    this.terrainContainer.sortableChildren = false;
+    // Elevation-aware iso depth sort: higher cells (and their south/east walls)
+    // must draw after lower neighbors. See DiamondTileVisual.computeTerrainZIndex.
+    this.terrainContainer.sortableChildren = true;
 
     this.gridContainer = new Container();
     this.gridContainer.sortableChildren = false;
