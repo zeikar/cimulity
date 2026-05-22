@@ -3,8 +3,9 @@
  */
 
 import { Container, Graphics } from 'pixi.js';
-import { tileToScreenWithHeight, ISO_CONFIG } from './IsoTransform';
+import { tileToScreenWithHeight, ISO_CONFIG, projectTileCornerScreen } from './IsoTransform';
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
+import type { CornerHeights } from './terrain/tileCornerHeights';
 
 export class SelectionRenderer {
   private container: Container;
@@ -17,6 +18,8 @@ export class SelectionRenderer {
   private dragPreviewColor = 0x4a4a4a;
   /** Latest height callback injected by refreshIfDirty. Null until first call — falls back to height=0. */
   private cachedGetHeight: ((x: number, y: number) => number) | null = null;
+  /** Latest corner-heights callback injected by refreshIfDirty. Null until first call — falls back to flat-diamond outline. */
+  private cachedGetCorners: ((x: number, y: number) => CornerHeights) | null = null;
   /** Last terrain revision seen; -1 means never synced. */
   private lastRev: number = -1;
 
@@ -85,56 +88,75 @@ export class SelectionRenderer {
    * Update the cached height callback on every call; redraw only when revision changes.
    * Keeps selection highlights aligned with terrain elevation each frame.
    */
-  refreshIfDirty(rev: number, getHeight: (x: number, y: number) => number): void {
+  refreshIfDirty(
+    rev: number,
+    getHeight: (x: number, y: number) => number,
+    getCorners?: (x: number, y: number) => CornerHeights,
+  ): void {
     this.cachedGetHeight = getHeight;
+    this.cachedGetCorners = getCorners ?? null;
     if (rev !== this.lastRev) {
       this.lastRev = rev;
       this.forceRedraw();
     }
   }
 
+  private cornerPointsFor(tile: TileCoord): ScreenCoord[] {
+    const c = this.cachedGetCorners?.(tile.x, tile.y);
+    if (c) {
+      return [
+        projectTileCornerScreen(tile, 'top',    c.topH),
+        projectTileCornerScreen(tile, 'right',  c.rightH),
+        projectTileCornerScreen(tile, 'bottom', c.bottomH),
+        projectTileCornerScreen(tile, 'left',   c.leftH),
+      ];
+    }
+    // Flat fallback: use cachedGetHeight at uniform height.
+    const h = this.cachedGetHeight?.(tile.x, tile.y) ?? 0;
+    const screen = tileToScreenWithHeight(tile, h);
+    const hw = ISO_CONFIG.TILE_WIDTH / 2;
+    const hh = ISO_CONFIG.TILE_HEIGHT / 2;
+    return [
+      { x: screen.x,      y: screen.y },
+      { x: screen.x + hw, y: screen.y + hh },
+      { x: screen.x,      y: screen.y + ISO_CONFIG.TILE_HEIGHT },
+      { x: screen.x - hw, y: screen.y + hh },
+    ];
+  }
+
   private renderHover(): void {
     this.hoverGraphics.clear();
     if (!this.currentHover) return;
-
-    const h = this.cachedGetHeight?.(this.currentHover.x, this.currentHover.y) ?? 0;
-    const screen = tileToScreenWithHeight(this.currentHover, h);
-    this.drawHighlight(this.hoverGraphics, screen, 0xffffff, 0.3);
+    const pts = this.cornerPointsFor(this.currentHover);
+    this.drawOutline(this.hoverGraphics, pts, 0xffffff, 0.3);
   }
 
   private renderSelected(): void {
     this.selectedGraphics.clear();
     if (!this.currentSelected) return;
-
-    const h = this.cachedGetHeight?.(this.currentSelected.x, this.currentSelected.y) ?? 0;
-    const screen = tileToScreenWithHeight(this.currentSelected, h);
-    this.drawHighlight(this.selectedGraphics, screen, 0xffff00, 0.5);
+    const pts = this.cornerPointsFor(this.currentSelected);
+    this.drawOutline(this.selectedGraphics, pts, 0xffff00, 0.5);
   }
 
   private renderDragPreview(): void {
     this.dragPreviewGraphics.clear();
     if (this.currentDragPreview.length === 0) return;
-
     for (const tile of this.currentDragPreview) {
-      const h = this.cachedGetHeight?.(tile.x, tile.y) ?? 0;
-      const screen = tileToScreenWithHeight(tile, h);
-      // Draw filled semi-transparent tile
+      const pts = this.cornerPointsFor(tile);
       this.dragPreviewGraphics.beginPath();
-      this.dragPreviewGraphics.moveTo(screen.x, screen.y);
-      this.dragPreviewGraphics.lineTo(screen.x + ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
-      this.dragPreviewGraphics.lineTo(screen.x, screen.y + ISO_CONFIG.TILE_HEIGHT);
-      this.dragPreviewGraphics.lineTo(screen.x - ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
+      this.dragPreviewGraphics.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        this.dragPreviewGraphics.lineTo(pts[i].x, pts[i].y);
+      }
       this.dragPreviewGraphics.closePath();
       this.dragPreviewGraphics.fill({ color: this.dragPreviewColor, alpha: 0.4 });
     }
   }
 
-  private drawHighlight(graphics: Graphics, screen: ScreenCoord, color: number, alpha: number): void {
+  private drawOutline(graphics: Graphics, points: ScreenCoord[], color: number, alpha: number): void {
     graphics.beginPath();
-    graphics.moveTo(screen.x, screen.y);
-    graphics.lineTo(screen.x + ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
-    graphics.lineTo(screen.x, screen.y + ISO_CONFIG.TILE_HEIGHT);
-    graphics.lineTo(screen.x - ISO_CONFIG.TILE_WIDTH / 2, screen.y + ISO_CONFIG.TILE_HEIGHT / 2);
+    graphics.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) graphics.lineTo(points[i].x, points[i].y);
     graphics.closePath();
     graphics.stroke({ color, width: 2, alpha });
   }

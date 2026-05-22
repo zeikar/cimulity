@@ -8,6 +8,7 @@ import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { GridRenderer } from './GridRenderer';
+import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
 import type { World } from '../core/World';
@@ -121,7 +122,11 @@ export class PixiApp {
       if (this.selectionRenderer && this.world) {
         const rev = this.world.getTerrainRevision();
         const terrain = this.world.getTerrain();
-        this.selectionRenderer.refreshIfDirty(rev, (x, y) => terrain.getRenderHeight(x, y));
+        this.selectionRenderer.refreshIfDirty(
+          rev,
+          (x, y) => terrain.getRenderHeight(x, y),
+          (x, y) => tileCornerHeights(terrain, x, y),
+        );
       }
     });
 
