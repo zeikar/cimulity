@@ -44,6 +44,7 @@ export default defineConfig({
         'game/core/heightShaping.ts',
         'game/core/waterMask.ts',
         'game/core/terrainGenerator.ts',
+        'game/render/terrain/tileCornerHeights.ts',
       ],
       thresholds: {
         lines: 80,
