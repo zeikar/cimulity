@@ -61,28 +61,26 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
 
   // Per-triangle shading. Adaptive diagonal split puts the fold along the ridge
   // of equal/maximum height so the dropped corner (when any) lands in exactly
-  // one triangle. Skip shading entirely when the chosen split's two endpoints
-  // share a height — the ridge is flat and the fold would just paint a phantom
-  // line on a coherent surface.
+  // one triangle. The `mean < maxH` predicate naturally suppresses shading on
+  // any triangle whose three corners are all at maxH, so planar ridges don't
+  // get a phantom fold line: only triangles that actually tilt below the ridge
+  // shade.
   const maxH = Math.max(c.topH, c.rightH, c.bottomH, c.leftH);
   const tbAtMax = (c.topH === maxH ? 1 : 0) + (c.bottomH === maxH ? 1 : 0);
   const lrAtMax = (c.leftH === maxH ? 1 : 0) + (c.rightH === maxH ? 1 : 0);
   const useTBSplit = tbAtMax >= lrAtMax;
-  const splitCornersEqual = useTBSplit ? c.topH === c.bottomH : c.leftH === c.rightH;
-  if (!splitCornersEqual) {
-    const shade = darken(color, 0.80);
-    const a = 0.45;
-    if (useTBSplit) {
-      const westMean = (c.bottomH + c.leftH + c.topH) / 3;
-      const eastMean = (c.bottomH + c.rightH + c.topH) / 3;
-      if (westMean < maxH) fillTri(gfx, bottom, left, top, shade, a);
-      if (eastMean < maxH) fillTri(gfx, bottom, right, top, shade, a);
-    } else {
-      const northMean = (c.leftH + c.topH + c.rightH) / 3;
-      const southMean = (c.leftH + c.bottomH + c.rightH) / 3;
-      if (northMean < maxH) fillTri(gfx, left, top, right, shade, a);
-      if (southMean < maxH) fillTri(gfx, left, bottom, right, shade, a);
-    }
+  const shade = darken(color, 0.80);
+  const a = 0.45;
+  if (useTBSplit) {
+    const westMean = (c.bottomH + c.leftH + c.topH) / 3;
+    const eastMean = (c.bottomH + c.rightH + c.topH) / 3;
+    if (westMean < maxH) fillTri(gfx, bottom, left, top, shade, a);
+    if (eastMean < maxH) fillTri(gfx, bottom, right, top, shade, a);
+  } else {
+    const northMean = (c.leftH + c.topH + c.rightH) / 3;
+    const southMean = (c.leftH + c.bottomH + c.rightH) / 3;
+    if (northMean < maxH) fillTri(gfx, left, top, right, shade, a);
+    if (southMean < maxH) fillTri(gfx, left, bottom, right, shade, a);
   }
 
   // OOB skirt — drop a vertical quad from south/east deformed corners to a
