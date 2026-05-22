@@ -5,16 +5,35 @@
 
 import { Graphics, Container } from 'pixi.js';
 import { projectTileCornerScreen } from '@/game/render/IsoTransform';
+import type { ScreenCoord } from '@/game/types/coordinates';
 import { tileFillColor } from '../palette';
 import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
+
+const SKIRT_COLOR = 0x3a2a18;
 
 function darken(color: number, factor: number): number {
   const r = Math.round(((color >> 16) & 0xff) * factor);
   const g = Math.round(((color >> 8)  & 0xff) * factor);
   const b = Math.round( (color        & 0xff) * factor);
   return (r << 16) | (g << 8) | b;
+}
+
+function fillTri(
+  gfx: Graphics,
+  a: ScreenCoord,
+  b: ScreenCoord,
+  c: ScreenCoord,
+  color: number,
+  alpha: number,
+): void {
+  gfx.beginPath();
+  gfx.moveTo(a.x, a.y);
+  gfx.lineTo(b.x, b.y);
+  gfx.lineTo(c.x, c.y);
+  gfx.closePath();
+  gfx.fill({ color, alpha });
 }
 
 function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
@@ -42,29 +61,36 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   gfx.closePath();
   gfx.fill({ color: fillColor });
 
-  // Per-triangle shading (depth cue for slopes; uses ORIGINAL color, not fillColor)
+  // Per-triangle shading. Adaptive diagonal split puts the fold along the ridge
+  // of equal/maximum height so the dropped corner (when any) lands in exactly
+  // one triangle. Skip shading entirely when the chosen split's two endpoints
+  // share a height — the ridge is flat and the fold would just paint a phantom
+  // line on a coherent surface.
   const maxH = Math.max(c.topH, c.rightH, c.bottomH, c.leftH);
-  const southMean = (c.bottomH + c.leftH + c.topH) / 3;
-  const eastMean  = (c.bottomH + c.rightH + c.topH) / 3;
-  if (southMean < maxH) {
-    gfx.beginPath();
-    gfx.moveTo(bottom.x, bottom.y);
-    gfx.lineTo(left.x, left.y);
-    gfx.lineTo(top.x, top.y);
-    gfx.closePath();
-    gfx.fill({ color: darken(color, 0.78), alpha: 0.55 });
-  }
-  if (eastMean < maxH) {
-    gfx.beginPath();
-    gfx.moveTo(bottom.x, bottom.y);
-    gfx.lineTo(right.x, right.y);
-    gfx.lineTo(top.x, top.y);
-    gfx.closePath();
-    gfx.fill({ color: darken(color, 0.65), alpha: 0.55 });
+  const tbAtMax = (c.topH === maxH ? 1 : 0) + (c.bottomH === maxH ? 1 : 0);
+  const lrAtMax = (c.leftH === maxH ? 1 : 0) + (c.rightH === maxH ? 1 : 0);
+  const useTBSplit = tbAtMax >= lrAtMax;
+  const splitCornersEqual = useTBSplit ? c.topH === c.bottomH : c.leftH === c.rightH;
+  if (!splitCornersEqual) {
+    const shade = darken(color, 0.80);
+    const a = 0.45;
+    if (useTBSplit) {
+      const westMean = (c.bottomH + c.leftH + c.topH) / 3;
+      const eastMean = (c.bottomH + c.rightH + c.topH) / 3;
+      if (westMean < maxH) fillTri(gfx, bottom, left, top, shade, a);
+      if (eastMean < maxH) fillTri(gfx, bottom, right, top, shade, a);
+    } else {
+      const northMean = (c.leftH + c.topH + c.rightH) / 3;
+      const southMean = (c.leftH + c.bottomH + c.rightH) / 3;
+      if (northMean < maxH) fillTri(gfx, left, top, right, shade, a);
+      if (southMean < maxH) fillTri(gfx, left, bottom, right, shade, a);
+    }
   }
 
   // OOB skirt — drop a vertical quad from south/east deformed corners to a
   // floor below the world for map-edge tiles. Skip when mapBounds is unknown.
+  // Uniform earth color across all skirts so the map's bottom edge reads as a
+  // single horizon band rather than a blue/green sawtooth following tile fills.
   if (input.mapBounds) {
     const southOOB = input.y === input.mapBounds.height - 1;
     const eastOOB  = input.x === input.mapBounds.width  - 1;
@@ -74,7 +100,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.moveTo(verts[0].x, verts[0].y);
       for (let i = 1; i < verts.length; i++) gfx.lineTo(verts[i].x, verts[i].y);
       gfx.closePath();
-      gfx.fill({ color: darken(color, 0.72) });
+      gfx.fill({ color: SKIRT_COLOR });
     }
     if (eastOOB) {
       const verts = eastSkirtVertices(tile, right, bottom);
@@ -82,7 +108,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.moveTo(verts[0].x, verts[0].y);
       for (let i = 1; i < verts.length; i++) gfx.lineTo(verts[i].x, verts[i].y);
       gfx.closePath();
-      gfx.fill({ color: darken(color, 0.55) });
+      gfx.fill({ color: SKIRT_COLOR });
     }
   }
 
