@@ -8,6 +8,8 @@
 
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
 import { ELEVATION_HEIGHT, MAX_ELEVATION, type Terrain } from '@/game/core';
+import { tileCornerHeights } from './terrain/tileCornerHeights';
+import { computeTerrainZIndex } from './terrain/terrainZIndex';
 
 export const ISO_CONFIG = {
   TILE_WIDTH: 64,
@@ -72,18 +74,24 @@ export function screenToTile(screen: ScreenCoord): TileCoord {
 }
 
 /**
- * Elevation-aware screen-to-tile picking.
+ * Elevation-aware screen-to-tile picking, deformed-polygon hit-test.
  *
- * Scans candidate tiles from MAX_ELEVATION down to 0 (topmost-wins).
- * For each elevation h, shifts the screen point up by h * ELEVATION_HEIGHT
- * (undoing the vertical lift) and checks if the cursor falls inside the
- * lifted diamond. First hit returns the candidate; flat fallback is used
- * when no elevated tile claims the cursor.
+ * Scans candidate tiles from MAX_ELEVATION down to 0 (topmost-wins). Per band:
+ * 1. Inverse-project the cursor as if it were at elevation h.
+ * 2. Scan a (2 * MAX_ELEVATION + 1)^2 neighborhood around the inverse-projected
+ *    tile — the lateral radius bounds the worst case where a tall wedge tile's
+ *    bottom corner sits up to MAX_ELEVATION iso-rows away from the cursor's
+ *    flat-projection tile.
+ * 3. For each in-bounds candidate at elevation h, build its deformed polygon
+ *    via projectTileCornerScreen + tileCornerHeights and test polygonContains
+ *    (inclusive boundary, general polygon — handles concave deformed quads).
+ * 4. Collect all hits in this band; return the one with max computeTerrainZIndex.
+ *    The tie-break is required because the inclusive boundary admits multiple
+ *    same-band hits at shared-edge cursors AND because the MIN-of-4 corner rule
+ *    permits same-height non-adjacent area-overlap (e.g. a same-h tall wedge
+ *    drapes over a same-h flat tile non-adjacent in tile coords).
  *
- * Flat fallback: returns screenToTile(screen) — may be OOB (preserves
- * current contract).
- *
- * center.y = top.y + TILE_HEIGHT/2 where top = tileToScreenWithHeight(cand, h)
+ * Flat fallback when no band has any hit: returns screenToTile(screen) (may be OOB).
  */
 export function screenToTileWithTerrain(
   screen: ScreenCoord,
@@ -91,25 +99,43 @@ export function screenToTileWithTerrain(
   mapWidth: number,
   mapHeight: number,
 ): TileCoord {
-  const halfW = ISO_CONFIG.TILE_WIDTH / 2;
-  const halfH = ISO_CONFIG.TILE_HEIGHT / 2;
+  const R = MAX_ELEVATION; // worst-case lateral radius
 
   for (let h = MAX_ELEVATION; h >= 0; h--) {
-    const rawH = screenToTileRaw(screen.x, screen.y + h * ELEVATION_HEIGHT);
-    const cand = { x: Math.floor(rawH.x), y: Math.floor(rawH.y) };
+    // Inverse-project the cursor as if it were at elevation h (undo the lift)
+    const lifted = { x: screen.x, y: screen.y + h * ELEVATION_HEIGHT };
+    const rawTile = screenToTileRaw(lifted.x, lifted.y);
+    const center = { x: Math.floor(rawTile.x), y: Math.floor(rawTile.y) };
 
-    if (cand.x < 0 || cand.x >= mapWidth || cand.y < 0 || cand.y >= mapHeight) continue;
-    if (terrain.getTileElevation(cand.x, cand.y) !== h) continue;
+    let bestHit: TileCoord | null = null;
+    let bestZ = -Infinity;
 
-    // Lifted diamond center: top corner + half tile height down
-    const top = tileToScreenWithHeight(cand, h);
-    const cx = top.x;
-    const cy = top.y + halfH;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        const cand = { x: center.x + dx, y: center.y + dy };
 
-    // Point-in-diamond test (inclusive <=)
-    if (Math.abs(screen.x - cx) / halfW + Math.abs(screen.y - cy) / halfH <= 1) {
-      return cand;
+        if (cand.x < 0 || cand.x >= mapWidth || cand.y < 0 || cand.y >= mapHeight) continue;
+        if (terrain.getTileElevation(cand.x, cand.y) !== h) continue;
+
+        const c = tileCornerHeights(terrain, cand.x, cand.y);
+        const poly = [
+          projectTileCornerScreen(cand, 'top',    c.topH),
+          projectTileCornerScreen(cand, 'right',  c.rightH),
+          projectTileCornerScreen(cand, 'bottom', c.bottomH),
+          projectTileCornerScreen(cand, 'left',   c.leftH),
+        ];
+
+        if (!polygonContains(poly, screen)) continue;
+
+        const z = computeTerrainZIndex(h, cand.x, cand.y);
+        if (z > bestZ) {
+          bestZ = z;
+          bestHit = cand;
+        }
+      }
     }
+
+    if (bestHit !== null) return bestHit;
   }
 
   // Flat fallback — preserves current contract (may be OOB)

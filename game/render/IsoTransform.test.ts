@@ -11,6 +11,7 @@ import {
   polygonContains,
 } from './IsoTransform';
 import { Terrain, ELEVATION_HEIGHT, MAX_ELEVATION } from '@/game/core';
+import { tileCornerHeights } from './terrain/tileCornerHeights';
 
 describe('tileToScreen', () => {
   it('maps the origin to the screen origin', () => {
@@ -126,7 +127,14 @@ describe('screenToTileWithTerrain — picking suite', () => {
 
   it('lifted center on raised tile (h=2): returns (5,5); flat inverse returns a different tile', () => {
     const terrain = new Terrain(10, 10);
-    terrain.unsafeSetElevation(5, 5, 2);
+    // Raise (5,5) and all 8 neighbors to h=2 so that tileCornerHeights gives all corners at 2.
+    // This ensures the deformed polygon is lifted to the h=2 screen position, matching
+    // the cursor placed via tileToScreenWithHeight(tile, 2).
+    for (let ny = 4; ny <= 6; ny++) {
+      for (let nx = 4; nx <= 6; nx++) {
+        terrain.unsafeSetElevation(nx, ny, 2);
+      }
+    }
 
     const liftedTop = tileToScreenWithHeight({ x: 5, y: 5 }, 2);
     const cursor = { x: liftedTop.x, y: liftedTop.y + ISO_CONFIG.TILE_HEIGHT / 2 };
@@ -152,7 +160,13 @@ describe('screenToTileWithTerrain — picking suite', () => {
     const terrain = new Terrain(10, 10);
     // A highly lifted tile (5,5) at h=3 — its lifted diamond covers the flat-inverse
     // landing zone of the cursor, so it should win.
-    terrain.unsafeSetElevation(5, 5, 3);
+    // Raise (5,5) and all 8 neighbors to h=3 so that tileCornerHeights gives all corners at 3,
+    // ensuring the deformed polygon is lifted to the h=3 screen position.
+    for (let ny = 4; ny <= 6; ny++) {
+      for (let nx = 4; nx <= 6; nx++) {
+        terrain.unsafeSetElevation(nx, ny, 3);
+      }
+    }
 
     // Cursor at the lifted center of (5,5)
     const liftedTop = tileToScreenWithHeight({ x: 5, y: 5 }, 3);
@@ -170,7 +184,14 @@ describe('screenToTileWithTerrain — picking suite', () => {
 
   it('diamond-edge inclusive: cursor at exact rhombus boundary of a lifted tile is accepted', () => {
     const terrain = new Terrain(10, 10);
+    // Raise (5,5) and its NW-quadrant neighbors (n, w, nw) to h=2 so that the top vertex
+    // of (5,5)'s deformed polygon is lifted to h=2. The top vertex = projectTileCornerScreen
+    // with topH=min(2,n,w,nw)=2, which places it at tileToScreenWithHeight({5,5},2).
+    // Only n/w/nw need to be lifted; e/s/se default 0 (those affect other corners).
     terrain.unsafeSetElevation(5, 5, 2);
+    terrain.unsafeSetElevation(5, 4, 2); // n
+    terrain.unsafeSetElevation(4, 5, 2); // w
+    terrain.unsafeSetElevation(4, 4, 2); // nw
 
     // Cursor at the top vertex of the lifted diamond — exactly on the boundary (sum = 1 in
     // the point-in-diamond formula: |0|/hw + |−hh|/hh = 0 + 1 = 1 ≤ 1).
@@ -186,7 +207,13 @@ describe('screenToTileWithTerrain — picking suite', () => {
 
   it('max elevation cap: cursor at lifted center of MAX_ELEVATION tile returns that tile', () => {
     const terrain = new Terrain(10, 10);
-    terrain.unsafeSetElevation(5, 5, MAX_ELEVATION);
+    // Raise (5,5) and all 8 neighbors to MAX_ELEVATION so that tileCornerHeights gives all
+    // corners at MAX_ELEVATION, ensuring the deformed polygon sits at the fully lifted position.
+    for (let ny = 4; ny <= 6; ny++) {
+      for (let nx = 4; nx <= 6; nx++) {
+        terrain.unsafeSetElevation(nx, ny, MAX_ELEVATION);
+      }
+    }
 
     const top = tileToScreenWithHeight({ x: 5, y: 5 }, MAX_ELEVATION);
     const cursor = { x: top.x, y: top.y + ISO_CONFIG.TILE_HEIGHT / 2 };
@@ -319,5 +346,156 @@ describe('polygonContains', () => {
       return true;
     }
     expect(convexContains(poly as Array<{ x: number; y: number }>, sample)).toBe(false);
+  });
+});
+
+describe('screenToTileWithTerrain (deformed-polygon picker)', () => {
+  // Helper: build deformed polygon for a tile from a Terrain object.
+  function buildPoly(terrain: Terrain, tx: number, ty: number) {
+    const c = tileCornerHeights(terrain, tx, ty);
+    return [
+      projectTileCornerScreen({ x: tx, y: ty }, 'top',    c.topH),
+      projectTileCornerScreen({ x: tx, y: ty }, 'right',  c.rightH),
+      projectTileCornerScreen({ x: tx, y: ty }, 'bottom', c.bottomH),
+      projectTileCornerScreen({ x: tx, y: ty }, 'left',   c.leftH),
+    ];
+  }
+
+  it('slope_s: cursor at polygon centroid of (5,5) returns (5,5)', () => {
+    // (5,5)=2, all 8 neighbors=2 except s=(5,6)=1.
+    // tileCornerHeights(5,5): topH=2, rightH=2, bottomH=min(2,e=2,s=1,se=2)=1, leftH=min(2,s=1,w=2,sw=2)=1
+    const terrain = new Terrain(10, 10);
+    terrain.unsafeSetElevation(5, 5, 2);
+    // Set all 8 neighbors to 2 except (5,6)
+    for (const [nx, ny] of [[4,4],[5,4],[6,4],[4,5],[6,5],[4,6],[6,6]] as [number,number][]) {
+      terrain.unsafeSetElevation(nx, ny, 2);
+    }
+    terrain.unsafeSetElevation(5, 6, 1);
+
+    const poly = buildPoly(terrain, 5, 5);
+    const centroid = {
+      x: poly.reduce((s, p) => s + p.x, 0) / poly.length,
+      y: poly.reduce((s, p) => s + p.y, 0) / poly.length,
+    };
+
+    const result = screenToTileWithTerrain(centroid, terrain, 10, 10);
+    expect(result).toEqual({ x: 5, y: 5 });
+  });
+
+  it('diagonal NE deformation: cursor at polygon centroid of (5,5) returns (5,5)', () => {
+    // (5,5)=2, ne=(6,4)=1, all other 7 neighbors=2.
+    // tileCornerHeights(5,5): topH=2, rightH=min(2,n=2,e=2,ne=1)=1, bottomH=2, leftH=2
+    const terrain = new Terrain(10, 10);
+    terrain.unsafeSetElevation(5, 5, 2);
+    for (const [nx, ny] of [[4,4],[5,4],[4,5],[6,5],[4,6],[5,6],[6,6]] as [number,number][]) {
+      terrain.unsafeSetElevation(nx, ny, 2);
+    }
+    terrain.unsafeSetElevation(6, 4, 1);
+
+    const poly = buildPoly(terrain, 5, 5);
+    const centroid = {
+      x: poly.reduce((s, p) => s + p.x, 0) / poly.length,
+      y: poly.reduce((s, p) => s + p.y, 0) / poly.length,
+    };
+
+    const result = screenToTileWithTerrain(centroid, terrain, 10, 10);
+    expect(result).toEqual({ x: 5, y: 5 });
+  });
+
+  it('radius-validating wedge: cursor inside deformed body (outside flat diamond) returns (8,8)', () => {
+    // (8,8)=8, n=(8,7)=8, w=(7,8)=8, nw=(7,7)=8, all other neighbors default 0.
+    // tileCornerHeights(8,8): topH=8, rightH=0, bottomH=0, leftH=0 — tall wedge.
+    // The deformed polygon's body extends far below the flat-diamond boundary.
+    // Cursor at (0, 230): inside deformed polygon but outside flat diamond;
+    // flat fallback gives (7,7), not (8,8). Old radius-0 algo fails here.
+    const terrain = new Terrain(10, 10);
+    terrain.unsafeSetElevation(8, 8, MAX_ELEVATION);
+    terrain.unsafeSetElevation(8, 7, MAX_ELEVATION); // n
+    terrain.unsafeSetElevation(7, 8, MAX_ELEVATION); // w
+    terrain.unsafeSetElevation(7, 7, MAX_ELEVATION); // nw
+
+    // Verify deformed polygon contains (0, 230) and flat fallback does not give (8,8)
+    const poly = buildPoly(terrain, 8, 8);
+    expect(polygonContains(poly, { x: 0, y: 230 })).toBe(true);
+    expect(screenToTile({ x: 0, y: 230 })).not.toEqual({ x: 8, y: 8 });
+
+    const result = screenToTileWithTerrain({ x: 0, y: 230 }, terrain, 10, 10);
+    expect(result).toEqual({ x: 8, y: 8 });
+  });
+
+  it('same-height non-adjacent area-overlap: max-z winner returned (B wins over A)', () => {
+    // 12x12 terrain.
+    // Tile A at (5,5) H=8: incident cells set so topH=8, rightH=8, bottomH=0, leftH=0.
+    //   n=(5,4)=8, nw=(4,4)=8, ne=(6,4)=8, w=(4,5)=8, e=(6,5)=8 → topH=8, rightH=8
+    //   s=(5,6)=0, se=(6,6)=0, sw=(4,6)=0                          → bottomH=0, leftH=0
+    // Tile B at (8,8) H=8 flat: all 8 neighbors=8 → all corners at 8.
+    // Cursor at (0, 180) is interior to BOTH deformed polygons.
+    // computeTerrainZIndex(8,5,5)=8_010_005 < computeTerrainZIndex(8,8,8)=8_016_008.
+    // Picker must return B=(8,8).
+    const terrain = new Terrain(12, 12);
+
+    // Tile A (5,5) = 8
+    terrain.unsafeSetElevation(5, 5, 8);
+    terrain.unsafeSetElevation(5, 4, 8); // n
+    terrain.unsafeSetElevation(4, 4, 8); // nw
+    terrain.unsafeSetElevation(6, 4, 8); // ne
+    terrain.unsafeSetElevation(4, 5, 8); // w
+    terrain.unsafeSetElevation(6, 5, 8); // e
+    // s, sw, se default to 0
+
+    // Tile B (8,8) = 8, all neighbors = 8
+    terrain.unsafeSetElevation(8, 8, 8);
+    terrain.unsafeSetElevation(7, 7, 8); // nw
+    terrain.unsafeSetElevation(8, 7, 8); // n
+    terrain.unsafeSetElevation(9, 7, 8); // ne
+    terrain.unsafeSetElevation(7, 8, 8); // w
+    terrain.unsafeSetElevation(9, 8, 8); // e
+    terrain.unsafeSetElevation(7, 9, 8); // sw
+    terrain.unsafeSetElevation(8, 9, 8); // s
+    terrain.unsafeSetElevation(9, 9, 8); // se
+
+    const cursor = { x: 0, y: 180 };
+
+    // Verify both polygons contain the cursor
+    const polyA = buildPoly(terrain, 5, 5);
+    const polyB = buildPoly(terrain, 8, 8);
+    expect(polygonContains(polyA, cursor)).toBe(true);
+    expect(polygonContains(polyB, cursor)).toBe(true);
+
+    // Picker must return B (higher z-index)
+    const result = screenToTileWithTerrain(cursor, terrain, 12, 12);
+    expect(result).toEqual({ x: 8, y: 8 });
+  });
+
+  it('shared-edge disambiguation: one cursor inside A, one inside B, picks correctly', () => {
+    // A=(5,5) H=2 with all default-0 neighbors → tileCornerHeights all 0 (flat diamond at h=0 positions).
+    // B=(5,6) H=1 with default-0 neighbors → tileCornerHeights all 0.
+    // Both tiles produce flat-diamond polygons at their respective h=0 tile positions.
+    // Cursor at A's centroid = center of A's flat diamond → h=2 band hits A.
+    // Cursor at B's centroid = center of B's flat diamond → h=2 band has no hit, h=1 band hits B.
+    const terrain = new Terrain(10, 10);
+    terrain.unsafeSetElevation(5, 5, 2);
+    terrain.unsafeSetElevation(5, 6, 1);
+
+    // A's deformed polygon corners (all at h=0 since neighbors are 0):
+    // screen0(5,5) = (0, 160); poly = [(0,160),(32,176),(0,192),(-32,176)]
+    // centroid = (0, 176)
+    const cursorA = { x: 0, y: 176 };
+
+    // B's deformed polygon corners (all at h=0):
+    // screen0(5,6) = (-32, 176); poly = [(-32,176),(0,192),(-32,208),(-64,192)]
+    // centroid = (-32, 192)
+    const cursorB = { x: -32, y: 192 };
+
+    // Verify cursor placement via buildPoly
+    const polyA = buildPoly(terrain, 5, 5);
+    const polyB = buildPoly(terrain, 5, 6);
+    expect(polygonContains(polyA, cursorA)).toBe(true);
+    expect(polygonContains(polyB, cursorA)).toBe(false);
+    expect(polygonContains(polyA, cursorB)).toBe(false);
+    expect(polygonContains(polyB, cursorB)).toBe(true);
+
+    expect(screenToTileWithTerrain(cursorA, terrain, 10, 10)).toEqual({ x: 5, y: 5 });
+    expect(screenToTileWithTerrain(cursorB, terrain, 10, 10)).toEqual({ x: 5, y: 6 });
   });
 });
