@@ -76,13 +76,19 @@ export function upwardTriangleNormal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
 // ---------------------------------------------------------------------------
 
 /**
- * World-space direction FROM the surface TOWARD the light source (NW and
- * above). Terrain shading derives from this vector via faceBrightness().
- * Cube face brightness and cubeDropShadow offsets are tracked as follow-up
- * PRs that will also key off this constant; those migrations require
- * additional work (cube face normals + density-tint composition;
- * world-light-to-screen projection for the shadow offset) — not a drop-in
- * call-site swap.
+ * World-space direction FROM the surface TOWARD the light source.
+ *
+ * Currently `(-1, 0, 1.0)` normalized: world **pure-west and above** — which iso-projects
+ * to **screen ~10 o'clock** (visually "upper-left / NW on screen"). The deliberate `y = 0`
+ * choice was a design decision: the screen-NW look matched user intuition better than the
+ * earlier `[-1, -1, 1.5]` (true world-NW, projected to screen 12 o'clock); the trade-off
+ * is that world N/S slope normals get equal brightness (their y component is multiplied
+ * by `LIGHT_DIR_WORLD[1] = 0`). E-W contrast is the dominant visual cue.
+ *
+ * Terrain shading derives from this vector via `faceBrightness()`; cube drop-shadow
+ * direction derives from it via `shadowOffsetScreen()`. Cube face brightness (currently
+ * 55% / 75% magic numbers in `CubeBuildingVisual`) is still a planned follow-up; that
+ * migration needs cube-side face normals + density-tint composition.
  */
 export const LIGHT_DIR_WORLD: Vec3 = normalizeStrict([-1, 0, 1.0], 'LIGHT_DIR_WORLD');
 

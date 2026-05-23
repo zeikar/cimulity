@@ -1,19 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { Container } from 'pixi.js';
-import { SHADOW_COLOR, SHADOW_ALPHA, SHADOW_MIN_OFFSET_X, cubeShadowPolygon } from './cubeDropShadow';
+import { SHADOW_COLOR, SHADOW_ALPHA, SHADOW_MIN_LENGTH, cubeShadowPolygon } from './cubeDropShadow';
 import { shadowOffsetScreen } from '../lighting';
 import { ELEVATION_HEIGHT } from '@/game/core';
 import { cubeFacePolygons } from './cubeGeometry';
 import { SHADOW_Z_OFFSET, CubeBuildingVisual } from './CubeBuildingVisual';
 
-// Per-test helper mirroring cubeDropShadow's derivation: pixel offset for a given
-// mainLift, derived from shadowOffsetScreen and clamped by SHADOW_MIN_OFFSET_X.
+// Per-test helper mirroring cubeDropShadow's derivation: shadow offset for a given
+// mainLift, derived from shadowOffsetScreen with magnitude-clamped to SHADOW_MIN_LENGTH.
 const expectedOffset = (mainLift: number): { ox: number; oy: number } => {
   const unit = shadowOffsetScreen(1);
   const z = mainLift / ELEVATION_HEIGHT;
-  const ox = Math.max(SHADOW_MIN_OFFSET_X, unit.dx * z);
-  const oy = unit.dy * (ox / unit.dx);
-  return { ox, oy };
+  const unitLen = Math.hypot(unit.dx, unit.dy);
+  const finalLen = Math.max(SHADOW_MIN_LENGTH, unitLen * z);
+  const scale = finalLen / unitLen;
+  return { ox: unit.dx * scale, oy: unit.dy * scale };
 };
 
 describe('cubeDropShadow', () => {
@@ -33,8 +34,8 @@ describe('cubeDropShadow', () => {
     expect(unit.dy).toBeCloseTo(unit.dx / 2, 9);
   });
 
-  it('SHADOW_MIN_OFFSET_X is 4 (floor so low cubes still cast a visible shadow)', () => {
-    expect(SHADOW_MIN_OFFSET_X).toBe(4);
+  it('SHADOW_MIN_LENGTH is 4 (length floor so low cubes still cast a visible shadow)', () => {
+    expect(SHADOW_MIN_LENGTH).toBe(4);
   });
 
   // Fixture A: full-width synthetic, mainLift = 40, un-inset base half-spans X=32 Y=16 at center y=0
@@ -76,17 +77,18 @@ describe('cubeDropShadow', () => {
     expect(out[3].x).toBeCloseTo(-24 + ox, 6);
   });
 
-  it('low-lift clamp: when mainLift × factor < SHADOW_MIN_OFFSET_X, falls back to floor', () => {
-    // mainLift = 5 → 5 * 0.22 = 1.1, clamped up to MIN_OFFSET_X = 4
+  it('low-lift clamp: natural shadow length < SHADOW_MIN_LENGTH falls back to min-length floor along light direction', () => {
+    // mainLift = 5 → z ≈ 0.42 → natural length ≈ 2.95·0.42 = 1.23 px, clamped UP to 4
+    // px along the unit direction (0.894, 0.447) → (3.578, 1.789) px screen offset.
     const facesLow = {
       top:   [{x:0,y:-21},{x:32,y:-5},{x:0,y:11},{x:-32,y:-5}],
       left:  [{x:0,y:11},{x:-32,y:-5},{x:-32,y:0},{x:0,y:16}],   // left[2].y - left[1].y = 0 - (-5) = 5
       right: [{x:32,y:-5},{x:0,y:11},{x:0,y:16},{x:32,y:0}],
     };
     const out = cubeShadowPolygon(facesLow);
-    // expected offset = max(4, 5 * 0.22) = 4 X, 2 Y
-    expect(out[0].x).toBeCloseTo(0 + 4, 6);
-    expect(out[0].y).toBeCloseTo(-16 + 2, 6);   // top[0].y + mainLift(5) + offY(2) = -21 + 5 + 2 = -14, baseY=-16+offY=-14 ✓
+    const { ox, oy } = expectedOffset(5);
+    expect(out[0].x).toBeCloseTo(0 + ox, 6);
+    expect(out[0].y).toBeCloseTo(-21 + 5 + oy, 6);   // top[0].y + mainLift + oy
   });
 
   it('source-aligned live test: cubeFacePolygons commercial level 3', () => {
@@ -156,18 +158,22 @@ describe('cubeDropShadow', () => {
     }
   });
 
-  it('mainLift = 0 degenerate: clamped offset = MIN_OFFSET_X applies, shadow stays at top diamond plane', () => {
+  it('mainLift = 0 degenerate: SHADOW_MIN_LENGTH floor applies, shadow stays at top diamond plane', () => {
     const facesZeroLift = {
       top:   [{x:0,y:-16},{x:32,y:0},{x:0,y:16},{x:-32,y:0}],
       left:  [{x:0,y:16},{x:-32,y:0},{x:-32,y:0},{x:0,y:16}],
       right: [{x:32,y:0},{x:0,y:16},{x:0,y:16},{x:32,y:0}],
     };
-    // mainLift = 0 ⇒ offset = max(4, 0) = 4 X, 2 Y
     const out = cubeShadowPolygon(facesZeroLift);
-    expect(out[0]).toEqual({x:0+4, y:-16+2});
-    expect(out[1]).toEqual({x:32+4, y:0+2});
-    expect(out[2]).toEqual({x:0+4, y:16+2});
-    expect(out[3]).toEqual({x:-32+4, y:0+2});
+    const { ox, oy } = expectedOffset(0);
+    expect(out[0].x).toBeCloseTo(0 + ox, 6);
+    expect(out[0].y).toBeCloseTo(-16 + oy, 6);
+    expect(out[1].x).toBeCloseTo(32 + ox, 6);
+    expect(out[1].y).toBeCloseTo(0 + oy, 6);
+    expect(out[2].x).toBeCloseTo(0 + ox, 6);
+    expect(out[2].y).toBeCloseTo(16 + oy, 6);
+    expect(out[3].x).toBeCloseTo(-32 + ox, 6);
+    expect(out[3].y).toBeCloseTo(0 + oy, 6);
   });
 
   // SHADOW_Z_OFFSET invariant: shadow Graphics draw before all face Graphics in the building layer.
