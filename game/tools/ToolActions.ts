@@ -19,6 +19,45 @@ function isStructuredCell(world: World, tile: Tile, x: number, y: number): boole
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
 }
 
+/**
+ * Returns true iff lowering cell (x, y) to newElev would break the flatness of
+ * any 4-cardinal in-bounds structured neighbor (ROAD / zone / building
+ * footprint). Per slopeMaskFor semantics, a structured cell gains a LOWER_*
+ * bit iff one of its cardinals is LOWER than its own center — so this guard
+ * fires only when newElev < structuredElev. Raising the player tile cannot
+ * trigger this (the structured cell sees its cardinal at a HIGHER elevation,
+ * which leaves the LOWER_* bit unset). Called only from the down builder.
+ * Pure read against world.
+ */
+function wouldBreakStructuredCardinalFlatness(
+  world: World,
+  x: number,
+  y: number,
+  newElev: number
+): boolean {
+  const terrain = world.getTerrain();
+  const map = world.getMap();
+  const w = terrain.getWidth();
+  const h = terrain.getHeight();
+  const cardinalOffsets: ReadonlyArray<readonly [number, number]> = [
+    [0, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+  ];
+  for (const [ox, oy] of cardinalOffsets) {
+    const cx = x + ox;
+    const cy = y + oy;
+    if (cx < 0 || cy < 0 || cx >= w || cy >= h) continue;
+    const neighborTile = map.getTile(cx, cy);
+    if (!neighborTile) continue;
+    if (!isStructuredCell(world, neighborTile, cx, cy)) continue;
+    const neighborElev = terrain.getTileElevation(cx, cy);
+    if (newElev < neighborElev) return true;
+  }
+  return false;
+}
+
 type CascadeDirection = 'up' | 'down';
 
 interface CascadeCell {
@@ -54,6 +93,7 @@ function cellKey(x: number, y: number): string {
  *
  * Pure read against world; never mutates.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function computeCascade(
   world: World,
   sourceX: number,
@@ -304,53 +344,78 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
 
 /**
  * Build terrain-raise commands.
- * Computes a cascade closure per source tile via `computeCascade('up')` —
- * the source plus any 8-neighbor whose original elevation would violate the
- * delta-1 invariant against the raised source, recursively. Cascade aborts
- * (no partial mutation) on OOB / structured / clamp / wrong-direction cliff.
- * Emits one elevation command per cascade cell in ascending originalElev
- * order so each `setElevation` passes against the partial dispatch state.
+ * Per-tile +1: clamps to MAX_ELEVATION, slope-checked via
+ * Terrain.canPlayerSetElevation (delta-3 player cap). Structured cells
+ * (ROAD / zone / building footprint) reject the edit. Raising never breaks
+ * an adjacent structured cell's flatness (slopeMaskFor only sets LOWER_*
+ * bits for cardinals lower than center), so no D4 guard is needed here.
  * Reads world only to decide intent; never mutates core.
  */
 function buildTerrainUpCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const commands: ToolCommand[] = [];
+  const terrain = world.getTerrain();
+  const map = world.getMap();
   for (const { x, y } of tiles) {
-    const cascade = computeCascade(world, x, y, 'up');
-    if (!cascade) continue;
-    for (const c of cascade) {
-      commands.push({ kind: 'elevation', x: c.x, y: c.y, elevation: c.newElev });
-    }
+    const tile = map.getTile(x, y);
+    if (!tile) continue;
+    if (isStructuredCell(world, tile, x, y)) continue;
+    const current = terrain.getTileElevation(x, y);
+    const next = current + 1;
+    if (next > MAX_ELEVATION) continue;
+    if (!terrain.canPlayerSetElevation(x, y, next)) continue;
+    // No D4 guard on raise: raising the player tile makes it HIGHER than any
+    // structured cardinal, which cannot set a LOWER_* bit on the structured cell.
+    commands.push({ kind: 'elevation', x, y, elevation: next });
   }
   return commands;
 }
 
 /**
  * Build terrain-lower commands.
- * Computes a cascade closure per source tile via `computeCascade('down')` —
- * the source plus any 8-neighbor whose original elevation would violate the
- * delta-1 invariant against the lowered source, recursively. Cascade aborts
- * on OOB / structured / clamp / wrong-direction cliff / would-break-structured-
- * cardinal-flatness (lower-only). Emits commands in descending originalElev
- * order (highest first) so each `setElevation` passes during dispatch.
+ * Per-tile -1: clamps to SEA_LEVEL, slope-checked via
+ * Terrain.canPlayerSetElevation (delta-3 player cap). Structured cells
+ * reject the edit. The D4 guard wouldBreakStructuredCardinalFlatness
+ * additionally rejects lowering that would set a LOWER_* slope-mask bit
+ * on a 4-cardinal structured neighbor (preserving road/zone/building
+ * flatness).
  *
- * DIRT→SEA_LEVEL paired write: when a cascade cell that's DIRT lands at
- * SEA_LEVEL, emit a tile-write (DIRT→GRASS) immediately before its elevation
- * command to preserve the `elevation <= SEA_LEVEL ⇒ GRASS` save/render
- * invariant. The slope/cascade preflight already gates atomicity of the pair.
+ * DIRT → SEA_LEVEL paired write: when TERRAIN_DOWN brings a DIRT tile to
+ * SEA_LEVEL, emit a tile-write (DIRT → GRASS) immediately before its
+ * elevation command to preserve the `elevation <= SEA_LEVEL ⇒ GRASS`
+ * save invariant.
+ *
+ * Atomicity contract (per Design D6): the paired write is two sequential
+ * commands. The dispatcher does NOT roll back partial mutations — that
+ * invariant is owned by the builder. Per-tile preflight uses
+ * canPlayerSetElevation against pre-batch state. Within a same-direction
+ * drag, earlier commands MAY mutate this cell's 8-neighbors (adjacent
+ * rect cells are 8-neighbors). The apply step still succeeds because
+ * every edited cell shifts by the same ±1 step: relative deltas BETWEEN
+ * edited cells stay unchanged across the batch (both moved by the same
+ * step), and deltas to fixed OUTSIDE neighbors are exactly what per-cell
+ * preflight already validated. A future builder change that mixes
+ * directions or emits unequal steps within one pass would violate this —
+ * the DIRT partial-mutation regression and the new adjacent-drag-both-
+ * commit test in CommandDispatcher.test.ts are the guards.
  * Reads world only to decide intent; never mutates core.
  */
 function buildTerrainDownCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const commands: ToolCommand[] = [];
+  const terrain = world.getTerrain();
+  const map = world.getMap();
   for (const { x, y } of tiles) {
-    const cascade = computeCascade(world, x, y, 'down');
-    if (!cascade) continue;
-    for (const c of cascade) {
-      const tile = world.getMap().getTile(c.x, c.y);
-      if (tile && tile.type === TileType.DIRT && c.newElev <= SEA_LEVEL) {
-        commands.push({ kind: 'tile', x: c.x, y: c.y, tile: createTile(c.x, c.y, TileType.GRASS) });
-      }
-      commands.push({ kind: 'elevation', x: c.x, y: c.y, elevation: c.newElev });
+    const tile = map.getTile(x, y);
+    if (!tile) continue;
+    if (isStructuredCell(world, tile, x, y)) continue;
+    const current = terrain.getTileElevation(x, y);
+    const next = current - 1;
+    if (next < SEA_LEVEL) continue;
+    if (!terrain.canPlayerSetElevation(x, y, next)) continue;
+    if (wouldBreakStructuredCardinalFlatness(world, x, y, next)) continue;
+    if (tile.type === TileType.DIRT && next <= SEA_LEVEL) {
+      commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
     }
+    commands.push({ kind: 'elevation', x, y, elevation: next });
   }
   return commands;
 }

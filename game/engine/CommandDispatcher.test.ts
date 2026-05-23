@@ -519,12 +519,10 @@ describe('executeClick - TERRAIN_UP / TERRAIN_DOWN', () => {
     expect(world.getTerrain().getTileElevation(2, 2)).toBe(MAX_ELEVATION);
   });
 
-  it('UP slope-blocked: neighbor too far below blocks the raise', () => {
-    // Center at 1, neighbor (1,2) at 4; raising center to 2 would give delta |4-2|=2 > 1
-    // Wait — the slope check is on the proposed new elevation vs neighbors.
-    // Center would go from 1→2. Neighbor (1,2) is at 4. delta |4-2|=2 > 1 → blocked.
+  it('UP slope-cap blocked: neighbor 6 blocks raise 1→2 (delta 4 > cap 3)', () => {
+    // Neighbor at 6, center raises 1→2: |6-2|=4 > cap 3 → blocked.
     const world = makeWorld(5);
-    world.getTerrain().unsafeSetElevation(1, 2, 4);
+    world.getTerrain().unsafeSetElevation(1, 2, 6);
 
     const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
 
@@ -552,15 +550,14 @@ describe('executeClick - TERRAIN_UP / TERRAIN_DOWN', () => {
   });
 
   it('DOWN slope-blocked: steep neighbor blocks the lower', () => {
-    // Center at 5, neighbor (1,2) at 2. Proposed next = 4. |2-4|=2 > 1 → blocked.
+    // Center at 5, neighbor (1,2) at 0: |0-4|=4 > cap 3 → blocked.
     const world = makeWorld(5);
-    // First raise all neighbors and center to 5 to avoid slope issues, then set specific values
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         world.getTerrain().unsafeSetElevation(2 + dx, 2 + dy, 5);
       }
     }
-    world.getTerrain().unsafeSetElevation(1, 2, 2);
+    world.getTerrain().unsafeSetElevation(1, 2, 0);
 
     const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
 
@@ -626,9 +623,9 @@ describe('executeClick - TERRAIN_UP / TERRAIN_DOWN', () => {
   });
 
   it('DIRT → SEA_LEVEL slope-blocked: tile stays DIRT, elevation unchanged', () => {
+    // Neighbor at 4 makes |4-0|=4 > cap 3, so preflight rejects — neither tile nor elevation commits.
     const world = makeWorld(5);
-    // Raise neighbor (1,2) to 3 so lowering center from 1→0 would give |3-0|=3 > 1 → blocked
-    world.getTerrain().unsafeSetElevation(1, 2, 3);
+    world.getTerrain().unsafeSetElevation(1, 2, 4);
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
 
     const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
@@ -647,6 +644,117 @@ describe('executeClick - TERRAIN_UP / TERRAIN_DOWN', () => {
     const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
 
     expect(result.changedTiles.length).toBe(2);
+  });
+
+  it('cap-3 UP boundary: neighbor at 5 (delta 3 from new elev 2) ACCEPTS raise', () => {
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(1, 2, 5);
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(2);
+  });
+
+  it('cap-3 UP boundary: neighbor at 6 (delta 4 > cap) REJECTS raise', () => {
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(1, 2, 6);
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(1);
+  });
+
+  it('cap-3 DOWN boundary: center 4 with neighbor at 6 (delta 3 = cap from new elev 3) ACCEPTS lower', () => {
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(2, 2, 4);
+    world.getTerrain().unsafeSetElevation(1, 2, 6);
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(3);
+  });
+
+  it('cap-3 DOWN boundary: center 4 with neighbor at 7 (delta 4 > cap from new elev 3) REJECTS lower', () => {
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(2, 2, 4);
+    world.getTerrain().unsafeSetElevation(1, 2, 7);
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(4);
+  });
+
+  it('needle-spike UP flow: four sequential TERRAIN_UP clicks on isolated tile (flat-1 neighbors) — clicks 1/2/3 raise 1→2→3→4, click 4 rejected at the cap', () => {
+    // Each accepted click commits via applyCommands → next call sees the new elevation.
+    // Cap-3 boundary: at center=4 with neighbors=1, next=5 gives |1-5|=4 > cap.
+    const world = makeWorld(5);
+    expect(executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world).changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(2);
+    expect(executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world).changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(3);
+    expect(executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world).changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(4);
+    expect(executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world).changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(4);
+  });
+
+  it('needle-spike DOWN flow: lower an isolated peak at elev 4 (flat-1 neighbors) — four lowers reach SEA_LEVEL, fifth rejected at the floor', () => {
+    // Pre-seed (2,2)=4 with neighbors=1. All four lowers stay within cap-3 because neighbors don't change.
+    // Fifth click hits the SEA_LEVEL floor (not the cap).
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(2, 2, 4);
+    for (const expectedElev of [3, 2, 1, SEA_LEVEL]) {
+      const r = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+      expect(r.changedTiles).toContainEqual({ x: 2, y: 2 });
+      expect(world.getTerrain().getTileElevation(2, 2)).toBe(expectedElev);
+    }
+    expect(executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world).changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(SEA_LEVEL);
+  });
+
+  it('raise next to a ROAD at SAME elevation is ACCEPTED — raise cannot add a LOWER bit to the road bitmask (D4 lower-only)', () => {
+    // Default world: all elevation 1. Road at (3,2). Raise (2,2) from 1→2.
+    // Road's west neighbor becomes 2 > road's elev 1 → bit unset → flat preserved.
+    const world = makeWorld(5);
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ROAD));
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(2);
+  });
+
+  it('lower next to a ROAD at SAME elevation is REJECTED — would set a LOWER bit on the road bitmask (D4)', () => {
+    // Seed map to 2 so DOWN is slope-legal; road at (3,2). Lower (2,2) from 2→1.
+    const world = makeWorld(5);
+    for (let y = 0; y < 5; y++) {
+      for (let x = 0; x < 5; x++) {
+        world.getTerrain().unsafeSetElevation(x, y, 2);
+      }
+    }
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ROAD));
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(2);
+  });
+
+  it('DIRT → SEA_LEVEL accept at cap boundary: neighbor at 3 (delta 3 = cap) → atomic GRASS + SEA_LEVEL commit, no partial mutation', () => {
+    // DIRT at (2,2) elev 1, neighbor (1,2) at 3. Lower 1→0: |3-0|=3 ≤ cap → preflight accepts.
+    // Builder emits paired {tile GRASS, elevation 0}; dispatcher applies both via setPlayerElevation.
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    world.getTerrain().unsafeSetElevation(1, 2, 3);
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(SEA_LEVEL);
+    expect(world.isWater(2, 2)).toBe(true);
+    expect(result.changedTiles.length).toBe(2);
+  });
+
+  it('DIRT → SEA_LEVEL reject above cap: neighbor at 4 (delta 4 > cap) → preflight rejects, tile stays DIRT, elevation unchanged (no partial GRASS write)', () => {
+    // Cap exceeded at the builder layer — preflight emits zero commands, so no tile-write either.
+    // Pins the per-tile atomicity contract: a rejected paired DIRT write leaves the DIRT tile untouched.
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    world.getTerrain().unsafeSetElevation(1, 2, 4);
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(1);
   });
 });
 
@@ -692,11 +800,9 @@ describe('executeDrag / previewDrag - TERRAIN_UP / TERRAIN_DOWN', () => {
   });
 
   it('Per-tile slope rejection inside drag (D6): slope-blocked cell is skipped, others change', () => {
-    // 5×5 world. Drag DOWN over (1,1)→(2,2). Seed outside cell (3,3) to elevation 3 so that
-    // only cell (2,2) (proposed: 1→0) sees |3-0|=3 > 1 → slope-blocked (diagonal neighbor).
-    // Cells (1,1), (2,1), (1,2) are safe — (3,3) is not within 1-step of any of them.
+    // Seed outside cell (3,3) to elevation 4 so that only cell (2,2) (proposed: 1→0) sees |4-0|=4 > cap 3 → slope-blocked.
     const world = makeWorld(5);
-    world.getTerrain().unsafeSetElevation(3, 3, 3);
+    world.getTerrain().unsafeSetElevation(3, 3, 4);
 
     const result = executeDrag(Tool.TERRAIN_DOWN, { x: 1, y: 1 }, { x: 2, y: 2 }, world);
 
@@ -706,6 +812,39 @@ describe('executeDrag / previewDrag - TERRAIN_UP / TERRAIN_DOWN', () => {
     expect(world.getTerrain().getTileElevation(2, 1)).toBe(SEA_LEVEL);
     expect(world.getTerrain().getTileElevation(1, 2)).toBe(SEA_LEVEL);
     expect(world.getTerrain().getTileElevation(2, 2)).toBe(1); // unchanged
+  });
+
+  it('drag mixed cap-boundary: 2×1 TERRAIN_DOWN rect — accepted cell at delta-3 from outside neighbor commits, rejected cell at delta-4 stays unchanged (D5 per-tile atomicity at batch level)', () => {
+    // (1,2) and (2,2) both at elev 4, next=3. Outside (0,2) at 6: |6-3|=3 ≤ cap → (1,2) accepts.
+    // Outside (3,2) at 7: |7-3|=4 > cap → (2,2) rejects. Inside-rect delta=0, so neither breaks the other.
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(1, 2, 4);
+    world.getTerrain().unsafeSetElevation(2, 2, 4);
+    world.getTerrain().unsafeSetElevation(0, 2, 6);
+    world.getTerrain().unsafeSetElevation(3, 2, 7);
+
+    const result = executeDrag(Tool.TERRAIN_DOWN, { x: 1, y: 2 }, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 1, y: 2 }]);
+    expect(world.getTerrain().getTileElevation(1, 2)).toBe(3);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(4); // rejected cell unchanged
+  });
+
+  it('drag adjacent-both-commit at cap boundary: 2×1 TERRAIN_UP rect — both rect cells (8-neighbors of each other) accept at outside-neighbor cap boundary (delta exactly 3) and apply cleanly despite mid-batch mutation of the other cell (D6 same-direction uniform-step atomicity proof)', () => {
+    // (2,2) and (3,2) both at elev 0, next=1. Outside (1,2) at 4: |4-1|=3 = cap → (2,2) accepts.
+    // Outside (4,2) at 4: |4-1|=3 = cap → (3,2) accepts. Pins that the mid-batch mutation of cell 1
+    // does not invalidate cell 2's apply-time delta check (uniform +1 step preserves relative deltas).
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(2, 2, 0);
+    world.getTerrain().unsafeSetElevation(3, 2, 0);
+    world.getTerrain().unsafeSetElevation(1, 2, 4);
+    world.getTerrain().unsafeSetElevation(4, 2, 4);
+
+    const result = executeDrag(Tool.TERRAIN_UP, { x: 2, y: 2 }, { x: 3, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }, { x: 3, y: 2 }]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(1);
+    expect(world.getTerrain().getTileElevation(3, 2)).toBe(1);
   });
 
   it('previewDrag pure: TERRAIN_UP preview returns rect tiles, world state unchanged', () => {
