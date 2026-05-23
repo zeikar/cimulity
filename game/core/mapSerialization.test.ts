@@ -1559,7 +1559,9 @@ describe('v6 terrain save/load', () => {
       b: [],
     });
     expect(deserializeWorldInto(world, payload)).toBe(true);
-    expect(world.isWater(0, 0)).toBe(true);
+    // isWater is now elevation-derived; v5 legacy tiles have MIN_LAND_ELEVATION so isWater is false.
+    // The tile-layer WATER type is preserved on the map directly.
+    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
     expect(world.getTerrain().getBaseTerrain(0, 0)).toBe('grass');
   });
 
@@ -1790,8 +1792,8 @@ describe('Task 8: hydration + generator-spy tests', () => {
     expect(worldB.getMap().getHeight()).toBe(H);
   });
 
-  // (b) v5 legacy hydration: all elevations reset to 0; tile-layer water preserved.
-  it('(b) v5 legacy hydration: all elevations are 0, water tile preserved on tile layer', () => {
+  // (b) v5 legacy hydration: all elevations reset to MIN_LAND_ELEVATION; tile-layer water preserved.
+  it('(b) v5 legacy hydration: all elevations are MIN_LAND_ELEVATION, water tile preserved on tile layer', () => {
     const tiles = Array(W * H).fill(TileType.GRASS) as TileType[];
     const waterX = 2;
     const waterY = 1;
@@ -1817,8 +1819,9 @@ describe('Task 8: hydration + generator-spy tests', () => {
         expect(world.getTerrain().getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
       }
     }
-    // Water tile preserved on the tile layer.
-    expect(world.isWater(waterX, waterY)).toBe(true);
+    // Tile-layer WATER type is preserved; isWater is elevation-derived so returns false at MIN_LAND_ELEVATION.
+    expect(world.getMap().getTile(waterX, waterY)?.type).toBe(TileType.WATER);
+    expect(world.isWater(waterX, waterY)).toBe(false);
   });
 
   // (c) v1 legacy hydration: all elevations reset to MIN_LAND_ELEVATION.

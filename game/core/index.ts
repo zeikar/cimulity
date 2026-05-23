@@ -10,6 +10,8 @@ export {
   Terrain,
   ELEVATION_HEIGHT,
   MAX_ELEVATION,
+  SEA_LEVEL,
+  MIN_LAND_ELEVATION,
   type HeightMode,
   type BaseTerrain,
   type TerrainData,

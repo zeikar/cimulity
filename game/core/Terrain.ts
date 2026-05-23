@@ -165,12 +165,6 @@ export class Terrain {
     return true;
   }
 
-  /** v1 placeholder. Real implementation lands when sea-level / flooding simulation arrives. */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  isBelowWaterLevel(x: number, y: number): boolean {
-    return false;
-  }
-
   /**
    * Returns a bitmask of which orthogonal neighbors are lower than this tile.
    * OOB center returns 0. OOB neighbors are treated as equal to center (bit unset).

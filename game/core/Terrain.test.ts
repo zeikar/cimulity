@@ -63,9 +63,6 @@ describe("OOB getters return safe defaults", () => {
     expect(t.getBaseTerrain(-1, 0)).toBe("grass");
   });
 
-  it("isBelowWaterLevel OOB returns false", () => {
-    expect(t.isBelowWaterLevel(-1, 0)).toBe(false);
-  });
 });
 
 describe("canSetElevation", () => {
@@ -246,17 +243,6 @@ describe("setBaseTerrain", () => {
     t.setOnMutate(spy);
     expect(t.setBaseTerrain(2, 2, "grass")).toBe(true);
     expect(spy).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("isBelowWaterLevel", () => {
-  it("always returns false in v1", () => {
-    const t = new Terrain(5, 5);
-    t.unsafeSetElevation(2, 2, 0);
-    expect(t.isBelowWaterLevel(2, 2)).toBe(false);
-    expect(t.isBelowWaterLevel(0, 0)).toBe(false);
-    // OOB also false
-    expect(t.isBelowWaterLevel(-1, 0)).toBe(false);
   });
 });
 

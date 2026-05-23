@@ -7,7 +7,7 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
-import { Terrain } from './Terrain';
+import { Terrain, SEA_LEVEL } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
@@ -169,11 +169,12 @@ export class World {
   }
 
   /**
-   * Water authority for v1: reads the tile layer, not the Terrain instance.
-   * TileType.WATER placed by tools is the canonical water truth in this version.
+   * Water is derived: a cell is water iff in-bounds and elevation <= SEA_LEVEL.
+   * Out-of-bounds coordinates return false.
    */
   isWater(x: number, y: number): boolean {
-    return this.map.getTile(x, y)?.type === TileType.WATER;
+    if (this.map.getTile(x, y) === null) return false;
+    return this.terrain.getTileElevation(x, y) <= SEA_LEVEL;
   }
 
   /**

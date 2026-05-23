@@ -14,7 +14,7 @@ import {
   DEFAULT_NEWCITY_SEED,
 } from './World';
 import { TileType, createTile } from './Tile';
-import { Terrain, MIN_LAND_ELEVATION } from './Terrain';
+import { Terrain, MIN_LAND_ELEVATION, SEA_LEVEL } from './Terrain';
 
 describe('World', () => {
   it('builds a map of the requested size', () => {
@@ -1249,27 +1249,47 @@ describe('World.reset() — terrainRev', () => {
 });
 
 describe('World.isWater()', () => {
-  it('returns true for a WATER tile and false for a GRASS tile', () => {
+  it('returns false for all tiles in a { regenerate: false } world (all elevations are MIN_LAND_ELEVATION > SEA_LEVEL)', () => {
     const world = new World(8, 8, { regenerate: false });
-    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
-    expect(world.isWater(3, 3)).toBe(true);
     expect(world.isWater(0, 0)).toBe(false);
+    expect(world.isWater(3, 3)).toBe(false);
+  });
+});
+
+describe('isWater (sea-level derived)', () => {
+  it('(a) returns true when elevation is set to SEA_LEVEL', () => {
+    const world = new World(8, 8, { regenerate: false });
+    world.getTerrain().unsafeSetElevation(2, 2, SEA_LEVEL);
+    expect(world.isWater(2, 2)).toBe(true);
+  });
+
+  it('(b) returns false when elevation is MIN_LAND_ELEVATION (above SEA_LEVEL)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    // Default elevation is already MIN_LAND_ELEVATION; verify false
+    expect(world.isWater(0, 0)).toBe(false);
+  });
+
+  it('(c) returns false for OOB coordinates', () => {
+    const world = new World(8, 8, { regenerate: false });
+    expect(world.isWater(-1, 0)).toBe(false);
+    expect(world.isWater(0, -1)).toBe(false);
+    expect(world.isWater(100, 100)).toBe(false);
   });
 });
 
 describe('World.canBuildAt()', () => {
-  it('returns false for a WATER tile and true for a flat GRASS tile', () => {
+  it('returns false for a water cell (elevation <= SEA_LEVEL) and true for a flat land tile', () => {
     const world = new World(8, 8, { regenerate: false });
-    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
+    world.getTerrain().unsafeSetElevation(3, 3, SEA_LEVEL);
     expect(world.canBuildAt(3, 3, 1, 1)).toBe(false);
     expect(world.canBuildAt(0, 0, 1, 1)).toBe(true);
   });
 });
 
 describe('World.canBuildRoadAt()', () => {
-  it('returns false for a WATER tile', () => {
+  it('returns false for a water cell (elevation <= SEA_LEVEL)', () => {
     const world = new World(8, 8, { regenerate: false });
-    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER));
+    world.getTerrain().unsafeSetElevation(3, 3, SEA_LEVEL);
     expect(world.canBuildRoadAt(3, 3)).toBe(false);
   });
 
