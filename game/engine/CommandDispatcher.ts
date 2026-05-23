@@ -84,9 +84,11 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   let landValueInvalidated = false;
   for (const cmd of commands) {
     if (cmd.kind === 'elevation') {
-      // Slope-constraint violations are silent no-ops (setElevation returns false).
-      // Elevation writes never trigger land-value invalidation.
-      const changed = world.getTerrain().setElevation(cmd.x, cmd.y, cmd.elevation);
+      // Slope-constraint violations are silent no-ops (setPlayerElevation returns false).
+      // Player-facing elevation writes use canPlayerSetElevation's 8-neighbor cap; tool
+      // builders preflight via the same predicate, so a dispatch failure here would
+      // indicate a builder bug. Elevation writes never trigger land-value invalidation.
+      const changed = world.getTerrain().setPlayerElevation(cmd.x, cmd.y, cmd.elevation);
       if (changed) {
         changedTiles.push({ x: cmd.x, y: cmd.y });
       }
