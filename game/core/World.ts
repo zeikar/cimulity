@@ -304,8 +304,9 @@ export class World {
    * lastRev will differ from the world rev on the next frame and forceRedraw() fires once.
    *
    * @param opts.regenerate - When true (default), runs procedural terrain generation.
-   *   Pass `{ regenerate: false }` to restore a flat all-zero terrain (used by
+   *   Pass `{ regenerate: false }` to restore a flat all-MIN_LAND_ELEVATION terrain (used by
    *   deserialization hydration paths so loaded terrain is not overwritten).
+   *   Water is derived from elevation — no flat canvas contains water by default.
    * @param opts.seed - Seed for procedural generation (only used when regenerate is true).
    *   Defaults to DEFAULT_NEWCITY_SEED.
    */

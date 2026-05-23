@@ -58,7 +58,7 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 
 ### MVP-1 (Remaining)
 
-- [ ] **Expanded tile types** - Water and additional terrain variety
+- [ ] **Expanded tile types** - Additional terrain variety (water is derived from elevation — sea-level tiles render as water by default)
 - [ ] **Sprites/textures** - Replace colored shapes with actual graphics
 
 ### MVP-2 (Future)

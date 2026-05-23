@@ -188,8 +188,9 @@ export class GameSession {
   }
 
   /**
-   * Reset to an all-zero, all-grass, no-water canvas. TEST/DEBUG only —
+   * Reset to an all-MIN_LAND_ELEVATION, all-grass canvas. TEST/DEBUG only —
    * production new-city uses regenerateTerrain via resetWorld.
+   * Water is derived from elevation — no flat canvas contains water by default.
    */
   resetFlat(): void {
     this.performDestructiveReset({ regenerate: false, clearSaveAfter: true });

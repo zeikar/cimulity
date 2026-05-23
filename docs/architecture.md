@@ -195,11 +195,11 @@ Each tick (`World.tick`, 1 tick = 1 day):
 
 ### Procedural terrain generation
 
-Pipeline: `createRng(seed)` → `fbm2d` (raw noise) → `shapeHeightmap` (gamma + median filter + quantize) → `buildWaterMask` (exact-count selection over the noise field). `generateTerrain` returns `{ elevations, waterMask }`; `World.reset({ regenerate: true })` installs `elevations` into `Terrain` via `unsafeSetElevation` and writes WATER tiles into `GameMap.setTile`.
+Pipeline: `createRng(seed)` → `fbm2d` (raw noise) → `shapeHeightmap` (gamma + median filter + quantize) → `buildWaterMask` (exact-count selection over the noise field to drive elevation clamping). `generateTerrain` returns `{ elevations, waterMask }` where water cells have elevation clamped to `SEA_LEVEL`; `World.reset({ regenerate: true })` installs `elevations` into `Terrain` via `unsafeSetElevation`. Water is entirely derived from elevation at render/tool/sim time — tiles with `elevation <= SEA_LEVEL` are treated as water; no separate WATER tile type is written into `GameMap`. The render layer passes the cell's `tileElevation` (from `terrain.getTileElevation(x, y)`) into `palette.tileFillColor`, which fires the `WATER_COLOR` branch for `GRASS && elevation <= SEA_LEVEL`. Tool coherence (buildability, PAINT_GRASS/PAINT_WATER) and `World.tick` growth-skip are all gated on `world.isWater(x, y)` — the same elevation predicate. A flat `{ regenerate: false }` canvas starts at `MIN_LAND_ELEVATION` on every cell and therefore contains no water.
 
 Default seed: `DEFAULT_NEWCITY_SEED = 0xC15A1E11`.
 
-Invocation rule: `new World(W, H)` and `World.reset({ regenerate: true })` invoke the generator. Save-hydration callsites (`worldStore.getWorld` when a save exists, `deserializeV5`/`deserializeV6`) construct/reset with `{ regenerate: false }` so the generator does NOT run on load.
+Invocation rule: `new World(W, H)` and `World.reset({ regenerate: true })` invoke the generator. Save-hydration callsites (`worldStore.getWorld` when a save exists, `deserializeWorldInto` — v7 only) construct/reset with `{ regenerate: false }` so the generator does NOT run on load.
 
 Failure fallback: `worldStore.getWorld` invokes `world.reset({ regenerate: true })` if `deserializeWorldInto` fails on a corrupt save, producing a fresh procedural map.
 
