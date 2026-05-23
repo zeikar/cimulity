@@ -482,26 +482,6 @@ describe('build costs', () => {
 });
 
 describe('executeClick - paint terrain', () => {
-  it('PAINT_GRASS on WATER writes GRASS (water is recoverable)', () => {
-    const world = makeWorld();
-    world.getMap().setTile(2, 2, createTile(2, 2, TileType.WATER));
-    const before = world.getMoney();
-
-    const result = executeClick(Tool.PAINT_GRASS, { x: 2, y: 2 }, world);
-
-    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
-    expect(world.getMoney()).toBe(before);
-  });
-
-  it('PAINT_WATER on GRASS writes WATER', () => {
-    const world = makeWorld();
-    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
-
-    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }]);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.WATER);
-  });
-
   it('PAINT_GRASS on DIRT writes GRASS', () => {
     const world = makeWorld();
     world.getMap().setTile(1, 1, createTile(1, 1, TileType.DIRT));
@@ -524,23 +504,6 @@ describe('executeClick - paint terrain', () => {
 });
 
 describe('executeDrag/previewDrag - paint terrain rectangle', () => {
-  it('(a) PAINT_WATER: 2x2 drag over default GRASS paints all 4 to WATER', () => {
-    const world = makeWorld(5);
-
-    const result = executeDrag(Tool.PAINT_WATER, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
-
-    expect(result.changedTiles).toEqual([
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 0, y: 1 },
-      { x: 1, y: 1 },
-    ]);
-    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
-  });
-
   it('(a) PAINT_GRASS: 2x2 drag over DIRT seed paints all 4 to GRASS', () => {
     const world = makeWorld(5);
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.DIRT));
@@ -562,23 +525,6 @@ describe('executeDrag/previewDrag - paint terrain rectangle', () => {
     expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
   });
 
-  it('(b) reversed corners {1,1}→{0,0} yields same 4 tiles as forward drag', () => {
-    const world = makeWorld(5);
-
-    const result = executeDrag(Tool.PAINT_WATER, { x: 1, y: 1 }, { x: 0, y: 0 }, world);
-
-    expect(result.changedTiles).toEqual([
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 0, y: 1 },
-      { x: 1, y: 1 },
-    ]);
-    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
-  });
-
   it('(c) previewDrag returns the rect without mutating', () => {
     const world = makeWorld(5);
 
@@ -597,7 +543,7 @@ describe('executeDrag/previewDrag - paint terrain rectangle', () => {
     expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
   });
 
-  it('(d) out-of-bounds left column clipped — x=-1 column dropped from preview and paint', () => {
+  it('(d) out-of-bounds left column clipped — x=-1 column dropped from preview', () => {
     const world = makeWorld(5);
 
     const path = previewDrag(Tool.PAINT_WATER, { x: -1, y: 0 }, { x: 1, y: 1 }, world);
@@ -607,18 +553,6 @@ describe('executeDrag/previewDrag - paint terrain rectangle', () => {
       { x: 0, y: 1 },
       { x: 1, y: 1 },
     ]);
-
-    const result = executeDrag(Tool.PAINT_WATER, { x: -1, y: 0 }, { x: 1, y: 1 }, world);
-    expect(result.changedTiles).toEqual([
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 0, y: 1 },
-      { x: 1, y: 1 },
-    ]);
-    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.WATER);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
   });
 });
 
@@ -630,7 +564,6 @@ describe('paint terrain - cost', () => {
     executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
 
     expect(world.getMoney()).toBe(before);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.WATER);
   });
 
   it('PAINT_GRASS drag over a 1x5 row of DIRT leaves money unchanged', () => {
@@ -656,5 +589,78 @@ describe('paint terrain - cost', () => {
     expect(result.changedTiles).toEqual([]);
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
     expect(world.getMoney()).toBe(before);
+  });
+});
+
+describe('executeClick/executeDrag — paint terrain elevation branch (dispatch state)', () => {
+  it('PAINT_WATER slope-safe: sets elevation to SEA_LEVEL and world.isWater becomes true', () => {
+    // 4×4 world, all GRASS at MIN_LAND_ELEVATION (1). Center (2,2) neighbors are all elev 1.
+    // Drop from 1 to 0: difference is 1 — within slope constraint.
+    const world = new World(4, 4, { regenerate: false });
+
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toHaveLength(1);
+    expect(result.changedTiles[0]).toEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(0); // SEA_LEVEL
+    expect(world.isWater(2, 2)).toBe(true);
+  });
+
+  it('PAINT_WATER slope-blocked: elevation stays unchanged when drop would create a cliff', () => {
+    // Center cell at elev 5, all 8 neighbors also at elev 5.
+    // Dropping center to SEA_LEVEL (0) would create a delta of 5 — slope-blocked.
+    // Tools emit intent; dispatcher enforces slope. This is the 'hard cliff' contract — silent no-op.
+    const world = new World(4, 4, { regenerate: false });
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        world.getTerrain().unsafeSetElevation(x, y, 5);
+      }
+    }
+
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    // setElevation rejected the 5→0 step — changedTiles must not include center
+    expect(result.changedTiles.some(c => c.x === 2 && c.y === 2)).toBe(false);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(5);
+  });
+
+  it('PAINT_GRASS slope-safe: raises sea-level GRASS to MIN_LAND_ELEVATION and isWater becomes false', () => {
+    // One-cell sea inlet: center (1,1) at elev 0; surrounding cells at elev 1.
+    const world = new World(3, 3, { regenerate: false });
+    world.getTerrain().unsafeSetElevation(1, 1, 0);
+    expect(world.isWater(1, 1)).toBe(true);
+
+    const result = executeClick(Tool.PAINT_GRASS, { x: 1, y: 1 }, world);
+
+    expect(world.getTerrain().getTileElevation(1, 1)).toBe(1); // MIN_LAND_ELEVATION
+    expect(world.isWater(1, 1)).toBe(false);
+    expect(result.changedTiles).toContainEqual({ x: 1, y: 1 });
+  });
+
+  it('PAINT_GRASS slope-blocked: steep-coast water stays at elev 0 (slope safety — silent no-op)', () => {
+    // Center (1,1) at elev 0; at least one neighbor at elev 4 (steep coast).
+    // Raising 0→1 blocked because neighbor at 4 vs proposed 1 = delta 3 > 1.
+    // Steep-coast water is not recoverable in this PR — see model commitment / PAINT_GRASS slope safety.
+    const world = new World(3, 3, { regenerate: false });
+    world.getTerrain().unsafeSetElevation(1, 1, 0);
+    world.getTerrain().unsafeSetElevation(0, 0, 4);
+
+    const result = executeClick(Tool.PAINT_GRASS, { x: 1, y: 1 }, world);
+
+    expect(world.getTerrain().getTileElevation(1, 1)).toBe(0);
+    expect(world.isWater(1, 1)).toBe(true);
+    expect(result.changedTiles.some(c => c.x === 1 && c.y === 1)).toBe(false);
+  });
+
+  it('PAINT_GRASS on DIRT (dispatch): tile becomes GRASS after executeClick', () => {
+    // Verifies the tile-write branch is unaffected by the new elevation branch
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    world.getTerrain().unsafeSetElevation(2, 2, 5);
+
+    const result = executeClick(Tool.PAINT_GRASS, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
   });
 });

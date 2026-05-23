@@ -7,6 +7,7 @@
 
 import { Tool } from './Tool';
 import { TileType, createTile, isZoneType } from '../core/Tile';
+import { SEA_LEVEL, MIN_LAND_ELEVATION } from '../core/Terrain';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
@@ -38,9 +39,9 @@ export function buildToolCommands(
     case Tool.ZONE_INDUSTRIAL:
       return buildZoneCommands(TileType.ZONE_INDUSTRIAL, tiles, world);
     case Tool.PAINT_WATER:
-      return buildPaintTerrainCommands(TileType.WATER, tiles, world);
+      return buildPaintWaterCommands(tiles, world);
     case Tool.PAINT_GRASS:
-      return buildPaintTerrainCommands(TileType.GRASS, tiles, world);
+      return buildPaintGrassCommands(tiles, world);
     default:
       return [];
   }
@@ -146,37 +147,55 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
 }
 
 /**
- * Build terrain-paint commands for WATER or GRASS.
- * Per-target allowlists: PAINT_WATER accepts GRASS/DIRT; PAINT_GRASS accepts
- * GRASS/DIRT/WATER (so water painted by PAINT_WATER can be restored).
- * Roads and zones always require bulldoze first. Same-type is a no-op.
+ * Build paint-water commands.
+ * Allow-list (all three must hold or the tile is skipped):
+ *   1. Tile type is GRASS.
+ *   2. No building footprint covers this cell.
+ *   3. Not already at sea level (no-op short-circuit).
+ * Emits an elevation command to SEA_LEVEL; no tile write.
  * Reads world only to decide intent; never mutates core.
- *
- * v1: water lives on tile layer; terrain.baseTiles is RESERVED (all-grass). PAINT_WATER does not touch terrain.
  */
-function buildPaintTerrainCommands(
-  targetType: TileType.WATER | TileType.GRASS,
-  tiles: TileCoord[],
-  world: World
-): ToolCommand[] {
+function buildPaintWaterCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
   const commands: ToolCommand[] = [];
 
-  for (const coord of tiles) {
-    const currentTile = map.getTile(coord.x, coord.y);
+  for (const { x, y } of tiles) {
+    const currentTile = map.getTile(x, y);
     if (!currentTile) continue;
-    if (currentTile.type === targetType) continue;
-    const paintable =
-      targetType === TileType.GRASS
-        ? currentTile.type === TileType.DIRT || currentTile.type === TileType.WATER
-        : currentTile.type === TileType.GRASS || currentTile.type === TileType.DIRT;
-    if (!paintable) continue;
-    commands.push({
-      kind: 'tile',
-      x: coord.x,
-      y: coord.y,
-      tile: createTile(coord.x, coord.y, targetType),
-    });
+    if (currentTile.type !== TileType.GRASS) continue;
+    if (map.getBuildings().getBuildingAt(x, y) !== null) continue;
+    if (world.isWater(x, y)) continue;
+    commands.push({ kind: 'elevation', x, y, elevation: SEA_LEVEL });
+  }
+
+  return commands;
+}
+
+/**
+ * Build paint-grass commands.
+ * Allow-list: tile type must be GRASS or DIRT.
+ * DIRT branch: emit a tile write to GRASS; elevation is left untouched.
+ * GRASS branch: if the cell is currently water (elevation <= SEA_LEVEL), emit an
+ *   elevation command to MIN_LAND_ELEVATION. If already above sea level, skip (no-op).
+ * Reads world only to decide intent; never mutates core.
+ */
+function buildPaintGrassCommands(tiles: TileCoord[], world: World): ToolCommand[] {
+  const map = world.getMap();
+  const commands: ToolCommand[] = [];
+
+  for (const { x, y } of tiles) {
+    const currentTile = map.getTile(x, y);
+    if (!currentTile) continue;
+    if (currentTile.type === TileType.DIRT) {
+      commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
+    } else if (currentTile.type === TileType.GRASS) {
+      const currentElev = world.getTerrain().getTileElevation(x, y);
+      if (currentElev <= SEA_LEVEL) {
+        commands.push({ kind: 'elevation', x, y, elevation: MIN_LAND_ELEVATION });
+      }
+      // else: already above sea level — no-op
+    }
+    // All other tile types (road, zone, etc.) are implicitly skipped
   }
 
   return commands;
