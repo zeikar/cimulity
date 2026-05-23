@@ -112,8 +112,12 @@ describe('faceBrightness', () => {
     expect(b).toBeGreaterThan(AMBIENT);
     expect(b).toBeLessThan(1.0);
   });
-  it('gentle SE-up normalize([0.1,0.1,1]) ≈ 0.9510', () => {
-    expect(faceBrightness(normalize([0.1, 0.1, 1]))).toBeCloseTo(0.9510, 3);
+  it('gentle SE-up normalize([0.1,0.1,1]) ≈ 0.9728', () => {
+    // Anchored on current AMBIENT=0.75, DIFFUSE=0.25, LIGHT_DIR=(-1,0,1)/√2:
+    // n ≈ (0.0990, 0.0990, 0.9901); dot·LIGHT_DIR ≈ 0.6301;
+    // lambert = 0.6301 / FLAT_DOT(0.7071) ≈ 0.8911;
+    // brightness = 0.75 + 0.25·0.8911 ≈ 0.9728.
+    expect(faceBrightness(normalize([0.1, 0.1, 1]))).toBeCloseTo(0.9728, 3);
   });
   it('back-facing normalize([1,1,-1]) → AMBIENT', () => {
     expect(faceBrightness(normalize([1, 1, -1]))).toBeCloseTo(AMBIENT, 9);

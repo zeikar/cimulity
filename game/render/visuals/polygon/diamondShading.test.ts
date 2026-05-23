@@ -344,22 +344,23 @@ describe('planDiamondShading', () => {
       const plan = planDiamondShading(ch(1, 1, 1, 1));
       expect(plan.brightnessWest).toBe(1.0);
     });
-    it('south-facing planar ch(2,2,1,1) — both triangles ≈ 0.8682', () => {
-      // Light = (-1, 0, 1)/√2. Normal normalize([0, 1, 1]) = (0, 0.707, 0.707).
-      // dot = 0 + 0 + 0.707·0.707 = 0.5; /FLAT_DOT = 0.5/0.707 = 0.707;
-      // brightness = 0.55 + 0.45·0.707 = 0.8682.
+    it('south-facing planar ch(2,2,1,1) — both triangles ≈ 0.9821', () => {
+      // Light = (-1, 0, 1)/√2. With LIGHTING_Z_SCALE = 0.4 the surface normal
+      // becomes normalize([0, 0.4, 1]) ≈ (0, 0.3714, 0.9285).
+      // dot·LIGHT_DIR = 0.9285·0.7071 ≈ 0.6566; /FLAT_DOT(0.7071) ≈ 0.9286;
+      // brightness = 0.75 + 0.25·0.9286 ≈ 0.9821.
       const plan = planDiamondShading(ch(2, 2, 1, 1));
-      expect(plan.brightnessWest).toBeCloseTo(0.8682, 3);
-      expect(plan.brightnessEast).toBeCloseTo(0.8682, 3);
+      expect(plan.brightnessWest).toBeCloseTo(0.9821, 3);
+      expect(plan.brightnessEast).toBeCloseTo(0.9821, 3);
     });
-    it('north-facing planar ch(1,1,2,2) — both triangles ≈ 0.8682 (equal to south under y=0 light)', () => {
-      // Normal normalize([0, -1, 1]) = (0, -0.707, 0.707).
-      // dot = 0 + 0 + 0.707·0.707 = 0.5 (same as south case — the y component is
-      // multiplied by light.y = 0, so sign flip on y doesn't change the result).
+    it('north-facing planar ch(1,1,2,2) — both triangles ≈ 0.9821 (equal to south under y=0 light)', () => {
+      // Normal normalize([0, -0.4, 1]) ≈ (0, -0.3714, 0.9285).
+      // dot·LIGHT_DIR same as south case — the y component is multiplied by
+      // light.y = 0, so sign flip on y doesn't change the result.
       // Brightness identical to south-facing fixture above.
       const plan = planDiamondShading(ch(1, 1, 2, 2));
-      expect(plan.brightnessWest).toBeCloseTo(0.8682, 3);
-      expect(plan.brightnessEast).toBeCloseTo(0.8682, 3);
+      expect(plan.brightnessWest).toBeCloseTo(0.9821, 3);
+      expect(plan.brightnessEast).toBeCloseTo(0.9821, 3);
     });
   });
 
@@ -388,12 +389,16 @@ describe('planDiamondShading', () => {
       expect(plan.brightnessNorth).toBe(1.0);
       expect(plan.brightnessSouth).toBe(1.0);
     });
-    it('top-peak tent ch(2,1,1,1) — brightnessSouth > brightnessNorth; brightnessNorth === AMBIENT', () => {
-      // LR split. North triangle contains the top peak; normal faces SE → lambert=0 → AMBIENT.
-      // South triangle has all-low corners → flat-ish normal → brightness = 1.0.
+    it('top-peak tent ch(2,1,1,1) — brightnessSouth > brightnessNorth, north triangle darkens', () => {
+      // LR split. North triangle contains the top peak; with LIGHTING_Z_SCALE=12/64 the
+      // normal is mostly +z with a mild SE tilt (no longer pure-SE as it was at scale=1.0),
+      // so lambert is positive — brightness sits above AMBIENT but still below the
+      // all-flat south triangle. Sanity check: just assert the ordering + that the north
+      // triangle is actually shaded.
       const plan = planDiamondShading(ch(2, 1, 1, 1));
       expect(plan.brightnessSouth).toBeGreaterThan(plan.brightnessNorth);
-      expect(plan.brightnessNorth).toBeCloseTo(AMBIENT, 9);
+      expect(plan.brightnessNorth).toBeLessThan(1.0);
+      expect(plan.brightnessNorth).toBeGreaterThan(AMBIENT);
     });
     it('bottom-peak tent ch(1,1,2,1) — both brightnessNorth and brightnessSouth ≈ 1.0', () => {
       // South triangle: normal has z-flip applied → NW-up → fully lit (clamped to 1.0).

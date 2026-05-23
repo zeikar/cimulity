@@ -92,11 +92,28 @@ export function upwardTriangleNormal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
  */
 export const LIGHT_DIR_WORLD: Vec3 = normalizeStrict([-1, 0, 1.0], 'LIGHT_DIR_WORLD');
 
-export const LIGHTING_Z_SCALE = 1.0;
+/**
+ * World-Z-per-elevation-unit. Controls how steep slopes appear to the Lambert model.
+ *
+ * Iso projection: a 1-tile horizontal span = `TILE_WIDTH = 64` screen px;
+ * 1 elevation unit = `ELEVATION_HEIGHT = 12` screen px. Pure screen-aspect would be
+ * `12 / 64 = 0.1875`, but that made shading too subtle to read as terrain depth.
+ * Sweet spot tuned for "visible-but-soft slope shading": `0.4` treats a 1-unit
+ * cardinal slope as ~22° to the lighting model (vs. ~10° true projected angle and
+ * the original 45° that came from `LIGHTING_Z_SCALE = 1.0`).
+ */
+export const LIGHTING_Z_SCALE = 0.4;
 
-export const AMBIENT = 0.55;
+/**
+ * Lambert split: brightness = AMBIENT + DIFFUSE * lambert, with `AMBIENT + DIFFUSE = 1.0`.
+ *
+ * Floor (slope facing fully away from light): `AMBIENT`. Raised from `0.55` to `0.75`
+ * so the worst-case darkening is 25% instead of 45% — flat-looking tiles whose corners
+ * got pulled down by lower neighbors no longer drop to half brightness.
+ */
+export const AMBIENT = 0.75;
 
-export const DIFFUSE = 0.45;
+export const DIFFUSE = 0.25;
 
 /**
  * Stylized shadow-length scale, applied as a multiplier on the physically-derived

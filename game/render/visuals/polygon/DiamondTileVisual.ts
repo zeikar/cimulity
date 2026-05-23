@@ -39,8 +39,15 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const h = input.renderHeight ?? 0;
   const c = input.cornerHeights ?? { topH: h, rightH: h, bottomH: h, leftH: h };
   const color = tileFillColor(input.type, input.level);
-  // rough = ambiguous slope; geometry remains smooth, only base fill darkens.
-  const fillColor = input.shape === 'rough' ? darken(color, 0.85) : color;
+  // rough = ambiguous slope shape; the 0.85 base-fill darken is an EXTRA visual cue
+  // on top of Lambert shading. But cornerHeights = MIN-of-4-neighbors can collapse a
+  // "rough" tile (e.g. an isolated peak with all 4 cardinals lower → slopeMask=15)
+  // to a flat-rendered diamond — every corner at the same lower elevation. In that
+  // case the tile shows as a flat patch but the unconditional 0.85 darken made it
+  // visibly darker than its (truly flat) neighbors. Skip the darken when the rendered
+  // surface is itself flat (all 4 corner heights equal) — Lambert is already 1.0 there.
+  const renderedFlat = c.topH === c.rightH && c.rightH === c.bottomH && c.bottomH === c.leftH;
+  const fillColor = (input.shape === 'rough' && !renderedFlat) ? darken(color, 0.85) : color;
 
   // Geometry from tileCornerHeights via projectTileCornerScreen. In-bounds
   // adjacencies are continuous — no wall renderer. Per-triangle shading
