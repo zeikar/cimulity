@@ -21,6 +21,7 @@ Implemented so far:
 - ✅ Autosave to localStorage with a "New City" reset
 - ✅ Clean architecture with separated concerns
 - ✅ **Elevation & smooth slopes** - Shared-vertex-height ramps between tiles of different elevation (SimCity 3000-style); cliffs render as steep continuous ramps with depth shading; map-edge skirt prevents floating world
+- ✅ **Directional terrain lighting** — per-triangle brightness from a world-space NW light vector (`LIGHT_DIR_WORLD` in `game/render/visuals/lighting.ts`) replaces the planar-height heuristic; cube shading migration tracked separately.
 
 ## Getting Started
 
