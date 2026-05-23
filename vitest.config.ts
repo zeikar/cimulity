@@ -38,6 +38,7 @@ export default defineConfig({
         'game/render/visuals/polygon/cubeDropShadow.ts',
         'game/render/visuals/polygon/DiamondOOBSkirt.ts',
         'game/render/visuals/polygon/diamondShading.ts',
+        'game/render/visuals/lighting.ts',
         'game/core/Terrain.ts',
         'game/core/terrainSlope.ts',
         'game/core/prng.ts',
