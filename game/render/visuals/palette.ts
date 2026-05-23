@@ -15,7 +15,6 @@ export const WATER_COLOR = 0x2e6ba3;
 export const TILE_COLORS: Record<TileType, number> = {
   grass: 0x4a9e3d,
   dirt: 0x8b6f47,
-  water: 0x2e6ba3,
   road: 0x4a4a4a,
   zone_residential: 0x3cc44b,
   zone_commercial: 0x2f8fd6,

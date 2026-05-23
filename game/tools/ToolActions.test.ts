@@ -36,8 +36,9 @@ describe('buildToolCommands - zone tools', () => {
         expect(commands[0]).toEqual({ kind: 'tile', x: 4, y: 4, tile: createTile(4, 4, zoneType) });
       });
 
-      it('(c) returns [] on a WATER tile', () => {
-        world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      it('(c) returns [] on a water-elevation tile', () => {
+        // Water is elevation-derived: drop (1, 1) to SEA_LEVEL so world.isWater is true.
+        world.getTerrain().unsafeSetElevation(1, 1, SEA_LEVEL);
         const commands = buildToolCommands(tool, [{ x: 1, y: 1 }], world);
         expect(commands).toHaveLength(0);
       });
@@ -59,8 +60,9 @@ describe('buildToolCommands - zone tools', () => {
         expect(commands).toHaveLength(0);
       });
 
-      it('(g) mixed batch [WATER, GRASS, ROAD, DIRT]: only GRASS+DIRT yield commands, input order preserved', () => {
-        world.getMap().setTile(0, 0, createTile(0, 0, TileType.WATER));
+      it('(g) mixed batch [water-elev GRASS, GRASS, ROAD, DIRT]: only land GRASS+DIRT yield commands, input order preserved', () => {
+        // (0, 0) is a water-elevation cell (GRASS at SEA_LEVEL).
+        world.getTerrain().unsafeSetElevation(0, 0, SEA_LEVEL);
         world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
         // tile at (2,0) is default GRASS
         world.getMap().setTile(3, 0, createTile(3, 0, TileType.DIRT));
@@ -146,8 +148,9 @@ describe('buildToolCommands - Tool.BULLDOZE', () => {
     expect(commands).toHaveLength(0);
   });
 
-  it('returns [] on a WATER tile', () => {
-    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+  it('returns [] on a water-elevation tile', () => {
+    // Water is elevation-derived: tile stays GRASS at SEA_LEVEL.
+    world.getTerrain().unsafeSetElevation(1, 1, SEA_LEVEL);
     const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 1, y: 1 }], world);
     expect(commands).toHaveLength(0);
   });
@@ -162,7 +165,8 @@ describe('buildToolCommands - Tool.BULLDOZE', () => {
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     // (2,0) is default GRASS — should be skipped
-    world.getMap().setTile(3, 0, createTile(3, 0, TileType.WATER));
+    // (3,0) is GRASS at water elevation — should be skipped
+    world.getTerrain().unsafeSetElevation(3, 0, SEA_LEVEL);
     const commands = buildToolCommands(
       Tool.BULLDOZE,
       [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }],

@@ -71,16 +71,18 @@ describe('World.tick() — heal rule', () => {
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.GRASS);
   });
 
-  it('does not alter ROAD or WATER tiles during a tick', () => {
+  it('does not alter ROAD tiles or water-elevation cells during a tick', () => {
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
-    world.getMap().setTile(1, 0, createTile(1, 0, TileType.WATER));
+    // (1, 0) stays GRASS but with elevation <= SEA_LEVEL — water is elevation-derived.
+    world.getTerrain().unsafeSetElevation(1, 0, 0);
 
     const result = world.tick();
 
     expect(result.changed).toBe(0);
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
-    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
+    expect(world.isWater(1, 0)).toBe(true);
   });
 });
 
@@ -556,7 +558,7 @@ describe('World.getPopulation()', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
-    map.setTile(1, 0, createTile(1, 0, TileType.WATER));
+    // (1, 0) stays GRASS — water is elevation-derived; type identity is fine here.
     map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
     map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
     // Only the zone at (3,0) has a building

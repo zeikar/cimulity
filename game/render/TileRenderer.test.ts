@@ -70,7 +70,7 @@ function makeStubTerrainVisual(): TerrainTileVisual & { updates: UpdateRecord[];
 function makeStubRegistry(terrainVisual: TerrainTileVisual): VisualRegistry {
   const registry = new VisualRegistry();
   const allTypes: TileType[] = [
-    TileType.WATER, TileType.DIRT, TileType.GRASS, TileType.ROAD,
+    TileType.DIRT, TileType.GRASS, TileType.ROAD,
     TileType.ZONE_RESIDENTIAL, TileType.ZONE_COMMERCIAL, TileType.ZONE_INDUSTRIAL,
   ];
   for (const t of allTypes) registry.registerTerrain(t, terrainVisual);

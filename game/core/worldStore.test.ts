@@ -71,7 +71,7 @@ afterEach(() => {
 // ---- tests ----
 
 describe('saveWorld', () => {
-  it('writes a v4 envelope to STORAGE_KEY with correct v, m, and d', () => {
+  it('writes a current-version envelope to STORAGE_KEY with correct v, m, and d', () => {
     const world = new World(64, 64, { regenerate: false });
     world.trySpend(1500); // leave 8500 in the treasury (STARTING_FUNDS=10000)
     // Advance a few ticks so d is non-zero.
@@ -86,78 +86,58 @@ describe('saveWorld', () => {
     const raw = fakeStorage.getItem(STORAGE_KEY);
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw as string);
-    expect(parsed.v).toBe(WORLD_SAVE_VERSION); // must be 4
+    expect(parsed.v).toBe(WORLD_SAVE_VERSION);
     expect(parsed.m).toBe(expectedMoney);
     expect(parsed.d).toBe(expectedDays);
     expect('tk' in parsed).toBe(false); // no separate persisted tick field
   });
 });
 
-describe('getWorld — v3 envelope restores money + map', () => {
-  it('restores money and map from v3; calendar defaults to year 1 month 1 day 1 / tick 0', () => {
-    // Craft a v3 envelope manually (no `d` field — backward-compat).
-    const tiles = Array(64 * 64).fill(TileType.GRASS) as TileType[];
-    tiles[5 + 5 * 64] = TileType.ROAD; // (5,5)
-    const levels = Array(64 * 64).fill(0) as number[];
-    const v3Payload = JSON.stringify({ v: 3, w: 64, h: 64, t: tiles, l: levels, m: 7000 });
-    fakeStorage.setItem(STORAGE_KEY, v3Payload);
-
-    const restored = getWorld();
-
-    expect(restored.getMoney()).toBe(7000);
-    expect(restored.getMap().getTile(5, 5)?.type).toBe(TileType.ROAD);
-    // v3 has no calendar — should default to day 0 / tick 0 / Year 1 M1 D1.
-    expect(restored.getElapsedDays()).toBe(0);
-    expect(restored.getTick()).toBe(0);
-    const date = restored.getDate();
-    expect(date.year).toBe(1);
-    expect(date.month).toBe(1);
-    expect(date.day).toBe(1);
-  });
-});
-
-describe('getWorld — v2 envelope (no m) defaults money to STARTING_FUNDS', () => {
-  it('loads map tiles and sets money to STARTING_FUNDS when saved payload has no m', () => {
-    // Craft a v2 envelope manually (64×64 map; only first tile is ROAD for this test).
-    const tiles = Array(64 * 64).fill(TileType.GRASS) as TileType[];
-    tiles[0] = TileType.ROAD; // (0,0)
-    const levels = Array(64 * 64).fill(0) as number[];
-    const v2Payload = JSON.stringify({ v: 2, w: 64, h: 64, t: tiles, l: levels });
-    fakeStorage.setItem(STORAGE_KEY, v2Payload);
+describe('getWorld — older envelopes are rejected and fall back to a fresh procedural world', () => {
+  // The deserializer accepts only v === WORLD_SAVE_VERSION (= 7). Any older
+  // envelope is rejected on load and worldStore falls back to a fresh
+  // procedural world (money = STARTING_FUNDS, calendar = day 0).
+  it.each([
+    [
+      'v3 envelope (no d)',
+      () => {
+        const tiles = Array(64 * 64).fill(TileType.GRASS) as TileType[];
+        tiles[5 + 5 * 64] = TileType.ROAD;
+        const levels = Array(64 * 64).fill(0) as number[];
+        return JSON.stringify({ v: 3, w: 64, h: 64, t: tiles, l: levels, m: 7000 });
+      },
+    ],
+    [
+      'v2 envelope (no m)',
+      () => {
+        const tiles = Array(64 * 64).fill(TileType.GRASS) as TileType[];
+        tiles[0] = TileType.ROAD;
+        const levels = Array(64 * 64).fill(0) as number[];
+        return JSON.stringify({ v: 2, w: 64, h: 64, t: tiles, l: levels });
+      },
+    ],
+    [
+      'v1 envelope (no l, no m)',
+      () => {
+        const tiles = Array(64 * 64).fill(TileType.GRASS) as TileType[];
+        tiles[1] = TileType.DIRT;
+        return JSON.stringify({ v: 1, w: 64, h: 64, t: tiles });
+      },
+    ],
+  ])('rejects %s and returns a fresh procedural world', (_label, build) => {
+    fakeStorage.setItem(STORAGE_KEY, build());
 
     const world = getWorld();
 
+    // Fresh world: STARTING_FUNDS, calendar reset to day 0 / tick 0.
     expect(world.getMoney()).toBe(STARTING_FUNDS);
-    expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
-    // v2 has no calendar — day and tick default to 0.
     expect(world.getElapsedDays()).toBe(0);
     expect(world.getTick()).toBe(0);
   });
 });
 
-describe('getWorld — v1 legacy envelope (no l, no m) defaults money to STARTING_FUNDS', () => {
-  it('loads map tiles with all levels 0 and money === STARTING_FUNDS', () => {
-    // v1: no `l` key, no `m` key.
-    const tiles = Array(64 * 64).fill(TileType.GRASS) as TileType[];
-    tiles[1] = TileType.WATER; // (1,0)
-    const v1Payload = JSON.stringify({ v: 1, w: 64, h: 64, t: tiles });
-    fakeStorage.setItem(STORAGE_KEY, v1Payload);
-
-    const world = getWorld();
-
-    expect(world.getMoney()).toBe(STARTING_FUNDS);
-    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.WATER);
-    // v1 always loads with level 0.
-    expect(world.getMap().getTile(1, 0)?.level).toBe(0);
-    // v1 has no calendar — day and tick default to 0.
-    expect(world.getElapsedDays()).toBe(0);
-    expect(world.getTick()).toBe(0);
-  });
-});
-
-describe('getWorld — v4 envelope restores calendar', () => {
-  it('restores getElapsedDays, getTick, and getDate from a v4 save', () => {
-    // Build a world, advance N ticks, save it.
+describe('getWorld — current-version envelope restores calendar', () => {
+  it('restores getElapsedDays, getTick, and getDate from a freshly-saved envelope', () => {
     const src = new World(64, 64, { regenerate: false });
     const N = 5;
     for (let i = 0; i < N; i++) src.tick();
@@ -165,13 +145,11 @@ describe('getWorld — v4 envelope restores calendar', () => {
     expect(src.getElapsedDays()).toBe(N);
     expect(src.getTick()).toBe(N);
 
-    // Reset singleton; getWorld() must hydrate from the v4 save.
     resetSingleton();
     const restored = getWorld();
 
     expect(restored.getElapsedDays()).toBe(N);
     expect(restored.getTick()).toBe(N);
-    // Day N=5: year 1, month 1, day 6 (0-based day 5 → 1-based day 6).
     const date = restored.getDate();
     expect(date.year).toBe(src.getDate().year);
     expect(date.month).toBe(src.getDate().month);
@@ -306,8 +284,8 @@ describe('getWorld — (a) no save → procedural terrain', () => {
   });
 });
 
-describe('getWorld — (b) valid v6 save → matches save terrain', () => {
-  it('restores terrain exactly from a v6 save', () => {
+describe('getWorld — (b) valid current-version save → matches save terrain', () => {
+  it('restores terrain exactly from a freshly-saved envelope', () => {
     // Build a source world with procedural terrain and save it.
     const src = new World(64, 64, { regenerate: true });
     const terrainSnapshot = src.getTerrain().toJSON();
@@ -400,8 +378,8 @@ describe('getWorld — spy: generateTerrain call count', () => {
     vi.restoreAllMocks();
   });
 
-  it('valid v6 save: generateTerrain is NOT called (0 times)', () => {
-    // Pre-populate localStorage with a valid v6 save (constructed before spy is active).
+  it('valid current-version save: generateTerrain is NOT called (0 times)', () => {
+    // Pre-populate localStorage with a valid v7 save (constructed before spy is active).
     const src = new World(64, 64, { regenerate: true });
     fakeStorage.setItem(STORAGE_KEY, serializeWorld(src));
 

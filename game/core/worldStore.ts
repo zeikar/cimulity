@@ -14,14 +14,8 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
 // STORAGE_KEY is frozen at 'cimulity:save:v2' (key name tracks the 64×64 map dimension
-// change, not the payload schema). The persisted payload is now a world envelope at
-// WORLD_SAVE_VERSION = 4 (adds elapsed-day field `d` on top of v3's treasury field `m`;
-// tickCount is reconstructed from `d` on load — no separate persisted tick field).
-// v1/v2/v3 schema-compatible same-dimension payloads still load (map preserved; money
-// per existing rules; calendar restarts at Year 1 M1 D1 / Tick 0, `d` defaults 0).
-// Next build/bulldoze/tax-triggered save writes a v4 payload. clearSave() unchanged.
-// "New City" → world.reset() now also zeroes the calendar and tick (covered by
-// World.reset()) and a fresh v4 is written on the next save after New City.
+// change, not the payload schema). Persisted payload is a world envelope at
+// WORLD_SAVE_VERSION = 7. Older versions are rejected on load → fresh world.
 const STORAGE_KEY = 'cimulity:save:v2';
 
 const store = globalThis as unknown as { __cimulityWorld?: World };

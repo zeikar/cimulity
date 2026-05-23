@@ -8,7 +8,6 @@
 export enum TileType {
   GRASS = 'grass',
   DIRT = 'dirt',
-  WATER = 'water',
   ROAD = 'road',
   ZONE_RESIDENTIAL = 'zone_residential',
   ZONE_COMMERCIAL = 'zone_commercial',

@@ -41,8 +41,8 @@ describe('VisualRegistry — terrain', () => {
 
   it('hasTerrain returns true after register', () => {
     const registry = new VisualRegistry();
-    registry.registerTerrain(TileType.WATER, makeTerrainVisual());
-    expect(registry.hasTerrain(TileType.WATER)).toBe(true);
+    registry.registerTerrain(TileType.DIRT, makeTerrainVisual());
+    expect(registry.hasTerrain(TileType.DIRT)).toBe(true);
   });
 
   it('hasTerrain returns false when not registered', () => {
@@ -106,7 +106,7 @@ describe('VisualRegistry — disposeAll', () => {
 
   it('does not throw when visuals have no dispose method', () => {
     const registry = new VisualRegistry();
-    registry.registerTerrain(TileType.WATER, makeTerrainVisual()); // dispose is undefined
+    registry.registerTerrain(TileType.ROAD, makeTerrainVisual()); // dispose is undefined
     expect(() => registry.disposeAll()).not.toThrow();
   });
 

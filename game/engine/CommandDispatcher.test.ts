@@ -67,7 +67,9 @@ describe('executeClick — bulldoze', () => {
 
   it('does nothing on a non-road tile', () => {
     const world = makeWorld();
-    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+    // (1, 1) is a water-elevation cell — bulldoze still skips it because it is
+    // not ROAD/zone and the tile type stays GRASS.
+    world.getTerrain().unsafeSetElevation(1, 1, 0);
 
     expect(
       executeClick(Tool.BULLDOZE, { x: 0, y: 0 }, world).changedTiles
@@ -75,7 +77,8 @@ describe('executeClick — bulldoze', () => {
     expect(
       executeClick(Tool.BULLDOZE, { x: 1, y: 1 }, world).changedTiles
     ).toEqual([]);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+    expect(world.isWater(1, 1)).toBe(true);
   });
 
   it('reports no change when bulldozing out of bounds', () => {
@@ -186,12 +189,14 @@ describe('executeClick - zoning', () => {
 
     it(`rejects ${tool} on a water tile`, () => {
       const world = makeWorld();
-      world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      // Water is elevation-derived: drop (1, 1) to SEA_LEVEL so world.isWater is true.
+      world.getTerrain().unsafeSetElevation(1, 1, 0);
 
       const result = executeClick(tool, { x: 1, y: 1 }, world);
 
       expect(result.changedTiles).toEqual([]);
-      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+      expect(world.isWater(1, 1)).toBe(true);
     });
   }
 });
@@ -222,9 +227,10 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
       expect(world.getMap().getTile(1, 1)?.type).toBe(expectedType);
     });
 
-    it(`(b) SKIP allowlist: ${tool} skips WATER, ROAD, and the same-zone no-op inside the rect`, () => {
+    it(`(b) SKIP allowlist: ${tool} skips water-elevation, ROAD, and the same-zone no-op inside the rect`, () => {
       const world = makeWorld(5);
-      world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      // Water is elevation-derived: drop (1, 1) to SEA_LEVEL.
+      world.getTerrain().unsafeSetElevation(1, 1, 0);
       world.getMap().setTile(0, 1, createTile(0, 1, TileType.ROAD));
       world.getMap().setTile(1, 0, createTile(1, 0, expectedType));
 
@@ -232,7 +238,9 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
 
       expect(result.changedTiles).toEqual([{ x: 0, y: 0 }]);
       expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
-      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+      // Water cell stayed GRASS (no zone applied) and remained at sea level.
+      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.GRASS);
+      expect(world.isWater(1, 1)).toBe(true);
       expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.ROAD);
       expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
     });
@@ -243,7 +251,8 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
         expectedType === TileType.ZONE_RESIDENTIAL
           ? TileType.ZONE_COMMERCIAL
           : TileType.ZONE_RESIDENTIAL;
-      world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+      // (1, 1) is a non-paintable ROAD; (0, 1) is also ROAD; (1, 0) is a different zone.
+      world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
       world.getMap().setTile(0, 1, createTile(0, 1, TileType.ROAD));
       world.getMap().setTile(1, 0, createTile(1, 0, otherZone));
 
@@ -252,7 +261,7 @@ describe('executeDrag/previewDrag - zoning rectangle paint', () => {
       expect(result.changedTiles).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }]);
       expect(world.getMap().getTile(0, 0)?.type).toBe(expectedType);
       expect(world.getMap().getTile(1, 0)?.type).toBe(expectedType);
-      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
+      expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.ROAD);
       expect(world.getMap().getTile(0, 1)?.type).toBe(TileType.ROAD);
     });
 
