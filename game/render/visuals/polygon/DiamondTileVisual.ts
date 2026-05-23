@@ -60,28 +60,30 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   gfx.closePath();
   gfx.fill({ color: fillColor });
 
-  // Per-triangle shading + fold-line stroke from the shading plan helper.
-  // See diamondShading.ts for the split/shade/stroke rules.
+  // Per-triangle brightness + fold-line stroke from the shading plan helper.
+  // See diamondShading.ts for the diagonal/brightness/stroke rules.
+  // Triangles draw OVER the base fill at alpha 1.0 to fully cover it where the
+  // brightness factor differs from 1.0 (the base fill stays visible only as the
+  // seam-safety bleed; for brightness === 1.0 the overdraw is bit-identical).
   const plan = planDiamondShading(c);
-  const shade = darken(color, 0.80);
-  const a = 0.45;
+  const shadeColor = (factor: number) => darken(fillColor, factor);
   if (plan.diagonal === 'tb') {
-    if (plan.shadeWest) fillTri(gfx, bottom, left, top, shade, a);
-    if (plan.shadeEast) fillTri(gfx, bottom, right, top, shade, a);
+    fillTri(gfx, bottom, left,  top, shadeColor(plan.brightnessWest), 1.0);
+    fillTri(gfx, bottom, right, top, shadeColor(plan.brightnessEast), 1.0);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(top.x, top.y);
       gfx.lineTo(bottom.x, bottom.y);
-      gfx.stroke({ color: 0x000000, width: 1, alpha: 0.30 });
+      gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
     }
   } else {
-    if (plan.shadeNorth) fillTri(gfx, left, top, right, shade, a);
-    if (plan.shadeSouth) fillTri(gfx, left, bottom, right, shade, a);
+    fillTri(gfx, left, top,    right, shadeColor(plan.brightnessNorth), 1.0);
+    fillTri(gfx, left, bottom, right, shadeColor(plan.brightnessSouth), 1.0);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(left.x, left.y);
       gfx.lineTo(right.x, right.y);
-      gfx.stroke({ color: 0x000000, width: 1, alpha: 0.30 });
+      gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
     }
   }
 
