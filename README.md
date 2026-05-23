@@ -1,5 +1,7 @@
 # Cimulity
 
+[![Built with HyperClaude](https://img.shields.io/badge/built%20with-HyperClaude-7c3aed)](http://zeikar.dev/hyperclaude/)
+
 **Open-source minimal city simulation game in the browser.**
 
 A SimCity-style city building simulation game built with Next.js, TypeScript, and PixiJS. Features an isometric grid-based world with camera controls, tile interactions, and a clean architectural separation between game logic, rendering, and UI.
@@ -83,4 +85,4 @@ MIT (or your preferred license)
 
 ---
 
-**Built with GPT-4 + Claude Code** 🤖✨
+**Built with [HyperClaude](http://zeikar.dev/hyperclaude/)** — *Claude builds, Codex critiques.* My own Claude Code plugin. 🤖✨
