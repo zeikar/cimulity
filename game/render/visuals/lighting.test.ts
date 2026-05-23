@@ -12,11 +12,11 @@ import {
 } from './lighting';
 
 describe('LIGHT_DIR_WORLD', () => {
-  it('x component is negative (light from the east side, NW direction)', () => {
+  it('x component is negative (light from the west, screen ~10 o\'clock)', () => {
     expect(LIGHT_DIR_WORLD[0]).toBeLessThan(0);
   });
-  it('y component is negative (light from the south side, NW direction)', () => {
-    expect(LIGHT_DIR_WORLD[1]).toBeLessThan(0);
+  it('y component is zero (no N/S bias — screen 10 o\'clock projects to pure-west world)', () => {
+    expect(LIGHT_DIR_WORLD[1]).toBe(0);
   });
   it('z component is positive (light from above)', () => {
     expect(LIGHT_DIR_WORLD[2]).toBeGreaterThan(0);
@@ -110,8 +110,8 @@ describe('faceBrightness', () => {
     expect(b).toBeGreaterThan(AMBIENT);
     expect(b).toBeLessThan(1.0);
   });
-  it('gentle SE-up normalize([0.1,0.1,1]) ≈ 0.9361', () => {
-    expect(faceBrightness(normalize([0.1, 0.1, 1]))).toBeCloseTo(0.9361, 3);
+  it('gentle SE-up normalize([0.1,0.1,1]) ≈ 0.9510', () => {
+    expect(faceBrightness(normalize([0.1, 0.1, 1]))).toBeCloseTo(0.9510, 3);
   });
   it('back-facing normalize([1,1,-1]) → AMBIENT', () => {
     expect(faceBrightness(normalize([1, 1, -1]))).toBeCloseTo(AMBIENT, 9);
@@ -121,13 +121,16 @@ describe('faceBrightness', () => {
     const east = faceBrightness(normalize([1, 0, 0]));
     expect(west).toBeGreaterThan(east);
   });
-  it('pure-west brightness ≈ 0.85', () => {
-    expect(faceBrightness(normalize([-1, 0, 0]))).toBeCloseTo(0.85, 2);
+  it('pure-west = 1.0 exact (aligns with light horizontal, clamped at ceiling)', () => {
+    expect(faceBrightness(normalize([-1, 0, 0]))).toBe(1.0);
   });
-  it('pure-north > pure-south (north faces light, south faces away)', () => {
+  it('pure-north === pure-south (both perpendicular to light horizontal, both clamp to AMBIENT)', () => {
+    // Light vector y=0 means N/S slope normals get equal (zero) dot with light's horizontal component;
+    // both clamp to AMBIENT. This is the intentional consequence of the screen-10-o'clock light direction.
     const north = faceBrightness(normalize([0, -1, 0]));
     const south = faceBrightness(normalize([0, 1, 0]));
-    expect(north).toBeGreaterThan(south);
+    expect(north).toBe(south);
+    expect(north).toBeCloseTo(AMBIENT, 9);
   });
   it('pure-east → AMBIENT exact', () => {
     expect(faceBrightness(normalize([1, 0, 0]))).toBeCloseTo(AMBIENT, 9);

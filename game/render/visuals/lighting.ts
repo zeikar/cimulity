@@ -84,7 +84,7 @@ export function upwardTriangleNormal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
  * world-light-to-screen projection for the shadow offset) — not a drop-in
  * call-site swap.
  */
-export const LIGHT_DIR_WORLD: Vec3 = normalizeStrict([-1, -1, 1.5], 'LIGHT_DIR_WORLD');
+export const LIGHT_DIR_WORLD: Vec3 = normalizeStrict([-1, 0, 1.0], 'LIGHT_DIR_WORLD');
 
 export const LIGHTING_Z_SCALE = 1.0;
 

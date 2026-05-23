@@ -344,25 +344,31 @@ describe('planDiamondShading', () => {
       const plan = planDiamondShading(ch(1, 1, 1, 1));
       expect(plan.brightnessWest).toBe(1.0);
     });
-    it('south-facing planar ch(2,2,1,1) — both triangles ≈ 0.6561', () => {
-      // normal normalize([0, 1, 1]): dot with light ≈ 0.172; lambert ≈ 0.236; brightness ≈ 0.656
+    it('south-facing planar ch(2,2,1,1) — both triangles ≈ 0.8682', () => {
+      // Light = (-1, 0, 1)/√2. Normal normalize([0, 1, 1]) = (0, 0.707, 0.707).
+      // dot = 0 + 0 + 0.707·0.707 = 0.5; /FLAT_DOT = 0.5/0.707 = 0.707;
+      // brightness = 0.55 + 0.45·0.707 = 0.8682.
       const plan = planDiamondShading(ch(2, 2, 1, 1));
-      expect(plan.brightnessWest).toBeCloseTo(0.6561, 3);
-      expect(plan.brightnessEast).toBeCloseTo(0.6561, 3);
+      expect(plan.brightnessWest).toBeCloseTo(0.8682, 3);
+      expect(plan.brightnessEast).toBeCloseTo(0.8682, 3);
     });
-    it('north-facing planar ch(1,1,2,2) — both triangles clamped to 1.0', () => {
-      // normal normalize([0, -1, 1]): computed dot ≈ 0.8576; lambert ≈ 1.1786; clamped to 1.0
+    it('north-facing planar ch(1,1,2,2) — both triangles ≈ 0.8682 (equal to south under y=0 light)', () => {
+      // Normal normalize([0, -1, 1]) = (0, -0.707, 0.707).
+      // dot = 0 + 0 + 0.707·0.707 = 0.5 (same as south case — the y component is
+      // multiplied by light.y = 0, so sign flip on y doesn't change the result).
+      // Brightness identical to south-facing fixture above.
       const plan = planDiamondShading(ch(1, 1, 2, 2));
-      expect(plan.brightnessWest).toBeCloseTo(1.0, 9);
-      expect(plan.brightnessEast).toBeCloseTo(1.0, 9);
+      expect(plan.brightnessWest).toBeCloseTo(0.8682, 3);
+      expect(plan.brightnessEast).toBeCloseTo(0.8682, 3);
     });
   });
 
-  describe('light-direction sanity (NW-facing > SE-facing)', () => {
-    it('NW-facing ch(1,1,2,2) brightness > SE-facing ch(2,2,1,1) by margin > 0.2', () => {
-      const nw = planDiamondShading(ch(1, 1, 2, 2));
-      const se = planDiamondShading(ch(2, 2, 1, 1));
-      expect(nw.brightnessWest - se.brightnessWest).toBeGreaterThan(0.2);
+  describe('light-direction sanity (W-facing > E-facing, N === S)', () => {
+    it('N-facing ch(1,1,2,2) === S-facing ch(2,2,1,1) (light.y = 0 → N/S collapse)', () => {
+      const north = planDiamondShading(ch(1, 1, 2, 2));
+      const south = planDiamondShading(ch(2, 2, 1, 1));
+      expect(north.brightnessWest).toBeCloseTo(south.brightnessWest, 9);
+      expect(north.brightnessEast).toBeCloseTo(south.brightnessEast, 9);
     });
     it('west-slope ch(1,2,2,1) brighter than east-slope ch(2,1,1,2)', () => {
       const west = planDiamondShading(ch(1, 2, 2, 1));
