@@ -34,13 +34,23 @@ export const ELEVATION_HEIGHT = 12 as const;
  */
 export const MAX_ELEVATION = 8 as const;
 
+/** Elevations <= SEA_LEVEL are water. */
+export const SEA_LEVEL = 0 as const;
+
+/**
+ * Lowest legal land elevation. Equals SEA_LEVEL + 1; declared as a literal (not a
+ * computed expression) so the const-assertion preserves the literal type. The runtime
+ * test in Terrain.test.ts asserts the relation.
+ */
+export const MIN_LAND_ELEVATION = 1 as const;
+
 export class Terrain {
   private readonly data: TerrainData;
   private onMutate: (() => void) | null = null;
 
   constructor(width: number, height: number) {
     const tileElevations: number[][] = Array.from({ length: height }, () =>
-      new Array<number>(width).fill(0)
+      new Array<number>(width).fill(MIN_LAND_ELEVATION)
     );
     const baseTiles: BaseTerrain[][] = Array.from({ length: height }, () =>
       new Array<BaseTerrain>(width).fill("grass")

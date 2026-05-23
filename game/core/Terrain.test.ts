@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Terrain, MAX_ELEVATION } from "./Terrain";
+import { Terrain, MAX_ELEVATION, SEA_LEVEL, MIN_LAND_ELEVATION } from "./Terrain";
 
 describe("Terrain construction defaults", () => {
   it("has correct width/height/mode", () => {
@@ -9,11 +9,11 @@ describe("Terrain construction defaults", () => {
     expect(t.getMode()).toBe("tile-step");
   });
 
-  it("all tile elevations start at 0", () => {
+  it("all tile elevations start at MIN_LAND_ELEVATION", () => {
     const t = new Terrain(4, 3);
     for (let y = 0; y < 3; y++) {
       for (let x = 0; x < 4; x++) {
-        expect(t.getTileElevation(x, y)).toBe(0);
+        expect(t.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
       }
     }
   });
@@ -25,6 +25,29 @@ describe("Terrain construction defaults", () => {
         expect(t.getBaseTerrain(x, y)).toBe("grass");
       }
     }
+  });
+});
+
+describe("flat baseline", () => {
+  it("every cell of a fresh 4×4 Terrain returns MIN_LAND_ELEVATION", () => {
+    const t = new Terrain(4, 4);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        expect(t.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
+      }
+    }
+  });
+
+  it("SEA_LEVEL === 0", () => {
+    expect(SEA_LEVEL).toBe(0);
+  });
+
+  it("MIN_LAND_ELEVATION === 1", () => {
+    expect(MIN_LAND_ELEVATION).toBe(1);
+  });
+
+  it("MIN_LAND_ELEVATION === SEA_LEVEL + 1", () => {
+    expect(MIN_LAND_ELEVATION).toBe(SEA_LEVEL + 1);
   });
 });
 
@@ -46,14 +69,14 @@ describe("OOB getters return safe defaults", () => {
 });
 
 describe("canSetElevation", () => {
-  it("accepts diff=1 from all-zero neighbors at center", () => {
+  it("accepts diff=1 from all-MIN_LAND_ELEVATION neighbors at center", () => {
     const t = new Terrain(5, 5);
-    expect(t.canSetElevation(2, 2, 1)).toBe(true);
+    expect(t.canSetElevation(2, 2, MIN_LAND_ELEVATION + 1)).toBe(true);
   });
 
-  it("rejects diff > 1 (all neighbors at 0, request 2)", () => {
+  it("rejects diff > 1 (all neighbors at MIN_LAND_ELEVATION, request MIN_LAND_ELEVATION + 2)", () => {
     const t = new Terrain(5, 5);
-    expect(t.canSetElevation(2, 2, 2)).toBe(false);
+    expect(t.canSetElevation(2, 2, MIN_LAND_ELEVATION + 2)).toBe(false);
   });
 
   it("rejects non-integer", () => {
@@ -102,9 +125,9 @@ describe("canSetElevation", () => {
 
   it("OOB neighbors are skipped — corner (0,0) only has 3 in-bounds neighbors", () => {
     const t = new Terrain(5, 5);
-    // All in-bounds neighbors of (0,0) are (1,0), (0,1), (1,1) — all at 0.
-    // diff of 1 from 0 is fine.
-    expect(t.canSetElevation(0, 0, 1)).toBe(true);
+    // All in-bounds neighbors of (0,0) are (1,0), (0,1), (1,1) — all at MIN_LAND_ELEVATION.
+    // diff of 1 from MIN_LAND_ELEVATION is fine (requesting MIN_LAND_ELEVATION + 1).
+    expect(t.canSetElevation(0, 0, MIN_LAND_ELEVATION + 1)).toBe(true);
   });
 });
 
@@ -117,15 +140,15 @@ describe("setElevation", () => {
 
   it("returns false and leaves value unchanged on reject", () => {
     const t = new Terrain(5, 5);
-    t.setElevation(2, 2, 1);
-    // diff of 5 from neighbors at 0 (aside from center already at 1) — try large value
+    t.setElevation(2, 2, MIN_LAND_ELEVATION + 1);
+    // diff of 4 from neighbors at MIN_LAND_ELEVATION — try large value
     expect(t.setElevation(2, 2, 5)).toBe(false);
-    expect(t.getTileElevation(2, 2)).toBe(1);
+    expect(t.getTileElevation(2, 2)).toBe(MIN_LAND_ELEVATION + 1);
   });
 });
 
 describe("unsafeSetElevation", () => {
-  it("accepts a cliff (diff > 1 from all-zero neighbors)", () => {
+  it("accepts a cliff (diff > 1 from all-MIN_LAND_ELEVATION neighbors)", () => {
     const t = new Terrain(5, 5);
     expect(t.unsafeSetElevation(2, 2, 3)).toBe(true);
     expect(t.getTileElevation(2, 2)).toBe(3);
@@ -254,7 +277,7 @@ describe("getSlopeMask", () => {
     expect(t.getSlopeMask(10, 10)).toBe(0);
   });
 
-  it("flat map — all-zero elevations — every tile has mask 0", () => {
+  it("flat map — all-MIN_LAND_ELEVATION elevations — every tile has mask 0", () => {
     const t = new Terrain(5, 5);
     expect(t.getSlopeMask(2, 2)).toBe(0);
     expect(t.getSlopeMask(0, 0)).toBe(0);
@@ -262,20 +285,21 @@ describe("getSlopeMask", () => {
 
   it("1×1 raised tile has non-zero mask", () => {
     const t = new Terrain(5, 5);
-    t.unsafeSetElevation(1, 1, 1);
+    // Center raised above MIN_LAND_ELEVATION baseline — neighbors stay at baseline.
+    t.unsafeSetElevation(1, 1, MIN_LAND_ELEVATION + 1);
     expect(t.getSlopeMask(1, 1)).not.toBe(0);
   });
 
-  it("OOB neighbors treated as equal — map-edge tile on all-zero map has mask 0", () => {
+  it("OOB neighbors treated as equal — map-edge tile on flat map has mask 0", () => {
     const t = new Terrain(5, 5);
     // (0,0) has OOB N and W neighbors; they are treated as equal, so mask stays 0
     expect(t.getSlopeMask(0, 0)).toBe(0);
   });
 
-  it("cliff case: diff=3 still sets LOWER_* bits", () => {
+  it("cliff case: diff=2 from baseline still sets LOWER_* bits", () => {
     const t = new Terrain(5, 5);
     t.unsafeSetElevation(2, 2, 3);
-    // Neighbors at 0, diff = 3 — bits must still be set
+    // Neighbors at MIN_LAND_ELEVATION=1, diff=2 — bits must still be set
     expect(t.getSlopeMask(2, 2)).not.toBe(0);
     expect(t.isFlatTile(2, 2, noWater)).toBe(false);
   });
@@ -287,7 +311,7 @@ describe("getTerrainShape", () => {
     expect(t.getTerrainShape(-1, 0)).toBe("flat");
   });
 
-  it("all-zero map — center returns flat", () => {
+  it("flat map — center returns flat", () => {
     const t = new Terrain(5, 5);
     expect(t.getTerrainShape(2, 2)).toBe("flat");
   });
@@ -296,9 +320,10 @@ describe("getTerrainShape", () => {
 describe("isFlatTile", () => {
   const noWater = () => false;
 
-  it("1×1 raised tile in all-zero map is NOT flat", () => {
+  it("1×1 raised tile above surrounding baseline is NOT flat", () => {
     const t = new Terrain(5, 5);
-    t.unsafeSetElevation(1, 1, 1);
+    // Raise center above the MIN_LAND_ELEVATION baseline so neighbors are lower.
+    t.unsafeSetElevation(1, 1, MIN_LAND_ELEVATION + 1);
     expect(t.isFlatTile(1, 1, noWater)).toBe(false);
   });
 
@@ -318,26 +343,25 @@ describe("isFlatTile", () => {
   });
 
   it("interior of 3×3 plateau is flat", () => {
-    // 5×5 map, 3×3 plateau at (0..2)×(0..2) all at elevation 1
+    // 5×5 map, 3×3 plateau at (0..2)×(0..2) all at elevation 2; surrounding at baseline (1).
     const t = new Terrain(5, 5);
     for (let py = 0; py < 3; py++) {
       for (let px = 0; px < 3; px++) {
-        t.unsafeSetElevation(px, py, 1);
+        t.unsafeSetElevation(px, py, 2);
       }
     }
-    // Interior tile (1,1): all 4 orthogonal neighbors are also elevation 1 → mask 0
+    // Interior tile (1,1): all 4 orthogonal neighbors are also elevation 2 → mask 0
     expect(t.getSlopeMask(1, 1)).toBe(0);
     expect(t.isFlatTile(1, 1, noWater)).toBe(true);
   });
 
   it("edge tile of 3×3 plateau is NOT flat (sees lower neighbor outside)", () => {
-    // 5×5 map, 3×3 plateau at (0..2)×(0..2) all at elevation 1
-    // (0,0) is a map-corner: OOB N and W are treated as equal, but S and E ARE in-bounds.
-    // Pick (2,1): in-bounds on all sides, E neighbor (3,1) = 0 < 1 → mask non-zero
+    // 5×5 map, 3×3 plateau at (0..2)×(0..2) all at elevation 2; surrounding at baseline (1).
+    // Pick (2,1): in-bounds on all sides, E neighbor (3,1) = baseline=1 < 2 → mask non-zero.
     const t = new Terrain(5, 5);
     for (let py = 0; py < 3; py++) {
       for (let px = 0; px < 3; px++) {
-        t.unsafeSetElevation(px, py, 1);
+        t.unsafeSetElevation(px, py, 2);
       }
     }
     expect(t.getSlopeMask(2, 1)).not.toBe(0);
@@ -350,17 +374,17 @@ describe("isFlatArea", () => {
 
   it("2×2 with one corner raised returns false", () => {
     const t = new Terrain(5, 5);
-    t.unsafeSetElevation(1, 1, 1);
+    // Raise one corner above the MIN_LAND_ELEVATION baseline so the rect is non-uniform.
+    t.unsafeSetElevation(1, 1, MIN_LAND_ELEVATION + 1);
     expect(t.isFlatArea(0, 0, 2, 2, noWater)).toBe(false);
   });
 
-  it("interior 3×3 of a 5×5 plateau at elevation 1 returns true", () => {
-    // 5×5 map with full 5×5 plateau at elevation 1
-    // Interior rect (1,1) 3×3: all cells have elevation-1 neighbors → mask 0
+  it("interior 3×3 of a 5×5 plateau at elevation 2 returns true", () => {
+    // 5×5 map with full 5×5 plateau at elevation 2; all cells uniform → mask 0 everywhere.
     const t = new Terrain(5, 5);
     for (let py = 0; py < 5; py++) {
       for (let px = 0; px < 5; px++) {
-        t.unsafeSetElevation(px, py, 1);
+        t.unsafeSetElevation(px, py, 2);
       }
     }
     expect(t.isFlatArea(1, 1, 3, 3, noWater)).toBe(true);
@@ -373,7 +397,7 @@ describe("isFlatArea", () => {
 
   it("water inside the rect causes false", () => {
     const t = new Terrain(5, 5);
-    // (1,1) is flat elevation-0 but water predicate marks it as water
+    // (1,1) is flat (at MIN_LAND_ELEVATION baseline) but water predicate marks it as water
     expect(t.isFlatArea(0, 0, 3, 3, (x, y) => x === 1 && y === 1)).toBe(false);
   });
 });
@@ -383,7 +407,8 @@ describe("canBuildAt", () => {
 
   it("1×1 raised tile rejects", () => {
     const t = new Terrain(5, 5);
-    t.unsafeSetElevation(1, 1, 1);
+    // Raise above baseline so the tile is not flat relative to its neighbors.
+    t.unsafeSetElevation(1, 1, MIN_LAND_ELEVATION + 1);
     expect(t.canBuildAt(1, 1, 1, 1, noWater)).toBe(false);
   });
 
@@ -408,7 +433,8 @@ describe("canBuildRoadAt", () => {
 
   it("1×1 raised tile rejects", () => {
     const t = new Terrain(5, 5);
-    t.unsafeSetElevation(1, 1, 1);
+    // Raise above baseline so the tile is not flat relative to its neighbors.
+    t.unsafeSetElevation(1, 1, MIN_LAND_ELEVATION + 1);
     expect(t.canBuildRoadAt(1, 1, noWater)).toBe(false);
   });
 

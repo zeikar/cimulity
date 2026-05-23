@@ -11,7 +11,7 @@ import {
   WORLD_SAVE_VERSION,
 } from './mapSerialization';
 import { BuildingMap } from './Building';
-import { MAX_ELEVATION } from './Terrain';
+import { MAX_ELEVATION, MIN_LAND_ELEVATION } from './Terrain';
 import * as terrainGeneratorModule from './terrainGenerator';
 
 describe('serializeMap / deserializeMapInto', () => {
@@ -1442,8 +1442,8 @@ describe('v6 terrain save/load', () => {
     expect(world.getMoney()).toBe(prevMoney);
   });
 
-  // (e) v1–v5 load installs fresh default terrain (all-zero elevations, all-grass baseTiles)
-  it('(e) v1 load installs fresh default terrain (all-zero, all-grass)', () => {
+  // (e) v1–v5 load installs fresh default terrain (MIN_LAND_ELEVATION elevations, all-grass baseTiles)
+  it('(e) v1 load installs fresh default terrain (MIN_LAND_ELEVATION, all-grass)', () => {
     const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 1,
@@ -1455,13 +1455,13 @@ describe('v6 terrain save/load', () => {
     const terrain = world.getTerrain();
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(terrain.getBaseTerrain(x, y)).toBe('grass');
       }
     }
   });
 
-  it('(e) v2 load installs fresh default terrain (all-zero, all-grass)', () => {
+  it('(e) v2 load installs fresh default terrain (MIN_LAND_ELEVATION, all-grass)', () => {
     const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 2,
@@ -1474,13 +1474,13 @@ describe('v6 terrain save/load', () => {
     const terrain = world.getTerrain();
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(terrain.getBaseTerrain(x, y)).toBe('grass');
       }
     }
   });
 
-  it('(e) v3 load installs fresh default terrain (all-zero, all-grass)', () => {
+  it('(e) v3 load installs fresh default terrain (MIN_LAND_ELEVATION, all-grass)', () => {
     const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 3,
@@ -1494,13 +1494,13 @@ describe('v6 terrain save/load', () => {
     const terrain = world.getTerrain();
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(terrain.getBaseTerrain(x, y)).toBe('grass');
       }
     }
   });
 
-  it('(e) v4 load installs fresh default terrain (all-zero, all-grass)', () => {
+  it('(e) v4 load installs fresh default terrain (MIN_LAND_ELEVATION, all-grass)', () => {
     const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 4,
@@ -1515,13 +1515,13 @@ describe('v6 terrain save/load', () => {
     const terrain = world.getTerrain();
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(terrain.getBaseTerrain(x, y)).toBe('grass');
       }
     }
   });
 
-  it('(e) v5 load installs fresh default terrain (all-zero, all-grass)', () => {
+  it('(e) v5 load installs fresh default terrain (MIN_LAND_ELEVATION, all-grass)', () => {
     const world = new World(W, H, { regenerate: false });
     const payload = JSON.stringify({
       v: 5,
@@ -1537,7 +1537,7 @@ describe('v6 terrain save/load', () => {
     const terrain = world.getTerrain();
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(terrain.getTileElevation(x, y)).toBe(0);
+        expect(terrain.getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(terrain.getBaseTerrain(x, y)).toBe('grass');
       }
     }
@@ -1580,7 +1580,8 @@ describe('v6 terrain save/load', () => {
       b: [],
     });
     expect(deserializeWorldInto(world, payload)).toBe(true);
-    expect(world.getTerrain().getTileElevation(5, 5)).toBe(0);
+    // v5 legacy load installs a fresh Terrain, so elevation resets to MIN_LAND_ELEVATION.
+    expect(world.getTerrain().getTileElevation(5, 5)).toBe(MIN_LAND_ELEVATION);
   });
 
   // (h) v6 malformed terrain block: full world state unchanged on rejection
@@ -1810,18 +1811,18 @@ describe('Task 8: hydration + generator-spy tests', () => {
     const world = new World(W, H, { regenerate: true });
     expect(deserializeWorldInto(world, v5JsonStr)).toBe(true);
 
-    // All elevations must be 0 after v5 legacy hydration.
+    // All elevations reset to MIN_LAND_ELEVATION after v5 legacy hydration (fresh Terrain installed).
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
       }
     }
     // Water tile preserved on the tile layer.
     expect(world.isWater(waterX, waterY)).toBe(true);
   });
 
-  // (c) v1 legacy hydration: all elevations reset to 0.
-  it('(c) v1 legacy hydration: all elevations are 0', () => {
+  // (c) v1 legacy hydration: all elevations reset to MIN_LAND_ELEVATION.
+  it('(c) v1 legacy hydration: all elevations are MIN_LAND_ELEVATION', () => {
     const v1JsonStr = JSON.stringify({
       v: 1,
       w: W,
@@ -1834,7 +1835,7 @@ describe('Task 8: hydration + generator-spy tests', () => {
 
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
       }
     }
   });

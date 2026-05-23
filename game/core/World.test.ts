@@ -14,7 +14,7 @@ import {
   DEFAULT_NEWCITY_SEED,
 } from './World';
 import { TileType, createTile } from './Tile';
-import { Terrain } from './Terrain';
+import { Terrain, MIN_LAND_ELEVATION } from './Terrain';
 
 describe('World', () => {
   it('builds a map of the requested size', () => {
@@ -1102,12 +1102,12 @@ describe('World.tick() — no-building branch creates level-0 building', () => {
 
 describe('World.tick() — zone-growth blocked on slope edge tile', () => {
   it('zone tile on slope edge does NOT grow even after ZONE_GROWTH_INTERVAL ticks', () => {
-    // Tile (1,0) is raised to elevation 1; its east/west neighbors are at 0 → slope mask non-zero.
+    // Tile (1,0) is raised to elevation 2; its east/west neighbors are at MIN_LAND_ELEVATION=1 → slope mask non-zero.
     // canBuildAt(1,0,1,1) = false → Branch A skips building creation.
-    // Road placed at (1,1) (elevation 0, flat) to satisfy road-adjacency requirement for the zone.
+    // Road placed at (1,1) (elevation MIN_LAND_ELEVATION, flat) to satisfy road-adjacency requirement for the zone.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
-    world.getTerrain().unsafeSetElevation(1, 0, 1);
+    world.getTerrain().unsafeSetElevation(1, 0, 2);
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ROAD)); // orthogonal neighbor (south)
 
@@ -1175,7 +1175,7 @@ describe('World.getTerrainRevision() — monotonicity', () => {
   it('rejected setElevation (diff > 1 from flat neighbors) does NOT bump rev', () => {
     const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
-    // All neighbors are at 0; setting to 5 violates the ≤1-step rule.
+    // All neighbors are at MIN_LAND_ELEVATION; setting to 5 violates the ≤1-step rule.
     const accepted = world.getTerrain().setElevation(0, 0, 5);
     expect(accepted).toBe(false);
     expect(world.getTerrainRevision()).toBe(rev0);
@@ -1275,8 +1275,8 @@ describe('World.canBuildRoadAt()', () => {
 
   it('returns false for a raised tile (slope mask non-zero in otherwise flat map)', () => {
     const world = new World(8, 8, { regenerate: false });
-    // Raise tile (2,2) — all its flat neighbors are at 0, so slope mask is non-zero.
-    world.getTerrain().unsafeSetElevation(2, 2, 1);
+    // Raise tile (2,2) above the MIN_LAND_ELEVATION baseline so neighbors are lower.
+    world.getTerrain().unsafeSetElevation(2, 2, 2);
     expect(world.canBuildRoadAt(2, 2)).toBe(false);
   });
 
@@ -1307,13 +1307,13 @@ describe('World procedural terrain — constructor default (regenerate: true)', 
     expect(hasWater).toBe(true);
   });
 
-  it('(b) new World(32, 32, { regenerate: false }) has all-zero elevations and no water tiles', () => {
+  it('(b) new World(32, 32, { regenerate: false }) has all-MIN_LAND_ELEVATION elevations and no water tiles', () => {
     const world = new World(32, 32, { regenerate: false });
     const W = 32;
     const H = 32;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(world.isWater(x, y)).toBe(false);
       }
     }
@@ -1326,20 +1326,20 @@ describe('World procedural terrain — constructor default (regenerate: true)', 
     let hasElevation = false;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        if (world.getTerrain().getTileElevation(x, y) > 0) hasElevation = true;
+        if (world.getTerrain().getTileElevation(x, y) > MIN_LAND_ELEVATION) hasElevation = true;
       }
     }
     expect(hasElevation).toBe(true);
   });
 
-  it('(d) reset({ regenerate: false }) after a generated world zeroes all elevations and removes water', () => {
+  it('(d) reset({ regenerate: false }) after a generated world resets to MIN_LAND_ELEVATION and removes water', () => {
     const world = new World(32, 32);
     world.reset({ regenerate: false });
     const W = 32;
     const H = 32;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        expect(world.getTerrain().getTileElevation(x, y)).toBe(0);
+        expect(world.getTerrain().getTileElevation(x, y)).toBe(MIN_LAND_ELEVATION);
         expect(world.isWater(x, y)).toBe(false);
       }
     }

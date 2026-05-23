@@ -286,10 +286,10 @@ describe('buildToolCommands - no-op tools still return []', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildToolCommands — terrain buildability gates', () => {
-  describe('raised single tile (cliff): 2×2 map with (1,1) at elevation 1', () => {
+  describe('raised single tile (cliff): 2×2 map with (1,1) at elevation 2 above baseline', () => {
     it('road at raised (1,1) is REJECTED; road at flat (0,0) is ACCEPTED', () => {
-      // (1,1) raised: its flat neighbors are at 0 → slope mask non-zero → canBuildRoadAt = false
-      world.getTerrain().unsafeSetElevation(1, 1, 1);
+      // (1,1) raised to 2: its flat neighbors are at MIN_LAND_ELEVATION=1 → slope mask non-zero → canBuildRoadAt = false
+      world.getTerrain().unsafeSetElevation(1, 1, 2);
       const commands = buildToolCommands(
         Tool.ROAD,
         [{ x: 1, y: 1 }, { x: 0, y: 0 }],
@@ -300,7 +300,7 @@ describe('buildToolCommands — terrain buildability gates', () => {
     });
 
     it('zone at raised (1,1) is REJECTED; zone at flat (0,0) is ACCEPTED', () => {
-      world.getTerrain().unsafeSetElevation(1, 1, 1);
+      world.getTerrain().unsafeSetElevation(1, 1, 2);
       const commands = buildToolCommands(
         Tool.ZONE_RESIDENTIAL,
         [{ x: 1, y: 1 }, { x: 0, y: 0 }],
@@ -313,12 +313,12 @@ describe('buildToolCommands — terrain buildability gates', () => {
 
   describe('3×3 plateau: interior tile flat, edge tile on slope rejected', () => {
     beforeEach(() => {
-      // Raise a 3×3 block at (2,2)-(4,4) to elevation 1.
+      // Raise a 3×3 block at (2,2)-(4,4) to elevation 2 above the MIN_LAND_ELEVATION=1 baseline.
       // Interior tile (3,3): all 4 orthogonal neighbors inside plateau → same elevation → flat.
-      // Edge tile (2,2): neighbor (1,2) at elevation 0 → slope mask non-zero → not flat.
+      // Edge tile (2,2): neighbor (1,2) at MIN_LAND_ELEVATION=1 < 2 → slope mask non-zero → not flat.
       for (let py = 2; py < 5; py++) {
         for (let px = 2; px < 5; px++) {
-          world.getTerrain().unsafeSetElevation(px, py, 1);
+          world.getTerrain().unsafeSetElevation(px, py, 2);
         }
       }
     });

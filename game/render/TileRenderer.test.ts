@@ -146,20 +146,20 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     // Second render — update path (terrainRev changed → full pass).
     renderer.render(world);
 
-    // Center tile (1,1): H=2, all 8 neighbors at default elevation 0 → every corner = min(2, 0, ...) = 0.
+    // Center tile (1,1): H=2, all 8 neighbors at MIN_LAND_ELEVATION=1 → every corner = min(2,1,...) = 1.
     const r11 = terrainVisual.updates.find((r) => r.x === 1 && r.y === 1);
     expect(r11).toBeDefined();
     expect(r11!.renderHeight).toBe(2);
-    // center H=2, all 8 neighbors at default elevation 0 → every corner = min(2, 0, ...) = 0
-    expect(r11!.cornerHeights).toEqual({ topH: 0, rightH: 0, bottomH: 0, leftH: 0 });
-    // slopeMask = 15 because all 4 cardinals are lower → mask is LOWER_N|LOWER_E|LOWER_S|LOWER_W = 15 → terrainShapeFor(15) === 'rough'
+    // center H=2, all 8 neighbors at MIN_LAND_ELEVATION=1 → every corner = min(2, 1, ...) = 1
+    expect(r11!.cornerHeights).toEqual({ topH: 1, rightH: 1, bottomH: 1, leftH: 1 });
+    // slopeMask = 15 because all 4 cardinals are lower (1 < 2) → mask is LOWER_N|LOWER_E|LOWER_S|LOWER_W = 15 → terrainShapeFor(15) === 'rough'
     expect(r11!.shape).toBe('rough');
     expect(r11!.mapBounds).toEqual({ width: 3, height: 3 });
 
-    // Corner tile (0,0): all elevations at default 0 → flat, all corner heights 0.
+    // Corner tile (0,0): all elevations at MIN_LAND_ELEVATION=1 → flat, all corner heights 1.
     const r00 = terrainVisual.updates.find((r) => r.x === 0 && r.y === 0);
     expect(r00).toBeDefined();
-    expect(r00!.cornerHeights).toEqual({ topH: 0, rightH: 0, bottomH: 0, leftH: 0 });
+    expect(r00!.cornerHeights).toEqual({ topH: 1, rightH: 1, bottomH: 1, leftH: 1 });
     expect(r00!.shape).toBe('flat');
     expect(r00!.mapBounds).toEqual({ width: 3, height: 3 });
   });
