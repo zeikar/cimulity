@@ -38,7 +38,7 @@ function fillTri(
 function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const h = input.renderHeight ?? 0;
   const c = input.cornerHeights ?? { topH: h, rightH: h, bottomH: h, leftH: h };
-  const color = tileFillColor(input.type, input.level);
+  const color = tileFillColor(input.type, input.level, input.tileElevation);
   // rough = ambiguous slope shape; the 0.85 base-fill darken is an EXTRA visual cue
   // on top of Lambert shading. But cornerHeights = MIN-of-4-neighbors can collapse a
   // "rough" tile (e.g. an isolated peak with all 4 cardinals lower → slopeMask=15)

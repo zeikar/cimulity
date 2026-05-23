@@ -63,10 +63,9 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
       continue;
     }
 
-    // Cannot place roads on water or zoned land
-    // Belt-and-suspenders: world.canBuildRoadAt already injects isWater, but the tile-type
-    // guard below also keeps roads off zone tiles (which canBuildRoadAt does not check).
-    if (currentTile.type === TileType.WATER || isZoneType(currentTile.type)) {
+    // Cannot place roads on zoned land.
+    // water rejection is handled by world.canBuildRoadAt (elevation-derived) below.
+    if (isZoneType(currentTile.type)) {
       continue;
     }
 

@@ -359,17 +359,18 @@ describe('buildToolCommands — terrain buildability gates', () => {
     });
   });
 
-  describe('water tile on tile layer rejects road and zone via World.isWater wire', () => {
+  describe('elevation-derived water rejects road and zone', () => {
     beforeEach(() => {
-      world.getMap().setTile(5, 5, createTile(5, 5, TileType.WATER));
+      // Water is now elevation-derived: drop (5,5) to SEA_LEVEL so world.isWater returns true.
+      world.getTerrain().unsafeSetElevation(5, 5, SEA_LEVEL);
     });
 
-    it('road at WATER tile (5,5) is REJECTED', () => {
+    it('road at water elevation (5,5) is REJECTED', () => {
       const commands = buildToolCommands(Tool.ROAD, [{ x: 5, y: 5 }], world);
       expect(commands).toHaveLength(0);
     });
 
-    it('zone at WATER tile (5,5) is REJECTED', () => {
+    it('zone at water elevation (5,5) is REJECTED', () => {
       const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 5, y: 5 }], world);
       expect(commands).toHaveLength(0);
     });

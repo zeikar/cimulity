@@ -328,18 +328,11 @@ export class World {
     // Procedural terrain generation.
     const W = this.map.getWidth();
     const H = this.map.getHeight();
-    const { elevations, waterMask } = terrainGenerator.generateTerrain(W, H, seed);
+    const { elevations } = terrainGenerator.generateTerrain(W, H, seed);
     const terrain = new Terrain(W, H);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         terrain.unsafeSetElevation(x, y, elevations[y][x]);
-      }
-    }
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        if (waterMask[y][x]) {
-          this.map.setTile(x, y, createTile(x, y, TileType.WATER));
-        }
       }
     }
     this.installTerrain(terrain);

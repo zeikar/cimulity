@@ -33,7 +33,6 @@ import { tileCornerHeights } from './terrain/tileCornerHeights';
 function buildRegistry(): VisualRegistry {
   const registry = new VisualRegistry();
   const allTypes: TileType[] = [
-    TileType.WATER,
     TileType.DIRT,
     TileType.GRASS,
     TileType.ROAD,
@@ -210,10 +209,11 @@ export class TileRenderer {
   private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain, mapBounds: MapBounds): void {
     const existing = this.tiles.get(index);
     const visual = this.registry.getTerrain(type);
+    const tileElevation = terrain.getTileElevation(x, y);
     const renderHeight = terrain.getRenderHeight(x, y);
     const cornerHeights = tileCornerHeights(terrain, x, y);
     const shape = terrain.getTerrainShape(x, y);
-    const input = { x, y, type, level, renderHeight, cornerHeights, shape, mapBounds };
+    const input = { x, y, type, level, tileElevation, renderHeight, cornerHeights, shape, mapBounds };
 
     if (!existing) {
       const displayObject = visual.mount(input, this.terrainContainer);

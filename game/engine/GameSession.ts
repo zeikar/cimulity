@@ -20,7 +20,7 @@ import { STARTING_FUNDS } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolResult } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
-import { TILE_COLORS } from '../render/visuals/palette';
+import { TILE_COLORS, WATER_COLOR } from '../render/visuals/palette';
 import { installDevApi, uninstallDevApi } from './devApi';
 
 // Drag-preview colors sourced from the shared palette so there's one source of truth.
@@ -29,7 +29,7 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
   [Tool.ZONE_COMMERCIAL]: TILE_COLORS['zone_commercial'],
   [Tool.ZONE_INDUSTRIAL]: TILE_COLORS['zone_industrial'],
   [Tool.BULLDOZE]: 0xff3b30,
-  [Tool.PAINT_WATER]: TILE_COLORS['water'],
+  [Tool.PAINT_WATER]: WATER_COLOR,
   [Tool.PAINT_GRASS]: TILE_COLORS['grass'],
 };
 

@@ -6,6 +6,10 @@
 import type { TileType } from '@/game/core/Tile';
 import { isZoneType } from '@/game/core/Tile';
 import { ZONE_MAX_LEVEL } from '@/game/core/World';
+import { SEA_LEVEL } from '@/game/core/Terrain';
+
+/** Canonical water color — single source of truth for elevation-derived water rendering. */
+export const WATER_COLOR = 0x2e6ba3;
 
 /** Base fill color per tile type. */
 export const TILE_COLORS: Record<TileType, number> = {
@@ -20,11 +24,14 @@ export const TILE_COLORS: Record<TileType, number> = {
 
 /**
  * Compute fill color for a tile.
+ * Elevation-derived water: GRASS tiles at or below SEA_LEVEL render as water.
  * Non-zone tiles return the exact base color.
  * Zone tiles interpolate toward white as level grows — brighter = more developed.
  * K=0.6 caps lightening so max level is clearly lighter but not pure white.
  */
-export function tileFillColor(type: TileType, level: number): number {
+export function tileFillColor(type: TileType, level: number, tileElevation: number): number {
+  // Elevation-derived water: GRASS at or below sea level is visually water.
+  if (type === 'grass' && tileElevation <= SEA_LEVEL) return WATER_COLOR;
   const base = TILE_COLORS[type];
   if (!isZoneType(type)) return base;
 

@@ -18,14 +18,14 @@ describe('executeClick', () => {
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
   });
 
-  it('does not place a road on water', () => {
+  it('does not place a road on water (elevation-derived)', () => {
     const world = makeWorld();
-    world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
+    // Water is now elevation-derived: drop (1,1) to SEA_LEVEL so world.isWater returns true.
+    world.getTerrain().unsafeSetElevation(1, 1, 0);
 
     const result = executeClick(Tool.ROAD, { x: 1, y: 1 }, world);
 
     expect(result.changedTiles).toEqual([]);
-    expect(world.getMap().getTile(1, 1)?.type).toBe(TileType.WATER);
   });
 
   it('does not re-place a road on an existing road', () => {
@@ -123,9 +123,10 @@ describe('executeDrag', () => {
     ]);
   });
 
-  it('skips water tiles in the middle of a diagonal drag', () => {
+  it('skips water tiles in the middle of a diagonal drag (elevation-derived)', () => {
     const world = makeWorld(5);
-    world.getMap().setTile(2, 2, createTile(2, 2, TileType.WATER));
+    // Water is now elevation-derived: drop (2,2) to SEA_LEVEL so world.isWater returns true.
+    world.getTerrain().unsafeSetElevation(2, 2, 0);
 
     const result = executeDrag(Tool.ROAD, { x: 0, y: 0 }, { x: 4, y: 4 }, world);
 
@@ -135,7 +136,6 @@ describe('executeDrag', () => {
       { x: 3, y: 3 },
       { x: 4, y: 4 },
     ]);
-    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.WATER);
   });
 
   it('reports no change when the tool has no drag path', () => {

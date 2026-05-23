@@ -18,6 +18,8 @@ export interface TileVisualInput {
   y: number;
   type: TileType;
   level: number;
+  /** Raw tile elevation (integer steps). Used to derive water appearance for GRASS tiles at or below SEA_LEVEL. */
+  tileElevation: number;
   /** Pre-projected elevation height. Renderer populates via world.getTerrain().getRenderHeight(x,y). Test fixtures may omit (treated as 0). */
   renderHeight?: number;
   cornerHeights?: CornerHeights;
