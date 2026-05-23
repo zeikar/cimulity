@@ -19,9 +19,11 @@ const KEY_TO_TOOL_SHIFT: Record<string, Tool> = {
   g: Tool.PAINT_GRASS,
 };
 
-// Zone shortcuts moved from 1/2/3 to q/w/e so 1/2/3 are free for speed tiers (see KEY_TO_SPEED below) and Space toggles pause.
+// Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, r=raise terrain, f=lower terrain.
 const KEY_TO_TOOL: Record<string, Tool> = {
-  r: Tool.ROAD,
+  t: Tool.ROAD,
+  r: Tool.TERRAIN_UP,
+  f: Tool.TERRAIN_DOWN,
   b: Tool.BULLDOZE,
   s: Tool.SELECT,
   Escape: Tool.SELECT,

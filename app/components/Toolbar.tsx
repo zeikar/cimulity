@@ -29,7 +29,7 @@ const SPEEDS: { value: 1 | 2 | 3; label: string; shortcut: string }[] = [
 
 const TOOL_BUTTONS: Record<Tool, ToolButton> = {
   [Tool.SELECT]: { tool: Tool.SELECT, label: 'Select', shortcut: 'S' },
-  [Tool.ROAD]: { tool: Tool.ROAD, label: 'Road', shortcut: 'R' },
+  [Tool.ROAD]: { tool: Tool.ROAD, label: 'Road', shortcut: 'T' },
   [Tool.BULLDOZE]: { tool: Tool.BULLDOZE, label: 'Bulldoze', shortcut: 'B' },
   [Tool.ZONE_RESIDENTIAL]: { tool: Tool.ZONE_RESIDENTIAL, label: 'Residential', shortcut: 'Q' },
   [Tool.ZONE_COMMERCIAL]: { tool: Tool.ZONE_COMMERCIAL, label: 'Commercial', shortcut: 'W' },

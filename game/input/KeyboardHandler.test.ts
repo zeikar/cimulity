@@ -93,14 +93,16 @@ describe('KeyboardHandler', () => {
     expect(ee.preventDefault).toHaveBeenCalled();
   });
 
-  it('r / b / s / Escape still trigger onToolChange and call preventDefault', () => {
+  it('t / b / s / Escape / r / f trigger onToolChange with the correct tool each', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
 
     const pairs: Array<[string, Tool]> = [
-      ['r', Tool.ROAD],
+      ['t', Tool.ROAD],
       ['b', Tool.BULLDOZE],
       ['s', Tool.SELECT],
       ['Escape', Tool.SELECT],
+      ['r', Tool.TERRAIN_UP],
+      ['f', Tool.TERRAIN_DOWN],
     ];
     for (const [key, expected] of pairs) {
       onToolChange.mockClear();
@@ -229,6 +231,27 @@ describe('KeyboardHandler', () => {
   it('Ctrl+Shift+W is not intercepted — ctrl wins, no callback fires and preventDefault is not called', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
     const event = fire('W', null, { shiftKey: true, ctrlKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+R is not intercepted — modifier short-circuit guards new TERRAIN_UP bind', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+    const event = fire('r', null, { ctrlKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+T is not intercepted', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+    const event = fire('t', null, { ctrlKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+F is not intercepted', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+    const event = fire('f', null, { ctrlKey: true });
     expect(onToolChange).not.toHaveBeenCalled();
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
