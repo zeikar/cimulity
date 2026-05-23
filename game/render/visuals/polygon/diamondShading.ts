@@ -1,23 +1,25 @@
 import type { CornerHeights } from '../../terrain/tileCornerHeights';
+import { faceBrightness, upwardTriangleNormal, LIGHTING_Z_SCALE } from '../lighting';
+import type { Vec3 } from '../lighting';
 import { projectTileCornerScreen } from '@/game/render/IsoTransform';
 import type { ScreenCoord } from '@/game/types/coordinates';
 
 export type Diagonal = 'tb' | 'lr';
 
 /**
- * Decided layout for one tile's per-triangle shading + fold-line stroke.
+ * Decided layout for one tile's per-triangle brightness + fold-line stroke.
  *
- * Exactly one of `{shadeWest, shadeEast}` (when `diagonal === 'tb'`) or
- * `{shadeNorth, shadeSouth}` (when `diagonal === 'lr'`) is meaningful;
- * the other pair is always `false`. Keeps the type flat so the renderer
+ * Exactly one of `{brightnessWest, brightnessEast}` (when `diagonal === 'tb'`) or
+ * `{brightnessNorth, brightnessSouth}` (when `diagonal === 'lr'`) is meaningful;
+ * the unused pair is always `1.0`. Keeps the type flat so the renderer
  * doesn't have to discriminate.
  */
 export interface ShadingPlan {
   diagonal: Diagonal;
-  shadeWest: boolean;
-  shadeEast: boolean;
-  shadeNorth: boolean;
-  shadeSouth: boolean;
+  brightnessWest: number;
+  brightnessEast: number;
+  brightnessNorth: number;
+  brightnessSouth: number;
   /** True iff the quad is non-planar — draw the diagonal as an explicit stroke. */
   strokeFold: boolean;
 }
@@ -66,9 +68,10 @@ function concaveVertex(c: CornerHeights): 'top' | 'right' | 'bottom' | 'left' | 
  *      smaller height difference — that diagonal stays closest to the
  *      surface ridge so the fold lies along it. A tent (one corner up,
  *      three down) gets a fold PERPENDICULAR to the peak. Tie → TB.
- * - Per-triangle shading: a triangle shades iff its mean corner height is
- *   strictly less than the tile's max corner height (i.e. it tilts below
- *   the ridge).
+ * - Per-triangle brightness is `faceBrightness(upwardTriangleNormal(...))` from
+ *   `lighting.ts`, computed in world/tile space (NOT screen space) so the model
+ *   is rotation-friendly. Diagonal choice + concave override + strokeFold rules
+ *   unchanged.
  * - Fold stroke: drawn iff the quad is non-planar
  *   (`topH + bottomH !== leftH + rightH`). Planar quads (cardinal slopes,
  *   axis-aligned cliffs) have no real fold so no stroke. Non-planar quads
@@ -76,7 +79,6 @@ function concaveVertex(c: CornerHeights): 'top' | 'right' | 'bottom' | 'left' | 
  *   (one-corner-high tents AND diagonal-drop slopes).
  */
 export function planDiamondShading(c: CornerHeights): ShadingPlan {
-  const maxH = Math.max(c.topH, c.rightH, c.bottomH, c.leftH);
   const concave = concaveVertex(c);
   let useTB: boolean;
   if (concave === 'top' || concave === 'bottom') {
@@ -90,26 +92,28 @@ export function planDiamondShading(c: CornerHeights): ShadingPlan {
   }
   const strokeFold = c.topH + c.bottomH !== c.leftH + c.rightH;
 
+  // World-space tile corners at origin (0, 0). Axes: +x east, +y south, +z up.
+  const tTop:    Vec3 = [0, 0, c.topH    * LIGHTING_Z_SCALE];
+  const tRight:  Vec3 = [1, 0, c.rightH  * LIGHTING_Z_SCALE];
+  const tBottom: Vec3 = [1, 1, c.bottomH * LIGHTING_Z_SCALE];
+  const tLeft:   Vec3 = [0, 1, c.leftH   * LIGHTING_Z_SCALE];
+
   if (useTB) {
-    const westMean = (c.bottomH + c.leftH + c.topH) / 3;
-    const eastMean = (c.bottomH + c.rightH + c.topH) / 3;
     return {
       diagonal: 'tb',
-      shadeWest: westMean < maxH,
-      shadeEast: eastMean < maxH,
-      shadeNorth: false,
-      shadeSouth: false,
+      brightnessWest: faceBrightness(upwardTriangleNormal(tBottom, tLeft, tTop)),
+      brightnessEast: faceBrightness(upwardTriangleNormal(tBottom, tRight, tTop)),
+      brightnessNorth: 1.0,
+      brightnessSouth: 1.0,
       strokeFold,
     };
   }
-  const northMean = (c.leftH + c.topH + c.rightH) / 3;
-  const southMean = (c.leftH + c.bottomH + c.rightH) / 3;
   return {
     diagonal: 'lr',
-    shadeWest: false,
-    shadeEast: false,
-    shadeNorth: northMean < maxH,
-    shadeSouth: southMean < maxH,
+    brightnessWest: 1.0,
+    brightnessEast: 1.0,
+    brightnessNorth: faceBrightness(upwardTriangleNormal(tLeft, tTop, tRight)),
+    brightnessSouth: faceBrightness(upwardTriangleNormal(tLeft, tBottom, tRight)),
     strokeFold,
   };
 }
