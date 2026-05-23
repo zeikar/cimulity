@@ -37,6 +37,8 @@ function pathForTool(
     case Tool.BULLDOZE:
     case Tool.PAINT_WATER:
     case Tool.PAINT_GRASS:
+    case Tool.TERRAIN_UP:
+    case Tool.TERRAIN_DOWN:
       return rectDragPath(start, end);
     default:
       return [];

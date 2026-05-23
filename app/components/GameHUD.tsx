@@ -18,6 +18,8 @@ const TOOL_LABELS: Record<Tool, string> = {
   [Tool.ZONE_RESIDENTIAL]: 'Residential',
   [Tool.ZONE_COMMERCIAL]: 'Commercial',
   [Tool.ZONE_INDUSTRIAL]: 'Industrial',
+  [Tool.TERRAIN_UP]: 'Raise',
+  [Tool.TERRAIN_DOWN]: 'Lower',
 };
 
 export interface GameHUDProps {

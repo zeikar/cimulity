@@ -31,6 +31,8 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
   [Tool.BULLDOZE]: 0xff3b30,
   [Tool.PAINT_WATER]: WATER_COLOR,
   [Tool.PAINT_GRASS]: TILE_COLORS['grass'],
+  [Tool.TERRAIN_UP]: 0x6dd06d,
+  [Tool.TERRAIN_DOWN]: 0x6db0e0,
 };
 
 export interface GameSessionCallbacks {

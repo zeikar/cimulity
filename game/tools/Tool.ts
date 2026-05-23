@@ -11,4 +11,6 @@ export enum Tool {
   PAINT_WATER = 'paint_water',
   PAINT_GRASS = 'paint_grass',
   BULLDOZE = 'bulldoze',
+  TERRAIN_UP = 'terrain_up',
+  TERRAIN_DOWN = 'terrain_down',
 }

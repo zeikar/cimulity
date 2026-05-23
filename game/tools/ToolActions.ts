@@ -7,10 +7,17 @@
 
 import { Tool } from './Tool';
 import { TileType, createTile, isZoneType } from '../core/Tile';
-import { SEA_LEVEL, MIN_LAND_ELEVATION } from '../core/Terrain';
+import type { Tile } from '../core/Tile';
+import { SEA_LEVEL, MIN_LAND_ELEVATION, MAX_ELEVATION } from '../core/Terrain';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
+
+function isStructuredCell(world: World, tile: Tile, x: number, y: number): boolean {
+  if (tile.type === TileType.ROAD) return true;
+  if (isZoneType(tile.type)) return true;
+  return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
+}
 
 /** Narrow union of the three placeable zone tile types. */
 type ZoneTileType = TileType.ZONE_RESIDENTIAL | TileType.ZONE_COMMERCIAL | TileType.ZONE_INDUSTRIAL;
@@ -42,6 +49,10 @@ export function buildToolCommands(
       return buildPaintWaterCommands(tiles, world);
     case Tool.PAINT_GRASS:
       return buildPaintGrassCommands(tiles, world);
+    case Tool.TERRAIN_UP:
+      return buildTerrainUpCommands(tiles, world);
+    case Tool.TERRAIN_DOWN:
+      return buildTerrainDownCommands(tiles, world);
     default:
       return [];
   }
@@ -207,5 +218,55 @@ function buildPaintGrassCommands(tiles: TileCoord[], world: World): ToolCommand[
     // All other tile types (road, zone, etc.) are implicitly skipped
   }
 
+  return commands;
+}
+
+/**
+ * Build terrain-raise commands.
+ * Allow-list: skips OOB, structured cells (road/zone/building), already-clamped
+ *   tiles (elevation >= MAX_ELEVATION), and slope-blocked cells.
+ * Single-elevation branch only: emits one elevation command per qualifying tile.
+ * Atomicity: per-tile — skipped tiles produce no output; qualifying tiles emit exactly one command.
+ * Reads world only to decide intent; never mutates core.
+ */
+function buildTerrainUpCommands(tiles: TileCoord[], world: World): ToolCommand[] {
+  const commands: ToolCommand[] = [];
+  for (const { x, y } of tiles) {
+    const tile = world.getMap().getTile(x, y);
+    if (!tile) continue;
+    if (isStructuredCell(world, tile, x, y)) continue;
+    const current = world.getTerrain().getTileElevation(x, y);
+    const next = current + 1;
+    if (next > MAX_ELEVATION) continue;
+    if (!world.getTerrain().canSetElevation(x, y, next)) continue;
+    commands.push({ kind: 'elevation', x, y, elevation: next });
+  }
+  return commands;
+}
+
+/**
+ * Build terrain-lower commands.
+ * Allow-list: skips OOB, structured cells (road/zone/building), already-clamped
+ *   tiles (next elevation < SEA_LEVEL), and slope-blocked cells.
+ * DIRT→SEA_LEVEL paired write: when a DIRT tile would land exactly at SEA_LEVEL,
+ *   emits a tile command (DIRT→GRASS) before the elevation command — both or neither
+ *   (the slope preflight earlier ensures atomicity of the pair).
+ * Reads world only to decide intent; never mutates core.
+ */
+function buildTerrainDownCommands(tiles: TileCoord[], world: World): ToolCommand[] {
+  const commands: ToolCommand[] = [];
+  for (const { x, y } of tiles) {
+    const tile = world.getMap().getTile(x, y);
+    if (!tile) continue;
+    if (isStructuredCell(world, tile, x, y)) continue;
+    const current = world.getTerrain().getTileElevation(x, y);
+    const next = current - 1;
+    if (next < SEA_LEVEL) continue;
+    if (!world.getTerrain().canSetElevation(x, y, next)) continue;
+    if (tile.type === TileType.DIRT && next <= SEA_LEVEL) {
+      commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
+    }
+    commands.push({ kind: 'elevation', x, y, elevation: next });
+  }
   return commands;
 }
