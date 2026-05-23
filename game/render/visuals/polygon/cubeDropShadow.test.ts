@@ -1,8 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { Container } from 'pixi.js';
-import { SHADOW_COLOR, SHADOW_ALPHA, SHADOW_LIFT_FACTOR_X, SHADOW_MIN_OFFSET_X, cubeShadowPolygon } from './cubeDropShadow';
+import { SHADOW_COLOR, SHADOW_ALPHA, SHADOW_MIN_OFFSET_X, cubeShadowPolygon } from './cubeDropShadow';
+import { shadowOffsetScreen } from '../lighting';
+import { ELEVATION_HEIGHT } from '@/game/core';
 import { cubeFacePolygons } from './cubeGeometry';
 import { SHADOW_Z_OFFSET, CubeBuildingVisual } from './CubeBuildingVisual';
+
+// Per-test helper mirroring cubeDropShadow's derivation: pixel offset for a given
+// mainLift, derived from shadowOffsetScreen and clamped by SHADOW_MIN_OFFSET_X.
+const expectedOffset = (mainLift: number): { ox: number; oy: number } => {
+  const unit = shadowOffsetScreen(1);
+  const z = mainLift / ELEVATION_HEIGHT;
+  const ox = Math.max(SHADOW_MIN_OFFSET_X, unit.dx * z);
+  const oy = unit.dy * (ox / unit.dx);
+  return { ox, oy };
+};
 
 describe('cubeDropShadow', () => {
   it('SHADOW_COLOR is 0x000000', () => {
@@ -13,8 +25,12 @@ describe('cubeDropShadow', () => {
     expect(SHADOW_ALPHA).toBe(0.35);
   });
 
-  it('SHADOW_LIFT_FACTOR_X is 0.22 (shadow offset scales with building lift)', () => {
-    expect(SHADOW_LIFT_FACTOR_X).toBe(0.22);
+  it('shadow direction tracks LIGHT_DIR_WORLD via shadowOffsetScreen (2:1 iso aspect for current pure-west light)', () => {
+    // The cube polygon offset is derived from shadowOffsetScreen(z); for the current
+    // LIGHT_DIR_WORLD = (-1, 0, 1) the projected direction is pure SE with dy = dx/2.
+    const unit = shadowOffsetScreen(1);
+    expect(unit.dx).toBeGreaterThan(0);
+    expect(unit.dy).toBeCloseTo(unit.dx / 2, 9);
   });
 
   it('SHADOW_MIN_OFFSET_X is 4 (floor so low cubes still cast a visible shadow)', () => {
@@ -82,8 +98,7 @@ describe('cubeDropShadow', () => {
     expect(out.length).toBe(4);
 
     const mainLift = f.left[2].y - f.left[1].y;
-    const expectedOX = Math.max(SHADOW_MIN_OFFSET_X, mainLift * SHADOW_LIFT_FACTOR_X);
-    const expectedOY = expectedOX / 2;
+    const { ox: expectedOX, oy: expectedOY } = expectedOffset(mainLift);
 
     // Shadow center Y = base-plane Y + expected offset
     const basePlaneY = (f.left[2].y + f.right[3].y) / 2;
@@ -111,8 +126,7 @@ describe('cubeDropShadow', () => {
     for (const f of [facesA, facesB]) {
       const out = cubeShadowPolygon(f);
       const mainLift = f.left[2].y - f.left[1].y;
-      const expectedOX = Math.max(SHADOW_MIN_OFFSET_X, mainLift * SHADOW_LIFT_FACTOR_X);
-      const expectedOY = expectedOX / 2;
+      const { ox: expectedOX, oy: expectedOY } = expectedOffset(mainLift);
       const baseCx = (f.top[0].x + f.top[1].x + f.top[2].x + f.top[3].x) / 4;
       const baseCy = (f.left[2].y + f.right[3].y) / 2;
       const outCx = (out[1].x + out[3].x) / 2;

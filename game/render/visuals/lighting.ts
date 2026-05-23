@@ -92,6 +92,15 @@ export const AMBIENT = 0.55;
 
 export const DIFFUSE = 0.45;
 
+/**
+ * Stylized shadow-length scale, applied as a multiplier on the physically-derived
+ * screen-space shadow vector. A physically-correct shadow under the current 45°-altitude
+ * light would extend `~ z * TILE_WIDTH/2` pixels horizontally — too long for the
+ * city-builder aesthetic. The default value (0.0825) preserves the prior cube-shadow
+ * look (`mainLift * 0.22` with `ELEVATION_HEIGHT=12`).
+ */
+export const SHADOW_LENGTH_SCALE = 0.0825;
+
 // FLAT_DOT: dot of straight-up normal with the light direction.
 // Math.max(0, ...) is load-bearing — a horizontal/downward light produces
 // dot <= 0, which the assertion below turns into a thrown error.
@@ -125,4 +134,36 @@ export function faceBrightness(normal: Vec3): number {
   const lambert = Math.max(0, dot(n, LIGHT_DIR_WORLD)) / FLAT_DOT;
   const raw = AMBIENT + DIFFUSE * lambert;
   return Math.min(1, raw);
+}
+
+// ---------------------------------------------------------------------------
+// Shadow projection
+// ---------------------------------------------------------------------------
+
+// Iso projection constants — duplicated here (vs imported from IsoTransform) so this
+// module stays import-free. These two values are part of the iso convention and won't
+// change without a renderer-wide redesign.
+const ISO_HALF_W = 32; // TILE_WIDTH / 2
+const ISO_HALF_H = 16; // TILE_HEIGHT / 2
+
+/**
+ * Screen-space shadow offset for a point at world height `z`, projected onto the
+ * `z = 0` ground plane along the LIGHT_DIR_WORLD direction. Direction is physically
+ * derived from the light vector; length is stylized via SHADOW_LENGTH_SCALE so the
+ * shadow stays visually subtle (a 45°-altitude light would otherwise produce shadows
+ * roughly 12× longer than the city-builder aesthetic calls for).
+ *
+ * For the current light (-1, 0, 1)/√2 this returns `(z·32, z·16) · 0.0825 ≈ (2.64z, 1.32z)`
+ * pixels south-east — matching the prior `cubeDropShadow.ts` formula bit-for-bit.
+ *
+ * Returns `{dx: 0, dy: 0}` for non-positive z (a ground-level point casts no offset).
+ */
+export function shadowOffsetScreen(z: number): { dx: number; dy: number } {
+  if (z <= 0) return { dx: 0, dy: 0 };
+  const wx = (-LIGHT_DIR_WORLD[0] * z) / LIGHT_DIR_WORLD[2];
+  const wy = (-LIGHT_DIR_WORLD[1] * z) / LIGHT_DIR_WORLD[2];
+  return {
+    dx: (wx - wy) * ISO_HALF_W * SHADOW_LENGTH_SCALE,
+    dy: (wx + wy) * ISO_HALF_H * SHADOW_LENGTH_SCALE,
+  };
 }

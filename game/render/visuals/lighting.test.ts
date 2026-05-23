@@ -3,12 +3,14 @@ import {
   LIGHT_DIR_WORLD,
   AMBIENT,
   DIFFUSE,
+  SHADOW_LENGTH_SCALE,
   dot,
   cross,
   sub,
   normalize,
   upwardTriangleNormal,
   faceBrightness,
+  shadowOffsetScreen,
 } from './lighting';
 
 describe('LIGHT_DIR_WORLD', () => {
@@ -143,5 +145,31 @@ describe('faceBrightness', () => {
   });
   it('degenerate zero normal → same brightness as (0,0,1)', () => {
     expect(faceBrightness([0, 0, 0])).toBeCloseTo(faceBrightness([0, 0, 1]), 9);
+  });
+});
+
+describe('shadowOffsetScreen', () => {
+  it('z=0 returns zero offset (a ground-level point casts no shadow drop)', () => {
+    expect(shadowOffsetScreen(0)).toEqual({ dx: 0, dy: 0 });
+  });
+  it('negative z returns zero offset (below-ground points have no shadow)', () => {
+    expect(shadowOffsetScreen(-5)).toEqual({ dx: 0, dy: 0 });
+  });
+  it('linear in z (doubling z doubles offset)', () => {
+    const a = shadowOffsetScreen(1);
+    const b = shadowOffsetScreen(2);
+    expect(b.dx).toBeCloseTo(a.dx * 2, 9);
+    expect(b.dy).toBeCloseTo(a.dy * 2, 9);
+  });
+  it('preserves iso 2:1 aspect (dy = dx/2) for the current pure-west light', () => {
+    // LIGHT = (-1, 0, 1)/√2 produces shadow direction = world (+1, 0), which iso-projects
+    // to screen (TILE_W/2, TILE_H/2) = (32, 16) — the canonical 2:1 ratio.
+    const { dx, dy } = shadowOffsetScreen(3);
+    expect(dy).toBeCloseTo(dx / 2, 9);
+  });
+  it('z=1 magnitude matches stylized scale (32 · SHADOW_LENGTH_SCALE pixels east)', () => {
+    // Hard-coded literal anchors the contract: changing SHADOW_LENGTH_SCALE or the iso
+    // tile size should trip this assertion.
+    expect(shadowOffsetScreen(1).dx).toBeCloseTo(32 * SHADOW_LENGTH_SCALE, 9);
   });
 });
