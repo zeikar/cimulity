@@ -21,10 +21,10 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// STORAGE_KEY is frozen at 'cimulity:save:v2' (key name tracks the 64×64 map dimension
-// change, not the payload schema). Persisted payload is a world envelope at
-// WORLD_SAVE_VERSION = 7. Older versions are rejected on load → fresh world.
-const STORAGE_KEY = 'cimulity:save:v2';
+// Storage key bumped to 'cimulity:save:v7' to match WORLD_SAVE_VERSION = 7.
+// Legacy saves at ':v2' remain in localStorage untouched but are never read.
+// First save under this key always creates fresh data (no silent overwrite of stale data).
+const STORAGE_KEY = 'cimulity:save:v7';
 
 // Bump this string whenever the stash format changes (e.g. a new required API
 // is added). An HMR singleton carrying a mismatched guard is discarded and

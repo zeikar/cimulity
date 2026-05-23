@@ -148,10 +148,14 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
 /**
  * Build paint-water commands.
  * Allow-list (all three must hold or the tile is skipped):
- *   1. Tile type is GRASS.
+ *   1. Tile type is GRASS or DIRT.
  *   2. No building footprint covers this cell.
- *   3. Not already at sea level (no-op short-circuit).
- * Emits an elevation command to SEA_LEVEL; no tile write.
+ *   3. Not already water (no-op short-circuit; only reachable for GRASS since
+ *      DIRT is always above sea level by invariant).
+ * GRASS branch: emits one elevation command to SEA_LEVEL.
+ * DIRT branch: preflights `canSetElevation(x, y, SEA_LEVEL)` before emitting anything.
+ *   If slope-blocked, skips both commands (no partial mutation). If slope-safe, emits
+ *   paired commands: tile write DIRT→GRASS first, then elevation to SEA_LEVEL.
  * Reads world only to decide intent; never mutates core.
  */
 function buildPaintWaterCommands(tiles: TileCoord[], world: World): ToolCommand[] {
@@ -161,9 +165,15 @@ function buildPaintWaterCommands(tiles: TileCoord[], world: World): ToolCommand[
   for (const { x, y } of tiles) {
     const currentTile = map.getTile(x, y);
     if (!currentTile) continue;
-    if (currentTile.type !== TileType.GRASS) continue;
+    if (currentTile.type !== TileType.GRASS && currentTile.type !== TileType.DIRT) continue;
     if (map.getBuildings().getBuildingAt(x, y) !== null) continue;
     if (world.isWater(x, y)) continue;
+    if (currentTile.type === TileType.DIRT) {
+      // Atomic preflight: paired tile+elevation commands are safe only if the
+      // elevation lower will succeed. If slope-blocked, skip both — no partial mutation.
+      if (!world.getTerrain().canSetElevation(x, y, SEA_LEVEL)) continue;
+      commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
+    }
     commands.push({ kind: 'elevation', x, y, elevation: SEA_LEVEL });
   }
 

@@ -672,4 +672,35 @@ describe('executeClick/executeDrag — paint terrain elevation branch (dispatch 
     expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
   });
+
+  it('PAINT_WATER on DIRT (dispatch): tile becomes GRASS, elevation drops to SEA_LEVEL, isWater true', () => {
+    // 5x5 world, all cells at MIN_LAND_ELEVATION (1). DIRT at (2,2) with slope-safe neighbors.
+    // Paired commands: tile DIRT→GRASS first, then elevation → SEA_LEVEL.
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(0); // SEA_LEVEL
+    expect(world.isWater(2, 2)).toBe(true);
+  });
+
+  it('PAINT_WATER on DIRT at high plateau (dispatch, slope-blocked) → tile stays DIRT, elevation unchanged', () => {
+    // All tiles at elev 5; DIRT at (2,2). Preflight blocks both commands — no partial mutation.
+    const world = makeWorld(5);
+    for (let y = 0; y < 5; y++) {
+      for (let x = 0; x < 5; x++) {
+        world.getTerrain().unsafeSetElevation(x, y, 5);
+      }
+    }
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+
+    const result = executeClick(Tool.PAINT_WATER, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(5);
+  });
 });

@@ -192,9 +192,28 @@ describe('buildToolCommands - PAINT_WATER emitted-command shapes', () => {
     expect(commands).toHaveLength(0);
   });
 
-  it('rejected — DIRT tile: zero commands', () => {
+  it('DIRT tile: emits paired tile (DIRT→GRASS) + elevation commands', () => {
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
     const commands = buildToolCommands(Tool.PAINT_WATER, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(2);
+    expect(commands[0].kind).toBe('tile');
+    if (commands[0].kind === 'tile') {
+      expect(commands[0].x).toBe(2);
+      expect(commands[0].y).toBe(2);
+      expect(commands[0].tile.type).toBe(TileType.GRASS);
+    }
+    expect(commands[1]).toEqual({ kind: 'elevation', x: 2, y: 2, elevation: SEA_LEVEL });
+  });
+
+  it('PAINT_WATER on DIRT at high plateau (slope-blocked) → zero commands (no partial mutation)', () => {
+    // All tiles at elev 5; DIRT at (5,5). Dropping to SEA_LEVEL (0) violates slope constraint.
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        world.getTerrain().unsafeSetElevation(x, y, 5);
+      }
+    }
+    world.getMap().setTile(5, 5, createTile(5, 5, TileType.DIRT));
+    const commands = buildToolCommands(Tool.PAINT_WATER, [{ x: 5, y: 5 }], world);
     expect(commands).toHaveLength(0);
   });
 
