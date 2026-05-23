@@ -22,6 +22,22 @@ export const TILE_COLORS: Record<TileType, number> = {
 };
 
 /**
+ * Are these corner heights renderable as water for the given tile type?
+ *
+ * Mirrors `tileFillColor`'s water branch (grass + elevation ≤ SEA_LEVEL) but
+ * applied to an arbitrary set of corner heights — used by the per-triangle
+ * "all corners submerged" check in `DiamondTileVisual`. The grass gate
+ * matches the palette contract: only grass tiles ever render as water.
+ * Roads, zones, and dirt above sea level keep their own color even if
+ * MIN-of-4 corner heights drop them to sea level.
+ */
+export function cornersRenderAsWater(type: TileType, cornerHeights: readonly number[]): boolean {
+  if (type !== 'grass') return false;
+  for (const h of cornerHeights) if (h > SEA_LEVEL) return false;
+  return cornerHeights.length > 0;
+}
+
+/**
  * Compute fill color for a tile.
  * Elevation-derived water: GRASS tiles at or below SEA_LEVEL render as water.
  * Non-zone tiles return the exact base color.

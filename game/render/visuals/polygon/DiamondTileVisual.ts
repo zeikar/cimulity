@@ -6,7 +6,7 @@
 import { Graphics, Container } from 'pixi.js';
 import { projectTileCornerScreen } from '@/game/render/IsoTransform';
 import type { ScreenCoord } from '@/game/types/coordinates';
-import { tileFillColor } from '../palette';
+import { tileFillColor, WATER_COLOR, cornersRenderAsWater } from '../palette';
 import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
@@ -49,6 +49,24 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const renderedFlat = c.topH === c.rightH && c.rightH === c.bottomH && c.bottomH === c.leftH;
   const fillColor = (input.shape === 'rough' && !renderedFlat) ? darken(color, 0.85) : color;
 
+  // Per-triangle "all-3 corners submerged" check: a triangle whose 3 corners
+  // are all at or below SEA_LEVEL renders as water, even when the tile's own
+  // elevation puts it above sea level. The MIN-of-4 corner rule can drop one
+  // or two corners of a coastal land tile to sea level; this prevents the
+  // resulting triangles from appearing as land "cliffs" diving into water.
+  // `cornersRenderAsWater` gates on `type === 'grass'` (palette contract),
+  // so non-grass tiles (roads, zones, dirt) keep their own color regardless
+  // of how their corners drop.
+  const tbWestWater  = cornersRenderAsWater(input.type, [c.bottomH, c.leftH,  c.topH]);
+  const tbEastWater  = cornersRenderAsWater(input.type, [c.bottomH, c.rightH, c.topH]);
+  const lrNorthWater = cornersRenderAsWater(input.type, [c.leftH,   c.topH,   c.rightH]);
+  const lrSouthWater = cornersRenderAsWater(input.type, [c.leftH,   c.bottomH, c.rightH]);
+  // All 4 corners submerged ⟹ both triangles are water. Swap the base diamond
+  // fill to WATER_COLOR so the sub-pixel seam between the two overlaid water
+  // triangles doesn't leak the land color.
+  const allCornersSubmerged = cornersRenderAsWater(input.type, [c.topH, c.rightH, c.bottomH, c.leftH]);
+  const baseFillColor = allCornersSubmerged ? WATER_COLOR : fillColor;
+
   // Geometry from tileCornerHeights via projectTileCornerScreen. In-bounds
   // adjacencies are continuous — no wall renderer. Per-triangle shading
   // provides depth cue for cardinal/diagonal slopes.
@@ -65,7 +83,7 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   gfx.lineTo(bottom.x, bottom.y);
   gfx.lineTo(left.x, left.y);
   gfx.closePath();
-  gfx.fill({ color: fillColor });
+  gfx.fill({ color: baseFillColor });
 
   // Per-triangle brightness + fold-line stroke from the shading plan helper.
   // See diamondShading.ts for the diagonal/brightness/stroke rules.
@@ -73,10 +91,11 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // brightness factor differs from 1.0 (the base fill stays visible only as the
   // seam-safety bleed; for brightness === 1.0 the overdraw is bit-identical).
   const plan = planDiamondShading(c);
-  const shadeColor = (factor: number) => darken(fillColor, factor);
+  const shadeColor = (factor: number, isWater: boolean) =>
+    darken(isWater ? WATER_COLOR : fillColor, factor);
   if (plan.diagonal === 'tb') {
-    fillTri(gfx, bottom, left,  top, shadeColor(plan.brightnessWest), 1.0);
-    fillTri(gfx, bottom, right, top, shadeColor(plan.brightnessEast), 1.0);
+    fillTri(gfx, bottom, left,  top, shadeColor(plan.brightnessWest, tbWestWater), 1.0);
+    fillTri(gfx, bottom, right, top, shadeColor(plan.brightnessEast, tbEastWater), 1.0);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(top.x, top.y);
@@ -84,8 +103,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
     }
   } else {
-    fillTri(gfx, left, top,    right, shadeColor(plan.brightnessNorth), 1.0);
-    fillTri(gfx, left, bottom, right, shadeColor(plan.brightnessSouth), 1.0);
+    fillTri(gfx, left, top,    right, shadeColor(plan.brightnessNorth, lrNorthWater), 1.0);
+    fillTri(gfx, left, bottom, right, shadeColor(plan.brightnessSouth, lrSouthWater), 1.0);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(left.x, left.y);

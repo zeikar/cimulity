@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { tileFillColor, TILE_COLORS, WATER_COLOR } from './palette';
+import { tileFillColor, TILE_COLORS, WATER_COLOR, cornersRenderAsWater } from './palette';
 import { TileType } from '@/game/core/Tile';
 import { SEA_LEVEL, MIN_LAND_ELEVATION } from '@/game/core/Terrain';
 
@@ -42,5 +42,32 @@ describe('tileFillColor', () => {
     const g2 = Math.round(g + (255 - g) * t * K);
     const b2 = Math.round(b + (255 - b) * t * K);
     expect(result).toBe((r2 << 16) | (g2 << 8) | b2);
+  });
+});
+
+describe('cornersRenderAsWater', () => {
+  it('GRASS with all corners ≤ SEA_LEVEL renders as water', () => {
+    expect(cornersRenderAsWater(TileType.GRASS, [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(true);
+    expect(cornersRenderAsWater(TileType.GRASS, [SEA_LEVEL - 1, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(true);
+  });
+
+  it('GRASS with any corner above SEA_LEVEL does not render as water', () => {
+    expect(cornersRenderAsWater(TileType.GRASS, [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL + 1])).toBe(false);
+    expect(cornersRenderAsWater(TileType.GRASS, [MIN_LAND_ELEVATION, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(false);
+  });
+
+  it('Non-grass tile types never render as water — even with all corners ≤ SEA_LEVEL', () => {
+    // Regression: per-triangle water rule must not bypass the palette gate
+    // and paint roads / zones / dirt as water when their MIN-of-4 corner
+    // heights drop to SEA_LEVEL via adjacent water tiles.
+    expect(cornersRenderAsWater(TileType.ROAD,             [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(false);
+    expect(cornersRenderAsWater(TileType.DIRT,             [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(false);
+    expect(cornersRenderAsWater(TileType.ZONE_RESIDENTIAL, [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(false);
+    expect(cornersRenderAsWater(TileType.ZONE_COMMERCIAL,  [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(false);
+    expect(cornersRenderAsWater(TileType.ZONE_INDUSTRIAL,  [SEA_LEVEL, SEA_LEVEL, SEA_LEVEL, SEA_LEVEL])).toBe(false);
+  });
+
+  it('Empty corner list returns false (defensive — no corners means no triangle)', () => {
+    expect(cornersRenderAsWater(TileType.GRASS, [])).toBe(false);
   });
 });
