@@ -3,7 +3,7 @@ import { buildToolCommands } from './ToolActions';
 import { Tool } from './Tool';
 import { World } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
-import { SEA_LEVEL, MIN_LAND_ELEVATION } from '../core/Terrain';
+import { SEA_LEVEL, MIN_LAND_ELEVATION, MAX_ELEVATION } from '../core/Terrain';
 import type { Building } from '../core/Building';
 
 const MAP_SIZE = 10;
@@ -319,6 +319,274 @@ describe('buildToolCommands - no-op tools still return []', () => {
   it('Tool.SELECT returns empty', () => {
     const commands = buildToolCommands(Tool.SELECT, [{ x: 0, y: 0 }], world);
     expect(commands).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TERRAIN_UP
+// ---------------------------------------------------------------------------
+
+describe('buildToolCommands - TERRAIN_UP', () => {
+  // (a) GRASS at MIN_LAND_ELEVATION: emits one elevation command to current+1
+  it('(a) GRASS at MIN_LAND_ELEVATION: emits elevation command to 2', () => {
+    // Default world: all GRASS at MIN_LAND_ELEVATION (1); neighbors also at 1 → slope OK
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: 2 });
+  });
+
+  // (b) GRASS at MAX_ELEVATION: next would exceed MAX_ELEVATION — clamped, zero commands
+  it('(b) GRASS at MAX_ELEVATION: zero commands (clamped at top)', () => {
+    // Seed (2,3) and its 3×3 neighborhood to MAX_ELEVATION so canSetElevation passes,
+    // but next=MAX_ELEVATION+1 > MAX_ELEVATION → early exit before the slope check
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        world.getTerrain().unsafeSetElevation(2 + dx, 3 + dy, MAX_ELEVATION);
+      }
+    }
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (c) GRASS at MAX_ELEVATION-1, slope-safe: one elevation command to MAX_ELEVATION
+  it('(c) GRASS at MAX_ELEVATION-1 with slope-safe neighborhood: one elevation command to MAX_ELEVATION', () => {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        world.getTerrain().unsafeSetElevation(2 + dx, 3 + dy, MAX_ELEVATION - 1);
+      }
+    }
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: MAX_ELEVATION });
+  });
+
+  // (d) Slope-blocked raise: neighbor at 4, target at 1, raising to 2 → delta vs neighbor is 2 → blocked
+  it('(d) slope-blocked raise: neighbor at 4 blocks 1→2, zero commands', () => {
+    // World uniform at 1; raise (1,2) to 4 bypassing slope check
+    world.getTerrain().unsafeSetElevation(1, 2, 4);
+    // Click at (2,2): would raise 1→2; canSetElevation(2,2,2): neighbor (1,2) at 4, |4-2|=2 → blocked
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (e) ROAD reject: structured cell → zero commands
+  it('(e) ROAD tile: zero commands', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (f) Zone reject: R/C/I all return zero commands
+  it('(f) zone tiles (R/C/I): zero commands each', () => {
+    const zoneTypes: TileType[] = [
+      TileType.ZONE_RESIDENTIAL,
+      TileType.ZONE_COMMERCIAL,
+      TileType.ZONE_INDUSTRIAL,
+    ];
+    for (const zoneType of zoneTypes) {
+      world.getMap().setTile(3, 3, createTile(3, 3, zoneType));
+      const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 3, y: 3 }], world);
+      expect(commands).toHaveLength(0);
+    }
+  });
+
+  // (g) Building footprint reject: tile stays GRASS but footprint blocks
+  it('(g) building footprint over GRASS: zero commands', () => {
+    const building: Building = {
+      id: 0,
+      type: 'residential',
+      footprint: [{ x: 4, y: 4 }],
+      anchor: { x: 4, y: 4 },
+      level: 0,
+      density: 0,
+      age: 0,
+    };
+    world.getMap().getBuildings().addExistingBuilding(building);
+    expect(world.getMap().getTile(4, 4)?.type).toBe(TileType.GRASS);
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 4, y: 4 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (h) DIRT, slope-safe raise: emits one elevation command, no tile write
+  it('(h) DIRT tile, slope-safe: emits elevation command only (no tile write)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    // Default elevation is 1 (MIN_LAND_ELEVATION); neighborhood at 1 → slope OK
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 2, elevation: 2 });
+  });
+
+  // (i) OOB: zero commands
+  it('(i) out-of-bounds {x:99,y:99}: zero commands', () => {
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 99, y: 99 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (j) Mixed batch [OOB, GRASS, ROAD, GRASS]: exactly two elevation commands in input order
+  it('(j) mixed batch [OOB, GRASS, ROAD, GRASS]: exactly two elevation commands in input order', () => {
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
+    // (2,2) and (4,4) are default GRASS at elevation 1
+    const commands = buildToolCommands(
+      Tool.TERRAIN_UP,
+      [{ x: 99, y: 99 }, { x: 2, y: 2 }, { x: 3, y: 3 }, { x: 4, y: 4 }],
+      world
+    );
+    expect(commands).toHaveLength(2);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 2, elevation: 2 });
+    expect(commands[1]).toEqual({ kind: 'elevation', x: 4, y: 4, elevation: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TERRAIN_DOWN
+// ---------------------------------------------------------------------------
+
+describe('buildToolCommands - TERRAIN_DOWN', () => {
+  // (a) GRASS at MIN_LAND_ELEVATION+1: one elevation command to 1
+  it('(a) GRASS at MIN_LAND_ELEVATION+1: one elevation command to MIN_LAND_ELEVATION', () => {
+    // Seed all cells to 2 so slope is uniform and canSetElevation(x,y,1) passes
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        world.getTerrain().unsafeSetElevation(x, y, 2);
+      }
+    }
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: 1 });
+  });
+
+  // (b) GRASS at SEA_LEVEL: next would be <SEA_LEVEL — clamped, zero commands
+  it('(b) GRASS at SEA_LEVEL: zero commands (clamped)', () => {
+    world.getTerrain().unsafeSetElevation(2, 3, SEA_LEVEL);
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (c) GRASS at MIN_LAND_ELEVATION → SEA_LEVEL (slope-safe): one elevation command to SEA_LEVEL
+  it('(c) GRASS at MIN_LAND_ELEVATION: one elevation command to SEA_LEVEL', () => {
+    // Default world: all GRASS at 1; neighbors at 1 → canSetElevation(2,3,0): |1-0|=1 → OK
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: SEA_LEVEL });
+  });
+
+  // (d) Slope-blocked DOWN: all cells at 5, neighbor (1,2) at 8; lower (2,2) from 5→4 vs neighbor 8: delta=4 → blocked
+  it('(d) slope-blocked lower: neighbor at 8 blocks 5→4, zero commands', () => {
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        world.getTerrain().unsafeSetElevation(x, y, 5);
+      }
+    }
+    world.getTerrain().unsafeSetElevation(1, 2, 8);
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (e) DIRT above SEA_LEVEL: one elevation command to current-1, no tile write
+  it('(e) DIRT at elevation 5, slope-safe: one elevation command to 4 (no tile write)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    // Seed (2,2) and 3×3 neighborhood to 5 so slope is uniform
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        world.getTerrain().unsafeSetElevation(2 + dx, 2 + dy, 5);
+      }
+    }
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 2, elevation: 4 });
+  });
+
+  // (f) DIRT → SEA_LEVEL coherence (Blocker fix): tile first, elevation second
+  it('(f) DIRT at MIN_LAND_ELEVATION (1) → SEA_LEVEL: emits tile (GRASS) then elevation command, in that order', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    // Default world all at 1; canSetElevation(2,2,0): |1-0|=1 → OK
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(2);
+    // Command 0: tile write DIRT→GRASS
+    expect(commands[0].kind).toBe('tile');
+    if (commands[0].kind === 'tile') {
+      expect(commands[0].x).toBe(2);
+      expect(commands[0].y).toBe(2);
+      expect(commands[0].tile.type).toBe(TileType.GRASS);
+    }
+    // Command 1: elevation to SEA_LEVEL
+    expect(commands[1]).toEqual({ kind: 'elevation', x: 2, y: 2, elevation: SEA_LEVEL });
+  });
+
+  // (g) DIRT → SEA_LEVEL slope-blocked: neighbor at 3 prevents lowering 1→0
+  it('(g) DIRT at elevation 1, slope-blocked by neighbor at 3: zero commands', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    // Raise neighbor (1,2) to 3; lowering (2,2) from 1→0: |3-0|=3 > 1 → blocked
+    world.getTerrain().unsafeSetElevation(1, 2, 3);
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (h) ROAD/zone/building reject DOWN: zero commands each
+  it('(h) ROAD tile: zero commands', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 2 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('(h) zone tiles (R/C/I): zero commands each', () => {
+    const zoneTypes: TileType[] = [
+      TileType.ZONE_RESIDENTIAL,
+      TileType.ZONE_COMMERCIAL,
+      TileType.ZONE_INDUSTRIAL,
+    ];
+    for (const zoneType of zoneTypes) {
+      world.getMap().setTile(3, 3, createTile(3, 3, zoneType));
+      const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 3, y: 3 }], world);
+      expect(commands).toHaveLength(0);
+    }
+  });
+
+  it('(h) building footprint over GRASS: zero commands', () => {
+    const building: Building = {
+      id: 1,
+      type: 'residential',
+      footprint: [{ x: 4, y: 4 }],
+      anchor: { x: 4, y: 4 },
+      level: 0,
+      density: 0,
+      age: 0,
+    };
+    world.getMap().getBuildings().addExistingBuilding(building);
+    expect(world.getMap().getTile(4, 4)?.type).toBe(TileType.GRASS);
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 4, y: 4 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (i) OOB: zero commands
+  it('(i) out-of-bounds {x:99,y:99}: zero commands', () => {
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 99, y: 99 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  // (j) Mixed batch: [GRASS at (0,0), DIRT at (0,1)] on default world (all at MIN_LAND_ELEVATION=1)
+  // Expects THREE commands: elevation(0,0), tile(0,1,GRASS), elevation(0,1) — DIRT pair contiguous at [1] and [2]
+  it('(j) mixed batch [GRASS(0,0), DIRT(0,1)] at MIN_LAND_ELEVATION: three commands in order, DIRT pair contiguous', () => {
+    world.getMap().setTile(0, 1, createTile(0, 1, TileType.DIRT));
+    // Default world: all elevation 1; all neighbors in-bounds at 1 or OOB-skipped
+    // (0,0) GRASS: 1→0=SEA_LEVEL, not DIRT → one elevation command
+    // (0,1) DIRT: 1→0=SEA_LEVEL → paired tile+elevation
+    const commands = buildToolCommands(
+      Tool.TERRAIN_DOWN,
+      [{ x: 0, y: 0 }, { x: 0, y: 1 }],
+      world
+    );
+    expect(commands).toHaveLength(3);
+    // Command 0: elevation for (0,0) GRASS
+    expect(commands[0]).toEqual({ kind: 'elevation', x: 0, y: 0, elevation: SEA_LEVEL });
+    // Commands 1 and 2: contiguous DIRT pair for (0,1)
+    expect(commands[1].kind).toBe('tile');
+    if (commands[1].kind === 'tile') {
+      expect(commands[1].x).toBe(0);
+      expect(commands[1].y).toBe(1);
+      expect(commands[1].tile.type).toBe(TileType.GRASS);
+    }
+    expect(commands[2]).toEqual({ kind: 'elevation', x: 0, y: 1, elevation: SEA_LEVEL });
   });
 });
 
