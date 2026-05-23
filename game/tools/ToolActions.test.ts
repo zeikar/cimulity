@@ -24,14 +24,14 @@ describe('buildToolCommands - zone tools', () => {
       it('(a) emits one command on a default GRASS tile', () => {
         const commands = buildToolCommands(tool, [{ x: 2, y: 3 }], world);
         expect(commands).toHaveLength(1);
-        expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, zoneType) });
+        expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 3, tile: createTile(2, 3, zoneType) });
       });
 
       it('(b) emits one command on a DIRT tile', () => {
         world.getMap().setTile(4, 4, createTile(4, 4, TileType.DIRT));
         const commands = buildToolCommands(tool, [{ x: 4, y: 4 }], world);
         expect(commands).toHaveLength(1);
-        expect(commands[0]).toEqual({ x: 4, y: 4, tile: createTile(4, 4, zoneType) });
+        expect(commands[0]).toEqual({ kind: 'tile', x: 4, y: 4, tile: createTile(4, 4, zoneType) });
       });
 
       it('(c) returns [] on a WATER tile', () => {
@@ -68,8 +68,8 @@ describe('buildToolCommands - zone tools', () => {
           world
         );
         expect(commands).toHaveLength(2);
-        expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, zoneType) });
-        expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, zoneType) });
+        expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 0, tile: createTile(2, 0, zoneType) });
+        expect(commands[1]).toEqual({ kind: 'tile', x: 3, y: 0, tile: createTile(3, 0, zoneType) });
       });
     });
   }
@@ -79,7 +79,7 @@ describe('buildToolCommands - zone tools', () => {
       world.getMap().setTile(5, 5, createTile(5, 5, TileType.ZONE_RESIDENTIAL));
       const commands = buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 5, y: 5 }], world);
       expect(commands).toEqual([
-        { x: 5, y: 5, tile: createTile(5, 5, TileType.ZONE_COMMERCIAL) },
+        { kind: 'tile', x: 5, y: 5, tile: createTile(5, 5, TileType.ZONE_COMMERCIAL) },
       ]);
     });
 
@@ -87,7 +87,7 @@ describe('buildToolCommands - zone tools', () => {
       world.getMap().setTile(6, 6, createTile(6, 6, TileType.ZONE_INDUSTRIAL));
       const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 6, y: 6 }], world);
       expect(commands).toEqual([
-        { x: 6, y: 6, tile: createTile(6, 6, TileType.ZONE_RESIDENTIAL) },
+        { kind: 'tile', x: 6, y: 6, tile: createTile(6, 6, TileType.ZONE_RESIDENTIAL) },
       ]);
     });
   });
@@ -110,7 +110,7 @@ describe('buildToolCommands - Tool.ROAD', () => {
         world
       );
       expect(commands).toHaveLength(1);
-      expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, TileType.ROAD) });
+      expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 0, tile: createTile(2, 0, TileType.ROAD) });
     });
   }
 });
@@ -120,7 +120,7 @@ describe('buildToolCommands - Tool.BULLDOZE', () => {
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
     const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 2, y: 2 }], world);
     expect(commands).toHaveLength(1);
-    expect(commands[0]).toEqual({ x: 2, y: 2, tile: createTile(2, 2, TileType.DIRT) });
+    expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.DIRT) });
   });
 
   const zoneTypes: [TileType, string][] = [
@@ -134,7 +134,7 @@ describe('buildToolCommands - Tool.BULLDOZE', () => {
       world.getMap().setTile(3, 3, createTile(3, 3, zoneType));
       const commands = buildToolCommands(Tool.BULLDOZE, [{ x: 3, y: 3 }], world);
       expect(commands).toHaveLength(1);
-      expect(commands[0]).toEqual({ x: 3, y: 3, tile: createTile(3, 3, TileType.DIRT) });
+      expect(commands[0]).toEqual({ kind: 'tile', x: 3, y: 3, tile: createTile(3, 3, TileType.DIRT) });
     });
   }
 
@@ -167,8 +167,8 @@ describe('buildToolCommands - Tool.BULLDOZE', () => {
       world
     );
     expect(commands).toHaveLength(2);
-    expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.DIRT) });
-    expect(commands[1]).toEqual({ x: 1, y: 0, tile: createTile(1, 0, TileType.DIRT) });
+    expect(commands[0]).toEqual({ kind: 'tile', x: 0, y: 0, tile: createTile(0, 0, TileType.DIRT) });
+    expect(commands[1]).toEqual({ kind: 'tile', x: 1, y: 0, tile: createTile(1, 0, TileType.DIRT) });
   });
 });
 
@@ -185,7 +185,7 @@ describe('buildToolCommands - paint tools', () => {
           // Default tile is GRASS → PAINT_WATER should emit
           const commands = buildToolCommands(tool, [{ x: 2, y: 3 }], world);
           expect(commands).toHaveLength(1);
-          expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, targetType) });
+          expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 3, tile: createTile(2, 3, targetType) });
 
           // WATER tile → PAINT_WATER is same-type no-op
           world.getMap().setTile(1, 1, createTile(1, 1, TileType.WATER));
@@ -196,7 +196,7 @@ describe('buildToolCommands - paint tools', () => {
           world.getMap().setTile(2, 3, createTile(2, 3, TileType.DIRT));
           const commands = buildToolCommands(tool, [{ x: 2, y: 3 }], world);
           expect(commands).toHaveLength(1);
-          expect(commands[0]).toEqual({ x: 2, y: 3, tile: createTile(2, 3, targetType) });
+          expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 3, tile: createTile(2, 3, targetType) });
 
           // GRASS tile → PAINT_GRASS is same-type no-op
           const noopCommands = buildToolCommands(tool, [{ x: 0, y: 0 }], world);
@@ -208,7 +208,7 @@ describe('buildToolCommands - paint tools', () => {
         world.getMap().setTile(4, 4, createTile(4, 4, TileType.DIRT));
         const commands = buildToolCommands(tool, [{ x: 4, y: 4 }], world);
         expect(commands).toHaveLength(1);
-        expect(commands[0]).toEqual({ x: 4, y: 4, tile: createTile(4, 4, targetType) });
+        expect(commands[0]).toEqual({ kind: 'tile', x: 4, y: 4, tile: createTile(4, 4, targetType) });
       });
 
       it('(c) returns [] on a ROAD tile', () => {
@@ -222,7 +222,7 @@ describe('buildToolCommands - paint tools', () => {
         const commands = buildToolCommands(tool, [{ x: 1, y: 1 }], world);
         if (tool === Tool.PAINT_GRASS) {
           expect(commands).toHaveLength(1);
-          expect(commands[0]).toEqual({ x: 1, y: 1, tile: createTile(1, 1, TileType.GRASS) });
+          expect(commands[0]).toEqual({ kind: 'tile', x: 1, y: 1, tile: createTile(1, 1, TileType.GRASS) });
         } else {
           expect(commands).toHaveLength(0);
         }
@@ -261,13 +261,13 @@ describe('buildToolCommands - paint tools', () => {
         if (tool === Tool.PAINT_WATER) {
           // PAINT_WATER: WATER skipped (same-type), ROAD blocked, GRASS accepted, DIRT accepted
           expect(commands).toHaveLength(2);
-          expect(commands[0]).toEqual({ x: 2, y: 0, tile: createTile(2, 0, targetType) });
-          expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
+          expect(commands[0]).toEqual({ kind: 'tile', x: 2, y: 0, tile: createTile(2, 0, targetType) });
+          expect(commands[1]).toEqual({ kind: 'tile', x: 3, y: 0, tile: createTile(3, 0, targetType) });
         } else {
           // PAINT_GRASS: WATER accepted, ROAD blocked, GRASS skipped (same-type), DIRT accepted
           expect(commands).toHaveLength(2);
-          expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, targetType) });
-          expect(commands[1]).toEqual({ x: 3, y: 0, tile: createTile(3, 0, targetType) });
+          expect(commands[0]).toEqual({ kind: 'tile', x: 0, y: 0, tile: createTile(0, 0, targetType) });
+          expect(commands[1]).toEqual({ kind: 'tile', x: 3, y: 0, tile: createTile(3, 0, targetType) });
         }
       });
     });
@@ -296,7 +296,7 @@ describe('buildToolCommands — terrain buildability gates', () => {
         world
       );
       expect(commands).toHaveLength(1);
-      expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) });
+      expect(commands[0]).toEqual({ kind: 'tile', x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) });
     });
 
     it('zone at raised (1,1) is REJECTED; zone at flat (0,0) is ACCEPTED', () => {
@@ -307,7 +307,7 @@ describe('buildToolCommands — terrain buildability gates', () => {
         world
       );
       expect(commands).toHaveLength(1);
-      expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.ZONE_RESIDENTIAL) });
+      expect(commands[0]).toEqual({ kind: 'tile', x: 0, y: 0, tile: createTile(0, 0, TileType.ZONE_RESIDENTIAL) });
     });
   });
 
@@ -326,7 +326,7 @@ describe('buildToolCommands — terrain buildability gates', () => {
     it('road tool ACCEPTS interior plateau tile (3,3)', () => {
       const commands = buildToolCommands(Tool.ROAD, [{ x: 3, y: 3 }], world);
       expect(commands).toHaveLength(1);
-      expect(commands[0]).toEqual({ x: 3, y: 3, tile: createTile(3, 3, TileType.ROAD) });
+      expect(commands[0]).toEqual({ kind: 'tile', x: 3, y: 3, tile: createTile(3, 3, TileType.ROAD) });
     });
 
     it('road tool REJECTS edge plateau tile (2,2) which has a lower neighbor at (1,2)', () => {
@@ -337,7 +337,7 @@ describe('buildToolCommands — terrain buildability gates', () => {
     it('road tool ACCEPTS flat surrounding tile (0,0)', () => {
       const commands = buildToolCommands(Tool.ROAD, [{ x: 0, y: 0 }], world);
       expect(commands).toHaveLength(1);
-      expect(commands[0]).toEqual({ x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) });
+      expect(commands[0]).toEqual({ kind: 'tile', x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) });
     });
   });
 

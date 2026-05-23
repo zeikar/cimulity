@@ -73,6 +73,7 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
     if (!world.canBuildRoadAt(coord.x, coord.y)) continue;
 
     commands.push({
+      kind: 'tile',
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, TileType.ROAD),
@@ -101,6 +102,7 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
     if (!clearable) continue;
 
     commands.push({
+      kind: 'tile',
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, TileType.DIRT),
@@ -133,6 +135,7 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
     // Skip slope/water tiles — terrain buildability gate.
     if (!world.canBuildAt(coord.x, coord.y, 1, 1)) continue;
     commands.push({
+      kind: 'tile',
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, zoneType),
@@ -169,6 +172,7 @@ function buildPaintTerrainCommands(
         : currentTile.type === TileType.GRASS || currentTile.type === TileType.DIRT;
     if (!paintable) continue;
     commands.push({
+      kind: 'tile',
       x: coord.x,
       y: coord.y,
       tile: createTile(coord.x, coord.y, targetType),

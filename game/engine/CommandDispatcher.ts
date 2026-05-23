@@ -48,8 +48,10 @@ function pathForTool(
  * DIRT is the tile bulldoze writes for both ROAD→DIRT and ZONE→DIRT clears,
  * so BULLDOZE_COST is charged for any bulldoze command regardless of the
  * source tile type. Zone types share ZONE_COST when being placed.
+ * Elevation writes are always free.
  */
 function commandCost(cmd: ToolCommand): number {
+  if (cmd.kind === 'elevation') return 0;
   const t = cmd.tile.type;
   if (t === TileType.ROAD) return ROAD_COST;
   if (isZoneType(t)) return ZONE_COST;
@@ -81,24 +83,33 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   const removedBuildingIds: number[] = [];
   let landValueInvalidated = false;
   for (const cmd of commands) {
-    const prevTile = map.getTile(cmd.x, cmd.y);
-    const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
-    if (rec.changed) {
-      changedTiles.push({ x: cmd.x, y: cmd.y });
-      // Mark land value dirty when a ROAD or ZONE tile is placed or replaced.
-      if (
-        !landValueInvalidated &&
-        (cmd.tile.type === TileType.ROAD ||
-          isZoneType(cmd.tile.type) ||
-          (prevTile !== null && (prevTile.type === TileType.ROAD || isZoneType(prevTile.type))))
-      ) {
-        landValueInvalidated = true;
+    if (cmd.kind === 'elevation') {
+      // Slope-constraint violations are silent no-ops (setElevation returns false).
+      // Elevation writes never trigger land-value invalidation.
+      const changed = world.getTerrain().setElevation(cmd.x, cmd.y, cmd.elevation);
+      if (changed) {
+        changedTiles.push({ x: cmd.x, y: cmd.y });
       }
-    }
-    if (rec.removedBuilding !== null) {
-      removedBuildingIds.push(rec.removedBuilding.id);
-      for (const coord of rec.removedBuilding.footprint) {
-        affectedTiles.push(coord);
+    } else {
+      const prevTile = map.getTile(cmd.x, cmd.y);
+      const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
+      if (rec.changed) {
+        changedTiles.push({ x: cmd.x, y: cmd.y });
+        // Mark land value dirty when a ROAD or ZONE tile is placed or replaced.
+        if (
+          !landValueInvalidated &&
+          (cmd.tile.type === TileType.ROAD ||
+            isZoneType(cmd.tile.type) ||
+            (prevTile !== null && (prevTile.type === TileType.ROAD || isZoneType(prevTile.type))))
+        ) {
+          landValueInvalidated = true;
+        }
+      }
+      if (rec.removedBuilding !== null) {
+        removedBuildingIds.push(rec.removedBuilding.id);
+        for (const coord of rec.removedBuilding.footprint) {
+          affectedTiles.push(coord);
+        }
       }
     }
   }
