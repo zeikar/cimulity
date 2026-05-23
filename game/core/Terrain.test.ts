@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Terrain, MAX_ELEVATION, SEA_LEVEL, MIN_LAND_ELEVATION } from "./Terrain";
+import { Terrain, MAX_ELEVATION, SEA_LEVEL, MIN_LAND_ELEVATION, MAX_PLAYER_SLOPE_DELTA } from "./Terrain";
 
 describe("Terrain construction defaults", () => {
   it("has correct width/height/mode", () => {
@@ -128,6 +128,89 @@ describe("canSetElevation", () => {
   });
 });
 
+describe("canPlayerSetElevation", () => {
+  it("MAX_PLAYER_SLOPE_DELTA === 3", () => {
+    expect(MAX_PLAYER_SLOPE_DELTA).toBe(3);
+  });
+
+  it("accepts diff=1 from all-MIN_LAND_ELEVATION neighbors", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, MIN_LAND_ELEVATION + 1)).toBe(true);
+  });
+
+  it("accepts diff=2 from all-MIN_LAND_ELEVATION neighbors", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, MIN_LAND_ELEVATION + 2)).toBe(true);
+  });
+
+  it("accepts diff=3 from all-MIN_LAND_ELEVATION neighbors", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, MIN_LAND_ELEVATION + 3)).toBe(true);
+  });
+
+  it("rejects diff=4 from all-MIN_LAND_ELEVATION neighbors", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, MIN_LAND_ELEVATION + 4)).toBe(false);
+  });
+
+  it("rejects non-integer", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, 1.5)).toBe(false);
+  });
+
+  it("rejects negative", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, -1)).toBe(false);
+  });
+
+  it("rejects over MAX_ELEVATION", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(2, 2, MAX_ELEVATION + 1)).toBe(false);
+  });
+
+  it("rejects OOB tile (-1, 0)", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(-1, 0, 0)).toBe(false);
+  });
+
+  it("rejects OOB tile (5, 0) on a 5x5 map", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canPlayerSetElevation(5, 0, 0)).toBe(false);
+  });
+
+  it("OOB neighbors are skipped — corner (0,0) only checks in-bounds neighbors", () => {
+    const t = new Terrain(5, 5);
+    // All in-bounds neighbors of (0,0) are (1,0), (0,1), (1,1) — all at MIN_LAND_ELEVATION.
+    // diff of 3 from MIN_LAND_ELEVATION is fine (requesting MIN_LAND_ELEVATION + 3).
+    expect(t.canPlayerSetElevation(0, 0, MIN_LAND_ELEVATION + 3)).toBe(true);
+  });
+
+  it("diff=3 check across all 8 neighbors (mixed elevations)", () => {
+    // Build a 5x5 with neighbors at mixed values within [0, 4]; center at 4 with no neighbor
+    // farther than 3 → accept; center at 5 with a neighbor at 1 (delta 4) → reject.
+    const t = new Terrain(5, 5);
+    // Set the 8 neighbors of (2,2) to mixed values: 0,1,2,3,4,0,1,2
+    t.unsafeSetElevation(1, 1, 0);
+    t.unsafeSetElevation(2, 1, 1);
+    t.unsafeSetElevation(3, 1, 2);
+    t.unsafeSetElevation(1, 2, 3);
+    t.unsafeSetElevation(3, 2, 4);
+    t.unsafeSetElevation(1, 3, 0);
+    t.unsafeSetElevation(2, 3, 1);
+    t.unsafeSetElevation(3, 3, 2);
+    // center at 4: max diff with neighbors is |4-0|=4 at (1,1) and (1,3) → reject
+    expect(t.canPlayerSetElevation(2, 2, 4)).toBe(false);
+    // center at 3: max diff with neighbors is |3-0|=3 at (1,1) and (1,3) → accept (on boundary)
+    expect(t.canPlayerSetElevation(2, 2, 3)).toBe(true);
+  });
+
+  it("canSetElevation stays delta-1 — sanity check the new method does not regress the strict rule", () => {
+    const t = new Terrain(5, 5);
+    expect(t.canSetElevation(2, 2, MIN_LAND_ELEVATION + 2)).toBe(false);
+    expect(t.canPlayerSetElevation(2, 2, MIN_LAND_ELEVATION + 2)).toBe(true);
+  });
+});
+
 describe("setElevation", () => {
   it("returns true and writes on accept", () => {
     const t = new Terrain(5, 5);
@@ -141,6 +224,48 @@ describe("setElevation", () => {
     // diff of 4 from neighbors at MIN_LAND_ELEVATION — try large value
     expect(t.setElevation(2, 2, 5)).toBe(false);
     expect(t.getTileElevation(2, 2)).toBe(MIN_LAND_ELEVATION + 1);
+  });
+});
+
+describe("setPlayerElevation", () => {
+  it("returns true and writes on accept (delta-3)", () => {
+    const t = new Terrain(5, 5);
+    // Default neighbors at MIN_LAND_ELEVATION=1; write 4 → |1-4|=3 ≤ cap.
+    expect(t.setPlayerElevation(2, 2, 4)).toBe(true);
+    expect(t.getTileElevation(2, 2)).toBe(4);
+  });
+
+  it("returns false and leaves value unchanged on reject (delta-4)", () => {
+    const t = new Terrain(5, 5);
+    // Default neighbors at MIN_LAND_ELEVATION=1; write 5 → |1-5|=4 > cap.
+    expect(t.setPlayerElevation(2, 2, 5)).toBe(false);
+    expect(t.getTileElevation(2, 2)).toBe(MIN_LAND_ELEVATION);
+  });
+
+  it("fires onMutate on accept", () => {
+    const t = new Terrain(5, 5);
+    const spy = vi.fn();
+    t.setOnMutate(spy);
+    t.setPlayerElevation(2, 2, 4);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT fire onMutate on reject", () => {
+    const t = new Terrain(5, 5);
+    const spy = vi.fn();
+    t.setOnMutate(spy);
+    t.setPlayerElevation(2, 2, 5);
+    expect(spy).toHaveBeenCalledTimes(0);
+  });
+
+  it("accepts cliff-stack on isolated tile up to cap-3 (1→4) but rejects 1→5", () => {
+    const t = new Terrain(5, 5);
+    expect(t.setPlayerElevation(2, 2, 4)).toBe(true);
+    // Now center=4, all neighbors=1. Next step would be 5; reject from setPlayerElevation
+    // because |1-5|=4 > cap. The TOOL-layer is what increments by 1, not this method,
+    // so this is a direct-call test: write absolute 5 fails.
+    expect(t.setPlayerElevation(2, 2, 5)).toBe(false);
+    expect(t.getTileElevation(2, 2)).toBe(4);
   });
 });
 

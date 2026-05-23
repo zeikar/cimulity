@@ -44,6 +44,15 @@ export const SEA_LEVEL = 0 as const;
  */
 export const MIN_LAND_ELEVATION = 1 as const;
 
+/**
+ * Player-facing slope cap. Player-driven terrain edits (TERRAIN_UP / TERRAIN_DOWN)
+ * accept adjacent-neighbor deltas up to MAX_PLAYER_SLOPE_DELTA (inclusive). The
+ * stricter delta-1 rule in `canSetElevation` still applies to direct
+ * `Terrain.setElevation` callers (currently none in production — dispatcher
+ * routes through `setPlayerElevation` after Task 2).
+ */
+export const MAX_PLAYER_SLOPE_DELTA = 3 as const;
+
 export class Terrain {
   private readonly data: TerrainData;
   private onMutate: (() => void) | null = null;
@@ -115,8 +124,46 @@ export class Terrain {
     return true;
   }
 
+  /**
+   * Like canSetElevation but uses MAX_PLAYER_SLOPE_DELTA for the 8-neighbor
+   * delta cap. Called by player-facing tools (TERRAIN_UP / TERRAIN_DOWN); the
+   * data-layer canSetElevation remains delta-1.
+   */
+  canPlayerSetElevation(x: number, y: number, newElevation: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    if (!Number.isInteger(newElevation)) return false;
+    if (newElevation < 0) return false;
+    if (newElevation > MAX_ELEVATION) return false;
+
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!this.inBounds(nx, ny)) continue;
+        const neighborElevation = this.data.tileElevations[ny][nx];
+        if (Math.abs(neighborElevation - newElevation) > MAX_PLAYER_SLOPE_DELTA) return false;
+      }
+    }
+
+    return true;
+  }
+
   setElevation(x: number, y: number, newElevation: number): boolean {
     if (!this.canSetElevation(x, y, newElevation)) return false;
+    this.data.tileElevations[y][x] = newElevation;
+    this.onMutate?.();
+    return true;
+  }
+
+  /**
+   * Player-facing elevation write. Mirrors setElevation but uses
+   * canPlayerSetElevation (delta-3 cap). Fires onMutate on accept; returns
+   * false (no-op) on reject. Called from CommandDispatcher.applyCommands for
+   * elevation commands emitted by TERRAIN_UP / TERRAIN_DOWN.
+   */
+  setPlayerElevation(x: number, y: number, newElevation: number): boolean {
+    if (!this.canPlayerSetElevation(x, y, newElevation)) return false;
     this.data.tileElevations[y][x] = newElevation;
     this.onMutate?.();
     return true;
