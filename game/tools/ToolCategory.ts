@@ -18,8 +18,6 @@ export enum ToolCategory {
  */
 export const TOOL_CATEGORY: Record<Tool, ToolCategory> = {
   [Tool.SELECT]: ToolCategory.CURSOR,
-  [Tool.PAINT_WATER]: ToolCategory.TERRAIN,
-  [Tool.PAINT_GRASS]: ToolCategory.TERRAIN,
   [Tool.TERRAIN_UP]: ToolCategory.TERRAIN,
   [Tool.TERRAIN_DOWN]: ToolCategory.TERRAIN,
   [Tool.ROAD]: ToolCategory.BUILD,

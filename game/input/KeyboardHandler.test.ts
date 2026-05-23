@@ -193,31 +193,10 @@ describe('KeyboardHandler', () => {
     expect(eE.preventDefault).toHaveBeenCalled();
   });
 
-  it('Shift+W (uppercase key) triggers Tool.PAINT_WATER and calls preventDefault', () => {
-    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
-    const event = fire('W', null, { shiftKey: true });
-    expect(onToolChange).toHaveBeenCalledWith(Tool.PAINT_WATER);
-    expect(event.preventDefault).toHaveBeenCalled();
-  });
-
-  it('Shift+G (uppercase key) triggers Tool.PAINT_GRASS and calls preventDefault', () => {
-    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
-    const event = fire('G', null, { shiftKey: true });
-    expect(onToolChange).toHaveBeenCalledWith(Tool.PAINT_GRASS);
-    expect(event.preventDefault).toHaveBeenCalled();
-  });
-
-  it('lowercase w + shiftKey triggers Tool.PAINT_WATER (IME/synthetic event guard)', () => {
+  it('shift modifier is ignored for tool keys — w + shift still fires Tool.ZONE_COMMERCIAL', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
     const event = fire('w', null, { shiftKey: true });
-    expect(onToolChange).toHaveBeenCalledWith(Tool.PAINT_WATER);
-    expect(event.preventDefault).toHaveBeenCalled();
-  });
-
-  it('lowercase g + shiftKey triggers Tool.PAINT_GRASS (IME/synthetic event guard)', () => {
-    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
-    const event = fire('g', null, { shiftKey: true });
-    expect(onToolChange).toHaveBeenCalledWith(Tool.PAINT_GRASS);
+    expect(onToolChange).toHaveBeenCalledWith(Tool.ZONE_COMMERCIAL);
     expect(event.preventDefault).toHaveBeenCalled();
   });
 
@@ -226,13 +205,6 @@ describe('KeyboardHandler', () => {
     const event = fire('w', null, { shiftKey: false });
     expect(onToolChange).toHaveBeenCalledWith(Tool.ZONE_COMMERCIAL);
     expect(event.preventDefault).toHaveBeenCalled();
-  });
-
-  it('Ctrl+Shift+W is not intercepted — ctrl wins, no callback fires and preventDefault is not called', () => {
-    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
-    const event = fire('W', null, { shiftKey: true, ctrlKey: true });
-    expect(onToolChange).not.toHaveBeenCalled();
-    expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
   it('Ctrl+R is not intercepted — modifier short-circuit guards new TERRAIN_UP bind', () => {

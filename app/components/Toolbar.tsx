@@ -34,8 +34,6 @@ const TOOL_BUTTONS: Record<Tool, ToolButton> = {
   [Tool.ZONE_RESIDENTIAL]: { tool: Tool.ZONE_RESIDENTIAL, label: 'Residential', shortcut: 'Q' },
   [Tool.ZONE_COMMERCIAL]: { tool: Tool.ZONE_COMMERCIAL, label: 'Commercial', shortcut: 'W' },
   [Tool.ZONE_INDUSTRIAL]: { tool: Tool.ZONE_INDUSTRIAL, label: 'Industrial', shortcut: 'E' },
-  [Tool.PAINT_WATER]: { tool: Tool.PAINT_WATER, label: 'Paint Water', shortcut: 'Shift+W' },
-  [Tool.PAINT_GRASS]: { tool: Tool.PAINT_GRASS, label: 'Paint Grass', shortcut: 'Shift+G' },
   [Tool.TERRAIN_UP]: { tool: Tool.TERRAIN_UP, label: 'Raise', shortcut: 'R' },
   [Tool.TERRAIN_DOWN]: { tool: Tool.TERRAIN_DOWN, label: 'Lower', shortcut: 'F' },
 };

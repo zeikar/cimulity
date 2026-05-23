@@ -8,12 +8,12 @@ describe('ToolCategory', () => {
       expect(TOOL_CATEGORY[Tool.SELECT]).toBe(ToolCategory.CURSOR);
     });
 
-    it('maps PAINT_WATER to TERRAIN', () => {
-      expect(TOOL_CATEGORY[Tool.PAINT_WATER]).toBe(ToolCategory.TERRAIN);
+    it('maps TERRAIN_UP to TERRAIN', () => {
+      expect(TOOL_CATEGORY[Tool.TERRAIN_UP]).toBe(ToolCategory.TERRAIN);
     });
 
-    it('maps PAINT_GRASS to TERRAIN', () => {
-      expect(TOOL_CATEGORY[Tool.PAINT_GRASS]).toBe(ToolCategory.TERRAIN);
+    it('maps TERRAIN_DOWN to TERRAIN', () => {
+      expect(TOOL_CATEGORY[Tool.TERRAIN_DOWN]).toBe(ToolCategory.TERRAIN);
     });
 
     it('maps ROAD to BUILD', () => {

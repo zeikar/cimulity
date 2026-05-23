@@ -8,8 +8,6 @@ export enum Tool {
   ZONE_RESIDENTIAL = 'zone_residential',
   ZONE_COMMERCIAL = 'zone_commercial',
   ZONE_INDUSTRIAL = 'zone_industrial',
-  PAINT_WATER = 'paint_water',
-  PAINT_GRASS = 'paint_grass',
   BULLDOZE = 'bulldoze',
   TERRAIN_UP = 'terrain_up',
   TERRAIN_DOWN = 'terrain_down',

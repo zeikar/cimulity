@@ -13,12 +13,6 @@ export interface KeyboardCallbacks {
   onPauseToggle?: () => void;
 }
 
-// Shift+key shortcuts for paint tools. Keys are lowercase (matching the normalized `key` variable in handleKeyDown).
-const KEY_TO_TOOL_SHIFT: Record<string, Tool> = {
-  w: Tool.PAINT_WATER,
-  g: Tool.PAINT_GRASS,
-};
-
 // Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, r=raise terrain, f=lower terrain.
 const KEY_TO_TOOL: Record<string, Tool> = {
   t: Tool.ROAD,
@@ -83,15 +77,6 @@ export class KeyboardHandler {
       event.preventDefault();
       this.callbacks.onSpeedChange?.(speed);
       return;
-    }
-
-    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      const shiftTool = KEY_TO_TOOL_SHIFT[key];
-      if (shiftTool !== undefined) {
-        event.preventDefault();
-        this.callbacks.onToolChange(shiftTool);
-        return;
-      }
     }
 
     const tool = KEY_TO_TOOL[key];

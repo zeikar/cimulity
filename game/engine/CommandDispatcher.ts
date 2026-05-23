@@ -35,8 +35,6 @@ function pathForTool(
     case Tool.ZONE_COMMERCIAL:
     case Tool.ZONE_INDUSTRIAL:
     case Tool.BULLDOZE:
-    case Tool.PAINT_WATER:
-    case Tool.PAINT_GRASS:
     case Tool.TERRAIN_UP:
     case Tool.TERRAIN_DOWN:
       return rectDragPath(start, end);
@@ -58,7 +56,7 @@ function commandCost(cmd: ToolCommand): number {
   if (t === TileType.ROAD) return ROAD_COST;
   if (isZoneType(t)) return ZONE_COST;
   if (t === TileType.DIRT) return BULLDOZE_COST;
-  // paint terrain writes (water/grass) are intentionally free; pinned by paint-terrain cost tests
+  // TERRAIN_DOWN may write DIRT→GRASS before lowering to SEA_LEVEL; GRASS tile writes are free.
   return 0;
 }
 
