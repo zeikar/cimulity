@@ -48,6 +48,9 @@ const STORAGE_KEY = 'cimulity:save:v2';
 function resetSingleton(): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (globalThis as any).__cimulityWorld;
+  // Also clear the paired sentinel so each test starts from a clean slate.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  delete (globalThis as any).__cimulityWorldGuard;
 }
 
 // ---- test lifecycle ----
@@ -368,6 +371,108 @@ describe('getWorld — (d) HMR guard rejects stale singleton missing regenerateT
     // The stale fake must have been discarded; real World has regenerateTerrain.
     expect(result).not.toBe(stale);
     expect(typeof result.regenerateTerrain).toBe('function');
+  });
+});
+
+// ---- Task 7 sentinel tests ----
+
+// Full stub that passes hasCurrentWorldApi — all load-bearing methods present.
+function makeFullApiStub() {
+  return {
+    getMoney: () => 0,
+    trySpend: () => false,
+    setMoney: () => {},
+    getDate: () => ({ year: 1, month: 1, day: 1 }),
+    getElapsedDays: () => 0,
+    setElapsedDays: () => {},
+    getMap: () => ({
+      getBuildings: () => ({
+        getBuildingAt: () => null,
+        getBuilding: () => null,
+        iterBuildings: () => [],
+        getAllBuildings: () => [],
+        addBuilding: () => null,
+        addExistingBuilding: () => false,
+        removeBuilding: () => {},
+        setNextIdFloor: () => {},
+        clear: () => {},
+      }),
+      setTileAndReconcile: () => ({ changed: false, removedBuilding: null }),
+    }),
+    getLandValue: () => null,
+    markLandValueDirty: () => {},
+    recomputeLandValueIfDirty: () => {},
+    recomputeLandValue: () => {},
+    getTerrain: () => null,
+    installTerrain: () => {},
+    getTerrainRevision: () => 0,
+    isWater: () => false,
+    canBuildAt: () => true,
+    canBuildRoadAt: () => true,
+    regenerateTerrain: () => {},
+  };
+}
+
+describe('getWorld — sentinel: Test A — API probe fails → fresh World', () => {
+  it('discards a stub missing required methods even when sentinel matches', () => {
+    // Stub is missing several methods so hasCurrentWorldApi returns false.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = {
+      getMoney: () => 0,
+      trySpend: () => false,
+      // getDate, getElapsedDays, setElapsedDays, getMap … all absent.
+    };
+    // Set the current sentinel so only the API probe causes the discard.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'sealevel-v1';
+
+    const result = getWorld();
+
+    expect(result).toBeInstanceOf(World);
+    expect(typeof result.getDate).toBe('function');
+    expect(typeof result.regenerateTerrain).toBe('function');
+  });
+});
+
+describe('getWorld — sentinel: Test B — sentinel mismatch → fresh World', () => {
+  it('discards a stub that passes the API probe but has a wrong sentinel', () => {
+    const stub = makeFullApiStub();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = stub;
+    // Set a sentinel value that does NOT match 'sealevel-v1'.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'old-guard-v0';
+
+    const result = getWorld();
+
+    expect(result).not.toBe(stub);
+    expect(result).toBeInstanceOf(World);
+  });
+});
+
+describe('getWorld — sentinel: Test C — both checks pass → cached instance returned', () => {
+  it('returns the same instance (===) when API probe and sentinel both pass', () => {
+    // Use a real World so hasCurrentWorldApi returns true.
+    const real = new World(64, 64, { regenerate: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = real;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'sealevel-v1';
+
+    const result = getWorld();
+
+    expect(result).toBe(real);
+  });
+});
+
+describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
+  it('builds a fresh World and writes sealevel-v1 to globalThis.__cimulityWorldGuard', () => {
+    // Singleton and guard are already cleared by beforeEach (resetSingleton).
+    const result = getWorld();
+
+    expect(result).toBeInstanceOf(World);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((globalThis as any).__cimulityWorldGuard).toBe('sealevel-v1');
   });
 });
 

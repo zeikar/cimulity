@@ -6,6 +6,14 @@
  * World, discarding placed tiles). On first creation the world is hydrated
  * from localStorage, so a full page reload (F5) now restores the saved
  * city instead of resetting. "New City" clears the save explicitly.
+ *
+ * Cache reuse requires TWO checks to pass:
+ *   1. `hasCurrentWorldApi` — structural backstop that verifies every
+ *      load-bearing method is present on the stashed instance.
+ *   2. `WORLD_SINGLETON_GUARD` sentinel — version string that is bumped
+ *      whenever the stash format changes, catching HMR singletons that
+ *      predate an API addition not yet covered by the method probe.
+ * Either check failing discards the cached World and rebuilds fresh.
  */
 
 import { World } from './World';
@@ -18,7 +26,15 @@ const MAP_HEIGHT = 64;
 // WORLD_SAVE_VERSION = 7. Older versions are rejected on load → fresh world.
 const STORAGE_KEY = 'cimulity:save:v2';
 
-const store = globalThis as unknown as { __cimulityWorld?: World };
+// Bump this string whenever the stash format changes (e.g. a new required API
+// is added). An HMR singleton carrying a mismatched guard is discarded and
+// rebuilt even if hasCurrentWorldApi passes.
+const WORLD_SINGLETON_GUARD = 'sealevel-v1' as const;
+
+const store = globalThis as unknown as {
+  __cimulityWorld?: World;
+  __cimulityWorldGuard?: string;
+};
 
 function readSave(): string | null {
   try {
@@ -31,6 +47,8 @@ function readSave(): string | null {
 }
 
 /**
+ * First of two cache-reuse checks (paired with `WORLD_SINGLETON_GUARD`).
+ *
  * A singleton that survived HMR/Fast Refresh may predate any API surface
  * the session/dispatcher/render layer relies on. We check every
  * load-bearing method on `World`, `GameMap`, and `BuildingMap` — checking
@@ -114,7 +132,11 @@ function hasCurrentWorldApi(world: World): boolean {
 }
 
 export function getWorld(): World {
-  if (!store.__cimulityWorld || !hasCurrentWorldApi(store.__cimulityWorld)) {
+  if (
+    !store.__cimulityWorld ||
+    !hasCurrentWorldApi(store.__cimulityWorld) ||
+    store.__cimulityWorldGuard !== WORLD_SINGLETON_GUARD
+  ) {
     const save = readSave();
     let world: World;
     if (save) {
@@ -130,6 +152,7 @@ export function getWorld(): World {
       world = new World(MAP_WIDTH, MAP_HEIGHT, { regenerate: true });
     }
     store.__cimulityWorld = world;
+    store.__cimulityWorldGuard = WORLD_SINGLETON_GUARD;
   }
   return store.__cimulityWorld;
 }
