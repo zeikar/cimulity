@@ -9,6 +9,7 @@ import { Tool } from './Tool';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import type { Tile } from '../core/Tile';
 import { SEA_LEVEL, MAX_ELEVATION } from '../core/Terrain';
+import { slopeMaskFor } from '../core/terrainSlope';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
@@ -17,6 +18,55 @@ function isStructuredCell(world: World, tile: Tile, x: number, y: number): boole
   if (tile.type === TileType.ROAD) return true;
   if (isZoneType(tile.type)) return true;
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
+}
+
+/**
+ * Returns true if setting (x,y) to proposedElevation would make any cardinal
+ * structured neighbor (road/zone/building) non-flat. "Flat" means slope mask === 0,
+ * i.e., all 4 cardinals of the neighbor are within 1 elevation step of the neighbor.
+ * This check is purely read-only — no mutation of world state.
+ */
+function wouldBreakStructuredNeighborFlatness(
+  world: World,
+  x: number,
+  y: number,
+  proposedElevation: number
+): boolean {
+  const terrain = world.getTerrain();
+  const map = world.getMap();
+
+  const cardinals = [
+    { nx: x, ny: y - 1 },
+    { nx: x + 1, ny: y },
+    { nx: x, ny: y + 1 },
+    { nx: x - 1, ny: y },
+  ] as const;
+
+  for (const { nx, ny } of cardinals) {
+    const neighborTile = map.getTile(nx, ny);
+    if (!neighborTile) continue;
+    if (!isStructuredCell(world, neighborTile, nx, ny)) continue;
+
+    const nc = terrain.getTileElevation(nx, ny);
+    // Compute the neighbor's 4 cardinal elevations, substituting proposedElevation
+    // for the direction that points back to (x,y). OOB cardinals treated as nc
+    // to match getSlopeMask's OOB convention (bit unset for equal-elevation neighbors).
+    const w = terrain.getWidth();
+    const h = terrain.getHeight();
+    const getElev = (cx: number, cy: number): number => {
+      if (cx === x && cy === y) return proposedElevation;
+      if (cx < 0 || cy < 0 || cx >= w || cy >= h) return nc;
+      return terrain.getTileElevation(cx, cy);
+    };
+    const nn = getElev(nx, ny - 1);
+    const ne = getElev(nx + 1, ny);
+    const ns = getElev(nx, ny + 1);
+    const nw = getElev(nx - 1, ny);
+
+    if (slopeMaskFor(nc, nn, ne, ns, nw) !== 0) return true;
+  }
+
+  return false;
 }
 
 /** Narrow union of the three placeable zone tile types. */
@@ -170,6 +220,7 @@ function buildTerrainUpCommands(tiles: TileCoord[], world: World): ToolCommand[]
     const next = current + 1;
     if (next > MAX_ELEVATION) continue;
     if (!world.getTerrain().canSetElevation(x, y, next)) continue;
+    if (wouldBreakStructuredNeighborFlatness(world, x, y, next)) continue;
     commands.push({ kind: 'elevation', x, y, elevation: next });
   }
   return commands;
@@ -194,6 +245,7 @@ function buildTerrainDownCommands(tiles: TileCoord[], world: World): ToolCommand
     const next = current - 1;
     if (next < SEA_LEVEL) continue;
     if (!world.getTerrain().canSetElevation(x, y, next)) continue;
+    if (wouldBreakStructuredNeighborFlatness(world, x, y, next)) continue;
     if (tile.type === TileType.DIRT && next <= SEA_LEVEL) {
       commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
     }

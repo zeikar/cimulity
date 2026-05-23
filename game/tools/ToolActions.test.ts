@@ -530,3 +530,107 @@ describe('buildToolCommands — terrain buildability gates', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Structured-neighbor flatness protection (Finding: terrain edits must not
+// silently invalidate adjacent road/zone/building flatness invariant)
+// ---------------------------------------------------------------------------
+
+describe('buildToolCommands — structured-neighbor flatness guard', () => {
+  describe('TERRAIN_UP and structured neighbors', () => {
+    // Raising a cell makes it HIGHER than the structured neighbor, not lower.
+    // getSlopeMask only marks neighbors that are LOWER than center, so a structured
+    // cell's mask stays 0 when its neighbor is raised — flatness invariant is not broken.
+    it('raise next to a ROAD tile at same elevation is ACCEPTED (raising does not lower the road neighbor)', () => {
+      // Default world: all elevation 1. Road at (3,3). Raising (2,3) to 2: road's west
+      // neighbor becomes 2 > road_nc=1 → not lower → slope mask unchanged → still flat.
+      world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
+      const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: 2 });
+    });
+
+    it('raise next to an empty zone is ACCEPTED (raising does not break flatness of the zone)', () => {
+      world.getMap().setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
+      const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: 2 });
+    });
+
+    it('raise next to a building footprint is ACCEPTED (raising does not break flatness)', () => {
+      const building: Building = {
+        id: 2,
+        type: 'residential',
+        footprint: [{ x: 3, y: 3 }],
+        anchor: { x: 3, y: 3 },
+        level: 0,
+        density: 0,
+        age: 0,
+      };
+      world.getMap().getBuildings().addExistingBuilding(building);
+      const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ kind: 'elevation', x: 2, y: 3, elevation: 2 });
+    });
+  });
+
+  describe('TERRAIN_DOWN rejects edits that break a structured neighbor', () => {
+    it('lower next to a ROAD tile is rejected', () => {
+      // Seed whole map to elevation 2 so lowering 2→1 is slope-legal, then place road at (3,3).
+      // Lowering (2,3) from 2→1: road at (3,3) has nc=2, its west cardinal would be 1 → delta=1 from nc=2 → actually that's fine...
+      // Need delta > 0 to matter: lower (2,3) to 1, road stays at 2 → road's west is 1, nc=2 → mask bit set → non-flat → reject.
+      for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+          world.getTerrain().unsafeSetElevation(x, y, 2);
+        }
+      }
+      world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
+      const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+      expect(commands).toHaveLength(0);
+    });
+
+    it('lower next to an empty zone is rejected', () => {
+      for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+          world.getTerrain().unsafeSetElevation(x, y, 2);
+        }
+      }
+      world.getMap().setTile(3, 3, createTile(3, 3, TileType.ZONE_COMMERCIAL));
+      const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+      expect(commands).toHaveLength(0);
+    });
+
+    it('lower next to a building footprint cell is rejected', () => {
+      for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+          world.getTerrain().unsafeSetElevation(x, y, 2);
+        }
+      }
+      const building: Building = {
+        id: 3,
+        type: 'residential',
+        footprint: [{ x: 3, y: 3 }],
+        anchor: { x: 3, y: 3 },
+        level: 0,
+        density: 0,
+        age: 0,
+      };
+      world.getMap().getBuildings().addExistingBuilding(building);
+      const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+      expect(commands).toHaveLength(0);
+    });
+
+    it('lower far from any structured cell is accepted', () => {
+      // All at elevation 2, road at (0,0), lower (5,5) — no structured neighbors
+      for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+          world.getTerrain().unsafeSetElevation(x, y, 2);
+        }
+      }
+      world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+      const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 5, y: 5 }], world);
+      expect(commands).toHaveLength(1);
+      expect(commands[0]).toEqual({ kind: 'elevation', x: 5, y: 5, elevation: 1 });
+    });
+  });
+});
