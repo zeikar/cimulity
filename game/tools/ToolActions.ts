@@ -9,7 +9,6 @@ import { Tool } from './Tool';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import type { Tile } from '../core/Tile';
 import { SEA_LEVEL, MAX_ELEVATION } from '../core/Terrain';
-import { slopeMaskFor } from '../core/terrainSlope';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
@@ -20,53 +19,154 @@ function isStructuredCell(world: World, tile: Tile, x: number, y: number): boole
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
 }
 
+type CascadeDirection = 'up' | 'down';
+
+interface CascadeCell {
+  x: number;
+  y: number;
+  originalElev: number;
+  newElev: number;
+}
+
+function cellKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
 /**
- * Returns true if setting (x,y) to proposedElevation would make any cardinal
- * structured neighbor (road/zone/building) non-flat. "Flat" means slope mask === 0,
- * i.e., all 4 cardinals of the neighbor are within 1 elevation step of the neighbor.
- * This check is purely read-only — no mutation of world state.
+ * BFS the closure of cells that must change by ±1 to satisfy the canSetElevation
+ * delta-1 8-neighbor invariant when the source cell is raised or lowered by 1.
+ *
+ * Each cell in the closure changes by exactly 1 in the same direction as the
+ * source — a smooth "ring" cascade that pulls lower neighbors up (raise) or
+ * higher neighbors down (lower). Returns the cells in apply order: ascending
+ * originalElev for raise, descending for lower, so each setElevation passes
+ * canSetElevation against the partial state during dispatch.
+ *
+ * Returns null (and the caller skips the tile, no partial mutation) when:
+ *   - source is OOB or structured (road / zone / building footprint),
+ *   - any cascade cell would exceed [SEA_LEVEL, MAX_ELEVATION],
+ *   - a cell that needs to cascade is structured,
+ *   - a pre-existing cliff in the "wrong" direction (raise vs above-neighbor,
+ *     lower vs below-neighbor) leaves delta > 1 after the ±1 change,
+ *   - lower direction only: a cascade cell sits adjacent to a non-cascade
+ *     structured cardinal whose flatness would break (cell ends up below the
+ *     structured cell's still-fixed elevation → slope-mask bit set).
+ *
+ * Pure read against world; never mutates.
  */
-function wouldBreakStructuredNeighborFlatness(
+function computeCascade(
   world: World,
-  x: number,
-  y: number,
-  proposedElevation: number
-): boolean {
+  sourceX: number,
+  sourceY: number,
+  direction: CascadeDirection
+): CascadeCell[] | null {
   const terrain = world.getTerrain();
   const map = world.getMap();
+  const w = terrain.getWidth();
+  const h = terrain.getHeight();
+  const inBounds = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < w && y < h;
+  const dir = direction === 'up' ? 1 : -1;
 
-  const cardinals = [
-    { nx: x, ny: y - 1 },
-    { nx: x + 1, ny: y },
-    { nx: x, ny: y + 1 },
-    { nx: x - 1, ny: y },
-  ] as const;
+  if (!inBounds(sourceX, sourceY)) return null;
+  const sourceTile = map.getTile(sourceX, sourceY);
+  if (!sourceTile) return null;
+  if (isStructuredCell(world, sourceTile, sourceX, sourceY)) return null;
 
-  for (const { nx, ny } of cardinals) {
-    const neighborTile = map.getTile(nx, ny);
-    if (!neighborTile) continue;
-    if (!isStructuredCell(world, neighborTile, nx, ny)) continue;
+  const sourceOriginal = terrain.getTileElevation(sourceX, sourceY);
+  const sourceNew = sourceOriginal + dir;
+  if (sourceNew < SEA_LEVEL || sourceNew > MAX_ELEVATION) return null;
 
-    const nc = terrain.getTileElevation(nx, ny);
-    // Compute the neighbor's 4 cardinal elevations, substituting proposedElevation
-    // for the direction that points back to (x,y). OOB cardinals treated as nc
-    // to match getSlopeMask's OOB convention (bit unset for equal-elevation neighbors).
-    const w = terrain.getWidth();
-    const h = terrain.getHeight();
-    const getElev = (cx: number, cy: number): number => {
-      if (cx === x && cy === y) return proposedElevation;
-      if (cx < 0 || cy < 0 || cx >= w || cy >= h) return nc;
-      return terrain.getTileElevation(cx, cy);
-    };
-    const nn = getElev(nx, ny - 1);
-    const ne = getElev(nx + 1, ny);
-    const ns = getElev(nx, ny + 1);
-    const nw = getElev(nx - 1, ny);
+  const cascade = new Map<string, CascadeCell>();
+  cascade.set(cellKey(sourceX, sourceY), {
+    x: sourceX,
+    y: sourceY,
+    originalElev: sourceOriginal,
+    newElev: sourceNew,
+  });
+  const queue: Array<{ x: number; y: number }> = [{ x: sourceX, y: sourceY }];
 
-    if (slopeMaskFor(nc, nn, ne, ns, nw) !== 0) return true;
+  while (queue.length > 0) {
+    const head = queue.shift()!;
+    const cell = cascade.get(cellKey(head.x, head.y))!;
+
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = cell.x + dx;
+        const ny = cell.y + dy;
+        if (!inBounds(nx, ny)) continue;
+
+        const nKey = cellKey(nx, ny);
+        const neighborInCascade = cascade.get(nKey);
+        const neighborOriginal = neighborInCascade
+          ? neighborInCascade.originalElev
+          : terrain.getTileElevation(nx, ny);
+        const neighborFinal = neighborInCascade
+          ? neighborInCascade.newElev
+          : neighborOriginal;
+
+        if (Math.abs(cell.newElev - neighborFinal) <= 1) continue;
+
+        const wantsCascade =
+          dir > 0
+            ? neighborOriginal < cell.originalElev
+            : neighborOriginal > cell.originalElev;
+        if (!wantsCascade) return null; // pre-existing cliff in the wrong direction
+
+        if (neighborInCascade) continue; // already accounted for; cascade is monotonic
+
+        const neighborTile = map.getTile(nx, ny);
+        if (!neighborTile) return null;
+        if (isStructuredCell(world, neighborTile, nx, ny)) return null;
+
+        const neighborNew = neighborOriginal + dir;
+        if (neighborNew < SEA_LEVEL || neighborNew > MAX_ELEVATION) return null;
+
+        cascade.set(nKey, {
+          x: nx,
+          y: ny,
+          originalElev: neighborOriginal,
+          newElev: neighborNew,
+        });
+        queue.push({ x: nx, y: ny });
+      }
+    }
   }
 
-  return false;
+  // Lower-only: cardinal-structured-neighbor flatness check.
+  // Raising can never break a structured cell's flatness — slopeMaskFor only
+  // flags cardinals LOWER than center, and cascade-on-raise only moves cells
+  // UP. Lowering can pull a cardinal of a structured cell below it, setting
+  // the bit. Reject when any cascade cell ends up below a non-cascade
+  // structured cardinal.
+  if (dir < 0) {
+    const cardinalOffsets: ReadonlyArray<readonly [number, number]> = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ];
+    for (const cell of cascade.values()) {
+      for (const [ox, oy] of cardinalOffsets) {
+        const cx = cell.x + ox;
+        const cy = cell.y + oy;
+        if (!inBounds(cx, cy)) continue;
+        if (cascade.has(cellKey(cx, cy))) continue;
+        const neighborTile = map.getTile(cx, cy);
+        if (!neighborTile) continue;
+        if (!isStructuredCell(world, neighborTile, cx, cy)) continue;
+        const neighborElev = terrain.getTileElevation(cx, cy);
+        if (cell.newElev < neighborElev) return null;
+      }
+    }
+  }
+
+  const sorted = [...cascade.values()];
+  sorted.sort((a, b) =>
+    dir > 0 ? a.originalElev - b.originalElev : b.originalElev - a.originalElev
+  );
+  return sorted;
 }
 
 /** Narrow union of the three placeable zone tile types. */
@@ -204,52 +304,53 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
 
 /**
  * Build terrain-raise commands.
- * Allow-list: skips OOB, structured cells (road/zone/building), already-clamped
- *   tiles (elevation >= MAX_ELEVATION), and slope-blocked cells.
- * Single-elevation branch only: emits one elevation command per qualifying tile.
- * Atomicity: per-tile — skipped tiles produce no output; qualifying tiles emit exactly one command.
+ * Computes a cascade closure per source tile via `computeCascade('up')` —
+ * the source plus any 8-neighbor whose original elevation would violate the
+ * delta-1 invariant against the raised source, recursively. Cascade aborts
+ * (no partial mutation) on OOB / structured / clamp / wrong-direction cliff.
+ * Emits one elevation command per cascade cell in ascending originalElev
+ * order so each `setElevation` passes against the partial dispatch state.
  * Reads world only to decide intent; never mutates core.
  */
 function buildTerrainUpCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const commands: ToolCommand[] = [];
   for (const { x, y } of tiles) {
-    const tile = world.getMap().getTile(x, y);
-    if (!tile) continue;
-    if (isStructuredCell(world, tile, x, y)) continue;
-    const current = world.getTerrain().getTileElevation(x, y);
-    const next = current + 1;
-    if (next > MAX_ELEVATION) continue;
-    if (!world.getTerrain().canSetElevation(x, y, next)) continue;
-    if (wouldBreakStructuredNeighborFlatness(world, x, y, next)) continue;
-    commands.push({ kind: 'elevation', x, y, elevation: next });
+    const cascade = computeCascade(world, x, y, 'up');
+    if (!cascade) continue;
+    for (const c of cascade) {
+      commands.push({ kind: 'elevation', x: c.x, y: c.y, elevation: c.newElev });
+    }
   }
   return commands;
 }
 
 /**
  * Build terrain-lower commands.
- * Allow-list: skips OOB, structured cells (road/zone/building), already-clamped
- *   tiles (next elevation < SEA_LEVEL), and slope-blocked cells.
- * DIRT→SEA_LEVEL paired write: when a DIRT tile would land exactly at SEA_LEVEL,
- *   emits a tile command (DIRT→GRASS) before the elevation command — both or neither
- *   (the slope preflight earlier ensures atomicity of the pair).
+ * Computes a cascade closure per source tile via `computeCascade('down')` —
+ * the source plus any 8-neighbor whose original elevation would violate the
+ * delta-1 invariant against the lowered source, recursively. Cascade aborts
+ * on OOB / structured / clamp / wrong-direction cliff / would-break-structured-
+ * cardinal-flatness (lower-only). Emits commands in descending originalElev
+ * order (highest first) so each `setElevation` passes during dispatch.
+ *
+ * DIRT→SEA_LEVEL paired write: when a cascade cell that's DIRT lands at
+ * SEA_LEVEL, emit a tile-write (DIRT→GRASS) immediately before its elevation
+ * command to preserve the `elevation <= SEA_LEVEL ⇒ GRASS` save/render
+ * invariant. The slope/cascade preflight already gates atomicity of the pair.
  * Reads world only to decide intent; never mutates core.
  */
 function buildTerrainDownCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const commands: ToolCommand[] = [];
   for (const { x, y } of tiles) {
-    const tile = world.getMap().getTile(x, y);
-    if (!tile) continue;
-    if (isStructuredCell(world, tile, x, y)) continue;
-    const current = world.getTerrain().getTileElevation(x, y);
-    const next = current - 1;
-    if (next < SEA_LEVEL) continue;
-    if (!world.getTerrain().canSetElevation(x, y, next)) continue;
-    if (wouldBreakStructuredNeighborFlatness(world, x, y, next)) continue;
-    if (tile.type === TileType.DIRT && next <= SEA_LEVEL) {
-      commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
+    const cascade = computeCascade(world, x, y, 'down');
+    if (!cascade) continue;
+    for (const c of cascade) {
+      const tile = world.getMap().getTile(c.x, c.y);
+      if (tile && tile.type === TileType.DIRT && c.newElev <= SEA_LEVEL) {
+        commands.push({ kind: 'tile', x: c.x, y: c.y, tile: createTile(c.x, c.y, TileType.GRASS) });
+      }
+      commands.push({ kind: 'elevation', x: c.x, y: c.y, elevation: c.newElev });
     }
-    commands.push({ kind: 'elevation', x, y, elevation: next });
   }
   return commands;
 }

@@ -634,3 +634,124 @@ describe('buildToolCommands — structured-neighbor flatness guard', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cascade behavior — raising a peak / lowering a pit smoothly pulls in
+// 8-neighbors so a single click on a hilltop actually raises the hilltop
+// (the original strict-only policy left peaks stuck against their lower
+// cardinals; cascade fixes that UX gap while still aborting at structures
+// and clamps).
+// ---------------------------------------------------------------------------
+
+function fillElev(world: World, value: number): void {
+  for (let y = 0; y < MAP_SIZE; y++) {
+    for (let x = 0; x < MAP_SIZE; x++) {
+      world.getTerrain().unsafeSetElevation(x, y, value);
+    }
+  }
+}
+
+describe('buildToolCommands — TERRAIN_UP cascade', () => {
+  it('raise on a peak with lower 8-neighbors cascades them all up by 1', () => {
+    // Peak at (3,3)=2 with the surrounding 3×3 at 1 and the rest of the map
+    // also at 1. canSetElevation enforces delta-1 over 8-neighbors (cardinal
+    // + diagonal), so the cascade pulls up ALL 8 surrounding cells — 4
+    // cardinals + 4 diagonals — to keep them within 1 of the new peak at 3.
+    fillElev(world, 1);
+    world.getTerrain().unsafeSetElevation(3, 3, 2);
+
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 3, y: 3 }], world);
+
+    // 8 cascade neighbors at original 1 → 2, plus the peak at 2 → 3. Total 9.
+    // Apply order is ascending originalElev: the peak (originalElev=2) is last.
+    expect(commands).toHaveLength(9);
+    expect(commands[commands.length - 1]).toEqual({ kind: 'elevation', x: 3, y: 3, elevation: 3 });
+    const ringCoords = new Set<string>();
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        ringCoords.add(`${3 + dx},${3 + dy}`);
+      }
+    }
+    for (let i = 0; i < 8; i++) {
+      const cmd = commands[i];
+      expect(cmd.kind).toBe('elevation');
+      if (cmd.kind === 'elevation') {
+        expect(ringCoords.has(`${cmd.x},${cmd.y}`)).toBe(true);
+        expect(cmd.elevation).toBe(2);
+      }
+    }
+  });
+
+  it('cascade aborts when it would push a cell above MAX_ELEVATION', () => {
+    // Peak already at MAX (8) with a lower cardinal: source at MAX. Source
+    // itself is the clamp-violating cell — should abort, zero commands.
+    fillElev(world, MAX_ELEVATION - 1);
+    world.getTerrain().unsafeSetElevation(3, 3, MAX_ELEVATION);
+
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 3, y: 3 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('cascade aborts when a cascade-required neighbor is a ROAD', () => {
+    // Peak at (3,3)=2 with cardinal (3,2)=1 as a ROAD. Raising the peak would
+    // require cascading (3,2) up — but it's structured → abort entire cascade.
+    fillElev(world, 1);
+    world.getTerrain().unsafeSetElevation(3, 3, 2);
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ROAD));
+
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 3, y: 3 }], world);
+    expect(commands).toHaveLength(0);
+    expect(world.getTerrain().getTileElevation(3, 3)).toBe(2); // unchanged
+  });
+});
+
+describe('buildToolCommands — TERRAIN_DOWN cascade', () => {
+  it('lower in a pit with higher cardinals cascades them all down by 1', () => {
+    // Pit at (3,3)=1 surrounded by cardinals at 2 (rest of map at 2 too, so
+    // the pit-bottom click forces a symmetric cascade — every cardinal that
+    // was at 2 lowers to 1 to keep delta-1 against the new pit-bottom at 0).
+    fillElev(world, 2);
+    world.getTerrain().unsafeSetElevation(3, 3, 1);
+
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 3, y: 3 }], world);
+
+    // All 8 cells in the 3×3 around the pit are at 2 and must lower to 1
+    // (lowering the pit center to 0 would otherwise leave delta=2 against
+    // them). Plus the pit center going 1→0. Total = 9 elevation commands.
+    expect(commands).toHaveLength(9);
+    // Pit center is emitted LAST (descending originalElev: 2 first, 1 last).
+    const last = commands[commands.length - 1];
+    expect(last).toEqual({ kind: 'elevation', x: 3, y: 3, elevation: SEA_LEVEL });
+  });
+
+  it('cascade aborts when it would push a cell below SEA_LEVEL', () => {
+    // Source already at SEA_LEVEL: nothing to lower, abort.
+    fillElev(world, 1);
+    world.getTerrain().unsafeSetElevation(3, 3, SEA_LEVEL);
+
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 3, y: 3 }], world);
+    expect(commands).toHaveLength(0);
+  });
+
+  it('cascade aborts when a cascade-required higher neighbor is a building footprint', () => {
+    // (3,3)=1 with cardinal (3,2)=2 hosting a building. Lowering (3,3) to 0
+    // would require cascading (3,2) down by 1, but it's structured → abort.
+    fillElev(world, 1);
+    world.getTerrain().unsafeSetElevation(3, 2, 2);
+    const building: Building = {
+      id: 42,
+      type: 'residential',
+      footprint: [{ x: 3, y: 2 }],
+      anchor: { x: 3, y: 2 },
+      level: 0,
+      density: 0,
+      age: 0,
+    };
+    world.getMap().getBuildings().addExistingBuilding(building);
+
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 3, y: 3 }], world);
+    expect(commands).toHaveLength(0);
+    expect(world.getTerrain().getTileElevation(3, 3)).toBe(1); // unchanged
+  });
+});
