@@ -4,6 +4,10 @@ import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
 import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
+import { SEA_LEVEL, MAX_ELEVATION } from '../core/Terrain';
+import type { Building } from '../core/Building';
+import { tileFillColor, WATER_COLOR } from '../render/visuals/palette';
+import { serializeWorld, deserializeWorldInto } from '../core/mapSerialization';
 
 function makeWorld(size = 5): World {
   return new World(size, size, { regenerate: false });
@@ -702,5 +706,329 @@ describe('executeClick/executeDrag — paint terrain elevation branch (dispatch 
     expect(result.changedTiles).toEqual([]);
     expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
     expect(world.getTerrain().getTileElevation(2, 2)).toBe(5);
+  });
+});
+
+describe('executeClick - TERRAIN_UP / TERRAIN_DOWN', () => {
+  it('UP slope-safe: raises elevation by 1', () => {
+    const world = makeWorld(5);
+
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(2);
+  });
+
+  it('UP at MAX_ELEVATION clamp: no change', () => {
+    const world = makeWorld(5);
+    // Seed center and 3×3 neighborhood to MAX_ELEVATION so canSetElevation passes
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        world.getTerrain().unsafeSetElevation(2 + dx, 2 + dy, MAX_ELEVATION);
+      }
+    }
+
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(MAX_ELEVATION);
+  });
+
+  it('UP slope-blocked: neighbor too far below blocks the raise', () => {
+    // Center at 1, neighbor (1,2) at 4; raising center to 2 would give delta |4-2|=2 > 1
+    // Wait — the slope check is on the proposed new elevation vs neighbors.
+    // Center would go from 1→2. Neighbor (1,2) is at 4. delta |4-2|=2 > 1 → blocked.
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(1, 2, 4);
+
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(1);
+  });
+
+  it('DOWN slope-safe: elevation becomes SEA_LEVEL, cell is water', () => {
+    const world = makeWorld(5);
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(SEA_LEVEL);
+    expect(world.isWater(2, 2)).toBe(true);
+  });
+
+  it('DOWN at SEA_LEVEL floor: no change', () => {
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(2, 2, SEA_LEVEL);
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+  });
+
+  it('DOWN slope-blocked: steep neighbor blocks the lower', () => {
+    // Center at 5, neighbor (1,2) at 2. Proposed next = 4. |2-4|=2 > 1 → blocked.
+    const world = makeWorld(5);
+    // First raise all neighbors and center to 5 to avoid slope issues, then set specific values
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        world.getTerrain().unsafeSetElevation(2 + dx, 2 + dy, 5);
+      }
+    }
+    world.getTerrain().unsafeSetElevation(1, 2, 2);
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(5);
+  });
+
+  it('Structured-tile reject UP: ROAD tile blocks TERRAIN_UP', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const elevBefore = world.getTerrain().getTileElevation(2, 2);
+
+    const result = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(elevBefore);
+  });
+
+  it('Structured-tile reject DOWN: ZONE_RESIDENTIAL tile blocks TERRAIN_DOWN', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+  });
+
+  it('Building footprint reject: TERRAIN_UP and TERRAIN_DOWN both blocked by a building', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    const building: Building = {
+      id: 0,
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 0,
+      density: 0,
+      age: 0,
+    };
+    world.getMap().getBuildings().addExistingBuilding(building);
+    const elevBefore = world.getTerrain().getTileElevation(2, 2);
+
+    const upResult = executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+    const downResult = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(upResult.changedTiles).toEqual([]);
+    expect(downResult.changedTiles).toEqual([]);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(elevBefore);
+  });
+
+  it('DIRT → SEA_LEVEL paired commit: tile becomes GRASS, elevation = SEA_LEVEL, changedTiles has two (2,2) entries', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    // Tile write + elevation write → two entries at the same coord
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(SEA_LEVEL);
+    expect(world.isWater(2, 2)).toBe(true);
+    expect(result.changedTiles).toEqual([{ x: 2, y: 2 }, { x: 2, y: 2 }]);
+  });
+
+  it('DIRT → SEA_LEVEL slope-blocked: tile stays DIRT, elevation unchanged', () => {
+    const world = makeWorld(5);
+    // Raise neighbor (1,2) to 3 so lowering center from 1→0 would give |3-0|=3 > 1 → blocked
+    world.getTerrain().unsafeSetElevation(1, 2, 3);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(1);
+  });
+
+  it('changedTiles contract pin (Design D8 regression bait): single TERRAIN_DOWN on DIRT at MIN_LAND_ELEVATION emits exactly 2 entries', () => {
+    // applyCommands pushes once per committed command; duplicates at the same coord are part of the contract.
+    // If a future refactor adds dedup, update D8 and this test together.
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+
+    const result = executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(result.changedTiles.length).toBe(2);
+  });
+});
+
+describe('executeDrag / previewDrag - TERRAIN_UP / TERRAIN_DOWN', () => {
+  it('UP drag 2×2 on default world: all four cells raised to elevation 2', () => {
+    const world = makeWorld(5);
+
+    const result = executeDrag(Tool.TERRAIN_UP, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    expect(result.changedTiles.length).toBe(4);
+    expect(world.getTerrain().getTileElevation(0, 0)).toBe(2);
+    expect(world.getTerrain().getTileElevation(1, 0)).toBe(2);
+    expect(world.getTerrain().getTileElevation(0, 1)).toBe(2);
+    expect(world.getTerrain().getTileElevation(1, 1)).toBe(2);
+  });
+
+  it('DOWN drag 2×2 with mixed DIRT+GRASS rect: DIRT cell gets paired write, total changedTiles === 5', () => {
+    const world = makeWorld(5);
+    // Seed DIRT at (1,0) only; rest of the 2×2 rect is GRASS
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.DIRT));
+
+    const result = executeDrag(Tool.TERRAIN_DOWN, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    // Three GRASS cells → 1 changedTile each (elevation only); DIRT cell → 2 changedTiles (tile + elevation)
+    expect(result.changedTiles.length).toBe(5);
+    // DIRT coord appears exactly twice
+    expect(result.changedTiles.filter(t => t.x === 1 && t.y === 0).length).toBe(2);
+
+    expect(result.changedTiles).toContainEqual({ x: 0, y: 0 });
+    expect(result.changedTiles).toContainEqual({ x: 1, y: 0 });
+    expect(result.changedTiles).toContainEqual({ x: 0, y: 1 });
+    expect(result.changedTiles).toContainEqual({ x: 1, y: 1 });
+
+    // (1,0) tile write: DIRT → GRASS
+    expect(world.getMap().getTile(1, 0)?.type).toBe(TileType.GRASS);
+    expect(world.getTerrain().getTileElevation(1, 0)).toBe(SEA_LEVEL);
+
+    // All four cells are now water
+    expect(world.isWater(0, 0)).toBe(true);
+    expect(world.isWater(1, 0)).toBe(true);
+    expect(world.isWater(0, 1)).toBe(true);
+    expect(world.isWater(1, 1)).toBe(true);
+  });
+
+  it('Per-tile slope rejection inside drag (D6): slope-blocked cell is skipped, others change', () => {
+    // 5×5 world. Drag DOWN over (1,1)→(2,2). Seed outside cell (3,3) to elevation 3 so that
+    // only cell (2,2) (proposed: 1→0) sees |3-0|=3 > 1 → slope-blocked (diagonal neighbor).
+    // Cells (1,1), (2,1), (1,2) are safe — (3,3) is not within 1-step of any of them.
+    const world = makeWorld(5);
+    world.getTerrain().unsafeSetElevation(3, 3, 3);
+
+    const result = executeDrag(Tool.TERRAIN_DOWN, { x: 1, y: 1 }, { x: 2, y: 2 }, world);
+
+    // Three safe GRASS cells → 3 elevation changes; (2,2) skipped; no DIRT so no paired writes
+    expect(result.changedTiles.length).toBe(3);
+    expect(world.getTerrain().getTileElevation(1, 1)).toBe(SEA_LEVEL);
+    expect(world.getTerrain().getTileElevation(2, 1)).toBe(SEA_LEVEL);
+    expect(world.getTerrain().getTileElevation(1, 2)).toBe(SEA_LEVEL);
+    expect(world.getTerrain().getTileElevation(2, 2)).toBe(1); // unchanged
+  });
+
+  it('previewDrag pure: TERRAIN_UP preview returns rect tiles, world state unchanged', () => {
+    const world = makeWorld(5);
+    const elevBefore = world.getTerrain().getTileElevation(0, 0);
+
+    const path = previewDrag(Tool.TERRAIN_UP, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+
+    expect(path).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ]);
+    // World unchanged
+    expect(world.getTerrain().getTileElevation(0, 0)).toBe(elevBefore);
+    expect(world.getTerrain().getTileElevation(1, 0)).toBe(elevBefore);
+    expect(world.getTerrain().getTileElevation(0, 1)).toBe(elevBefore);
+    expect(world.getTerrain().getTileElevation(1, 1)).toBe(elevBefore);
+  });
+});
+
+describe('TERRAIN_UP / TERRAIN_DOWN cost', () => {
+  it('TERRAIN_UP on plain GRASS: money unchanged', () => {
+    const world = makeWorld(5);
+    const before = world.getMoney();
+
+    executeClick(Tool.TERRAIN_UP, { x: 2, y: 2 }, world);
+
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('TERRAIN_DOWN on plain GRASS: money unchanged', () => {
+    const world = makeWorld(5);
+    const before = world.getMoney();
+
+    executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('DIRT → SEA_LEVEL paired commit: money unchanged', () => {
+    // commandCost charges by cmd.tile.type for tile writes; paired DIRT→GRASS writes a GRASS tile
+    // (fallback return 0), not the BULLDOZE_COST DIRT branch. Explicit assertion guards against future cost refactors.
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    const before = world.getMoney();
+
+    executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('TERRAIN_UP drag over five GRASS cells: money unchanged', () => {
+    const world = makeWorld(5);
+    const before = world.getMoney();
+
+    const result = executeDrag(Tool.TERRAIN_UP, { x: 0, y: 0 }, { x: 4, y: 0 }, world);
+
+    expect(result.changedTiles).toHaveLength(5);
+    expect(world.getMoney()).toBe(before);
+  });
+});
+
+describe('TERRAIN_DOWN — render/save coherence', () => {
+  it('Palette coherence (GRASS → SEA_LEVEL): tileFillColor returns WATER_COLOR after click', () => {
+    const world = makeWorld(5);
+    executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    // Elevation is now SEA_LEVEL; three-arg call required for water branch to fire
+    expect(tileFillColor(TileType.GRASS, 0, world.getTerrain().getTileElevation(2, 2))).toBe(WATER_COLOR);
+    expect(tileFillColor(TileType.GRASS, 0, SEA_LEVEL)).toBe(WATER_COLOR);
+  });
+
+  it('Palette coherence after DIRT→SEA_LEVEL paired commit: tile is GRASS and renders as water', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world);
+
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(tileFillColor(TileType.GRASS, 0, SEA_LEVEL)).toBe(WATER_COLOR);
+  });
+
+  it('Serialization round-trip: DIRT→SEA_LEVEL state survives save/load', () => {
+    const world = makeWorld(5);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    executeClick(Tool.TERRAIN_DOWN, { x: 2, y: 2 }, world); // paired DIRT→GRASS + elevation → SEA_LEVEL
+
+    const json = serializeWorld(world);
+    const loaded = new World(5, 5, { regenerate: false });
+    expect(deserializeWorldInto(loaded, json)).toBe(true);
+    expect(loaded.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(loaded.getTerrain().getTileElevation(2, 2)).toBe(SEA_LEVEL);
+  });
+
+  it('Serialization round-trip negative control: DIRT tile at SEA_LEVEL elevation is rejected', () => {
+    // Serialize a valid world, then mutate the JSON so cell (2,2) has DIRT type but elevation <= SEA_LEVEL.
+    // This pins the "elevation <= SEA_LEVEL ⇒ GRASS" invariant — the loader must reject incoherent data.
+    const world = makeWorld(5);
+    // Lower (2,2) to SEA_LEVEL first (valid: GRASS at sea level)
+    world.getTerrain().unsafeSetElevation(2, 2, SEA_LEVEL);
+    const json = serializeWorld(world);
+
+    // Mutate the tile at index (2*5+2 = 12) from GRASS to DIRT in the JSON
+    const parsed = JSON.parse(json) as { t: string[] };
+    parsed.t[2 * 5 + 2] = TileType.DIRT;
+    const mutatedJson = JSON.stringify(parsed);
+
+    expect(deserializeWorldInto(new World(5, 5, { regenerate: false }), mutatedJson)).toBe(false);
   });
 });
