@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateTerrain, DEFAULT_NEWCITY_SEED } from './terrainGenerator';
-import { Terrain, MAX_ELEVATION } from './Terrain';
+import { Terrain, MAX_ELEVATION, SEA_LEVEL, MIN_LAND_ELEVATION } from './Terrain';
 
 describe('generateTerrain', () => {
   it('(a) determinism — same seed produces identical output', () => {
@@ -47,8 +47,9 @@ describe('generateTerrain', () => {
 
   it('(d) pinned regression — generateTerrain(4, 4, 1) exact snapshot', () => {
     const { elevations, waterMask } = generateTerrain(4, 4, 1);
+    // waterMask[0][2] === true → elevation clamped to SEA_LEVEL (0).
     expect(elevations).toEqual([
-      [3, 2, 1, 1],
+      [3, 2, 0, 1],
       [3, 2, 1, 1],
       [3, 3, 2, 1],
       [3, 3, 2, 1],
@@ -75,6 +76,40 @@ describe('generateTerrain', () => {
     expect(() => generateTerrain(0, 8, 0)).toThrow(RangeError);
     expect(() => generateTerrain(8, 0, 0)).toThrow(RangeError);
     expect(() => generateTerrain(1.5, 8, 0)).toThrow(RangeError);
+  });
+
+  it('(j) clamp invariant — water cells have elevation === SEA_LEVEL', () => {
+    const { elevations, waterMask } = generateTerrain(32, 32, DEFAULT_NEWCITY_SEED);
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        if (waterMask[y][x]) {
+          expect(elevations[y][x]).toBe(SEA_LEVEL);
+        }
+      }
+    }
+  });
+
+  it('(k) clamp invariant — non-water cells have elevation >= MIN_LAND_ELEVATION', () => {
+    const { elevations, waterMask } = generateTerrain(32, 32, DEFAULT_NEWCITY_SEED);
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        if (!waterMask[y][x]) {
+          expect(elevations[y][x]).toBeGreaterThanOrEqual(MIN_LAND_ELEVATION);
+        }
+      }
+    }
+  });
+
+  it('(l) clamp invariant — elev <= SEA_LEVEL implies waterMask (no spurious water)', () => {
+    // Contrapositive: if waterMask[y][x] is false, elevation must be > SEA_LEVEL.
+    const { elevations, waterMask } = generateTerrain(32, 32, DEFAULT_NEWCITY_SEED);
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        if (elevations[y][x] <= SEA_LEVEL) {
+          expect(waterMask[y][x]).toBe(true);
+        }
+      }
+    }
   });
 });
 
