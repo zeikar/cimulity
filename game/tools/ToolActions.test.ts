@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildToolCommands } from './ToolActions';
+import { buildToolCommands, buildToolPreview } from './ToolActions';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from './Tool';
 import { World } from '../core/World';
@@ -240,6 +240,83 @@ describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
     if (commands[0].kind !== 'vertex-edit') throw new Error('expected vertex edit');
     expect(commands[0].writes).not.toContainEqual({ vx: 2, vy: 2, height: MAX_ELEVATION + 1 });
     expect(commands[0].writes.length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildToolPreview - ROAD', () => {
+  it('valid 3-tile horizontal road drag on flat grass → pathTiles=input, rejected=[], allOrNothingBlocked=false', () => {
+    const tiles = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }];
+    const preview = buildToolPreview(Tool.ROAD, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+
+  it('road drag where last tile has water corner → rejected=[last tile], allOrNothingBlocked=true', () => {
+    // Vertex (4,1)=0 gives tile (3,1) a water corner
+    world.getTerrain().unsafeSetVertexHeight(4, 1, SEA_LEVEL);
+    const tiles = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }];
+    const preview = buildToolPreview(Tool.ROAD, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([{ x: 3, y: 1 }]);
+    expect(preview.allOrNothingBlocked).toBe(true);
+  });
+
+  it('single-tile road preview on triangle wedge → pathTiles=[tile], rejected=[tile], allOrNothingBlocked=true', () => {
+    // Vertex (3,3)=2: tile (2,2) corners topH=1, rightH=1, bottomH=2, leftH=1 → not coplanar
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    const tiles = [{ x: 2, y: 2 }];
+    const preview = buildToolPreview(Tool.ROAD, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([{ x: 2, y: 2 }]);
+    expect(preview.allOrNothingBlocked).toBe(true);
+  });
+
+  it('road drag including one existing-ROAD tile → ROAD tile in pathTiles but not rejected, allOrNothingBlocked=false', () => {
+    world.getMap().setTile(2, 1, createTile(2, 1, TileType.ROAD));
+    const tiles = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }];
+    const preview = buildToolPreview(Tool.ROAD, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+});
+
+describe('buildToolPreview - ZONE', () => {
+  it('valid zone drag on flat grass → pathTiles=input, rejected=[], allOrNothingBlocked=false', () => {
+    const tiles = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }];
+    const preview = buildToolPreview(Tool.ZONE_RESIDENTIAL, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+
+  it('mixed zone drag (water + flat) → rejected=[water tile], allOrNothingBlocked=false', () => {
+    // Vertex (2,1)=0 makes tile (1,1) have a water corner
+    world.getTerrain().unsafeSetVertexHeight(2, 1, SEA_LEVEL);
+    const tiles = [{ x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 }];
+    const preview = buildToolPreview(Tool.ZONE_RESIDENTIAL, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([{ x: 1, y: 1 }]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+});
+
+describe('buildToolPreview - other tools', () => {
+  it('BULLDOZE preview on 2×2 rect → pathTiles=input, rejected=[], allOrNothingBlocked=false', () => {
+    const tiles = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }];
+    const preview = buildToolPreview(Tool.BULLDOZE, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+
+  it('TERRAIN_UP preview on 2×2 rect → pathTiles=input, rejected=[], allOrNothingBlocked=false', () => {
+    const tiles = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }];
+    const preview = buildToolPreview(Tool.TERRAIN_UP, tiles, world);
+    expect(preview.pathTiles).toEqual(tiles);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
   });
 });
 
