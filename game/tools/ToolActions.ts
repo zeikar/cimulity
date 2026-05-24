@@ -42,6 +42,32 @@ function wouldBreakStructuredTile(
 /** Narrow union of the three placeable zone tile types. */
 type ZoneTileType = TileType.ZONE_RESIDENTIAL | TileType.ZONE_COMMERCIAL | TileType.ZONE_INDUSTRIAL;
 
+type PlaceClassification = 'emit' | 'skip' | 'reject';
+
+function classifyRoadTile(world: World, x: number, y: number): PlaceClassification {
+  const tile = world.getMap().getTile(x, y);
+  if (!tile) return 'reject';
+  if (tile.type === TileType.ROAD) return 'skip';
+  if (isZoneType(tile.type)) return 'reject';
+  if (!world.canBuildRoadAt(x, y)) return 'reject';
+  return 'emit';
+}
+
+function classifyZoneTile(
+  world: World, x: number, y: number, zoneType: ZoneTileType
+): PlaceClassification {
+  const tile = world.getMap().getTile(x, y);
+  if (!tile) return 'reject';
+  if (tile.type === zoneType) return 'skip';
+  const paintable =
+    tile.type === TileType.GRASS ||
+    tile.type === TileType.DIRT ||
+    isZoneType(tile.type);
+  if (!paintable) return 'reject';
+  if (!world.canBuildAt(x, y, 1, 1)) return 'reject';
+  return 'emit';
+}
+
 /**
  * Build the commands a tool would apply on a set of tiles
  * @returns the intended tile writes (empty if the tool changes nothing)
@@ -77,40 +103,16 @@ export function buildToolCommands(
   }
 }
 
-/**
- * Build road-placement commands
- * Cannot place on water, existing roads, or zoned land.
- */
 function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
-  const map = world.getMap();
   const commands: ToolCommand[] = [];
-
-  for (const coord of tiles) {
-    const currentTile = map.getTile(coord.x, coord.y);
-
-    // Skip if tile doesn't exist or is already a road
-    if (!currentTile || currentTile.type === TileType.ROAD) {
-      continue;
-    }
-
-    // Cannot place roads on zoned land.
-    // water rejection is handled by world.canBuildRoadAt (elevation-derived) below.
-    if (isZoneType(currentTile.type)) {
-      continue;
-    }
-
-    // Coplanar/water buildability gate (player placement).
-    if (!world.canBuildRoadAt(coord.x, coord.y)) continue;
-
-    commands.push({
-      kind: 'tile',
-      x: coord.x,
-      y: coord.y,
-      tile: createTile(coord.x, coord.y, TileType.ROAD),
-    });
+  let anyRejected = false;
+  for (const { x, y } of tiles) {
+    const c = classifyRoadTile(world, x, y);
+    if (c === 'reject') { anyRejected = true; continue; }
+    if (c === 'skip') continue;
+    commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.ROAD) });
   }
-
-  return commands;
+  return anyRejected ? [] : commands;
 }
 
 /**
@@ -142,36 +144,13 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
   return commands;
 }
 
-/**
- * Build zone-placement commands.
- * Places a zone on GRASS, DIRT, or an existing zone of a different type
- * (R/C/I freely repaint over each other). Water, road, and other types
- * are implicitly rejected; repainting the same zone is skipped as a no-op.
- * Reads world only to decide intent; never mutates core.
- */
 function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: World): ToolCommand[] {
-  const map = world.getMap();
   const commands: ToolCommand[] = [];
-
-  for (const coord of tiles) {
-    const currentTile = map.getTile(coord.x, coord.y);
-    if (!currentTile) continue;
-    if (currentTile.type === zoneType) continue;
-    const paintable =
-      currentTile.type === TileType.GRASS ||
-      currentTile.type === TileType.DIRT ||
-      isZoneType(currentTile.type);
-    if (!paintable) continue;
-    // Coplanar/water buildability gate (player placement).
-    if (!world.canBuildAt(coord.x, coord.y, 1, 1)) continue;
-    commands.push({
-      kind: 'tile',
-      x: coord.x,
-      y: coord.y,
-      tile: createTile(coord.x, coord.y, zoneType),
-    });
+  for (const { x, y } of tiles) {
+    const c = classifyZoneTile(world, x, y, zoneType);
+    if (c !== 'emit') continue;
+    commands.push({ kind: 'tile', x, y, tile: createTile(x, y, zoneType) });
   }
-
   return commands;
 }
 
