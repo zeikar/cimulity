@@ -1113,13 +1113,39 @@ describe('World.tick() — no-building branch creates level-0 building', () => {
 describe('World.tick() — zone-growth blocked on slope edge tile', () => {
   it('zone tile on slope edge does NOT grow even after ZONE_GROWTH_INTERVAL ticks', () => {
     // Tile (1,0) is raised to elevation 2; its east/west neighbors are at MIN_LAND_ELEVATION=1 → slope mask non-zero.
-    // canBuildAt(1,0,1,1) = false → Branch A skips building creation.
+    // tile (1,0) is non-coplanar AND non-flat → spawn (strict-flat) denies regardless.
     // Road placed at (1,1) (elevation MIN_LAND_ELEVATION, flat) to satisfy road-adjacency requirement for the zone.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     world.getTerrain().unsafeSetVertexHeight(1, 0, 2);
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ROAD)); // orthogonal neighbor (south)
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    expect(map.getBuildings().getBuildingAt(1, 0)).toBeNull();
+  });
+});
+
+describe('World.tick() — zone-growth blocked on coplanar slope tile (spawn stays strict-flat)', () => {
+  it('zone tile on uniform N-S ramp does NOT grow even though canBuildAt allows it', () => {
+    // Tile (1,0): corners (1,0)=1,(2,0)=1,(2,1)=2,(1,1)=2 — uniform N-S ramp.
+    // topH+bottomH=1+2=3, leftH+rightH=2+1=3 → coplanar (canBuildAt passes).
+    // But not flat (heights differ) → isFlatTile returns false → spawn denied.
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+    const terrain = world.getTerrain();
+    // Raise south vertices to create a uniform N-S ramp at tile (1,0).
+    terrain.unsafeSetVertexHeight(1, 1, 2);
+    terrain.unsafeSetVertexHeight(2, 1, 2);
+
+    // Verify the asymmetry: loosened gate allows, strict-flat gate denies.
+    expect(world.canBuildAt(1, 0, 1, 1)).toBe(true);
+    expect(world.getTerrain().isFlatTile(1, 0, (xx, yy) => world.isWater(xx, yy))).toBe(false);
+
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    // Road at (2,0) — orthogonal east neighbor satisfies road-adjacency.
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
 

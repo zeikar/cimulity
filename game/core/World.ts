@@ -424,8 +424,8 @@ export class World {
           // Branch A: no building yet — create a level-0 building at this single tile.
           // landValue/cooldown gating applies only to existing buildings — a tile with
           // no building yet always creates one (subject to road-adjacency only).
-          // Skip slope/water tiles for growth — best-effort, no notification.
-          if (!this.canBuildAt(x, y, 1, 1)) continue;
+          // spawn stays strict-flat: building sprites are not tilted-ready (player placement loosened to coplanar separately).
+          if (!this.terrain.isFlatTile(x, y, (xx, yy) => this.isWater(xx, yy))) continue;
           const bType = tile.type.replace('zone_', '') as BuildingType;
           const created = buildings.addBuilding({
             type: bType,
