@@ -38,6 +38,7 @@ function pathForTool(
     case Tool.BULLDOZE:
     case Tool.TERRAIN_UP:
     case Tool.TERRAIN_DOWN:
+    case Tool.TERRAIN_LEVEL:
       return rectDragPath(start, end);
     default:
       return [];
@@ -106,7 +107,7 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
         for (const [tx, ty] of tilesTouchingVertex(write.vx, write.vy, terrain.getWidth(), terrain.getHeight())) {
           pushChanged(tx, ty);
 
-          if (cmd.direction !== 'down') continue;
+          if (cmd.direction === 'up') continue;
           if (terrain.getTileMinCornerHeight(tx, ty) > SEA_LEVEL) continue;
           const key = tileKey(tx, ty);
           if (convertedDirt.has(key)) continue;

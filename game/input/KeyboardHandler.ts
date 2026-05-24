@@ -13,11 +13,12 @@ export interface KeyboardCallbacks {
   onPauseToggle?: () => void;
 }
 
-// Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, r=raise terrain, f=lower terrain.
+// Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, r=raise terrain, f=lower terrain, g=level terrain.
 const KEY_TO_TOOL: Record<string, Tool> = {
   t: Tool.ROAD,
   r: Tool.TERRAIN_UP,
   f: Tool.TERRAIN_DOWN,
+  g: Tool.TERRAIN_LEVEL,
   b: Tool.BULLDOZE,
   s: Tool.SELECT,
   Escape: Tool.SELECT,
