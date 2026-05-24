@@ -285,6 +285,21 @@ export class Terrain {
   }
 
   /**
+   * True iff the tile's four corners are coplanar (single plane), all above sea
+   * level, and not water. A plane is defined by 3 points; the 4th is coplanar
+   * iff topH + bottomH === leftH + rightH (opposite-corner sums match).
+   */
+  isCoplanarTile(
+    x: number,
+    y: number,
+    isWater: (x: number, y: number) => boolean
+  ): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const c = this.getTileCornerHeights(x, y);
+    return c.topH + c.bottomH === c.leftH + c.rightH && Math.min(c.topH, c.rightH, c.bottomH, c.leftH) > SEA_LEVEL && !isWater(x, y);
+  }
+
+  /**
    * True iff the rect is in-bounds, every vertex spanning the rect shares one
    * height above sea level, and the water predicate rejects no cell.
    */

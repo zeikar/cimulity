@@ -115,6 +115,66 @@ describe("derived tile height and buildability", () => {
   });
 });
 
+describe("coplanar tile predicate", () => {
+  it("flat tile (all corners at MIN_LAND_ELEVATION) is coplanar", () => {
+    const t = new Terrain(2, 2);
+    expect(t.isCoplanarTile(0, 0, noWater)).toBe(true);
+  });
+
+  it("uniform N-S ramp is coplanar (top+bottom = left+right)", () => {
+    const t = new Terrain(2, 2);
+    t.unsafeSetVertexHeight(0, 0, 1);
+    t.unsafeSetVertexHeight(1, 0, 1);
+    t.unsafeSetVertexHeight(0, 1, 2);
+    t.unsafeSetVertexHeight(1, 1, 2);
+    expect(t.isCoplanarTile(0, 0, noWater)).toBe(true);
+  });
+
+  it("uniform E-W ramp is coplanar (top+bottom = left+right)", () => {
+    const t = new Terrain(2, 2);
+    t.unsafeSetVertexHeight(0, 0, 1);
+    t.unsafeSetVertexHeight(1, 0, 2);
+    t.unsafeSetVertexHeight(0, 1, 1);
+    t.unsafeSetVertexHeight(1, 1, 2);
+    expect(t.isCoplanarTile(0, 0, noWater)).toBe(true);
+  });
+
+  it("triangle wedge is NOT coplanar (top+bottom != left+right)", () => {
+    const t = new Terrain(2, 2);
+    t.unsafeSetVertexHeight(0, 0, 1);
+    t.unsafeSetVertexHeight(1, 0, 1);
+    t.unsafeSetVertexHeight(0, 1, 1);
+    t.unsafeSetVertexHeight(1, 1, 2);
+    expect(t.isCoplanarTile(0, 0, noWater)).toBe(false);
+  });
+
+  it("saddle is NOT coplanar (top+bottom != left+right)", () => {
+    const t = new Terrain(2, 2);
+    t.unsafeSetVertexHeight(0, 0, 2);
+    t.unsafeSetVertexHeight(1, 0, 1);
+    t.unsafeSetVertexHeight(0, 1, 1);
+    t.unsafeSetVertexHeight(1, 1, 2);
+    expect(t.isCoplanarTile(0, 0, noWater)).toBe(false);
+  });
+
+  it("water corner (min <= SEA_LEVEL) is NOT coplanar despite formula balance", () => {
+    const t = new Terrain(2, 2);
+    t.unsafeSetVertexHeight(0, 0, 0);
+    t.unsafeSetVertexHeight(1, 0, 0);
+    t.unsafeSetVertexHeight(0, 1, 1);
+    t.unsafeSetVertexHeight(1, 1, 1);
+    expect(t.isCoplanarTile(0, 0, noWater)).toBe(false);
+  });
+
+  it("OOB tile returns false", () => {
+    const t = new Terrain(2, 2);
+    expect(t.isCoplanarTile(-1, 0, noWater)).toBe(false);
+    expect(t.isCoplanarTile(2, 0, noWater)).toBe(false);
+    expect(t.isCoplanarTile(0, -1, noWater)).toBe(false);
+    expect(t.isCoplanarTile(0, 2, noWater)).toBe(false);
+  });
+});
+
 describe("serialization data", () => {
   it("toJSON emits vertex-smooth v8 terrain data", () => {
     const t = new Terrain(2, 2);
