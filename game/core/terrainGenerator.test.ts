@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { generateTerrain, DEFAULT_NEWCITY_SEED } from './terrainGenerator';
-import { Terrain, MAX_ELEVATION, SEA_LEVEL, MIN_LAND_ELEVATION } from './Terrain';
+import {
+  Terrain,
+  MAX_ELEVATION,
+  SEA_LEVEL,
+  MIN_LAND_ELEVATION,
+  projectTileHeightsToVertexHeights,
+} from './Terrain';
 
 describe('generateTerrain', () => {
   it('(a) determinism — same seed produces identical output', () => {
@@ -9,7 +15,7 @@ describe('generateTerrain', () => {
     expect(r1).toEqual(r2);
   });
 
-  it('(b) Terrain.fromData compatibility — elevations are valid integers in [0, MAX_ELEVATION]', () => {
+  it('(b) Terrain.fromData compatibility — projected vertices are valid integers in [0, MAX_ELEVATION]', () => {
     const { elevations, waterMask } = generateTerrain(8, 8, 1);
     for (const row of elevations) {
       for (const v of row) {
@@ -26,8 +32,8 @@ describe('generateTerrain', () => {
       Terrain.fromData({
         width: 8,
         height: 8,
-        mode: 'tile-step',
-        tileElevations: elevations,
+        mode: 'vertex-smooth',
+        vertexHeights: projectTileHeightsToVertexHeights(elevations),
         baseTiles,
       }),
     ).not.toThrow();
@@ -123,8 +129,8 @@ describe('generateTerrain buildability acceptance (64×64 default seed)', () => 
   const terrain = Terrain.fromData({
     width: W,
     height: H,
-    mode: 'tile-step',
-    tileElevations: elevations,
+    mode: 'vertex-smooth',
+    vertexHeights: projectTileHeightsToVertexHeights(elevations),
     baseTiles,
   });
   const isWater = (x: number, y: number) => waterMask[y][x];

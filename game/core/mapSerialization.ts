@@ -1,9 +1,9 @@
 /**
  * World-envelope (de)serialization.
  *
- * Only v7 is supported. Older saves are rejected; `worldStore` falls back to a fresh
- * procedural world. `t[]` accepts only the current `TileType` enum (no `'water'`);
- * coherence (`elev <= SEA_LEVEL ⇒ GRASS && no building footprint`) is checked after
+ * v8 is native; older saves are rejected; `worldStore` falls back to a fresh
+ * procedural world. `t[]` accepts only
+ * the current `TileType` enum (no `'water'`); coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
  * it serializes the in-memory `World` as-is; `devApi.seedScene` is the only legitimate
  * producer of incoherent worlds and the load-side rejection is the safety net.
@@ -18,10 +18,9 @@ import { Terrain, SEA_LEVEL } from './Terrain';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. v7 is the only supported version;
- * older v1..v6 are rejected with no migration path.
+ * This is the `v` value written to disk. Only native v8 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 7;
+export const WORLD_SAVE_VERSION = 8;
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
@@ -41,7 +40,7 @@ interface BuildingSaveEntry {
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 7) with no compat branches.
+ * Always emits `v: WORLD_SAVE_VERSION` (= 8).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` is sorted by id ascending for deterministic byte-equality across round-trips.
@@ -171,10 +170,10 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
 }
 
 /**
- * Apply a serialized v7 world envelope onto an existing World instance.
+ * Apply a serialized v8 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===7 → dims → m/d → t[] → l[] → b[] → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===8 → dims → m/d → t[] → l[] → b[] → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
@@ -236,7 +235,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   const stagingBuildings = validateBuildingsArray(data, w, h);
   if (stagingBuildings === null) return false;
 
-  // terrain: DTO parsed + validated via Terrain.fromData; dims cross-checked against world.
+  // terrain: native v8 DTO parsed directly.
   let candidateTerrain: Terrain;
   try {
     candidateTerrain = Terrain.fromData(data.terrain);
@@ -245,9 +244,8 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   }
   if (candidateTerrain.getWidth() !== w || candidateTerrain.getHeight() !== h) return false;
 
-  // Coherence: at any cell where elevation <= SEA_LEVEL, t[] must be GRASS and no
-  // building footprint may cover that cell. Build the footprint index set from the
-  // staged buildings (cheaper than scanning b[] per-cell).
+  // Coherence: water cells must be GRASS and uncovered; structured cells must be
+  // vertex-flat and above sea level.
   const footprintIndices = new Set<number>();
   for (const building of stagingBuildings) {
     for (const c of building.footprint) {
@@ -256,10 +254,19 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   }
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (candidateTerrain.getTileElevation(x, y) <= SEA_LEVEL) {
-        const i = y * w + x;
+      const i = y * w + x;
+      if (candidateTerrain.getTileMinCornerHeight(x, y) <= SEA_LEVEL) {
         if (data.t[i] !== TileType.GRASS) return false;
         if (footprintIndices.has(i)) return false;
+      }
+      if (
+        data.t[i] === TileType.ROAD ||
+        isZoneType(data.t[i]) ||
+        footprintIndices.has(i)
+      ) {
+        if (!candidateTerrain.isFlatTile(x, y, () => candidateTerrain.getTileMinCornerHeight(x, y) <= SEA_LEVEL)) {
+          return false;
+        }
       }
     }
   }

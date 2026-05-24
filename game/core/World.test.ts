@@ -16,6 +16,14 @@ import {
 import { TileType, createTile } from './Tile';
 import { Terrain, MIN_LAND_ELEVATION, SEA_LEVEL } from './Terrain';
 
+function setTileCorners(world: World, x: number, y: number, h: number): void {
+  const terrain = world.getTerrain();
+  terrain.unsafeSetVertexHeight(x, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y + 1, h);
+  terrain.unsafeSetVertexHeight(x, y + 1, h);
+}
+
 describe('World', () => {
   it('builds a map of the requested size', () => {
     const world = new World(8, 6, { regenerate: false });
@@ -75,7 +83,7 @@ describe('World.tick() — heal rule', () => {
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     // (1, 0) stays GRASS but with elevation <= SEA_LEVEL — water is elevation-derived.
-    world.getTerrain().unsafeSetElevation(1, 0, 0);
+    setTileCorners(world, 1, 0, 0);
 
     const result = world.tick();
 
@@ -1109,7 +1117,7 @@ describe('World.tick() — zone-growth blocked on slope edge tile', () => {
     // Road placed at (1,1) (elevation MIN_LAND_ELEVATION, flat) to satisfy road-adjacency requirement for the zone.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
-    world.getTerrain().unsafeSetElevation(1, 0, 2);
+    world.getTerrain().unsafeSetVertexHeight(1, 0, 2);
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ROAD)); // orthogonal neighbor (south)
 
@@ -1129,7 +1137,7 @@ describe('World.tick() — zone-growth proceeds on plateau interior tile', () =>
     const map = world.getMap();
     for (let py = 2; py <= 6; py++) {
       for (let px = 2; px <= 6; px++) {
-        world.getTerrain().unsafeSetElevation(px, py, 1);
+        setTileCorners(world, px, py, 1);
       }
     }
     map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
@@ -1160,10 +1168,10 @@ describe('World.getTerrain() — initial state', () => {
 });
 
 describe('World.getTerrainRevision() — monotonicity', () => {
-  it('unsafeSetElevation (accepted) increments rev by exactly 1', () => {
+  it('unsafeSetVertexHeight (accepted) increments rev by exactly 1', () => {
     const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
-    world.getTerrain().unsafeSetElevation(0, 0, 1);
+    world.getTerrain().unsafeSetVertexHeight(0, 0, 1);
     expect(world.getTerrainRevision()).toBe(rev0 + 1);
   });
 
@@ -1174,11 +1182,11 @@ describe('World.getTerrainRevision() — monotonicity', () => {
     expect(world.getTerrainRevision()).toBe(rev0 + 1);
   });
 
-  it('rejected setElevation (diff > 1 from flat neighbors) does NOT bump rev', () => {
+  it('rejected setPlayerVertexHeight (diff > cap from flat neighbors) does NOT bump rev', () => {
     const world = new World(4, 4, { regenerate: false });
     const rev0 = world.getTerrainRevision();
-    // All neighbors are at MIN_LAND_ELEVATION; setting to 5 violates the ≤1-step rule.
-    const accepted = world.getTerrain().setElevation(0, 0, 5);
+    // All neighbors are at MIN_LAND_ELEVATION; setting to 5 violates the player cap.
+    const accepted = world.getTerrain().setPlayerVertexHeight(0, 0, 5);
     expect(accepted).toBe(false);
     expect(world.getTerrainRevision()).toBe(rev0);
   });
@@ -1222,7 +1230,7 @@ describe('World.installTerrain() — dimension mismatch', () => {
     const bad = new Terrain(prevTerrain.getWidth() + 1, prevTerrain.getHeight());
     expect(() => world.installTerrain(bad)).toThrow();
     // Mutation on the original terrain must still bump world's rev.
-    prevTerrain.unsafeSetElevation(0, 0, 1);
+    prevTerrain.unsafeSetVertexHeight(0, 0, 1);
     expect(world.getTerrainRevision()).toBe(prevRev + 1);
   });
 });
@@ -1233,7 +1241,7 @@ describe('World.installTerrain() — callback un-wiring after successful swap', 
     const oldTerrain = world.getTerrain();
     world.installTerrain(new Terrain(world.getTerrain().getWidth(), world.getTerrain().getHeight()));
     const revAfterInstall = world.getTerrainRevision();
-    oldTerrain.unsafeSetElevation(0, 0, 2);
+    oldTerrain.unsafeSetVertexHeight(0, 0, 2);
     // Old terrain's callback must have been cleared — rev must not change.
     expect(world.getTerrainRevision()).toBe(revAfterInstall);
   });
@@ -1243,7 +1251,7 @@ describe('World.reset() — terrainRev', () => {
   it('reset() bumps terrainRev strictly above its pre-reset value', () => {
     const world = new World(4, 4, { regenerate: false });
     // Make at least one accepted mutation to ensure the counter has advanced.
-    world.getTerrain().unsafeSetElevation(0, 0, 1);
+    world.getTerrain().unsafeSetVertexHeight(0, 0, 1);
     const prevRev = world.getTerrainRevision();
     world.reset();
     expect(world.getTerrainRevision()).toBeGreaterThan(prevRev);
@@ -1261,7 +1269,7 @@ describe('World.isWater()', () => {
 describe('isWater (sea-level derived)', () => {
   it('(a) returns true when elevation is set to SEA_LEVEL', () => {
     const world = new World(8, 8, { regenerate: false });
-    world.getTerrain().unsafeSetElevation(2, 2, SEA_LEVEL);
+    setTileCorners(world, 2, 2, SEA_LEVEL);
     expect(world.isWater(2, 2)).toBe(true);
   });
 
@@ -1282,7 +1290,7 @@ describe('isWater (sea-level derived)', () => {
 describe('World.canBuildAt()', () => {
   it('returns false for a water cell (elevation <= SEA_LEVEL) and true for a flat land tile', () => {
     const world = new World(8, 8, { regenerate: false });
-    world.getTerrain().unsafeSetElevation(3, 3, SEA_LEVEL);
+    setTileCorners(world, 3, 3, SEA_LEVEL);
     expect(world.canBuildAt(3, 3, 1, 1)).toBe(false);
     expect(world.canBuildAt(0, 0, 1, 1)).toBe(true);
   });
@@ -1291,14 +1299,13 @@ describe('World.canBuildAt()', () => {
 describe('World.canBuildRoadAt()', () => {
   it('returns false for a water cell (elevation <= SEA_LEVEL)', () => {
     const world = new World(8, 8, { regenerate: false });
-    world.getTerrain().unsafeSetElevation(3, 3, SEA_LEVEL);
+    setTileCorners(world, 3, 3, SEA_LEVEL);
     expect(world.canBuildRoadAt(3, 3)).toBe(false);
   });
 
-  it('returns false for a raised tile (slope mask non-zero in otherwise flat map)', () => {
+  it('returns false for a non-flat vertex tile', () => {
     const world = new World(8, 8, { regenerate: false });
-    // Raise tile (2,2) above the MIN_LAND_ELEVATION baseline so neighbors are lower.
-    world.getTerrain().unsafeSetElevation(2, 2, 2);
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 2);
     expect(world.canBuildRoadAt(2, 2)).toBe(false);
   });
 

@@ -37,8 +37,8 @@ export interface SeedSceneSpec {
   buildings?: ReadonlyArray<SeedBuildingSpec>;
   /** When true (default), `BuildingMap.clear()` runs before seeding. */
   clearExisting?: boolean;
-  /** Elevation overrides via `terrain.unsafeSetElevation`. Out-of-bounds or invalid entries are silently skipped. */
-  elevations?: ReadonlyArray<{ x: number; y: number; elevation: number }>;
+  /** Vertex height overrides via `terrain.unsafeSetVertexHeight`. Out-of-bounds or invalid entries are silently skipped. */
+  vertexHeights?: ReadonlyArray<{ vx: number; vy: number; height: number }>;
 }
 
 export interface DevApi {
@@ -145,8 +145,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         }
 
         let elevationsApplied = 0;
-        for (const e of spec.elevations ?? []) {
-          if (world.getTerrain().unsafeSetElevation(e.x, e.y, e.elevation)) elevationsApplied++;
+        for (const v of spec.vertexHeights ?? []) {
+          if (world.getTerrain().unsafeSetVertexHeight(v.vx, v.vy, v.height)) elevationsApplied++;
         }
 
         pixiApp.getTileRenderer()?.markDirty();

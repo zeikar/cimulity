@@ -8,7 +8,7 @@
 import { Tool } from './Tool';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import type { Tile } from '../core/Tile';
-import { SEA_LEVEL, MAX_ELEVATION } from '../core/Terrain';
+import { SEA_LEVEL, MAX_ELEVATION, tileVertices, tilesTouchingVertex } from '../core/Terrain';
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
@@ -19,41 +19,22 @@ function isStructuredCell(world: World, tile: Tile, x: number, y: number): boole
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
 }
 
-/**
- * Returns true iff lowering cell (x, y) to newElev would break the flatness of
- * any 4-cardinal in-bounds structured neighbor (ROAD / zone / building
- * footprint). Per slopeMaskFor semantics, a structured cell gains a LOWER_*
- * bit iff one of its cardinals is LOWER than its own center — so this guard
- * fires only when newElev < structuredElev. Raising the player tile cannot
- * trigger this (the structured cell sees its cardinal at a HIGHER elevation,
- * which leaves the LOWER_* bit unset). Called only from the down builder.
- * Pure read against world.
- */
-function wouldBreakStructuredCardinalFlatness(
+function wouldBreakStructuredTile(
   world: World,
-  x: number,
-  y: number,
-  newElev: number
+  vx: number,
+  vy: number,
+  newHeight: number
 ): boolean {
   const terrain = world.getTerrain();
   const map = world.getMap();
-  const w = terrain.getWidth();
-  const h = terrain.getHeight();
-  const cardinalOffsets: ReadonlyArray<readonly [number, number]> = [
-    [0, -1],
-    [1, 0],
-    [0, 1],
-    [-1, 0],
-  ];
-  for (const [ox, oy] of cardinalOffsets) {
-    const cx = x + ox;
-    const cy = y + oy;
-    if (cx < 0 || cy < 0 || cx >= w || cy >= h) continue;
-    const neighborTile = map.getTile(cx, cy);
-    if (!neighborTile) continue;
-    if (!isStructuredCell(world, neighborTile, cx, cy)) continue;
-    const neighborElev = terrain.getTileElevation(cx, cy);
-    if (newElev < neighborElev) return true;
+  for (const [tx, ty] of tilesTouchingVertex(vx, vy, terrain.getWidth(), terrain.getHeight())) {
+    const tile = map.getTile(tx, ty);
+    if (!tile || !isStructuredCell(world, tile, tx, ty)) continue;
+    const heights = tileVertices(tx, ty).map(([cx, cy]) =>
+      cx === vx && cy === vy ? newHeight : terrain.getVertexHeight(cx, cy)
+    );
+    const flat = heights.every((h) => h === heights[0]);
+    if (!flat || heights[0] <= SEA_LEVEL) return true;
   }
   return false;
 }
@@ -191,80 +172,43 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
   return commands;
 }
 
-/**
- * Build terrain-raise commands.
- * Per-tile +1: clamps to MAX_ELEVATION, slope-checked via
- * Terrain.canPlayerSetElevation (delta-3 player cap). Structured cells
- * (ROAD / zone / building footprint) reject the edit. Raising never breaks
- * an adjacent structured cell's flatness (slopeMaskFor only sets LOWER_*
- * bits for cardinals lower than center), so no D4 guard is needed here.
- * Reads world only to decide intent; never mutates core.
- */
 function buildTerrainUpCommands(tiles: TileCoord[], world: World): ToolCommand[] {
-  const commands: ToolCommand[] = [];
-  const terrain = world.getTerrain();
-  const map = world.getMap();
-  for (const { x, y } of tiles) {
-    const tile = map.getTile(x, y);
-    if (!tile) continue;
-    if (isStructuredCell(world, tile, x, y)) continue;
-    const current = terrain.getTileElevation(x, y);
-    const next = current + 1;
-    if (next > MAX_ELEVATION) continue;
-    if (!terrain.canPlayerSetElevation(x, y, next)) continue;
-    // No D4 guard on raise: raising the player tile makes it HIGHER than any
-    // structured cardinal, which cannot set a LOWER_* bit on the structured cell.
-    commands.push({ kind: 'elevation', x, y, elevation: next });
-  }
-  return commands;
+  return buildTerrainVertexEditCommand(tiles, world, 'up');
 }
 
-/**
- * Build terrain-lower commands.
- * Per-tile -1: clamps to SEA_LEVEL, slope-checked via
- * Terrain.canPlayerSetElevation (delta-3 player cap). Structured cells
- * reject the edit. The D4 guard wouldBreakStructuredCardinalFlatness
- * additionally rejects lowering that would set a LOWER_* slope-mask bit
- * on a 4-cardinal structured neighbor (preserving road/zone/building
- * flatness).
- *
- * DIRT → SEA_LEVEL paired write: when TERRAIN_DOWN brings a DIRT tile to
- * SEA_LEVEL, emit a tile-write (DIRT → GRASS) immediately before its
- * elevation command to preserve the `elevation <= SEA_LEVEL ⇒ GRASS`
- * save invariant.
- *
- * Atomicity contract (per Design D6): the paired write is two sequential
- * commands. The dispatcher does NOT roll back partial mutations — that
- * invariant is owned by the builder. Per-tile preflight uses
- * canPlayerSetElevation against pre-batch state. Within a same-direction
- * drag, earlier commands MAY mutate this cell's 8-neighbors (adjacent
- * rect cells are 8-neighbors). The apply step still succeeds because
- * every edited cell shifts by the same ±1 step: relative deltas BETWEEN
- * edited cells stay unchanged across the batch (both moved by the same
- * step), and deltas to fixed OUTSIDE neighbors are exactly what per-cell
- * preflight already validated. A future builder change that mixes
- * directions or emits unequal steps within one pass would violate this —
- * the DIRT partial-mutation regression and the new adjacent-drag-both-
- * commit test in CommandDispatcher.test.ts are the guards.
- * Reads world only to decide intent; never mutates core.
- */
 function buildTerrainDownCommands(tiles: TileCoord[], world: World): ToolCommand[] {
-  const commands: ToolCommand[] = [];
+  return buildTerrainVertexEditCommand(tiles, world, 'down');
+}
+
+function buildTerrainVertexEditCommand(
+  tiles: TileCoord[],
+  world: World,
+  direction: 'up' | 'down'
+): ToolCommand[] {
   const terrain = world.getTerrain();
   const map = world.getMap();
+  const vertices = new Map<string, { vx: number; vy: number }>();
+
   for (const { x, y } of tiles) {
     const tile = map.getTile(x, y);
     if (!tile) continue;
     if (isStructuredCell(world, tile, x, y)) continue;
-    const current = terrain.getTileElevation(x, y);
-    const next = current - 1;
-    if (next < SEA_LEVEL) continue;
-    if (!terrain.canPlayerSetElevation(x, y, next)) continue;
-    if (wouldBreakStructuredCardinalFlatness(world, x, y, next)) continue;
-    if (tile.type === TileType.DIRT && next <= SEA_LEVEL) {
-      commands.push({ kind: 'tile', x, y, tile: createTile(x, y, TileType.GRASS) });
+    for (const [vx, vy] of tileVertices(x, y)) {
+      vertices.set(`${vx},${vy}`, { vx, vy });
     }
-    commands.push({ kind: 'elevation', x, y, elevation: next });
   }
-  return commands;
+
+  const writes = [...vertices.values()]
+    .sort((a, b) => a.vy - b.vy || a.vx - b.vx)
+    .flatMap(({ vx, vy }) => {
+      const current = terrain.getVertexHeight(vx, vy);
+      const height = direction === 'up' ? current + 1 : current - 1;
+      if (height < SEA_LEVEL || height > MAX_ELEVATION) return [];
+      if (!terrain.canPlayerSetVertexHeight(vx, vy, height)) return [];
+      if (wouldBreakStructuredTile(world, vx, vy, height)) return [];
+      return [{ vx, vy, height }];
+    });
+
+  if (writes.length === 0) return [];
+  return [{ kind: 'vertex-edit', direction, writes }];
 }

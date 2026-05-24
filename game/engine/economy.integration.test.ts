@@ -131,8 +131,11 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     // (the building record is the source of truth for zone level).
     world.getMap().setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL, 0));
     world.getMap().setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL, 0));
-    // Water is now elevation-derived; drop (3, 0) to SEA_LEVEL with tile staying GRASS.
-    world.getTerrain().unsafeSetElevation(3, 0, 0);
+    // Water is now vertex-derived; place it away from structured setup tiles.
+    world.getTerrain().unsafeSetVertexHeight(5, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(6, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(6, 1, 0);
+    world.getTerrain().unsafeSetVertexHeight(5, 1, 0);
 
     // Set a specific non-default money value.
     world.setMoney(7654);
@@ -154,9 +157,9 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     expect(fresh.getMap().getTile(2, 0)?.type).toBe(TileType.ZONE_INDUSTRIAL);
     expect(fresh.getMap().getTile(2, 0)?.level).toBe(0);
     // Water-elevation cell round-trips: tile stays GRASS, elevation stays 0.
-    expect(fresh.getMap().getTile(3, 0)?.type).toBe(TileType.GRASS);
-    expect(fresh.getTerrain().getTileElevation(3, 0)).toBe(0);
-    expect(fresh.isWater(3, 0)).toBe(true);
+    expect(fresh.getMap().getTile(5, 0)?.type).toBe(TileType.GRASS);
+    expect(fresh.getTerrain().getTileMinCornerHeight(5, 0)).toBe(0);
+    expect(fresh.isWater(5, 0)).toBe(true);
     // Untouched tiles remain GRASS.
     expect(fresh.getMap().getTile(7, 7)?.type).toBe(TileType.GRASS);
   });

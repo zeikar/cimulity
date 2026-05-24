@@ -40,8 +40,8 @@ function makeFakeStorage(): FakeStorage {
   };
 }
 
-// The storage key mirrors the constant in worldStore.ts (v7 cut).
-const STORAGE_KEY = 'cimulity:save:v7';
+// The storage key mirrors the constant in worldStore.ts (v8 cut).
+const STORAGE_KEY = 'cimulity:save:v8';
 
 // ---- singleton reset helper ----
 
@@ -97,7 +97,7 @@ describe('saveWorld', () => {
 });
 
 describe('getWorld — older envelopes are rejected and fall back to a fresh procedural world', () => {
-  // The deserializer accepts only v === WORLD_SAVE_VERSION (= 7). Any older
+  // The deserializer accepts only v === WORLD_SAVE_VERSION. Any older
   // envelope is rejected on load and worldStore falls back to a fresh
   // procedural world (money = STARTING_FUNDS, calendar = day 0).
   it.each([
@@ -424,7 +424,7 @@ describe('getWorld — sentinel: Test A — API probe fails → fresh World', ()
     };
     // Set the current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'sealevel-v1';
+    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-v1';
 
     const result = getWorld();
 
@@ -439,7 +439,7 @@ describe('getWorld — sentinel: Test B — sentinel mismatch → fresh World', 
     const stub = makeFullApiStub();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = stub;
-    // Set a sentinel value that does NOT match 'sealevel-v1'.
+    // Set a sentinel value that does NOT match the current guard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorldGuard = 'old-guard-v0';
 
@@ -457,7 +457,7 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = real;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'sealevel-v1';
+    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-v1';
 
     const result = getWorld();
 
@@ -466,13 +466,13 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
 });
 
 describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
-  it('builds a fresh World and writes sealevel-v1 to globalThis.__cimulityWorldGuard', () => {
+  it('builds a fresh World and writes vertex-smooth-v1 to globalThis.__cimulityWorldGuard', () => {
     // Singleton and guard are already cleared by beforeEach (resetSingleton).
     const result = getWorld();
 
     expect(result).toBeInstanceOf(World);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((globalThis as any).__cimulityWorldGuard).toBe('sealevel-v1');
+    expect((globalThis as any).__cimulityWorldGuard).toBe('vertex-smooth-v1');
   });
 });
 
@@ -484,7 +484,7 @@ describe('getWorld — spy: generateTerrain call count', () => {
   });
 
   it('valid current-version save: generateTerrain is NOT called (0 times)', () => {
-    // Pre-populate localStorage with a valid v7 save (constructed before spy is active).
+    // Pre-populate localStorage with a valid current-version save (constructed before spy is active).
     const src = new World(64, 64, { regenerate: true });
     fakeStorage.setItem(STORAGE_KEY, serializeWorld(src));
 

@@ -37,6 +37,14 @@ function makeDisplayObject(): Container {
   return { destroy: vi.fn() } as unknown as Container;
 }
 
+function setTileCorners(world: World, x: number, y: number, h: number): void {
+  const terrain = world.getTerrain();
+  terrain.unsafeSetVertexHeight(x, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y + 1, h);
+  terrain.unsafeSetVertexHeight(x, y + 1, h);
+}
+
 interface UpdateRecord {
   x: number;
   y: number;
@@ -110,8 +118,8 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     renderer.render(world);
     expect((terrainVisual.update as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
 
-    // Mutate elevation at (1,1): terrainRev bumps.
-    world.getTerrain().unsafeSetElevation(1, 1, 2);
+    // Mutate tile vertices at (1,1): terrainRev bumps.
+    setTileCorners(world, 1, 1, 2);
     const revBefore = world.getTerrainRevision();
     expect(revBefore).toBeGreaterThan(0);
 
@@ -137,8 +145,8 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     // First render — mount path.
     renderer.render(world);
 
-    // Mutate center tile to elevation 2, bumping terrainRev.
-    world.getTerrain().unsafeSetElevation(1, 1, 2);
+    // Mutate center tile vertices to height 2, bumping terrainRev.
+    setTileCorners(world, 1, 1, 2);
 
     // Clear mount records so we focus on update pass.
     terrainVisual.updates.length = 0;
@@ -146,20 +154,18 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     // Second render — update path (terrainRev changed → full pass).
     renderer.render(world);
 
-    // Center tile (1,1): H=2, all 8 neighbors at MIN_LAND_ELEVATION=1 → every corner = min(2,1,...) = 1.
+    // Center tile (1,1): its four shared vertices were raised to 2.
     const r11 = terrainVisual.updates.find((r) => r.x === 1 && r.y === 1);
     expect(r11).toBeDefined();
     expect(r11!.renderHeight).toBe(2);
-    // center H=2, all 8 neighbors at MIN_LAND_ELEVATION=1 → every corner = min(2, 1, ...) = 1
-    expect(r11!.cornerHeights).toEqual({ topH: 1, rightH: 1, bottomH: 1, leftH: 1 });
-    // slopeMask = 15 because all 4 cardinals are lower (1 < 2) → mask is LOWER_N|LOWER_E|LOWER_S|LOWER_W = 15 → terrainShapeFor(15) === 'rough'
-    expect(r11!.shape).toBe('rough');
+    expect(r11!.cornerHeights).toEqual({ topH: 2, rightH: 2, bottomH: 2, leftH: 2 });
+    expect(r11!.shape).toBe('flat');
     expect(r11!.mapBounds).toEqual({ width: 3, height: 3 });
 
     // Corner tile (0,0): all elevations at MIN_LAND_ELEVATION=1 → flat, all corner heights 1.
     const r00 = terrainVisual.updates.find((r) => r.x === 0 && r.y === 0);
     expect(r00).toBeDefined();
-    expect(r00!.cornerHeights).toEqual({ topH: 1, rightH: 1, bottomH: 1, leftH: 1 });
+    expect(r00!.cornerHeights).toEqual({ topH: 1, rightH: 1, bottomH: 2, leftH: 1 });
     expect(r00!.shape).toBe('flat');
     expect(r00!.mapBounds).toEqual({ width: 3, height: 3 });
   });

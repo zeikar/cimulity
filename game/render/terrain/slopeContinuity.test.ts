@@ -27,11 +27,18 @@ function assertShared(terrain: Terrain, x: number, y: number): void {
   expect(a.left).toEqual(south.top);
 }
 
+function setTileCorners(t: Terrain, x: number, y: number, h: number): void {
+  t.unsafeSetVertexHeight(x, y, h);
+  t.unsafeSetVertexHeight(x + 1, y, h);
+  t.unsafeSetVertexHeight(x + 1, y + 1, h);
+  t.unsafeSetVertexHeight(x, y + 1, h);
+}
+
 function flat(size: number, h: number): Terrain {
   const t = new Terrain(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      t.unsafeSetElevation(x, y, h);
+      setTileCorners(t, x, y, h);
     }
   }
   return t;
@@ -46,22 +53,22 @@ describe('slope continuity — shared corners project to identical screen points
   it('cardinal-S lower: south neighbor of center at H=1, rest at H=2', () => {
     const t = flat(5, 2);
     // Drop only (2,3) — the s neighbor of center (2,2).
-    t.unsafeSetElevation(2, 3, 1);
+    setTileCorners(t, 2, 3, 1);
     assertShared(t, 2, 2);
   });
 
   it('2-step cliff: center at H=3, se/s/sw/e corners forced down to H=1', () => {
     const t = flat(5, 3);
     // Lower a cluster so tileCornerHeights produces varied corner values.
-    t.unsafeSetElevation(3, 3, 1); // se of (2,2)
-    t.unsafeSetElevation(2, 3, 1); // s  of (2,2)
-    t.unsafeSetElevation(1, 3, 1); // sw of (2,2)
+    setTileCorners(t, 3, 3, 1); // se of (2,2)
+    setTileCorners(t, 2, 3, 1); // s  of (2,2)
+    setTileCorners(t, 1, 3, 1); // sw of (2,2)
     assertShared(t, 2, 2);
   });
 
   it('diagonal drop: ne neighbor of center lowered to H=1', () => {
     const t = flat(5, 2);
-    t.unsafeSetElevation(3, 1, 1); // ne of (2,2)
+    setTileCorners(t, 3, 1, 1); // ne of (2,2)
     assertShared(t, 2, 2);
   });
 });

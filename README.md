@@ -22,7 +22,7 @@ Implemented so far:
 - ✅ Clean architecture with separated concerns
 - ✅ **Elevation & smooth slopes** - Shared-vertex-height ramps between tiles of different elevation (SimCity 3000-style); cliffs render as steep continuous ramps with depth shading; map-edge skirt prevents floating world
 - ✅ **Directional terrain lighting** — per-triangle brightness from a centralized light vector (`LIGHT_DIR_WORLD` in `game/render/visuals/lighting.ts`; currently world pure-west + above, iso-projecting to screen ~10 o'clock / upper-left) replaces the planar-height heuristic. Cube drop-shadow direction derives from the same vector; cube face brightness migration is tracked separately.
-- ✅ Terrain tools — Raise / Lower a tile by ±1 (per-click; adjacent-neighbor slope cap of 3 lets players sculpt peaks and cliffs; water emerges via existing palette branch when elevation hits sea level)
+- ✅ Terrain tools — Raise / Lower shared terrain vertices by ±1 (click edits the tile's 4 corners; drag edits a deduped vertex rectangle; water emerges when any corner reaches sea level)
 
 ## Getting Started
 

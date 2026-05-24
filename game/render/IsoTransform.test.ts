@@ -13,6 +13,13 @@ import {
 import { Terrain, ELEVATION_HEIGHT, MAX_ELEVATION } from '@/game/core';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 
+function setTileCorners(terrain: Terrain, x: number, y: number, h: number): void {
+  terrain.unsafeSetVertexHeight(x, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y + 1, h);
+  terrain.unsafeSetVertexHeight(x, y + 1, h);
+}
+
 describe('tileToScreen', () => {
   it('maps the origin to the screen origin', () => {
     expect(tileToScreen({ x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
@@ -132,7 +139,7 @@ describe('screenToTileWithTerrain — picking suite', () => {
     // the cursor placed via tileToScreenWithHeight(tile, 2).
     for (let ny = 4; ny <= 6; ny++) {
       for (let nx = 4; nx <= 6; nx++) {
-        terrain.unsafeSetElevation(nx, ny, 2);
+        setTileCorners(terrain, nx, ny, 2);
       }
     }
 
@@ -164,7 +171,7 @@ describe('screenToTileWithTerrain — picking suite', () => {
     // ensuring the deformed polygon is lifted to the h=3 screen position.
     for (let ny = 4; ny <= 6; ny++) {
       for (let nx = 4; nx <= 6; nx++) {
-        terrain.unsafeSetElevation(nx, ny, 3);
+        setTileCorners(terrain, nx, ny, 3);
       }
     }
 
@@ -188,10 +195,10 @@ describe('screenToTileWithTerrain — picking suite', () => {
     // of (5,5)'s deformed polygon is lifted to h=2. The top vertex = projectTileCornerScreen
     // with topH=min(2,n,w,nw)=2, which places it at tileToScreenWithHeight({5,5},2).
     // Only n/w/nw need to be lifted; e/s/se default 0 (those affect other corners).
-    terrain.unsafeSetElevation(5, 5, 2);
-    terrain.unsafeSetElevation(5, 4, 2); // n
-    terrain.unsafeSetElevation(4, 5, 2); // w
-    terrain.unsafeSetElevation(4, 4, 2); // nw
+    setTileCorners(terrain, 5, 5, 2);
+    setTileCorners(terrain, 5, 4, 2); // n
+    setTileCorners(terrain, 4, 5, 2); // w
+    setTileCorners(terrain, 4, 4, 2); // nw
 
     // Cursor at the top vertex of the lifted diamond — exactly on the boundary (sum = 1 in
     // the point-in-diamond formula: |0|/hw + |−hh|/hh = 0 + 1 = 1 ≤ 1).
@@ -211,7 +218,7 @@ describe('screenToTileWithTerrain — picking suite', () => {
     // corners at MAX_ELEVATION, ensuring the deformed polygon sits at the fully lifted position.
     for (let ny = 4; ny <= 6; ny++) {
       for (let nx = 4; nx <= 6; nx++) {
-        terrain.unsafeSetElevation(nx, ny, MAX_ELEVATION);
+        setTileCorners(terrain, nx, ny, MAX_ELEVATION);
       }
     }
 
@@ -365,12 +372,12 @@ describe('screenToTileWithTerrain (deformed-polygon picker)', () => {
     // (5,5)=2, all 8 neighbors=2 except s=(5,6)=1.
     // tileCornerHeights(5,5): topH=2, rightH=2, bottomH=min(2,e=2,s=1,se=2)=1, leftH=min(2,s=1,w=2,sw=2)=1
     const terrain = new Terrain(10, 10);
-    terrain.unsafeSetElevation(5, 5, 2);
+    setTileCorners(terrain, 5, 5, 2);
     // Set all 8 neighbors to 2 except (5,6)
     for (const [nx, ny] of [[4,4],[5,4],[6,4],[4,5],[6,5],[4,6],[6,6]] as [number,number][]) {
-      terrain.unsafeSetElevation(nx, ny, 2);
+      setTileCorners(terrain, nx, ny, 2);
     }
-    terrain.unsafeSetElevation(5, 6, 1);
+    setTileCorners(terrain, 5, 6, 1);
 
     const poly = buildPoly(terrain, 5, 5);
     const centroid = {
@@ -386,11 +393,11 @@ describe('screenToTileWithTerrain (deformed-polygon picker)', () => {
     // (5,5)=2, ne=(6,4)=1, all other 7 neighbors=2.
     // tileCornerHeights(5,5): topH=2, rightH=min(2,n=2,e=2,ne=1)=1, bottomH=2, leftH=2
     const terrain = new Terrain(10, 10);
-    terrain.unsafeSetElevation(5, 5, 2);
+    setTileCorners(terrain, 5, 5, 2);
     for (const [nx, ny] of [[4,4],[5,4],[4,5],[6,5],[4,6],[5,6],[6,6]] as [number,number][]) {
-      terrain.unsafeSetElevation(nx, ny, 2);
+      setTileCorners(terrain, nx, ny, 2);
     }
-    terrain.unsafeSetElevation(6, 4, 1);
+    setTileCorners(terrain, 6, 4, 1);
 
     const poly = buildPoly(terrain, 5, 5);
     const centroid = {
@@ -409,10 +416,10 @@ describe('screenToTileWithTerrain (deformed-polygon picker)', () => {
     // Cursor at (0, 230): inside deformed polygon but outside flat diamond;
     // flat fallback gives (7,7), not (8,8). Old radius-0 algo fails here.
     const terrain = new Terrain(10, 10);
-    terrain.unsafeSetElevation(8, 8, MAX_ELEVATION);
-    terrain.unsafeSetElevation(8, 7, MAX_ELEVATION); // n
-    terrain.unsafeSetElevation(7, 8, MAX_ELEVATION); // w
-    terrain.unsafeSetElevation(7, 7, MAX_ELEVATION); // nw
+    terrain.unsafeSetVertexHeight(8, 8, MAX_ELEVATION);
+    terrain.unsafeSetVertexHeight(9, 8, 0);
+    terrain.unsafeSetVertexHeight(9, 9, 0);
+    terrain.unsafeSetVertexHeight(8, 9, 0);
 
     // Verify deformed polygon contains (0, 230) and flat fallback does not give (8,8)
     const poly = buildPoly(terrain, 8, 8);
@@ -434,25 +441,17 @@ describe('screenToTileWithTerrain (deformed-polygon picker)', () => {
     // Picker must return B=(8,8).
     const terrain = new Terrain(12, 12);
 
-    // Tile A (5,5) = 8
-    terrain.unsafeSetElevation(5, 5, 8);
-    terrain.unsafeSetElevation(5, 4, 8); // n
-    terrain.unsafeSetElevation(4, 4, 8); // nw
-    terrain.unsafeSetElevation(6, 4, 8); // ne
-    terrain.unsafeSetElevation(4, 5, 8); // w
-    terrain.unsafeSetElevation(6, 5, 8); // e
-    // s, sw, se default to 0
+    // Tile A direct vertices: top/right high, bottom/left low.
+    terrain.unsafeSetVertexHeight(5, 5, 8);
+    terrain.unsafeSetVertexHeight(6, 5, 8);
+    terrain.unsafeSetVertexHeight(6, 6, 0);
+    terrain.unsafeSetVertexHeight(5, 6, 0);
 
-    // Tile B (8,8) = 8, all neighbors = 8
-    terrain.unsafeSetElevation(8, 8, 8);
-    terrain.unsafeSetElevation(7, 7, 8); // nw
-    terrain.unsafeSetElevation(8, 7, 8); // n
-    terrain.unsafeSetElevation(9, 7, 8); // ne
-    terrain.unsafeSetElevation(7, 8, 8); // w
-    terrain.unsafeSetElevation(9, 8, 8); // e
-    terrain.unsafeSetElevation(7, 9, 8); // sw
-    terrain.unsafeSetElevation(8, 9, 8); // s
-    terrain.unsafeSetElevation(9, 9, 8); // se
+    // Tile B direct vertices: flat at 8.
+    terrain.unsafeSetVertexHeight(8, 8, 8);
+    terrain.unsafeSetVertexHeight(9, 8, 8);
+    terrain.unsafeSetVertexHeight(9, 9, 8);
+    terrain.unsafeSetVertexHeight(8, 9, 8);
 
     const cursor = { x: 0, y: 180 };
 
@@ -474,8 +473,8 @@ describe('screenToTileWithTerrain (deformed-polygon picker)', () => {
     // Cursor at A's centroid = center of A's flat diamond → h=2 band hits A.
     // Cursor at B's centroid = center of B's flat diamond → h=2 band has no hit, h=1 band hits B.
     const terrain = new Terrain(10, 10);
-    terrain.unsafeSetElevation(5, 5, 2);
-    terrain.unsafeSetElevation(5, 6, 1);
+    setTileCorners(terrain, 5, 5, 2);
+    setTileCorners(terrain, 5, 6, 1);
 
     // A's deformed polygon corners (all at h=0 since neighbors are 0):
     // screen0(5,5) = (0, 160); poly = [(0,160),(32,176),(0,192),(-32,176)]

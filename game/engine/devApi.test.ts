@@ -39,12 +39,12 @@ function makeHooks(): {
 const originalNodeEnv = process.env.NODE_ENV;
 
 beforeEach(() => {
-  process.env.NODE_ENV = 'development';
+  vi.stubEnv('NODE_ENV', 'development');
 });
 
 afterEach(() => {
   uninstallDevApi();
-  process.env.NODE_ENV = originalNodeEnv;
+  vi.stubEnv('NODE_ENV', originalNodeEnv);
 });
 
 describe('installDevApi hook-dispatch', () => {

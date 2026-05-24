@@ -5,7 +5,7 @@
  * to core. Tools never mutate core directly.
  *
  * `TileWriteCommand`      — write a tile at a grid coordinate
- * `ElevationWriteCommand` — set the terrain elevation at a grid coordinate
+ * `VertexEditCommand`    — set terrain vertex heights in deterministic order
  * `ToolCommand`           — discriminated union of the above
  */
 
@@ -21,14 +21,14 @@ export interface TileWriteCommand {
   readonly tile: Tile;
 }
 
-/**
- * A single intended elevation write at grid coordinates
- */
-export interface ElevationWriteCommand {
-  readonly kind: 'elevation';
-  readonly x: number;
-  readonly y: number;
-  readonly elevation: number;
+export interface VertexEditCommand {
+  readonly kind: 'vertex-edit';
+  readonly direction: 'up' | 'down';
+  readonly writes: ReadonlyArray<{
+    readonly vx: number;
+    readonly vy: number;
+    readonly height: number;
+  }>;
 }
 
-export type ToolCommand = TileWriteCommand | ElevationWriteCommand;
+export type ToolCommand = TileWriteCommand | VertexEditCommand;

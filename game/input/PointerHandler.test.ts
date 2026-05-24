@@ -16,6 +16,7 @@ import { getWorld } from '../core/worldStore';
 import { tileToScreenWithHeight, ISO_CONFIG } from '../render/IsoTransform';
 import type { Camera } from '../render/Camera';
 import type { ScreenCoord } from '../types/coordinates';
+import type { World } from '../core/World';
 
 type EventCallback = (e: Event) => void;
 
@@ -50,6 +51,14 @@ function makeIdentityCamera(): Camera {
   } as unknown as Camera;
 }
 
+function setTileCorners(world: World, x: number, y: number, h: number): void {
+  const terrain = world.getTerrain();
+  terrain.unsafeSetVertexHeight(x, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y, h);
+  terrain.unsafeSetVertexHeight(x + 1, y + 1, h);
+  terrain.unsafeSetVertexHeight(x, y + 1, h);
+}
+
 describe('PointerHandler — elevation-aware picking', () => {
   it('cursor at lifted center of elevated tile (5,5,h=2) picks (5,5)', () => {
     const world = getWorld();
@@ -58,7 +67,7 @@ describe('PointerHandler — elevation-aware picking', () => {
     // tileToScreenWithHeight({5,5}, 2) deterministically — independent of world state.
     for (let ny = 4; ny <= 6; ny++) {
       for (let nx = 4; nx <= 6; nx++) {
-        world.getTerrain().unsafeSetElevation(nx, ny, 2);
+        setTileCorners(world, nx, ny, 2);
       }
     }
 
@@ -90,7 +99,7 @@ describe('PointerHandler — elevation-aware picking', () => {
     handler.detach();
     for (let ny = 4; ny <= 6; ny++) {
       for (let nx = 4; nx <= 6; nx++) {
-        world.getTerrain().unsafeSetElevation(nx, ny, 0);
+        setTileCorners(world, nx, ny, 0);
       }
     }
   });

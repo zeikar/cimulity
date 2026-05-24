@@ -7,7 +7,7 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
-import { Terrain, SEA_LEVEL } from './Terrain';
+import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
@@ -169,12 +169,12 @@ export class World {
   }
 
   /**
-   * Water is derived: a cell is water iff in-bounds and elevation <= SEA_LEVEL.
+   * Water is derived: a cell is water iff in-bounds and any corner is at/below SEA_LEVEL.
    * Out-of-bounds coordinates return false.
    */
   isWater(x: number, y: number): boolean {
     if (this.map.getTile(x, y) === null) return false;
-    return this.terrain.getTileElevation(x, y) <= SEA_LEVEL;
+    return this.terrain.getTileMinCornerHeight(x, y) <= SEA_LEVEL;
   }
 
   /**
@@ -331,9 +331,10 @@ export class World {
     const H = this.map.getHeight();
     const { elevations } = terrainGenerator.generateTerrain(W, H, seed);
     const terrain = new Terrain(W, H);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        terrain.unsafeSetElevation(x, y, elevations[y][x]);
+    const vertexHeights = projectTileHeightsToVertexHeights(elevations);
+    for (let vy = 0; vy <= H; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        terrain.unsafeSetVertexHeight(vx, vy, vertexHeights[vy][vx]);
       }
     }
     this.installTerrain(terrain);

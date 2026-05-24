@@ -36,6 +36,17 @@ When adding code, keep the dependency direction strictly downward — no layer i
 
 All content in this repository — code, comments, identifiers, JSDoc, commit messages, Markdown docs, and skills under `.claude/` — is written in English. No exceptions.
 
+## Backwards compatibility — none yet
+
+The game has no production users. No save-format migrations, no legacy storage-key paths, no transitional code arms unless **explicitly requested**.
+
+When a schema/format changes:
+- Bump the storage key (e.g. `cimulity:save:vN`) so stale saves are never read.
+- Reject any non-current save version in `deserializeWorldInto` — `worldStore` falls back to a fresh procedural world.
+- Remove the previous code path in the same change. No deprecation period, no dual-read arms.
+
+If a plan-review (Codex or otherwise) flags "missing migration from vN-1 → vN" as a blocker, treat it as out of scope unless the user asks for it.
+
 ## Testing
 
 Tests are `*.test.ts` colocated next to source under `game/`. The coverage gate (80% lines/statements/functions/branches) is **deliberately scoped** to the pure-logic files listed in [vitest.config.ts](vitest.config.ts) (core state, RoadTool, ToolActions, CommandDispatcher, IsoTransform). Pixi render glue, DOM input handlers, and `GameSession` are intentionally excluded — verify those by gameplay/manual testing, not headless mocks. New pure logic should land in (or alongside) the gated files and stay above threshold.

@@ -13,7 +13,8 @@ import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
 import { buildToolCommands } from '../tools';
 import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
-import { TileType, isZoneType } from '../core/Tile';
+import { TileType, createTile, isZoneType } from '../core/Tile';
+import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { ToolCommand, ToolResult } from '../tools';
@@ -51,13 +52,17 @@ function pathForTool(
  * Elevation writes are always free.
  */
 function commandCost(cmd: ToolCommand): number {
-  if (cmd.kind === 'elevation') return 0;
+  if (cmd.kind === 'vertex-edit') return 0;
   const t = cmd.tile.type;
   if (t === TileType.ROAD) return ROAD_COST;
   if (isZoneType(t)) return ZONE_COST;
   if (t === TileType.DIRT) return BULLDOZE_COST;
-  // TERRAIN_DOWN may write DIRT→GRASS before lowering to SEA_LEVEL; GRASS tile writes are free.
+  // TERRAIN_DOWN may write DIRT→GRASS after lowering to SEA_LEVEL; GRASS tile writes are free.
   return 0;
+}
+
+function tileKey(x: number, y: number): string {
+  return `${x},${y}`;
 }
 
 /**
@@ -82,21 +87,43 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   const affectedTiles: TileCoord[] = [];
   const removedBuildingIds: number[] = [];
   let landValueInvalidated = false;
+  const pushedChanged = new Set<string>();
+  const pushChanged = (x: number, y: number): void => {
+    const key = tileKey(x, y);
+    if (pushedChanged.has(key)) return;
+    pushedChanged.add(key);
+    changedTiles.push({ x, y });
+  };
+
   for (const cmd of commands) {
-    if (cmd.kind === 'elevation') {
-      // Slope-constraint violations are silent no-ops (setPlayerElevation returns false).
-      // Player-facing elevation writes use canPlayerSetElevation's 8-neighbor cap; tool
-      // builders preflight via the same predicate, so a dispatch failure here would
-      // indicate a builder bug. Elevation writes never trigger land-value invalidation.
-      const changed = world.getTerrain().setPlayerElevation(cmd.x, cmd.y, cmd.elevation);
-      if (changed) {
-        changedTiles.push({ x: cmd.x, y: cmd.y });
+    if (cmd.kind === 'vertex-edit') {
+      const terrain = world.getTerrain();
+      const convertedDirt = new Set<string>();
+      for (const write of cmd.writes) {
+        const changed = terrain.setPlayerVertexHeight(write.vx, write.vy, write.height);
+        if (!changed) continue;
+
+        for (const [tx, ty] of tilesTouchingVertex(write.vx, write.vy, terrain.getWidth(), terrain.getHeight())) {
+          pushChanged(tx, ty);
+
+          if (cmd.direction !== 'down') continue;
+          if (terrain.getTileMinCornerHeight(tx, ty) > SEA_LEVEL) continue;
+          const key = tileKey(tx, ty);
+          if (convertedDirt.has(key)) continue;
+          const tile = map.getTile(tx, ty);
+          if (tile?.type !== TileType.DIRT) continue;
+          const rec = map.setTileAndReconcile(tx, ty, createTile(tx, ty, TileType.GRASS));
+          if (rec.changed) {
+            convertedDirt.add(key);
+            pushChanged(tx, ty);
+          }
+        }
       }
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
       if (rec.changed) {
-        changedTiles.push({ x: cmd.x, y: cmd.y });
+        pushChanged(cmd.x, cmd.y);
         // Mark land value dirty when a ROAD or ZONE tile is placed or replaced.
         if (
           !landValueInvalidated &&
