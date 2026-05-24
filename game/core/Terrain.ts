@@ -251,7 +251,7 @@ export class Terrain {
 
   /**
    * Visual slope label. Uses derived tile ceilings and remains a render cue only;
-   * buildability is checked by direct corner equality.
+   * player placement buildability is checked by the coplanar predicate; this mask is render-only.
    */
   getSlopeMask(x: number, y: number): number {
     if (!this.inBounds(x, y)) return 0;
@@ -270,8 +270,9 @@ export class Terrain {
   }
 
   /**
-   * A tile is buildable iff its 4 corner vertices are exactly equal, above sea
-   * level, and the injected water predicate returns false.
+   * Strict-flat predicate (internal): true iff all 4 corners are exactly equal, above sea
+   * level, and the water predicate rejects nothing. Player buildability uses isCoplanarTile;
+   * isFlatTile is retained for World.tick spawn and mapSerialization footprint validation.
    */
   isFlatTile(
     x: number,

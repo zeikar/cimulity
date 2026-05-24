@@ -1329,7 +1329,7 @@ describe('World.canBuildRoadAt()', () => {
     expect(world.canBuildRoadAt(3, 3)).toBe(false);
   });
 
-  it('returns false for a non-flat vertex tile', () => {
+  it('returns false for a non-coplanar vertex tile (triangle wedge)', () => {
     const world = new World(8, 8, { regenerate: false });
     world.getTerrain().unsafeSetVertexHeight(2, 2, 2);
     expect(world.canBuildRoadAt(2, 2)).toBe(false);

@@ -99,7 +99,7 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
       continue;
     }
 
-    // Skip slope/water tiles — terrain buildability gate.
+    // Coplanar/water buildability gate (player placement).
     if (!world.canBuildRoadAt(coord.x, coord.y)) continue;
 
     commands.push({
@@ -162,7 +162,7 @@ function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: Wo
       currentTile.type === TileType.DIRT ||
       isZoneType(currentTile.type);
     if (!paintable) continue;
-    // Skip slope/water tiles — terrain buildability gate.
+    // Coplanar/water buildability gate (player placement).
     if (!world.canBuildAt(coord.x, coord.y, 1, 1)) continue;
     commands.push({
       kind: 'tile',
