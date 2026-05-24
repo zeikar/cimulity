@@ -1,11 +1,11 @@
 ---
 name: autopilot
-description: Run a fire-and-forget autonomous workflow that loops plan-loop → implement-loop → ff merge → push → next task, until context exhausts or a stop condition fires. Two delivery modes — (a) **scheduled** wakes up N hours/minutes from now via `CronCreate`; (b) **immediate** starts right now in this session, no cron. Use when the user says "start work in N hours", "work on it while I'm asleep", "trigger in a few hours", "set up autopilot for later", "autopilot now", "kick off autopilot immediately", "autopilot", or any "leave it running" request. Scheduled mode wraps `CronCreate` with a pre-built autonomous-loop prompt; immediate mode kicks off the same workflow inline.
+description: Run a fire-and-forget autonomous workflow that loops hyper-auto (plan-loop → implement-loop) → ff merge → push → next task, until context exhausts or a stop condition fires. Two delivery modes — (a) **scheduled** wakes up N hours/minutes from now via `CronCreate`; (b) **immediate** starts right now in this session, no cron. Use when the user says "start work in N hours", "work on it while I'm asleep", "trigger in a few hours", "set up autopilot for later", "autopilot now", "kick off autopilot immediately", "autopilot", or any "leave it running" request. Scheduled mode wraps `CronCreate` with a pre-built autonomous-loop prompt; immediate mode kicks off the same workflow inline.
 ---
 
 # Autopilot — autonomous-loop runner (scheduled or immediate)
 
-Lets the user say "in 2h, work on cube rooftop detail", "autopilot in 30m: viewport culling", or "autopilot now: rooftop accents" and walk away. The same self-driving 4-step workflow (plan-loop → implement-loop → ff merge → push → next task → repeat) runs in both modes — only the trigger differs.
+Lets the user say "in 2h, work on cube rooftop detail", "autopilot in 30m: viewport culling", or "autopilot now: rooftop accents" and walk away. The same self-driving 3-step workflow (hyper-auto → ff merge → push → next task → repeat) runs in both modes — only the trigger differs. `hyper-auto` itself chains `hyper-plan-loop` → `hyper-implement-loop` with a built-in safety stop between phases, so autopilot delegates the plan→implement chaining and only orchestrates merge/push/next-task selection on top.
 
 ## Modes
 
@@ -24,14 +24,14 @@ Both modes run in the local Claude session — no remote agent.
 
 ## When NOT to use
 
-- The user wants **a single round only** with no auto-pickup of the next task — just run `/hyperclaude:hyper-plan-loop` (or `hyper-implement-loop`) directly. Autopilot's value is the per-round loop.
+- The user wants **a single round only** with no auto-pickup of the next task — just run `/hyperclaude:hyper-auto` directly (or `/hyperclaude:hyper-plan-loop` / `/hyperclaude:hyper-implement-loop` for finer control). Autopilot's value is the multi-round loop on top of those.
 - One-shot edits / quick fixes — no need for the multi-round loop.
 - The user explicitly asks for remote/cloud execution — that needs `/schedule` (RemoteTrigger), not local cron / inline.
 
 ## Inputs the user must provide
 
 1. **Mode + when** (if scheduled): how long until autopilot kicks off. Natural language is fine — "2 hours", "30 minutes", "9 AM", "in 4h", "tomorrow 8am". Resolve against the freshly-fetched current time, not the prompt-anchor time. If the user says "now" / "immediately" / supplies no time, treat as immediate mode and skip cron entirely.
-2. **Round-1 task**: what to work on first. A short description (one paragraph is enough — autopilot's `hyper-plan-loop` will expand it).
+2. **Round-1 task**: what to work on first. A short description (one paragraph is enough — autopilot's `hyper-auto` will hand it to `hyper-plan-loop`, which expands it).
 3. (optional) **Follow-up candidates**: ordered list of next tasks autopilot picks from after Round 1. Defaults to "pick from README MVP-1 roadmap and recent `.hyperclaude/plans/` if not supplied".
 4. (optional) **Stop conditions / extra constraints**: pushed into the prompt body alongside the standard ones.
 
@@ -86,7 +86,7 @@ Show the full assembled prompt back regardless of mode. Get explicit "go" before
 - `durable`: default `false` (in-memory) unless the user wants it to survive a Claude restart.
 - `prompt`: the assembled string from Step 4.
 
-**Step 5B — Immediate:** on "go", do NOT call `CronCreate`. Instead, treat the assembled prompt as the active directive for this session and begin executing Round 1 directly — start by invoking `/hyperclaude:hyper-plan-loop` on the Round-1 task. The rest of the per-round 4 steps, candidate-picking, stop conditions, and rules from the template apply exactly as if a cron had just fired the same prompt. Do not paraphrase the rules away — keep the assembled body in scope as you proceed.
+**Step 5B — Immediate:** on "go", do NOT call `CronCreate`. Instead, treat the assembled prompt as the active directive for this session and begin executing Round 1 directly — start by invoking `/hyperclaude:hyper-auto` on the Round-1 task. The rest of the per-round 3 steps, candidate-picking, stop conditions, and rules from the template apply exactly as if a cron had just fired the same prompt. Do not paraphrase the rules away — keep the assembled body in scope as you proceed.
 
 ### Step 6 — Tell the user what to expect
 
@@ -111,9 +111,10 @@ Show the full assembled prompt back regardless of mode. Get explicit "go" before
 - Substituting `now` from a stale conversation anchor instead of re-fetching with `date -u` *(scheduled)*.
 - Defaulting silently to one mode when the phrasing is ambiguous. Ask, don't guess.
 - Stuffing the prompt with multiple Round-1 tasks. Use the candidates list for follow-ups; Round 1 is one task.
-- Hardcoding the 4-step workflow to skip `hyper-plan-loop` for "simple" tasks. The skill is fire-and-forget — let plan-loop decide if it's simple.
+- Hardcoding the 3-step workflow to skip `hyper-auto` for "simple" tasks. The skill is fire-and-forget — let hyper-auto decide if the inner plan/implement loops are short.
+- Splitting `hyper-auto` back into `hyper-plan-loop` + `hyper-implement-loop` calls inside the per-round body. The whole point of the change is to delegate plan→implement chaining (and its between-phase safety stop) to `hyper-auto`.
 - Forgetting to mention the "session must stay alive" caveat in scheduled mode. The user will be surprised otherwise.
-- In immediate mode, paraphrasing the assembled rules ("I'll just start hyper-plan-loop and follow the general idea"). Keep the assembled body in scope — that's the contract.
+- In immediate mode, paraphrasing the assembled rules ("I'll just start hyper-auto and follow the general idea"). Keep the assembled body in scope — that's the contract.
 - In immediate mode, calling `CronCreate` with a 1-minute fire as a workaround. The whole point is no cron — just start.
 
 ---
@@ -126,13 +127,12 @@ Show the full assembled prompt back regardless of mode. Get explicit "go" before
 ## Round 1 task
 {{round1}}
 
-## Per-round 4 steps
-1. **/hyperclaude:hyper-plan-loop** — loop plan ↔ Codex review until clean
-2. **/hyperclaude:hyper-implement-loop** — loop implement ↔ code-review ↔ fix until clean
-3. **Fast-forward merge to main** — if on a work branch, checkout main then `git merge --ff-only`
-4. **git push origin main** — no force push, no `--no-verify`; on hook failure, fix the root cause and create a new commit
+## Per-round 3 steps
+1. **/hyperclaude:hyper-auto** — chain `hyper-plan-loop` → `hyper-implement-loop` for this round's task. `hyper-auto` itself stops between phases if plan-loop hits cap-reached or terminal revise-regression; treat that as a round failure (see Stop conditions).
+2. **Fast-forward merge to main** — if on a work branch, checkout main then `git merge --ff-only`
+3. **git push origin main** — no force push, no `--no-verify`; on hook failure, fix the root cause and create a new commit
 
-After step 4 completes → autonomously pick the next task and start the next round.
+After step 3 completes → autonomously pick the next task and start the next round.
 
 ## Next-task candidates (priority order)
 {{candidates}}
@@ -141,7 +141,7 @@ After step 4 completes → autonomously pick the next task and start the next ro
 - If the context limit is near, finish the current round and stop
 - If any step requires a destructive git op (force push / hard reset / branch -D, etc.), stop immediately and report
 - If push fails (remote rejection, auth failure, etc.), stop and report
-- If hyper-plan-loop or hyper-implement-loop hits its round cap, stop — do not start the next round
+- If `hyper-auto` reports a non-clean terminal state for either inner loop — plan-loop cap-reached / terminal revise-regression, or implement-loop ending with open Blocker/Major — stop. Do not start the next round, and do not retry the same task.
 
 ## Rules
 - Respect CLAUDE.md layer invariants, comment policy, and code style
