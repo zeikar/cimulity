@@ -20,6 +20,7 @@ export const TOOL_CATEGORY: Record<Tool, ToolCategory> = {
   [Tool.SELECT]: ToolCategory.CURSOR,
   [Tool.TERRAIN_UP]: ToolCategory.TERRAIN,
   [Tool.TERRAIN_DOWN]: ToolCategory.TERRAIN,
+  [Tool.TERRAIN_LEVEL]: ToolCategory.TERRAIN,
   [Tool.ROAD]: ToolCategory.BUILD,
   [Tool.ZONE_RESIDENTIAL]: ToolCategory.ZONE,
   [Tool.ZONE_COMMERCIAL]: ToolCategory.ZONE,

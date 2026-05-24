@@ -36,6 +36,7 @@ const TOOL_BUTTONS: Record<Tool, ToolButton> = {
   [Tool.ZONE_INDUSTRIAL]: { tool: Tool.ZONE_INDUSTRIAL, label: 'Industrial', shortcut: 'E' },
   [Tool.TERRAIN_UP]: { tool: Tool.TERRAIN_UP, label: 'Raise', shortcut: 'R' },
   [Tool.TERRAIN_DOWN]: { tool: Tool.TERRAIN_DOWN, label: 'Lower', shortcut: 'F' },
+  [Tool.TERRAIN_LEVEL]: { tool: Tool.TERRAIN_LEVEL, label: 'Level', shortcut: 'G' },
 };
 
 const CATEGORY_LABELS: Record<ToolCategory, string> = {

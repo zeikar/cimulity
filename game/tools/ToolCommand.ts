@@ -23,7 +23,7 @@ export interface TileWriteCommand {
 
 export interface VertexEditCommand {
   readonly kind: 'vertex-edit';
-  readonly direction: 'up' | 'down';
+  readonly direction: 'up' | 'down' | 'level';
   readonly writes: ReadonlyArray<{
     readonly vx: number;
     readonly vy: number;

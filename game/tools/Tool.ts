@@ -11,4 +11,5 @@ export enum Tool {
   BULLDOZE = 'bulldoze',
   TERRAIN_UP = 'terrain_up',
   TERRAIN_DOWN = 'terrain_down',
+  TERRAIN_LEVEL = 'terrain_level',
 }
