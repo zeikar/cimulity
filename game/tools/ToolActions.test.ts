@@ -123,6 +123,74 @@ describe('buildToolCommands - normal tile tools', () => {
   });
 });
 
+describe('buildToolCommands - ROAD drag transactional', () => {
+  it('Test A (water in path): any-reject causes transactional empty result', () => {
+    // Vertex (4,4)=0 → tile (3,3) has a water corner → classifyRoadTile returns reject
+    world.getTerrain().unsafeSetVertexHeight(4, 4, SEA_LEVEL);
+    const commands = buildToolCommands(Tool.ROAD, [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }], world, { x: 1, y: 1 });
+    expect(commands).toEqual([]);
+  });
+
+  it('Test B (all valid): emits one ROAD command per tile in path order', () => {
+    const commands = buildToolCommands(Tool.ROAD, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }], world, { x: 0, y: 0 });
+    expect(commands).toEqual([
+      { kind: 'tile', x: 0, y: 0, tile: createTile(0, 0, TileType.ROAD) },
+      { kind: 'tile', x: 1, y: 0, tile: createTile(1, 0, TileType.ROAD) },
+      { kind: 'tile', x: 2, y: 0, tile: createTile(2, 0, TileType.ROAD) },
+      { kind: 'tile', x: 3, y: 0, tile: createTile(3, 0, TileType.ROAD) },
+    ]);
+  });
+
+  it('Test C (triangle wedge in path): any-reject causes transactional empty result', () => {
+    // Vertex (3,3)=2 → tile (2,2): topH=1, rightH=1, bottomH=2, leftH=1
+    // topH+bottomH=3 !== leftH+rightH=2 → NOT coplanar → classifyRoadTile returns reject
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    const commands = buildToolCommands(Tool.ROAD, [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }], world, { x: 0, y: 0 });
+    expect(commands).toEqual([]);
+  });
+
+  it('Test D (zoned tile in path): any-reject causes transactional empty result', () => {
+    world.getMap().setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    const commands = buildToolCommands(Tool.ROAD, [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }], world, { x: 0, y: 1 });
+    expect(commands).toEqual([]);
+  });
+
+  it('Test E (existing-road is skip, not reject): drag still commits remaining tiles', () => {
+    // Pre-placed ROAD at (1,1) is a skip — does not trigger transactional rollback
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
+    const commands = buildToolCommands(Tool.ROAD, [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }], world, { x: 1, y: 1 });
+    expect(commands).toEqual([
+      { kind: 'tile', x: 2, y: 1, tile: createTile(2, 1, TileType.ROAD) },
+      { kind: 'tile', x: 3, y: 1, tile: createTile(3, 1, TileType.ROAD) },
+    ]);
+  });
+});
+
+describe('buildToolCommands - ZONE partial regression', () => {
+  it('Test F (mixed water+flat → partial): rejected tile is omitted, others still emit', () => {
+    // Vertex (2,1)=0 touches tiles (1,0),(2,0),(1,1),(2,1).
+    // Tile (1,1) min corner = 0 → water → reject.
+    // Tiles (1,2) and (1,3) corners stay all at 1 → emit.
+    world.getTerrain().unsafeSetVertexHeight(2, 1, SEA_LEVEL);
+    const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 }], world, { x: 1, y: 1 });
+    expect(commands).toEqual([
+      { kind: 'tile', x: 1, y: 2, tile: createTile(1, 2, TileType.ZONE_RESIDENTIAL) },
+      { kind: 'tile', x: 1, y: 3, tile: createTile(1, 3, TileType.ZONE_RESIDENTIAL) },
+    ]);
+  });
+
+  it('Test G (same-type skip, different-type repaint): skip omits tile, repaint emits', () => {
+    // (2,2) same type → skip; (3,2) ZONE_COMMERCIAL → repaint to ZONE_RESIDENTIAL → emit; (4,2) GRASS → emit
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ZONE_COMMERCIAL));
+    const commands = buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 }], world, { x: 2, y: 2 });
+    expect(commands).toEqual([
+      { kind: 'tile', x: 3, y: 2, tile: createTile(3, 2, TileType.ZONE_RESIDENTIAL) },
+      { kind: 'tile', x: 4, y: 2, tile: createTile(4, 2, TileType.ZONE_RESIDENTIAL) },
+    ]);
+  });
+});
+
 describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
   it('click emits one vertex-edit command with 4 sorted unique vertex writes', () => {
     const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world, { x: 2, y: 3 });
