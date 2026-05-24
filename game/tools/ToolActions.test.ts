@@ -56,6 +56,71 @@ describe('buildToolCommands - normal tile tools', () => {
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
     expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
   });
+
+  it('ROAD places on a uniform N-S ramp (coplanar non-flat)', () => {
+    // Tile (2,2): topH=(2,2)=1, rightH=(3,2)=1, bottomH=(3,3)=2, leftH=(2,3)=2
+    // topH+bottomH=3 === leftH+rightH=3 → coplanar
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ROAD) },
+    ]);
+  });
+
+  it('ROAD places on a uniform E-W ramp (coplanar non-flat)', () => {
+    // Tile (2,2): topH=(2,2)=1, rightH=(3,2)=2, bottomH=(3,3)=2, leftH=(2,3)=1
+    // topH+bottomH=3 === leftH+rightH=3 → coplanar
+    world.getTerrain().unsafeSetVertexHeight(3, 2, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ROAD) },
+    ]);
+  });
+
+  it('ROAD rejects triangle wedge (not coplanar)', () => {
+    // Tile (2,2): topH=(2,2)=1, rightH=(3,2)=1, bottomH=(3,3)=2, leftH=(2,3)=1
+    // topH+bottomH=3 !== leftH+rightH=2 → NOT coplanar
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ROAD still rejects any-corner water terrain', () => {
+    world.getTerrain().unsafeSetVertexHeight(2, 2, SEA_LEVEL);
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_RESIDENTIAL places on a uniform N-S ramp (coplanar non-flat)', () => {
+    // Same N-S ramp as ROAD test: topH+bottomH === leftH+rightH → coplanar
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ZONE_RESIDENTIAL) },
+    ]);
+  });
+
+  it('ZONE_RESIDENTIAL rejects triangle wedge', () => {
+    // Only one corner elevated → not coplanar
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL places on coplanar ramp', () => {
+    // N-S ramp: coplanar non-flat
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ZONE_COMMERCIAL) },
+    ]);
+  });
+
+  it('ZONE_INDUSTRIAL places on coplanar ramp', () => {
+    // N-S ramp: coplanar non-flat
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ZONE_INDUSTRIAL) },
+    ]);
+  });
 });
 
 describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
