@@ -93,7 +93,7 @@ describe('KeyboardHandler', () => {
     expect(ee.preventDefault).toHaveBeenCalled();
   });
 
-  it('t / b / s / Escape / r / f trigger onToolChange with the correct tool each', () => {
+  it('t / b / s / Escape / r / f / g trigger onToolChange with the correct tool each', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
 
     const pairs: Array<[string, Tool]> = [
@@ -103,6 +103,7 @@ describe('KeyboardHandler', () => {
       ['Escape', Tool.SELECT],
       ['r', Tool.TERRAIN_UP],
       ['f', Tool.TERRAIN_DOWN],
+      ['g', Tool.TERRAIN_LEVEL],
     ];
     for (const [key, expected] of pairs) {
       onToolChange.mockClear();
@@ -224,6 +225,13 @@ describe('KeyboardHandler', () => {
   it('Ctrl+F is not intercepted', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
     const event = fire('f', null, { ctrlKey: true });
+    expect(onToolChange).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+G is not intercepted — modifier short-circuit guards TERRAIN_LEVEL bind', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+    const event = fire('g', null, { ctrlKey: true });
     expect(onToolChange).not.toHaveBeenCalled();
     expect(event.preventDefault).not.toHaveBeenCalled();
   });

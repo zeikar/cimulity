@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { buildToolCommands } from './ToolActions';
+import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from './Tool';
 import { World } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
@@ -28,6 +29,32 @@ describe('buildToolCommands - normal tile tools', () => {
     expect(buildToolCommands(Tool.BULLDOZE, [{ x: 3, y: 3 }, { x: 4, y: 4 }], world, { x: 3, y: 3 })).toEqual([
       { kind: 'tile', x: 3, y: 3, tile: createTile(3, 3, TileType.DIRT) },
     ]);
+  });
+
+  it('SELECT returns empty commands', () => {
+    expect(buildToolCommands(Tool.SELECT, [{ x: 0, y: 0 }], world, { x: 0, y: 0 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL emits a tile write on flat dry terrain', () => {
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ZONE_COMMERCIAL) },
+    ]);
+  });
+
+  it('ZONE_INDUSTRIAL emits a tile write on flat dry terrain', () => {
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
+      { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ZONE_INDUSTRIAL) },
+    ]);
+  });
+
+  it('ROAD skips tiles that already have a road', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ROAD skips zoned tiles', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
   });
 });
 
@@ -108,6 +135,268 @@ describe('buildToolCommands - TERRAIN_DOWN vertex edits', () => {
     expect(commands[0].writes).toEqual([
       { vx: 2, vy: 3, height: 0 },
       { vx: 2, vy: 4, height: 0 },
+    ]);
+  });
+});
+
+describe('buildToolCommands - TERRAIN_LEVEL vertex edits', () => {
+  it('Test 1: no-op on flat tile — all corners already at target', () => {
+    // Default world: every vertex at MIN_LAND_ELEVATION=1.
+    // Tile (2,2) corners all=1, target=1. All vertices already at target → no writes.
+    const commands = buildToolCommands(Tool.TERRAIN_LEVEL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(commands).toEqual([]);
+  });
+
+  it('Test 2: mixed corners step toward target on a single tile', () => {
+    // Tile (2,2) corners: (2,2)=3, (3,2)=4, (2,3)=5, (3,3)=5.
+    // Pad ring so that writing to 3 passes canPlayerSetVertexHeight.
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 2, 4);
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 5);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 5);
+    // Pad 8-neighborhood ring (vertices outside this ring keep the default
+    // MIN_LAND_ELEVATION=1; |1-3|=2 ≤ cap, so writes to height 3 stay legal).
+    world.getTerrain().unsafeSetVertexHeight(1, 1, 3);
+    world.getTerrain().unsafeSetVertexHeight(2, 1, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 1, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 1, 3);
+    world.getTerrain().unsafeSetVertexHeight(1, 2, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 2, 3);
+    world.getTerrain().unsafeSetVertexHeight(1, 3, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 3, 3);
+    world.getTerrain().unsafeSetVertexHeight(2, 4, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 4, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 4, 3);
+    // target = min(3,4,5,5) = 3. Vertex (2,2) skipped (h===target).
+    const commands = buildToolCommands(Tool.TERRAIN_LEVEL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(commands).toEqual([
+      {
+        kind: 'vertex-edit',
+        direction: 'level',
+        writes: [
+          { vx: 3, vy: 2, height: 3 },
+          { vx: 2, vy: 3, height: 3 },
+          { vx: 3, vy: 3, height: 3 },
+        ],
+      },
+    ]);
+  });
+
+  it('Test 3: uniform drag is no-op — all vertices already at target', () => {
+    // Default world all at 1. DragStart tile (0,0), target=1. Two tiles, all corners at 1.
+    const commands = buildToolCommands(
+      Tool.TERRAIN_LEVEL,
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+      world,
+      { x: 0, y: 0 }
+    );
+    expect(commands).toEqual([]);
+  });
+
+  it('Test 4: drag across 1×2 strip levels east vertices to target', () => {
+    // Tile (0,0) corners all=2 (left strip). Tile (1,0) east corners=5.
+    world.getTerrain().unsafeSetVertexHeight(0, 0, 2);
+    world.getTerrain().unsafeSetVertexHeight(1, 0, 2);
+    world.getTerrain().unsafeSetVertexHeight(0, 1, 2);
+    world.getTerrain().unsafeSetVertexHeight(1, 1, 2);
+    world.getTerrain().unsafeSetVertexHeight(2, 0, 5);
+    world.getTerrain().unsafeSetVertexHeight(2, 1, 5);
+    // Pad so canPlayerSetVertexHeight admits writing (2,0)=2 and (2,1)=2.
+    // (2,0) neighbors: (1,0)=2,(3,0),(1,1)=2,(2,1)=5,(3,1). |5-2|=3 ✓, default 1→|1-2|=1 ✓.
+    world.getTerrain().unsafeSetVertexHeight(3, 0, 5);
+    world.getTerrain().unsafeSetVertexHeight(3, 1, 5);
+    world.getTerrain().unsafeSetVertexHeight(3, 2, 5);
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 5);
+    world.getTerrain().unsafeSetVertexHeight(1, 2, 2);
+    world.getTerrain().unsafeSetVertexHeight(0, 2, 2);
+    // target = min(tile(0,0)) = min(2,2,2,2) = 2.
+    // (2,0) and (2,1) step from 5→2 (|5-2|=3 ≤ cap); others already at 2 → skip.
+    const commands = buildToolCommands(
+      Tool.TERRAIN_LEVEL,
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+      world,
+      { x: 0, y: 0 }
+    );
+    expect(commands).toEqual([
+      {
+        kind: 'vertex-edit',
+        direction: 'level',
+        writes: [
+          { vx: 2, vy: 0, height: 2 },
+          { vx: 2, vy: 1, height: 2 },
+        ],
+      },
+    ]);
+  });
+
+  it('Test 5: closest legal value on graded cliffs — Pass A, re-grade between, then Pass B', () => {
+    // Build a graded cliff: peak (2,2)=8, inner ring=5, outer ring=2.
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 8);
+    for (const [vx, vy] of [[1,1],[2,1],[3,1],[1,2],[3,2],[1,3],[2,3],[3,3]] as const) {
+      world.getTerrain().unsafeSetVertexHeight(vx, vy, 5);
+    }
+    for (const [vx, vy] of [
+      [0,0],[1,0],[2,0],[3,0],[4,0],
+      [0,1],[4,1],
+      [0,2],[4,2],
+      [0,3],[4,3],
+      [0,4],[1,4],[2,4],[3,4],[4,4],
+    ] as const) {
+      world.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+    }
+
+    // Pass A: executeClick on tile (1,1). Corners: (1,1)=5,(2,1)=5,(2,2)=8,(1,2)=5. target=5.
+    // (2,2)=8 → search from 5 toward 8: try 5. All 8-neighbors of (2,2) are 5 → |5-5|=0 ≤3. Legal.
+    const resultA = executeClick(Tool.TERRAIN_LEVEL, { x: 1, y: 1 }, world);
+    expect(resultA.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getVertexHeight(2, 2)).toBe(5);
+
+    // Pass B setup: re-grade (2,2)'s 8-neighbors to 2. (2,2) is now 5 after Pass A.
+    for (const [vx, vy] of [[1,1],[2,1],[3,1],[1,2],[3,2],[1,3],[2,3],[3,3]] as const) {
+      world.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+    }
+    // Pass B: tile (1,1) corners: (1,1)=2,(2,1)=2,(2,2)=5,(1,2)=2. target=2.
+    // (2,2)=5 → search from 2 toward 5: try 2. Neighbors all=2 → |2-2|=0 ≤3. Legal.
+    const resultB = executeClick(Tool.TERRAIN_LEVEL, { x: 1, y: 1 }, world);
+    expect(resultB.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(world.getTerrain().getVertexHeight(2, 2)).toBe(2);
+  });
+
+  it('Test 6: shared vertex that would break adjacent road flatness is dropped (layer-b reject)', () => {
+    // Install ROAD at (3,3).
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
+    // Grid setup (graded from 0 in the low-left to 3 in the upper-right region).
+    // Row y=0
+    world.getTerrain().unsafeSetVertexHeight(0, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(2, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(3, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(4, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(5, 0, 3);
+    // Row y=1
+    world.getTerrain().unsafeSetVertexHeight(0, 1, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 1, 0);
+    world.getTerrain().unsafeSetVertexHeight(2, 1, 0);
+    world.getTerrain().unsafeSetVertexHeight(3, 1, 0);
+    world.getTerrain().unsafeSetVertexHeight(4, 1, 3);
+    world.getTerrain().unsafeSetVertexHeight(5, 1, 3);
+    // Row y=2
+    world.getTerrain().unsafeSetVertexHeight(0, 2, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 2, 0);
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 0);
+    world.getTerrain().unsafeSetVertexHeight(3, 2, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 2, 3);
+    world.getTerrain().unsafeSetVertexHeight(5, 2, 3);
+    // Row y=3
+    world.getTerrain().unsafeSetVertexHeight(0, 3, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 3, 0);
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 3, 3);
+    world.getTerrain().unsafeSetVertexHeight(5, 3, 3);
+    // Row y=4
+    world.getTerrain().unsafeSetVertexHeight(0, 4, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 4, 0);
+    world.getTerrain().unsafeSetVertexHeight(2, 4, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 4, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 4, 3);
+    world.getTerrain().unsafeSetVertexHeight(5, 4, 3);
+    // Row y=5
+    world.getTerrain().unsafeSetVertexHeight(0, 5, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 5, 0);
+    world.getTerrain().unsafeSetVertexHeight(2, 5, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 5, 3);
+    world.getTerrain().unsafeSetVertexHeight(4, 5, 3);
+    world.getTerrain().unsafeSetVertexHeight(5, 5, 3);
+    // Tile (2,2) corners: (2,2)=0,(3,2)=3,(2,3)=3,(3,3)=3. target=0.
+    // (3,3) is the road's NW corner; writing 0 there would make road non-flat → dropped.
+    const commands = buildToolCommands(
+      Tool.TERRAIN_LEVEL,
+      [{ x: 2, y: 2 }],
+      world,
+      { x: 2, y: 2 }
+    );
+    expect(commands).toEqual([
+      {
+        kind: 'vertex-edit',
+        direction: 'level',
+        writes: [
+          { vx: 3, vy: 2, height: 0 },
+          { vx: 2, vy: 3, height: 0 },
+        ],
+      },
+    ]);
+    // Road tile is still there (builder does not mutate).
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.ROAD);
+  });
+
+  it('Test 7: layer-a source-cell skip + layer-b shared-vertex reject across 2×2 drag rect', () => {
+    // Install zone at (2,2) with all corners flat at 2.
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 2, 2);
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    // Non-zone tile (1,1) non-shared corner=1 (default); shared corners at 2.
+    world.getTerrain().unsafeSetVertexHeight(2, 1, 2);
+    world.getTerrain().unsafeSetVertexHeight(1, 2, 2);
+    // Pad ring (already at default 1, but set explicitly for clarity):
+    world.getTerrain().unsafeSetVertexHeight(3, 1, 1);
+    world.getTerrain().unsafeSetVertexHeight(4, 1, 1);
+    world.getTerrain().unsafeSetVertexHeight(4, 2, 1);
+    world.getTerrain().unsafeSetVertexHeight(4, 3, 1);
+    world.getTerrain().unsafeSetVertexHeight(1, 3, 1);
+    world.getTerrain().unsafeSetVertexHeight(0, 3, 1);
+    world.getTerrain().unsafeSetVertexHeight(2, 4, 1);
+    world.getTerrain().unsafeSetVertexHeight(3, 4, 1);
+    world.getTerrain().unsafeSetVertexHeight(4, 4, 1);
+    // Drag rect [(1,1),(2,1),(1,2),(2,2)], dragStart=(1,1).
+    // target = min(tile(1,1)) = min((1,1)=1,(2,1)=2,(2,2)=2,(1,2)=2) = 1.
+    // Layer (a): tile(2,2) structured → no vertices from it; (3,3) not contributed.
+    // Layer (b): shared zone corners (2,2),(3,2),(2,3) would break zone flatness → dropped.
+    // (2,1)=2→1 and (1,2)=2→1 are legal and not zone-protected.
+    const commands = buildToolCommands(
+      Tool.TERRAIN_LEVEL,
+      [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }],
+      world,
+      { x: 1, y: 1 }
+    );
+    expect(commands).toEqual([
+      {
+        kind: 'vertex-edit',
+        direction: 'level',
+        writes: [
+          { vx: 2, vy: 1, height: 1 },
+          { vx: 1, vy: 2, height: 1 },
+        ],
+      },
+    ]);
+  });
+
+  it('Test 8: vertex lowering crosses SEA_LEVEL — builder output only, no reconcile', () => {
+    // Tile (2,2) corners: (2,2)=0 (target), (3,2)=3, (2,3)=3, (3,3)=3.
+    // Default neighbors are all 1; |1-0|=1 ≤3 and |3-0|=3 ≤3 → cap satisfied.
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 0);
+    world.getTerrain().unsafeSetVertexHeight(3, 2, 3);
+    world.getTerrain().unsafeSetVertexHeight(2, 3, 3);
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 3);
+    // target = min(0,3,3,3) = 0. (2,2) already at 0 → skip. Others lower from 3→0.
+    const commands = buildToolCommands(
+      Tool.TERRAIN_LEVEL,
+      [{ x: 2, y: 2 }],
+      world,
+      { x: 2, y: 2 }
+    );
+    expect(commands).toEqual([
+      {
+        kind: 'vertex-edit',
+        direction: 'level',
+        writes: [
+          { vx: 3, vy: 2, height: 0 },
+          { vx: 2, vy: 3, height: 0 },
+          { vx: 3, vy: 3, height: 0 },
+        ],
+      },
     ]);
   });
 });

@@ -32,6 +32,22 @@ describe('CommandDispatcher tile tools', () => {
     expect(path).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]);
     expect(world.getTerrain().getVertexHeight(0, 0)).toBe(1);
   });
+
+  it('returns empty changedTiles when player cannot afford the command cost', () => {
+    // Drain the treasury so ROAD placement (ROAD_COST=10) fails.
+    const world = makeWorld();
+    world.trySpend(world.getMoney()); // drain to 0
+    const result = executeClick(Tool.ROAD, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).not.toBe(TileType.ROAD);
+  });
+
+  it('executeDrag returns empty result when all drag tiles are out of bounds', () => {
+    const world = makeWorld(4);
+    // Drag to an entirely OOB tile coordinate; filter removes it, tiles=[].
+    const result = executeDrag(Tool.ROAD, { x: 10, y: 10 }, { x: 11, y: 10 }, world);
+    expect(result.changedTiles).toEqual([]);
+  });
 });
 
 describe('CommandDispatcher terrain vertex edits', () => {
@@ -86,5 +102,48 @@ describe('CommandDispatcher terrain vertex edits', () => {
     }
     expect(result.changedTiles).toContainEqual({ x: 0, y: 0 });
     expect(result.changedTiles).toContainEqual({ x: 1, y: 0 });
+  });
+});
+
+describe('CommandDispatcher TERRAIN_LEVEL', () => {
+  it('Test 9: TERRAIN_LEVEL drag with dry DIRT tile — level write crosses SEA_LEVEL and reconciles DIRT→GRASS', () => {
+    const world = new World(6, 6, { regenerate: false });
+
+    // Install a DIRT tile at (3,3).
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.DIRT));
+
+    // Set DIRT tile corners to 2 (dry: all corners > SEA_LEVEL=0).
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(4, 3, 2);
+    world.getTerrain().unsafeSetVertexHeight(3, 4, 2);
+    world.getTerrain().unsafeSetVertexHeight(4, 4, 2);
+
+    // Set dragStart tile (0,0) corners to 0 — this is the level target.
+    world.getTerrain().unsafeSetVertexHeight(0, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 0, 0);
+    world.getTerrain().unsafeSetVertexHeight(0, 1, 0);
+    world.getTerrain().unsafeSetVertexHeight(1, 1, 0);
+
+    // Pad rows 2–5, cols 2–5 to 0 (except the four DIRT corners already set to 2).
+    // This ensures canPlayerSetVertexHeight admits writing DIRT corners to 0: |2-0|=2 ≤3.
+    for (let vy = 2; vy <= 5; vy++) {
+      for (let vx = 2; vx <= 5; vx++) {
+        if ((vx === 3 || vx === 4) && (vy === 3 || vy === 4)) continue; // DIRT corners stay at 2
+        world.getTerrain().unsafeSetVertexHeight(vx, vy, 0);
+      }
+    }
+
+    // Pre-condition: DIRT tile is dry before the call.
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.DIRT);
+    expect(world.isWater(3, 3)).toBe(false);
+
+    // Execute TERRAIN_LEVEL drag from (0,0) to (4,4). dragStart=(0,0), target=0.
+    // All 25 tiles (0,0)–(4,4) are in the rect; DIRT is not structured, so its corners are collected.
+    // After writing DIRT corners to 0, min corner of (3,3) = 0 ≤ SEA_LEVEL → reconcile to GRASS.
+    const result = executeDrag(Tool.TERRAIN_LEVEL, { x: 0, y: 0 }, { x: 4, y: 4 }, world);
+
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.GRASS);
+    expect(world.isWater(3, 3)).toBe(true);
+    expect(result.changedTiles).toContainEqual({ x: 3, y: 3 });
   });
 });
