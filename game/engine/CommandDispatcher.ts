@@ -101,6 +101,7 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
       const terrain = world.getTerrain();
       const convertedDirt = new Set<string>();
       for (const write of cmd.writes) {
+        const prevHeight = terrain.getVertexHeight(write.vx, write.vy);
         const changed = terrain.setPlayerVertexHeight(write.vx, write.vy, write.height);
         if (!changed) continue;
 
@@ -108,6 +109,10 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
           pushChanged(tx, ty);
 
           if (cmd.direction === 'up') continue;
+          // Only reconcile DIRT→GRASS when this specific write crossed sea level downward.
+          // A 'level' write that raises a vertex, or a down-write on an already-below-sea-level
+          // corner, must not trigger conversion.
+          if (!(prevHeight > SEA_LEVEL && write.height <= SEA_LEVEL)) continue;
           if (terrain.getTileMinCornerHeight(tx, ty) > SEA_LEVEL) continue;
           const key = tileKey(tx, ty);
           if (convertedDirt.has(key)) continue;
