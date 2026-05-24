@@ -49,7 +49,8 @@ type ZoneTileType = TileType.ZONE_RESIDENTIAL | TileType.ZONE_COMMERCIAL | TileT
 export function buildToolCommands(
   tool: Tool,
   tiles: TileCoord[],
-  world: World
+  world: World,
+  dragStart: TileCoord
 ): ToolCommand[] {
   switch (tool) {
     case Tool.SELECT:

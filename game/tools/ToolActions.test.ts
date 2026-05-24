@@ -13,19 +13,19 @@ beforeEach(() => {
 
 describe('buildToolCommands - normal tile tools', () => {
   it('ROAD emits a tile write on flat dry terrain', () => {
-    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world)).toEqual([
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([
       { kind: 'tile', x: 2, y: 2, tile: createTile(2, 2, TileType.ROAD) },
     ]);
   });
 
   it('ZONE rejects any-corner water terrain', () => {
     world.getTerrain().unsafeSetVertexHeight(1, 1, SEA_LEVEL);
-    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 1, y: 1 }], world)).toEqual([]);
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 1, y: 1 }], world, { x: 1, y: 1 })).toEqual([]);
   });
 
   it('BULLDOZE clears roads to DIRT only', () => {
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
-    expect(buildToolCommands(Tool.BULLDOZE, [{ x: 3, y: 3 }, { x: 4, y: 4 }], world)).toEqual([
+    expect(buildToolCommands(Tool.BULLDOZE, [{ x: 3, y: 3 }, { x: 4, y: 4 }], world, { x: 3, y: 3 })).toEqual([
       { kind: 'tile', x: 3, y: 3, tile: createTile(3, 3, TileType.DIRT) },
     ]);
   });
@@ -33,7 +33,7 @@ describe('buildToolCommands - normal tile tools', () => {
 
 describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
   it('click emits one vertex-edit command with 4 sorted unique vertex writes', () => {
-    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world);
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 3 }], world, { x: 2, y: 3 });
     expect(commands).toEqual([
       {
         kind: 'vertex-edit',
@@ -49,7 +49,7 @@ describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
   });
 
   it('drag command dedupes shared vertices and keeps row-major order', () => {
-    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 0, y: 0 }, { x: 1, y: 0 }], world);
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 0, y: 0 }, { x: 1, y: 0 }], world, { x: 0, y: 0 });
     expect(commands).toHaveLength(1);
     expect(commands[0]).toMatchObject({ kind: 'vertex-edit', direction: 'up' });
     if (commands[0].kind !== 'vertex-edit') throw new Error('expected vertex edit');
@@ -65,7 +65,7 @@ describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
 
   it('skips structured target tiles', () => {
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
-    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world)).toEqual([]);
+    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
   });
 
   it('skips capped vertices but keeps other valid vertices', () => {
@@ -75,7 +75,7 @@ describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
       }
     }
     world.getTerrain().unsafeSetVertexHeight(2, 2, MAX_ELEVATION);
-    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world);
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
     expect(commands).toHaveLength(1);
     if (commands[0].kind !== 'vertex-edit') throw new Error('expected vertex edit');
     expect(commands[0].writes).not.toContainEqual({ vx: 2, vy: 2, height: MAX_ELEVATION + 1 });
@@ -85,7 +85,7 @@ describe('buildToolCommands - TERRAIN_UP vertex edits', () => {
 
 describe('buildToolCommands - TERRAIN_DOWN vertex edits', () => {
   it('click emits one vertex-edit command lowering 4 vertices to sea level', () => {
-    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world, { x: 2, y: 3 });
     expect(commands).toEqual([
       {
         kind: 'vertex-edit',
@@ -102,7 +102,7 @@ describe('buildToolCommands - TERRAIN_DOWN vertex edits', () => {
 
   it('skips vertices whose edit would make a structured touching tile non-flat', () => {
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
-    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world);
+    const commands = buildToolCommands(Tool.TERRAIN_DOWN, [{ x: 2, y: 3 }], world, { x: 2, y: 3 });
     expect(commands).toHaveLength(1);
     if (commands[0].kind !== 'vertex-edit') throw new Error('expected vertex edit');
     expect(commands[0].writes).toEqual([

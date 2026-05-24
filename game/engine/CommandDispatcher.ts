@@ -153,7 +153,7 @@ export function executeClick(
   tile: TileCoord,
   world: World
 ): ToolResult {
-  return applyCommands(buildToolCommands(tool, [tile], world), world);
+  return applyCommands(buildToolCommands(tool, [tile], world, tile), world);
 }
 
 export function executeDrag(
@@ -168,7 +168,7 @@ export function executeDrag(
   if (tiles.length === 0) {
     return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
   }
-  return applyCommands(buildToolCommands(tool, tiles, world), world);
+  return applyCommands(buildToolCommands(tool, tiles, world, start), world);
 }
 
 export function previewDrag(
