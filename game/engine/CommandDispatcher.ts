@@ -11,13 +11,13 @@
 import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
-import { buildToolCommands } from '../tools';
+import { buildToolCommands, buildToolPreview } from '../tools';
 import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
-import type { ToolCommand, ToolResult } from '../tools';
+import type { ToolCommand, ToolResult, ToolPreview } from '../tools';
 
 /**
  * Single place tool→path mapping lives. Each drag tool owns its own path
@@ -182,8 +182,12 @@ export function previewDrag(
   start: TileCoord,
   end: TileCoord,
   world: World
-): TileCoord[] {
-  return pathForTool(tool, start, end).filter((t) =>
-    world.getMap().getTile(t.x, t.y)
+): ToolPreview {
+  const tiles = pathForTool(tool, start, end).filter(
+    (t) => world.getMap().getTile(t.x, t.y)
   );
+  if (tiles.length === 0) {
+    return { pathTiles: [], rejected: [], allOrNothingBlocked: false };
+  }
+  return buildToolPreview(tool, tiles, world);
 }

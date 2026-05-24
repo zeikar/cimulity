@@ -26,11 +26,38 @@ describe('CommandDispatcher tile tools', () => {
     expect(executeClick(Tool.ZONE_RESIDENTIAL, { x: 1, y: 1 }, world).changedTiles).toEqual([]);
   });
 
-  it('previewDrag returns rectangle tiles for terrain tools without mutating', () => {
+  it('previewDrag returns ToolPreview struct for terrain tools without mutating', () => {
     const world = makeWorld();
-    const path = previewDrag(Tool.TERRAIN_UP, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
-    expect(path).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]);
+    const preview = previewDrag(Tool.TERRAIN_UP, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
     expect(world.getTerrain().getVertexHeight(0, 0)).toBe(1);
+  });
+
+  it('previewDrag(ROAD) on a 3-tile path with one water tile flags allOrNothingBlocked and reports rejection without mutation', () => {
+    const world = makeWorld(8);
+    // Sink one corner of tile (1,0) to SEA_LEVEL so it becomes water; (0,0) and (2,0) remain dry.
+    world.getTerrain().unsafeSetVertexHeight(1, 0, SEA_LEVEL);
+    const heightBefore = world.getTerrain().getVertexHeight(1, 0);
+    const preview = previewDrag(Tool.ROAD, { x: 0, y: 0 }, { x: 2, y: 0 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }]);
+    expect(preview.rejected).toContainEqual({ x: 1, y: 0 });
+    expect(preview.allOrNothingBlocked).toBe(true);
+    // No mutation: vertex height unchanged.
+    expect(world.getTerrain().getVertexHeight(1, 0)).toBe(heightBefore);
+  });
+
+  it('previewDrag(ZONE_RESIDENTIAL) on a 2x2 rect with one water tile reports rejection without all-or-nothing block', () => {
+    const world = makeWorld(8);
+    // Sink one corner of tile (1,1) to SEA_LEVEL → tile (1,1) is water, (0,0)/(1,0)/(0,1) remain dry.
+    world.getTerrain().unsafeSetVertexHeight(2, 2, SEA_LEVEL);
+    const heightBefore = world.getTerrain().getVertexHeight(2, 2);
+    const preview = previewDrag(Tool.ZONE_RESIDENTIAL, { x: 0, y: 0 }, { x: 1, y: 1 }, world);
+    expect(preview.pathTiles.length).toBe(4);
+    expect(preview.rejected).toContainEqual({ x: 1, y: 1 });
+    expect(preview.allOrNothingBlocked).toBe(false);
+    expect(world.getTerrain().getVertexHeight(2, 2)).toBe(heightBefore);
   });
 
   it('returns empty changedTiles when player cannot afford the command cost', () => {

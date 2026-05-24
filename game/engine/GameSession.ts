@@ -286,19 +286,23 @@ export class GameSession {
         this.markIfChanged(executeDrag(tool, start, end, world));
       },
       onDragPreview: (start, end) => {
-        // Any tool with a drag path previews; previewDrag returns [] for
-        // tools without one, so no per-tool gate is needed here.
         const tool = this.toolManager.getCurrentTool();
         const selectionRenderer = pixiApp.getSelectionRenderer();
         if (end === null) {
           selectionRenderer?.clearDragPreview();
           return;
         }
-        const previewColor = DRAG_PREVIEW_COLORS[tool] ?? 0x4a4a4a;
-        selectionRenderer?.setDragPreview(
-          previewDrag(tool, start, end, world),
-          previewColor
+        const preview = previewDrag(tool, start, end, world);
+        const rejectedKeys = new Set(preview.rejected.map((t) => `${t.x},${t.y}`));
+        const standardTiles = preview.pathTiles.filter(
+          (t) => !rejectedKeys.has(`${t.x},${t.y}`)
         );
+        selectionRenderer?.setDragPreview({
+          standardTiles,
+          rejectedTiles: [...preview.rejected],
+          muted: preview.allOrNothingBlocked,
+          standardColor: DRAG_PREVIEW_COLORS[tool] ?? 0x4a4a4a,
+        });
       },
     });
     this.pointerHandler = pointerHandler;

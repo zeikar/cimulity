@@ -7,6 +7,19 @@ import { tileToScreenWithHeight, ISO_CONFIG, projectTileCornerScreen } from './I
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
 import type { CornerHeights } from './terrain/tileCornerHeights';
 
+const REJECT_COLOR = 0xff3b30;
+const MUTED_COLOR = 0x6a6a6a;
+const STANDARD_ALPHA = 0.4;
+const MUTED_ALPHA = 0.2;
+const REJECT_ALPHA = 0.5;
+
+export interface DragPreviewInput {
+  standardTiles: TileCoord[];
+  rejectedTiles: TileCoord[];
+  muted: boolean;
+  standardColor: number;
+}
+
 export class SelectionRenderer {
   private container: Container;
   private hoverGraphics: Graphics;
@@ -14,8 +27,12 @@ export class SelectionRenderer {
   private dragPreviewGraphics: Graphics;
   private currentHover: TileCoord | null = null;
   private currentSelected: TileCoord | null = null;
-  private currentDragPreview: TileCoord[] = [];
-  private dragPreviewColor = 0x4a4a4a;
+  private currentDragPreview: DragPreviewInput = {
+    standardTiles: [],
+    rejectedTiles: [],
+    muted: false,
+    standardColor: 0x4a4a4a,
+  };
   /** Latest height callback injected by refreshIfDirty. Null until first call — falls back to height=0. */
   private cachedGetHeight: ((x: number, y: number) => number) | null = null;
   /** Latest corner-heights callback injected by refreshIfDirty. Null until first call — falls back to flat-diamond outline. */
@@ -56,13 +73,13 @@ export class SelectionRenderer {
   }
 
   /**
-   * Update drag preview (show tiles that will be affected). The caller
-   * passes a tint so the preview reads as the acting tool — e.g. road
-   * gray vs. a destructive red for bulldoze.
+   * Update drag preview (show tiles that will be affected). The input
+   * partitions tiles into standard vs. rejected; muted=true means the
+   * whole batch will be rejected at commit (all-or-nothing tools), so
+   * the standard tiles render in a desaturated tint to telegraph that.
    */
-  setDragPreview(tiles: TileCoord[], color = 0x4a4a4a): void {
-    this.currentDragPreview = tiles;
-    this.dragPreviewColor = color;
+  setDragPreview(input: DragPreviewInput): void {
+    this.currentDragPreview = input;
     this.renderDragPreview();
   }
 
@@ -70,7 +87,12 @@ export class SelectionRenderer {
    * Clear drag preview
    */
   clearDragPreview(): void {
-    this.currentDragPreview = [];
+    this.currentDragPreview = {
+      standardTiles: [],
+      rejectedTiles: [],
+      muted: false,
+      standardColor: 0x4a4a4a,
+    };
     this.dragPreviewGraphics.clear();
   }
 
@@ -140,8 +162,16 @@ export class SelectionRenderer {
 
   private renderDragPreview(): void {
     this.dragPreviewGraphics.clear();
-    if (this.currentDragPreview.length === 0) return;
-    for (const tile of this.currentDragPreview) {
+    const { standardTiles, rejectedTiles, muted, standardColor } = this.currentDragPreview;
+    if (standardTiles.length === 0 && rejectedTiles.length === 0) return;
+    const stdColor = muted ? MUTED_COLOR : standardColor;
+    const stdAlpha = muted ? MUTED_ALPHA : STANDARD_ALPHA;
+    this.drawDragTiles(standardTiles, stdColor, stdAlpha);
+    this.drawDragTiles(rejectedTiles, REJECT_COLOR, REJECT_ALPHA);
+  }
+
+  private drawDragTiles(tiles: TileCoord[], color: number, alpha: number): void {
+    for (const tile of tiles) {
       const pts = this.cornerPointsFor(tile);
       this.dragPreviewGraphics.beginPath();
       this.dragPreviewGraphics.moveTo(pts[0].x, pts[0].y);
@@ -149,7 +179,7 @@ export class SelectionRenderer {
         this.dragPreviewGraphics.lineTo(pts[i].x, pts[i].y);
       }
       this.dragPreviewGraphics.closePath();
-      this.dragPreviewGraphics.fill({ color: this.dragPreviewColor, alpha: 0.4 });
+      this.dragPreviewGraphics.fill({ color, alpha });
     }
   }
 
