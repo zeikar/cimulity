@@ -244,14 +244,17 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   }
   if (candidateTerrain.getWidth() !== w || candidateTerrain.getHeight() !== h) return false;
 
-  // Coherence: water cells must be GRASS and uncovered; structured cells must be
-  // vertex-flat and above sea level.
+  // Coherence: water cells must be GRASS and uncovered; ROAD/zone cells must be
+  // coplanar (single plane) above sea level; building-footprint cells must additionally
+  // be strict-flat (mirrors World.tick spawn — building visuals are not tilted-ready).
   const footprintIndices = new Set<number>();
   for (const building of stagingBuildings) {
     for (const c of building.footprint) {
       footprintIndices.add(c.y * w + c.x);
     }
   }
+  const isWater = (cx: number, cy: number) =>
+    candidateTerrain.getTileMinCornerHeight(cx, cy) <= SEA_LEVEL;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
@@ -259,14 +262,12 @@ export function deserializeWorldInto(world: World, json: string): boolean {
         if (data.t[i] !== TileType.GRASS) return false;
         if (footprintIndices.has(i)) return false;
       }
-      if (
-        data.t[i] === TileType.ROAD ||
-        isZoneType(data.t[i]) ||
-        footprintIndices.has(i)
-      ) {
-        if (!candidateTerrain.isFlatTile(x, y, () => candidateTerrain.getTileMinCornerHeight(x, y) <= SEA_LEVEL)) {
-          return false;
-        }
+      const isRoadOrZone = data.t[i] === TileType.ROAD || isZoneType(data.t[i]);
+      if (isRoadOrZone && !candidateTerrain.isCoplanarTile(x, y, isWater)) {
+        return false;
+      }
+      if (footprintIndices.has(i) && !candidateTerrain.isFlatTile(x, y, isWater)) {
+        return false;
       }
     }
   }
