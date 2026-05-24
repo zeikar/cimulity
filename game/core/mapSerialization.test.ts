@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { World } from './World';
 import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
-import { SEA_LEVEL } from './Terrain';
 
 describe('v8 serialization', () => {
   it('WORLD_SAVE_VERSION is 8 and serializeWorld emits vertex-smooth terrain', () => {
@@ -76,7 +75,6 @@ describe('v8 serialization', () => {
     // that has a building footprint on it. The strict-flat predicate must reject this.
     const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
     const w = 4;
-    const h = 4;
 
     // Set N-S ramp vertices: (2,3)=2 and (3,3)=2 while (2,2) and (3,2) stay at 1.
     base.terrain.vertexHeights[3][2] = 2;
