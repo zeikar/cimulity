@@ -68,6 +68,54 @@ function classifyZoneTile(
   return 'emit';
 }
 
+export interface ToolPreview {
+  /**
+   * The caller-provided drag path tiles — copied verbatim from the `tiles`
+   * argument. The builder does NOT filter for in-bounds; that is the caller's
+   * responsibility. `previewDrag` in CommandDispatcher.ts performs in-bounds
+   * filtering BEFORE invoking this builder.
+   */
+  readonly pathTiles: TileCoord[];
+  /** Subset of pathTiles that classify as `reject` for the active tool. */
+  readonly rejected: TileCoord[];
+  /** True iff the tool is transactional (ROAD) AND `rejected.length > 0`. */
+  readonly allOrNothingBlocked: boolean;
+}
+
+export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): ToolPreview {
+  const pathTiles = [...tiles];
+  let rejected: TileCoord[];
+  let allOrNothingBlocked: boolean;
+
+  switch (tool) {
+    case Tool.ROAD: {
+      rejected = tiles.filter(({ x, y }) => classifyRoadTile(world, x, y) === 'reject');
+      allOrNothingBlocked = rejected.length > 0;
+      break;
+    }
+    case Tool.ZONE_RESIDENTIAL: {
+      rejected = tiles.filter(({ x, y }) => classifyZoneTile(world, x, y, TileType.ZONE_RESIDENTIAL) === 'reject');
+      allOrNothingBlocked = false;
+      break;
+    }
+    case Tool.ZONE_COMMERCIAL: {
+      rejected = tiles.filter(({ x, y }) => classifyZoneTile(world, x, y, TileType.ZONE_COMMERCIAL) === 'reject');
+      allOrNothingBlocked = false;
+      break;
+    }
+    case Tool.ZONE_INDUSTRIAL: {
+      rejected = tiles.filter(({ x, y }) => classifyZoneTile(world, x, y, TileType.ZONE_INDUSTRIAL) === 'reject');
+      allOrNothingBlocked = false;
+      break;
+    }
+    default:
+      rejected = [];
+      allOrNothingBlocked = false;
+  }
+
+  return { pathTiles, rejected, allOrNothingBlocked };
+}
+
 /**
  * Build the commands a tool would apply on a set of tiles
  * @returns the intended tile writes (empty if the tool changes nothing)
