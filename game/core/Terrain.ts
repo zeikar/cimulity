@@ -301,29 +301,6 @@ export class Terrain {
   }
 
   /**
-   * True iff every tile in the w×h footprint is coplanar (single plane), all
-   * corners above sea level, and the water predicate rejects no cell.
-   */
-  isCoplanarArea(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    isWater: (x: number, y: number) => boolean
-  ): boolean {
-    if (
-      !this.inBounds(x, y) ||
-      !this.inBounds(x + w - 1, y + h - 1)
-    ) return false;
-    for (let cy = y; cy < y + h; cy++) {
-      for (let cx = x; cx < x + w; cx++) {
-        if (!this.isCoplanarTile(cx, cy, isWater)) return false;
-      }
-    }
-    return true;
-  }
-
-  /**
    * True iff the rect is in-bounds, every vertex spanning the rect shares one
    * height above sea level, and the water predicate rejects no cell.
    */
@@ -354,7 +331,11 @@ export class Terrain {
     return true;
   }
 
-  /** True iff every tile in the w×h footprint is coplanar (single plane), all corners above sea level, and the water predicate rejects no cell. */
+  /**
+   * True iff the rect is buildable. 1×1 uses the coplanar predicate (single-plane player
+   * placement); larger footprints use the strict-flat predicate — multi-tile single-plane
+   * is not currently a contract this method honors.
+   */
   canBuildAt(
     x: number,
     y: number,
@@ -362,7 +343,8 @@ export class Terrain {
     h: number,
     isWater: (x: number, y: number) => boolean
   ): boolean {
-    return this.isCoplanarArea(x, y, w, h, isWater);
+    if (w === 1 && h === 1) return this.isCoplanarTile(x, y, isWater);
+    return this.isFlatArea(x, y, w, h, isWater);
   }
 
   /** True iff the tile is coplanar (single plane), all corners above sea level, and not water. */
