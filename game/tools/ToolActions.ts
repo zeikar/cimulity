@@ -70,6 +70,8 @@ export function buildToolCommands(
       return buildTerrainUpCommands(tiles, world);
     case Tool.TERRAIN_DOWN:
       return buildTerrainDownCommands(tiles, world);
+    case Tool.TERRAIN_LEVEL:
+      return buildTerrainLevelCommands(tiles, world, dragStart);
     default:
       return [];
   }
@@ -179,6 +181,54 @@ function buildTerrainUpCommands(tiles: TileCoord[], world: World): ToolCommand[]
 
 function buildTerrainDownCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   return buildTerrainVertexEditCommand(tiles, world, 'down');
+}
+
+function buildTerrainLevelCommands(
+  tiles: TileCoord[],
+  world: World,
+  dragStart: TileCoord
+): ToolCommand[] {
+  const terrain = world.getTerrain();
+  const map = world.getMap();
+
+  if (!map.getTile(dragStart.x, dragStart.y)) return [];
+
+  const c = terrain.getTileCornerHeights(dragStart.x, dragStart.y);
+  const target = Math.min(c.topH, c.rightH, c.bottomH, c.leftH);
+
+  const vertices = new Map<string, { vx: number; vy: number }>();
+  for (const { x, y } of tiles) {
+    const tile = map.getTile(x, y);
+    if (!tile) continue;
+    if (isStructuredCell(world, tile, x, y)) continue;
+    for (const [vx, vy] of tileVertices(x, y)) {
+      vertices.set(`${vx},${vy}`, { vx, vy });
+    }
+  }
+
+  const writes = [...vertices.values()]
+    .sort((a, b) => a.vy - b.vy || a.vx - b.vx)
+    .flatMap(({ vx, vy }) => {
+      const h = terrain.getVertexHeight(vx, vy);
+      if (h === target) return [];
+
+      // Search from target toward h so the closest-to-target legal value wins.
+      const step = target < h ? 1 : -1;
+      let h_new = h;
+      for (let v = target; v !== h; v += step) {
+        if (terrain.canPlayerSetVertexHeight(vx, vy, v)) {
+          h_new = v;
+          break;
+        }
+      }
+
+      if (h_new === h) return [];
+      if (wouldBreakStructuredTile(world, vx, vy, h_new)) return [];
+      return [{ vx, vy, height: h_new }];
+    });
+
+  if (writes.length === 0) return [];
+  return [{ kind: 'vertex-edit', direction: 'level', writes }];
 }
 
 function buildTerrainVertexEditCommand(
