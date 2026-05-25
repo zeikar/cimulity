@@ -174,6 +174,30 @@ describe('BuildingMap', () => {
       ).toBeNull();
     });
 
+    it('rejects when frontage is missing', () => {
+      const map = new BuildingMap(10, 10);
+      const result = map.addBuilding({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(makeBase() as any),
+        frontage: undefined,
+        footprint: [{ x: 0, y: 0 }],
+        anchor: { x: 0, y: 0 },
+      });
+      expect(result).toBeNull();
+    });
+
+    it('rejects when frontage is an invalid value', () => {
+      const map = new BuildingMap(10, 10);
+      const result = map.addBuilding({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(makeBase() as any),
+        frontage: 'X',
+        footprint: [{ x: 0, y: 0 }],
+        anchor: { x: 0, y: 0 },
+      });
+      expect(result).toBeNull();
+    });
+
     it('rejects an anchor not in the footprint', () => {
       const map = new BuildingMap(10, 10);
       const result = map.addBuilding({
@@ -283,6 +307,34 @@ describe('BuildingMap', () => {
         map.addExistingBuilding({
           ...makeBase(),
           id: -1,
+          footprint: [{ x: 0, y: 0 }],
+          anchor: { x: 0, y: 0 },
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects when frontage is missing', () => {
+      const map = new BuildingMap(10, 10);
+      expect(
+        map.addExistingBuilding({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...(makeBase() as any),
+          frontage: undefined,
+          id: 1,
+          footprint: [{ x: 0, y: 0 }],
+          anchor: { x: 0, y: 0 },
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects when frontage is an invalid value', () => {
+      const map = new BuildingMap(10, 10);
+      expect(
+        map.addExistingBuilding({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...(makeBase() as any),
+          frontage: 'X',
+          id: 1,
           footprint: [{ x: 0, y: 0 }],
           anchor: { x: 0, y: 0 },
         }),

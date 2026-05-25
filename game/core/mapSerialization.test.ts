@@ -105,6 +105,7 @@ describe('v9 serialization', () => {
       lvl: 1,
       den: 0,
       age: 0,
+      f: 'S',
     }];
 
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -143,6 +144,7 @@ describe('v9 serialization', () => {
       lvl: 1,
       den: 0,
       age: 0,
+      f: 'S',
     }];
 
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -163,6 +165,7 @@ describe('v9 serialization', () => {
       lvl: 1,
       den: 0,
       age: 0,
+      f: 'S',
     }];
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -180,6 +183,7 @@ describe('v9 serialization', () => {
       lvl: 1,
       den: 0,
       age: 0,
+      f: 'S',
     }];
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -200,6 +204,7 @@ describe('v9 serialization', () => {
       lvl: 1,
       den: 0,
       age: 0,
+      f: 'S',
     }];
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -226,6 +231,7 @@ describe('v9 serialization', () => {
       lvl: 1,
       den: 0,
       age: 0,
+      f: 'S',
     }];
 
     const target = new World(4, 4, { regenerate: false });

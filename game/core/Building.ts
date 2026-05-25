@@ -1,5 +1,5 @@
 import { TileType } from './Tile';
-import { isCanonicalFootprintRect } from './buildingFootprint';
+import { isCanonicalFootprintRect, isFrontage } from './buildingFootprint';
 import type { Frontage } from './buildingFootprint';
 
 export type BuildingType = 'residential' | 'commercial' | 'industrial';
@@ -93,6 +93,7 @@ export class BuildingMap {
   }
 
   addBuilding(b: Omit<Building, 'id'>): Building | null {
+    if (!isFrontage(b.frontage)) return null;
     if (!this.validateFootprint(b.footprint, b.anchor)) return null;
     if (this.hasOverlap(b.footprint)) return null;
 
@@ -113,6 +114,7 @@ export class BuildingMap {
     ) {
       return false;
     }
+    if (!isFrontage(b.frontage)) return false;
     if (this.buildings.has(b.id)) return false;
     if (!this.validateFootprint(b.footprint, b.anchor)) return false;
     if (this.hasOverlap(b.footprint)) return false;

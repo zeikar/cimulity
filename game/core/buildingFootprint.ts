@@ -1,5 +1,9 @@
 export type Frontage = 'N' | 'S' | 'E' | 'W';
 
+export function isFrontage(v: unknown): v is Frontage {
+  return v === 'N' || v === 'S' || v === 'E' || v === 'W';
+}
+
 export type Rect = { x: number; y: number; w: number; h: number };
 
 /** Full WxH rect, anchor at NW corner, W,H ∈ {1..4}, no holes/dupes/extras. */
