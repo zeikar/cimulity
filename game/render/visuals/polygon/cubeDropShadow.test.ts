@@ -176,6 +176,68 @@ describe('cubeDropShadow', () => {
     expect(out[3].y).toBeCloseTo(0 + oy, 6);
   });
 
+  // --- Multi-cell (W×H) coverage ---
+
+  it('4×2 commercial L=5 D=2: shadow has 4 vertices, each vertex numerically pinned', () => {
+    // Build a 4×2 footprint with anchor at (0,0).
+    const fp: { x: number; y: number }[] = [];
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 4; x++) fp.push({ x, y });
+    const anchor = { x: 0, y: 0 };
+    const faces = cubeFacePolygons('commercial', 5, 2, fp, anchor)!;
+    const out = cubeShadowPolygon(faces);
+
+    expect(out.length).toBe(4);
+
+    // Pinned values derived by running cubeFacePolygons + cubeShadowPolygon once
+    // and recording the output (see task derivation script).
+    expect(out[0].x).toBeCloseTo(32.32, 6);
+    expect(out[0].y).toBeCloseTo(23.84, 6);
+    expect(out[1].x).toBeCloseTo(129.6, 6);
+    expect(out[1].y).toBeCloseTo(72.48, 6);
+    expect(out[2].x).toBeCloseTo(80.96, 6);
+    expect(out[2].y).toBeCloseTo(96.8, 6);
+    expect(out[3].x).toBeCloseTo(-16.32, 6);
+    expect(out[3].y).toBeCloseTo(48.16, 6);
+  });
+
+  it('4×1 vs 1×4 commercial L=3 D=1: shadows are different polygons (asymmetric silhouette)', () => {
+    const anchor = { x: 0, y: 0 };
+
+    const fp4x1: { x: number; y: number }[] = [];
+    for (let x = 0; x < 4; x++) fp4x1.push({ x, y: 0 });
+    const faces4x1 = cubeFacePolygons('commercial', 3, 1, fp4x1, anchor)!;
+    const shadow4x1 = cubeShadowPolygon(faces4x1);
+
+    const fp1x4: { x: number; y: number }[] = [];
+    for (let y = 0; y < 4; y++) fp1x4.push({ x: 0, y });
+    const faces1x4 = cubeFacePolygons('commercial', 3, 1, fp1x4, anchor)!;
+    const shadow1x4 = cubeShadowPolygon(faces1x4);
+
+    // The two shadows must differ — 4×1 and 1×4 have different parallelogram shapes.
+    const same = shadow4x1.every(
+      (v, i) => Math.abs(v.x - shadow1x4[i].x) < 1e-9 && Math.abs(v.y - shadow1x4[i].y) < 1e-9,
+    );
+    expect(same).toBe(false);
+  });
+
+  it('1×1 commercial L=3 D=1 regression: shadow vertices match expected single-cube values', () => {
+    const anchor = { x: 0, y: 0 };
+    const faces = cubeFacePolygons('commercial', 3, 1, [{ x: 0, y: 0 }], anchor)!;
+    const out = cubeShadowPolygon(faces);
+
+    expect(out.length).toBe(4);
+
+    // Pinned single-cube expected values — must not regress when multi-cell path changes.
+    expect(out[0].x).toBeCloseTo(17.16, 6);
+    expect(out[0].y).toBeCloseTo(12.42, 6);
+    expect(out[1].x).toBeCloseTo(41.48, 6);
+    expect(out[1].y).toBeCloseTo(24.58, 6);
+    expect(out[2].x).toBeCloseTo(17.16, 6);
+    expect(out[2].y).toBeCloseTo(36.74, 6);
+    expect(out[3].x).toBeCloseTo(-7.16, 6);
+    expect(out[3].y).toBeCloseTo(24.58, 6);
+  });
+
   // SHADOW_Z_OFFSET invariant: shadow Graphics draw before all face Graphics in the building layer.
   // The building layer uses sortableChildren=true; shadows get SHADOW_Z_OFFSET + computeZIndex,
   // faces get computeZIndex alone — so every shadow zIndex is strictly less than every face zIndex.
