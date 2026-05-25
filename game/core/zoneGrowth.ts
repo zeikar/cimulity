@@ -9,8 +9,8 @@ export type SpawnSize = { w: number; h: number };
 export type SpawnFootprint = { rect: Rect; frontage: Frontage };
 
 export function spawnSeed(x: number, y: number, tickCount: number): number {
-  const mixed = ((y * 73856093) ^ (x * 19349663) ^ (tickCount * 83492791)) >>> 0;
-  return ((mixed ^ (mixed >>> 16)) * 2654435761) >>> 0;
+  const mixed = (Math.imul(y, 73856093) ^ Math.imul(x, 19349663) ^ Math.imul(tickCount, 83492791)) >>> 0;
+  return Math.imul(mixed ^ (mixed >>> 16), 2654435761) >>> 0;
 }
 
 export function weightsForDemand(d: number): readonly [number, number, number, number] {

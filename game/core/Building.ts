@@ -123,6 +123,7 @@ export class BuildingMap {
       this.tileOwner[c.y * this.width + c.x] = b.id;
     }
     this.buildings.set(b.id, b);
+    this.nextId = Math.max(this.nextId, b.id + 1);
     return true;
   }
 
