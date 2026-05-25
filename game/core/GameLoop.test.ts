@@ -356,7 +356,6 @@ describe('GameLoop', () => {
 
   // (w) catch-up ≥2 ticks including a density bump: aggregated changedTiles + changedBuildingIds
   it('(w) catch-up drain with density bump: aggregated changedTiles contains footprint coord and changedBuildingIds contains building id', () => {
-    // Use a larger world with diversified zones so land value >= HIGH_DENSITY_THRESHOLD.
     const bigWorld = new World(6, 6, { regenerate: false });
     const bigMap = bigWorld.getMap();
     bigMap.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -364,11 +363,9 @@ describe('GameLoop', () => {
     bigMap.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     bigMap.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
 
-    // Import needed constants inline to avoid polluting test scope
     // DENSITY_COOLDOWN_INTERVALS=24, ZONE_GROWTH_INTERVAL=8.
     // Seed a ZONE_MAX_LEVEL building with age DENSITY_COOLDOWN_INTERVALS-1
     // so that the NEXT growth tick bumps density (age → 24 >= 24).
-    // id=0 (first building), stagger(0)=0.
     const b = bigMap.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
@@ -378,12 +375,30 @@ describe('GameLoop', () => {
       age: 23, // DENSITY_COOLDOWN_INTERVALS - 1
       frontage: 'S',
     })!;
+    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    bigMap.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    bigMap.getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    bigWorld.markDemandDirty();
 
-    // Advance the world to just before the next growth tick
-    // so that one more growth tick fires during catch-up.
+    // Advance the world to just before the next growth tick.
     // Current tick is 0; next growth tick = ZONE_GROWTH_INTERVAL (8).
     // Pre-advance to 7 ticks so the next tick is 8 (a growth tick).
-    // Land value is recomputed at tick 16 or when dirty; we force a dirty mark.
     bigWorld.markLandValueDirty();
     for (let i = 0; i < 7; i++) bigWorld.tick();
 

@@ -13,6 +13,7 @@ import {
   stagger,
   DEFAULT_NEWCITY_SEED,
 } from './World';
+import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { Terrain, MIN_LAND_ELEVATION, SEA_LEVEL } from './Terrain';
 
@@ -916,8 +917,7 @@ describe('World.tick() — density tier', () => {
     expect(b2.density).toBe(0);
   });
 
-  it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + landValue >= HIGH_DENSITY_THRESHOLD', () => {
-    // Use diversified map to ensure HIGH_DENSITY_THRESHOLD is met
+  it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + demand[type] >= DENSITY_DEMAND_THRESHOLD', () => {
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -926,7 +926,6 @@ describe('World.tick() — density tier', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
 
     // Seed building at ZONE_MAX_LEVEL with age just under DENSITY_COOLDOWN_INTERVALS.
-    // id=0 (first building), so stagger(0)=0, cooldown=DENSITY_COOLDOWN_INTERVALS.
     map.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
@@ -936,10 +935,27 @@ describe('World.tick() — density tier', () => {
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'S',
     });
+    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    map.getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    world.markDemandDirty();
 
-    // The first growth tick: age → DENSITY_COOLDOWN_INTERVALS; but land value may be 0
-    // until recomputed. Land value recomputes at LAND_VALUE_INTERVAL cadence.
-    // Run enough ticks so land value is recomputed (<=16 ticks) AND age >= DENSITY_COOLDOWN_INTERVALS.
     let densityBumpResult: ReturnType<typeof world.tick> | null = null;
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
       const result = world.tick();
@@ -972,6 +988,26 @@ describe('World.tick() — density tier', () => {
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'S',
     })!;
+    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    map.getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    world.markDemandDirty();
 
     let densityTickResult: ReturnType<typeof world.tick> | null = null;
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
@@ -1605,6 +1641,26 @@ describe('World.tick() — Branch B road-access gate', () => {
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'E',
     });
+    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    map.getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    world.markDemandDirty();
     world.markLandValueDirty();
     // Run enough ticks so density fires (positive control).
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
@@ -1659,5 +1715,123 @@ describe('World.tick() — Branch B road-access gate', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
     expect(map.getBuildings().getBuildingAt(0, 0)!.age).toBe(2);
+  });
+});
+
+describe('World.tick() — density gating (demand-driven)', () => {
+  it('Fixture A: no C/I buildings → residential demand < threshold → density stays 0', () => {
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS + 1,
+      frontage: 'S',
+    });
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    expect(b.density).toBe(0);
+  });
+
+  it('Fixture B: sufficient C/I level-points → residentialDemand >= threshold → density bumps to 1', () => {
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS,
+      frontage: 'S',
+    });
+    // C+I level-points = 8 → jobsLevels=8, levelSumR=5 → residential=(8-5)/8+0.25=0.625 >= 0.6
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    map.getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+    world.markDemandDirty();
+
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    expect(b.density).toBe(1);
+  });
+
+  it("Fixture B': post-tick getDemand() reflects level-up totals vs control world that did not tick", () => {
+    // World with a low-level R building near road, no C/I — tick until it levels up.
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS + 10,
+      frontage: 'S',
+    });
+    world.markLandValueDirty();
+
+    // Control world: same setup, no ticks.
+    const control = new World(4, 4, { regenerate: false });
+    const controlMap = control.getMap();
+    controlMap.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    controlMap.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    controlMap.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS + 10,
+      frontage: 'S',
+    });
+
+    // Tick until level-up occurs at least once.
+    let levelled = false;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 20; i++) {
+      world.tick();
+      const b = map.getBuildings().getBuildingAt(0, 0)!;
+      if (b.level > 0) { levelled = true; break; }
+    }
+    expect(levelled).toBe(true);
+
+    // Post-tick demand must differ from the control (which never ticked).
+    const postTickDemand = world.getDemand();
+    const controlDemand = control.getDemand();
+    // After level-up, residentialLevels increased → residential demand shifts.
+    expect(postTickDemand.residential).not.toBe(controlDemand.residential);
   });
 });

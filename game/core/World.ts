@@ -7,6 +7,8 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
+import { Demand, DENSITY_DEMAND_THRESHOLD } from './Demand';
+import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
 import {
@@ -38,8 +40,6 @@ export const ZONE_MAX_LEVEL = 5;
  * level (i-1) to level i.
  */
 export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
-/** Land-value threshold required to advance density (0→1 or 1→2). */
-export const HIGH_DENSITY_THRESHOLD = 0.7;
 /**
  * Minimum growth-opportunity count (age) before a building may level up.
  * Unit: growth opportunities (Branch B increments). Stagger adds 0–6 on top.
@@ -119,6 +119,8 @@ export class World {
   private landValue: LandValueMap | null = null;
   /** True when the influence map inputs have changed since last recompute. */
   private landValueDirty: boolean = false;
+  private demand: Demand | null = null;
+  private demandDirty: boolean = true;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -288,6 +290,21 @@ export class World {
     this.landValueDirty = true;
   }
 
+  markDemandDirty(): void {
+    this.demandDirty = true;
+  }
+
+  getDemand(): DemandVector {
+    if (this.demand === null) {
+      this.demand = new Demand();
+    }
+    if (this.demandDirty) {
+      this.demand.recompute(this.map.getBuildings());
+      this.demandDirty = false;
+    }
+    return this.demand.get();
+  }
+
   /** Count DIRT tiles currently on the map. */
   countDirt(): number {
     let count = 0;
@@ -322,6 +339,7 @@ export class World {
     const regenerate = opts?.regenerate ?? true;
     const seed = opts?.seed ?? terrainGenerator.DEFAULT_NEWCITY_SEED;
 
+    this.demandDirty = true;
     this.map.reset();
     this.tickCount = 0;
     this.day = 0;
@@ -415,6 +433,9 @@ export class World {
       const mapW = this.map.getWidth();
       const mapH = this.map.getHeight();
 
+      this.markDemandDirty();
+      const demandVec = this.getDemand();
+
       for (const tile of this.map.iterateTiles()) {
         if (!isZoneType(tile.type)) continue;
         const { x, y } = tile;
@@ -483,7 +504,7 @@ export class World {
         } else {
           // Density-bump branch: building is at max level; advance density tier.
           if (
-            anchorLandValue >= HIGH_DENSITY_THRESHOLD &&
+            demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
             existing.density < 2
           ) {
@@ -496,6 +517,8 @@ export class World {
           }
         }
       }
+
+      if (changedBuildingIds.length > 0) this.markDemandDirty();
     }
 
     return { changedTiles, changed: changedTiles.length, changedBuildingIds };

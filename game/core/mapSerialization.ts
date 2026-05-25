@@ -314,6 +314,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
 
   // Land value is not persisted — mark dirty so the first tick after load recomputes.
   world.markLandValueDirty();
+  world.markDemandDirty();
 
   return true;
 }

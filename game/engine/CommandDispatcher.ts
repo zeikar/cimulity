@@ -151,6 +151,9 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   if (landValueInvalidated) {
     world.markLandValueDirty();
   }
+  if (removedBuildingIds.length > 0) {
+    world.markDemandDirty();
+  }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }
 

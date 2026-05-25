@@ -153,6 +153,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         }
 
         pixiApp.getTileRenderer()?.markDirty();
+        world.markDemandDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

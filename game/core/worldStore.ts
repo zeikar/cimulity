@@ -29,7 +29,7 @@ const STORAGE_KEY = 'cimulity:save:v9';
 // Bump this string whenever the stash format changes (e.g. a new required API
 // is added). An HMR singleton carrying a mismatched guard is discarded and
 // rebuilt even if hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'vertex-smooth-frontage-v1' as const;
+const WORLD_SINGLETON_GUARD = 'vertex-smooth-frontage-demand-v1' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -63,7 +63,8 @@ function readSave(): string | null {
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
- *          isWater, canBuildAt, canBuildRoadAt, regenerateTerrain
+ *          isWater, canBuildAt, canBuildRoadAt, regenerateTerrain,
+ *          getDemand, markDemandDirty
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
  *                addBuilding, addExistingBuilding, removeBuilding, setNextIdFloor, clear
@@ -127,6 +128,10 @@ function hasCurrentWorldApi(world: World): boolean {
   }
   // Procedural terrain API (added in Task 7): full regeneration entry-point.
   if (typeof world.regenerateTerrain !== 'function') {
+    return false;
+  }
+  // Demand API (added in Task 2): demand snapshot + dirty-mark.
+  if (typeof world.getDemand !== 'function' || typeof world.markDemandDirty !== 'function') {
     return false;
   }
   return true;
