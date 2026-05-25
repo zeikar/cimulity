@@ -7,6 +7,7 @@
 
 import type { TileCoord } from '@/game/types/coordinates';
 import type { WorldDate } from '@/game/core/World';
+import type { DemandVector } from '@/game/core/Demand';
 import { Tool } from '@/game/tools';
 
 const TOOL_LABELS: Record<Tool, string> = {
@@ -32,9 +33,19 @@ export interface GameHUDProps {
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
+  demand: DemandVector;
   currentTool?: Tool;
   speedMultiplier: 1 | 2 | 3;
   paused: boolean;
+}
+
+function BarBlocks({ value, color }: { value: number; color: string }) {
+  const filled = Math.round(value * 10);
+  return (
+    <span style={{ color }}>
+      {'█'.repeat(filled)}{'░'.repeat(10 - filled)}
+    </span>
+  );
 }
 
 export function GameHUD({
@@ -43,6 +54,7 @@ export function GameHUD({
   tick,
   dirt,
   population,
+  demand,
   money,
   date,
   cameraX,
@@ -88,6 +100,15 @@ export function GameHUD({
       </div>
       <div>
         <strong>Population:</strong> {population}
+      </div>
+      <div>
+        <strong>R:</strong> <BarBlocks value={demand.residential} color="#4caf50" /> {demand.residential.toFixed(2)}
+      </div>
+      <div>
+        <strong>C:</strong> <BarBlocks value={demand.commercial} color="#2196f3" /> {demand.commercial.toFixed(2)}
+      </div>
+      <div>
+        <strong>I:</strong> <BarBlocks value={demand.industrial} color="#ffeb3b" /> {demand.industrial.toFixed(2)}
       </div>
       <div>
         <strong>Money:</strong> {money}

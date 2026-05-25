@@ -12,6 +12,7 @@ import { Toolbar } from './components/Toolbar';
 import { Tool } from '@/game/tools';
 import { STARTING_FUNDS } from '@/game/core/World';
 import type { WorldDate } from '@/game/core/World';
+import type { DemandVector } from '@/game/core/Demand';
 import type { TileCoord } from '@/game/types/coordinates';
 
 export default function Home() {
@@ -19,7 +20,7 @@ export default function Home() {
   const [selectedTile, setSelectedTile] = useState<TileCoord | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
-  const [sim, setSim] = useState({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS, date: { year: 1, month: 1, day: 1 } });
+  const [sim, setSim] = useState({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS, date: { year: 1, month: 1, day: 1 }, demand: { residential: 0.25, commercial: 0.25, industrial: 0.25 } });
   const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
   const [resetNonce, setResetNonce] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3>(1);
@@ -42,8 +43,8 @@ export default function Home() {
     setCamera({ x, y, zoom });
   }, []);
 
-  const handleSimUpdate = useCallback((tick: number, dirt: number, population: number, money: number, date: WorldDate) => {
-    setSim({ tick, dirt, population, money, date });
+  const handleSimUpdate = useCallback((tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector) => {
+    setSim({ tick, dirt, population, money, date, demand });
   }, []);
 
   const handleSpeedSync = useCallback((m: 1 | 2 | 3) => setSpeedMultiplier(m), []);
@@ -134,6 +135,7 @@ export default function Home() {
         population={sim.population}
         money={sim.money}
         date={sim.date}
+        demand={sim.demand}
         currentTool={currentTool}
         speedMultiplier={speedMultiplier}
         paused={paused}
