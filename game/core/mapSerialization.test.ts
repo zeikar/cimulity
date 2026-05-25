@@ -107,9 +107,11 @@ describe('v8 serialization', () => {
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('accepts a disconnected 2-cell footprint when both cells share the same renderHeight', () => {
-    // Same disconnected footprint: cells (0,0) and (5,5), but both flat at height 2.
-    // This is the pre-Task-4 baseline; shape validation is not yet enforced.
+  it('rejects a disconnected 2-cell footprint even when both cells share the same renderHeight (Task-4 shape check)', () => {
+    // Pre-Task-4 this passed the same-height check and was accepted.
+    // Task 4 adds isCanonicalFootprintRect which rejects non-rectangular footprints
+    // regardless of height equality. Documenting the layering: same-height guards one
+    // class; canonical-rect closes off the rest.
     const base = JSON.parse(serializeWorld(new World(10, 10, { regenerate: false })));
     const w = 10;
 
@@ -129,7 +131,7 @@ describe('v8 serialization', () => {
     base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
     base.t[5 * w + 5] = TileType.ZONE_RESIDENTIAL;
 
-    // Add a residential building with a disconnected 2-cell footprint.
+    // Disconnected footprint: not a canonical rectangle → rejected by isCanonicalFootprintRect.
     base.b = [{
       id: 0,
       type: 'residential',
@@ -140,10 +142,63 @@ describe('v8 serialization', () => {
       age: 0,
     }];
 
-    const target = new World(10, 10, { regenerate: false });
-    expect(deserializeWorldInto(target, JSON.stringify(base))).toBe(true);
-    expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
-    expect(target.getMap().getTile(5, 5)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a save containing an L-shape footprint', () => {
+    const base = JSON.parse(serializeWorld(new World(10, 10, { regenerate: false })));
+    const w = 10;
+    // L-shape: (0,0),(1,0),(0,1) — 3 cells, 2×2 bounding box, missing (1,1).
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[0 * w + 1] = TileType.ZONE_RESIDENTIAL;
+    base.t[1 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [1, 0], [0, 1]],
+      anc: [0, 0],
+      lvl: 1,
+      den: 0,
+      age: 0,
+    }];
+    expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a save with a 5×1 footprint (W > 4)', () => {
+    const base = JSON.parse(serializeWorld(new World(10, 10, { regenerate: false })));
+    const w = 10;
+    // 5 cells in a row starting at (0,0).
+    for (let x = 0; x < 5; x++) base.t[0 * w + x] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]],
+      anc: [0, 0],
+      lvl: 1,
+      den: 0,
+      age: 0,
+    }];
+    expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a save where anchor is the SE corner (not NW)', () => {
+    const base = JSON.parse(serializeWorld(new World(10, 10, { regenerate: false })));
+    const w = 10;
+    // 2×2 rectangle with anchor at SE corner (1,1) instead of NW (0,0).
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[0 * w + 1] = TileType.ZONE_RESIDENTIAL;
+    base.t[1 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[1 * w + 1] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [1, 0], [0, 1], [1, 1]],
+      anc: [1, 1],
+      lvl: 1,
+      den: 0,
+      age: 0,
+    }];
+    expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
   it('rejects a save where a building footprint lands on a coplanar non-flat tile', () => {

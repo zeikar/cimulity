@@ -13,6 +13,7 @@ import { TileType, createTile, isZoneType } from './Tile';
 import { ZONE_MAX_LEVEL } from './World';
 import type { World } from './World';
 import { isBuildingType, tileTypeFromBuildingType } from './Building';
+import { isCanonicalFootprintRect } from './buildingFootprint';
 import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
 
@@ -143,6 +144,9 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
     if (!Number.isInteger(ax) || !Number.isInteger(ay)) return null;
     const ancInFootprint = footprint.some((c) => c.x === ax && c.y === ay);
     if (!ancInFootprint) return null;
+
+    // Footprint must be a canonical NW-anchored rectangle, W and H in {1..4}.
+    if (!isCanonicalFootprintRect(footprint, { x: ax, y: ay })) return null;
 
     const expectedTileType = tileTypeFromBuildingType(e.type);
     for (const c of footprint) {

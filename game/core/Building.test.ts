@@ -182,6 +182,62 @@ describe('BuildingMap', () => {
       });
       expect(result).toBeNull();
     });
+
+    it('rejects an L-shape footprint', () => {
+      const map = new BuildingMap(10, 10);
+      // 3-cell L: (0,0),(1,0),(0,1) — 2×2 bounding box but missing (1,1).
+      expect(
+        map.addBuilding({
+          ...makeBase(),
+          footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }],
+          anchor: { x: 0, y: 0 },
+        }),
+      ).toBeNull();
+    });
+
+    it('rejects a 5×1 footprint (W out of range)', () => {
+      const map = new BuildingMap(10, 10);
+      expect(
+        map.addBuilding({
+          ...makeBase(),
+          footprint: [
+            { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+            { x: 3, y: 0 }, { x: 4, y: 0 },
+          ],
+          anchor: { x: 0, y: 0 },
+        }),
+      ).toBeNull();
+    });
+
+    it('rejects a footprint whose anchor is the SE corner', () => {
+      const map = new BuildingMap(10, 10);
+      // Full 2×2 rectangle but anchor at (1,1) instead of NW (0,0).
+      expect(
+        map.addBuilding({
+          ...makeBase(),
+          footprint: [
+            { x: 0, y: 0 }, { x: 1, y: 0 },
+            { x: 0, y: 1 }, { x: 1, y: 1 },
+          ],
+          anchor: { x: 1, y: 1 },
+        }),
+      ).toBeNull();
+    });
+
+    it('accepts a 2×2 full rectangle with NW anchor', () => {
+      const map = new BuildingMap(10, 10);
+      const result = map.addBuilding({
+        ...makeBase(),
+        footprint: [
+          { x: 2, y: 2 }, { x: 3, y: 2 },
+          { x: 2, y: 3 }, { x: 3, y: 3 },
+        ],
+        anchor: { x: 2, y: 2 },
+      });
+      expect(result).not.toBeNull();
+      expect(map.getBuildingAt(2, 2)).toBe(result);
+      expect(map.getBuildingAt(3, 3)).toBe(result);
+    });
   });
 
   describe('addExistingBuilding', () => {

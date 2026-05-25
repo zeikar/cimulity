@@ -1,4 +1,5 @@
 import { TileType } from './Tile';
+import { isCanonicalFootprintRect } from './buildingFootprint';
 
 export type BuildingType = 'residential' | 'commercial' | 'industrial';
 
@@ -75,6 +76,9 @@ export class BuildingMap {
       (c) => c.x === anchor.x && c.y === anchor.y,
     );
     if (!anchorInFootprint) return false;
+
+    // Footprint must be a canonical NW-anchored rectangle, W and H in {1..4}.
+    if (!isCanonicalFootprintRect(footprint, anchor)) return false;
 
     return true;
   }
