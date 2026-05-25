@@ -16,6 +16,8 @@ import {
 import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { Terrain, MIN_LAND_ELEVATION, SEA_LEVEL } from './Terrain';
+import { executeClick } from '../engine/CommandDispatcher';
+import { Tool } from '../tools/Tool';
 
 function setTileCorners(world: World, x: number, y: number, h: number): void {
   const terrain = world.getTerrain();
@@ -1818,6 +1820,134 @@ describe('World.tick() — spawn size (demand-driven)', () => {
     }
 
     expect(snapshot(worldA, preSeededIdsA)).toEqual(snapshot(worldB, preSeededIdsB));
+  });
+});
+
+describe('World.tick() — T3 spawn-size determinism', () => {
+  it('two identically seeded worlds produce identical post-id-2 buildings after ticking', () => {
+    function buildWorld(): World {
+      const world = new World(8, 8, { regenerate: false });
+      const map = world.getMap();
+      for (let x = 0; x < 8; x++) {
+        map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
+      }
+      for (let y = 2; y <= 3; y++) {
+        for (let x = 1; x <= 6; x++) {
+          map.setTile(x, y, createTile(x, y, TileType.ZONE_RESIDENTIAL));
+        }
+      }
+      map.setTile(6, 0, createTile(6, 0, TileType.ZONE_INDUSTRIAL));
+      map.setTile(7, 0, createTile(7, 0, TileType.ZONE_INDUSTRIAL));
+      map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 6, y: 0 }], anchor: { x: 6, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S' });
+      map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 7, y: 0 }], anchor: { x: 7, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S' });
+      world.markDemandDirty();
+      return world;
+    }
+
+    const worldA = buildWorld();
+    const worldB = buildWorld();
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) {
+      worldA.tick();
+      worldB.tick();
+    }
+
+    function snapshot(w: World) {
+      return Array.from(w.getMap().getBuildings().iterBuildings())
+        .filter(b => b.id >= 2)
+        .map(b => ({ ax: b.anchor.x, ay: b.anchor.y, len: b.footprint.length }))
+        .sort((a, b) => a.ay - b.ay || a.ax - b.ax);
+    }
+
+    const snapA = snapshot(worldA);
+    const snapB = snapshot(worldB);
+    expect(snapA).toEqual(snapB);
+
+    const hasMultiTile = snapA.some(b => b.len >= 2);
+    expect(hasMultiTile).toBe(true);
+  });
+});
+
+describe('World.tick() — T3 density-bump E2E', () => {
+  it('max-level R with demand satisfied bumps density to 1 after one growth interval', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    for (let x = 0; x < 8; x++) {
+      map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
+    }
+    map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 3, createTile(2, 3, TileType.ZONE_COMMERCIAL));
+    map.setTile(4, 3, createTile(4, 3, TileType.ZONE_INDUSTRIAL));
+    map.setTile(5, 3, createTile(5, 3, TileType.ZONE_INDUSTRIAL));
+
+    map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 },
+      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, frontage: 'S',
+    });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 4, y: 3 }], anchor: { x: 4, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 5, y: 3 }], anchor: { x: 5, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S' });
+
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(3, 3);
+    expect(b).not.toBeNull();
+    expect(b!.density).toBe(1);
+  });
+});
+
+describe('World.getDemand() — freshness', () => {
+  it('reset({ regenerate: false }) drops demand back to baseline 0.25', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+
+    world.reset({ regenerate: false });
+
+    expect(world.getDemand().residential).toBe(0.25);
+  });
+
+  it('reset({ regenerate: true }) drops demand back to baseline 0.25', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+
+    world.reset({ regenerate: true });
+
+    expect(world.getDemand().residential).toBe(0.25);
+  });
+
+  it('CommandDispatcher bulldoze of a non-zero-level R building refreshes demand', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, frontage: 'S' });
+
+    world.markDemandDirty();
+    const demandBefore = world.getDemand().industrial;
+    expect(demandBefore).toBeGreaterThan(0.25);
+
+    const result = executeClick(Tool.BULLDOZE, { x: 3, y: 3 }, world);
+    expect(result.removedBuildingIds).toContain(0);
+
+    expect(world.getDemand().industrial).toBe(0.25);
   });
 });
 

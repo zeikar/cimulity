@@ -341,6 +341,30 @@ describe('v9 frontage round-trip', () => {
   });
 });
 
+describe('demand freshness on hydrate', () => {
+  it('getDemand() reflects hydrated buildings immediately after deserializeWorldInto', () => {
+    const src = new World(8, 8, { regenerate: false });
+    const map = src.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(4, 1, createTile(4, 1, TileType.ZONE_INDUSTRIAL));
+    src.getMap().getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    src.getMap().getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    src.getMap().getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    src.getMap().getBuildings().addExistingBuilding({ id: 3, type: 'industrial', footprint: [{ x: 4, y: 1 }], anchor: { x: 4, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    src.markDemandDirty();
+    expect(src.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+
+    const savedJSON = serializeWorld(src);
+
+    const dst = new World(8, 8, { regenerate: false });
+    expect(deserializeWorldInto(dst, savedJSON)).toBe(true);
+
+    expect(dst.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+  });
+});
+
 describe('end-to-end integration: spawn → save → load', () => {
   it('organic spawn round-trip: 1×1 building gets frontage W and survives serialize/deserialize', () => {
     // World: ROAD at (1,2), ZONE_RESIDENTIAL at (2,2). Road is west of zone → frontage W.
