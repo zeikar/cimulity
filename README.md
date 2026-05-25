@@ -4,25 +4,17 @@
 
 **Open-source minimal city simulation game in the browser.**
 
-A SimCity-style city building simulation game built with Next.js, TypeScript, and PixiJS. Features an isometric grid-based world with camera controls, tile interactions, and a clean architectural separation between game logic, rendering, and UI.
+Cimulity is a SimCity-style city builder built with Next.js, TypeScript, and PixiJS. It focuses on a small, readable simulation core: isometric terrain, roads, zoning, basic growth/economy, and terrain editing.
 
-## Current Status: MVP-1 (in progress)
+## Project Status
 
-Implemented so far:
-- ✅ 64x64 isometric diamond grid rendering
-- ✅ Camera controls (edge-pan by moving cursor to screen edge, mouse wheel zoom around cursor)
-- ✅ Tile interaction (hover highlight, click selection)
-- ✅ HUD overlay (FPS counter, tick counter, selected tile coordinates, camera position)
-- ✅ UI toolbar for tool selection
-- ✅ Road painting tool (click or click-drag)
-- ✅ R/C/I zoning (click or drag a rectangle to paint residential/commercial/industrial)
-- ✅ Bulldoze tool (rectangular area selection, leaves a regrowing scar)
-- ✅ Fixed-timestep simulation tick loop
-- ✅ Autosave to localStorage with a "New City" reset
-- ✅ Clean architecture with separated concerns
-- ✅ **Elevation & smooth slopes** - Shared-vertex-height ramps between tiles of different elevation (SimCity 3000-style); cliffs render as steep continuous ramps with depth shading; map-edge skirt prevents floating world
-- ✅ **Directional terrain lighting** — per-triangle brightness from a centralized light vector (`LIGHT_DIR_WORLD` in `game/render/visuals/lighting.ts`; currently world pure-west + above, iso-projecting to screen ~10 o'clock / upper-left) replaces the planar-height heuristic. Cube drop-shadow direction derives from the same vector; cube face brightness migration is tracked separately.
-- ✅ Terrain tools — Raise / Lower shared terrain vertices by ±1 (click edits the tile's 4 corners; drag edits a deduped vertex rectangle; water emerges when any corner reaches sea level)
+MVP-1 is playable and in active development. The current build supports:
+- 64x64 isometric terrain with camera pan/zoom, hover/select, and drag previews
+- Roads, bulldoze, R/C/I zoning, and raise/lower/level terrain tools
+- Vertex-based terrain with smooth slopes, elevation-derived water, and coplanar road/zone placement
+- Fixed-timestep simulation with zone growth, population, money, speed/pause controls, autosave, and New City reset
+
+Next focus: replace placeholder colored geometry with sprites/textures, add more terrain variety, and continue tightening tool feedback.
 
 ## Getting Started
 
@@ -41,14 +33,17 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 - **Zoom**: Mouse wheel (zooms around cursor)
 - **Select Tile**: Left-click on any tile
 - **Hover**: Move mouse over tiles to see highlight
-- **Raise/Lower terrain**: R / F (or click Raise / Lower in the toolbar; drag to extend over a rectangle)
+- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones
+- **Terrain**: R raise, F lower, G level/flatten
+- **Time**: Space pause/resume, 1/2/3 speed
 
 ## Tech Stack
 
 - **Framework**: Next.js 16.1.1 (App Router)
 - **Language**: TypeScript (strict mode)
-- **Rendering**: PixiJS 8.5.2 (WebGL with Canvas fallback)
+- **Rendering**: PixiJS 8.15.0 (WebGL with Canvas fallback)
 - **Styling**: Tailwind CSS 4
+- **Testing**: Vitest
 
 ## Architecture
 
