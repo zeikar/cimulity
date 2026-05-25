@@ -16,6 +16,10 @@ const REJECT_ALPHA = 0.5;
 export interface DragPreviewInput {
   standardTiles: TileCoord[];
   rejectedTiles: TileCoord[];
+  /** Cells belonging to buildings whose entire footprint will be removed by
+   *  this drag (BULLDOZE only). Merged with rejectedTiles into a single
+   *  deduped reject-tinted layer at render time. */
+  affectedFootprintTiles: TileCoord[];
   muted: boolean;
   standardColor: number;
 }
@@ -26,10 +30,13 @@ export class SelectionRenderer {
   private selectedGraphics: Graphics;
   private dragPreviewGraphics: Graphics;
   private currentHover: TileCoord | null = null;
+  private currentHoverFootprint: ReadonlyArray<TileCoord> | undefined = undefined;
+  private lastHoverFootprintSig: string | null = null;
   private currentSelected: TileCoord | null = null;
   private currentDragPreview: DragPreviewInput = {
     standardTiles: [],
     rejectedTiles: [],
+    affectedFootprintTiles: [],
     muted: false,
     standardColor: 0x4a4a4a,
   };
@@ -53,12 +60,21 @@ export class SelectionRenderer {
   }
 
   /**
-   * Update hover highlight
+   * Update hover highlight. When footprintCells is provided and non-empty,
+   * outlines every cell in the footprint (same style). Falls back to the
+   * single-cell outline when undefined or empty.
    */
-  setHover(tile: TileCoord | null): void {
-    if (this.coordsEqual(this.currentHover, tile)) return;
+  setHover(tile: TileCoord | null, footprintCells?: ReadonlyArray<TileCoord>): void {
+    const sig = footprintCells && footprintCells.length > 0
+      ? [...footprintCells].sort((a, b) => a.y - b.y || a.x - b.x).map((c) => `${c.x},${c.y}`).join(';')
+      : null;
+    const tileUnchanged = this.coordsEqual(this.currentHover, tile);
+    const sigUnchanged = sig === this.lastHoverFootprintSig;
+    if (tileUnchanged && sigUnchanged) return;
 
     this.currentHover = tile;
+    this.currentHoverFootprint = footprintCells;
+    this.lastHoverFootprintSig = sig;
     this.renderHover();
   }
 
@@ -90,6 +106,7 @@ export class SelectionRenderer {
     this.currentDragPreview = {
       standardTiles: [],
       rejectedTiles: [],
+      affectedFootprintTiles: [],
       muted: false,
       standardColor: 0x4a4a4a,
     };
@@ -149,8 +166,14 @@ export class SelectionRenderer {
   private renderHover(): void {
     this.hoverGraphics.clear();
     if (!this.currentHover) return;
-    const pts = this.cornerPointsFor(this.currentHover);
-    this.drawOutline(this.hoverGraphics, pts, 0xffffff, 0.3);
+    const cells =
+      this.currentHoverFootprint && this.currentHoverFootprint.length > 0
+        ? this.currentHoverFootprint
+        : [this.currentHover];
+    for (const cell of cells) {
+      const pts = this.cornerPointsFor(cell);
+      this.drawOutline(this.hoverGraphics, pts, 0xffffff, 0.3);
+    }
   }
 
   private renderSelected(): void {
@@ -162,12 +185,23 @@ export class SelectionRenderer {
 
   private renderDragPreview(): void {
     this.dragPreviewGraphics.clear();
-    const { standardTiles, rejectedTiles, muted, standardColor } = this.currentDragPreview;
-    if (standardTiles.length === 0 && rejectedTiles.length === 0) return;
+    const { standardTiles, rejectedTiles, affectedFootprintTiles, muted, standardColor } = this.currentDragPreview;
+    if (standardTiles.length === 0 && rejectedTiles.length === 0 && affectedFootprintTiles.length === 0) return;
+
+    // Pass 2: build deduped reject union (rejectedTiles ∪ affectedFootprintTiles).
+    const rejectUnionMap = new Map<string, TileCoord>();
+    for (const t of rejectedTiles) rejectUnionMap.set(`${t.x},${t.y}`, t);
+    for (const t of affectedFootprintTiles) rejectUnionMap.set(`${t.x},${t.y}`, t);
+    const rejectUnionKeys = new Set(rejectUnionMap.keys());
+
+    // Pass 1: standard tiles, excluding any cell in the reject union.
     const stdColor = muted ? MUTED_COLOR : standardColor;
     const stdAlpha = muted ? MUTED_ALPHA : STANDARD_ALPHA;
-    this.drawDragTiles(standardTiles, stdColor, stdAlpha);
-    this.drawDragTiles(rejectedTiles, REJECT_COLOR, REJECT_ALPHA);
+    const filteredStandard = standardTiles.filter((t) => !rejectUnionKeys.has(`${t.x},${t.y}`));
+    this.drawDragTiles(filteredStandard, stdColor, stdAlpha);
+
+    // Pass 2: reject union drawn exactly once.
+    this.drawDragTiles([...rejectUnionMap.values()], REJECT_COLOR, REJECT_ALPHA);
   }
 
   private drawDragTiles(tiles: TileCoord[], color: number, alpha: number): void {

@@ -175,7 +175,7 @@ export class GameSession {
     this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
     // Step 6: clear selected/hover.
     this.pixiApp?.setSelectedTile(null);
-    this.pixiApp?.setHoverTile(null);
+    this.pixiApp?.setHoverTile(null, undefined);
     // Step 7: mark renderer dirty.
     this.pixiApp?.getTileRenderer()?.markDirty();
   }
@@ -226,7 +226,9 @@ export class GameSession {
     // Initialize PixiJS app
     const pixiApp = new PixiApp(world, {
       onTileHover: (tile) => {
-        pixiApp.setHoverTile(tile);
+        const owner = tile ? world.getMap().getBuildings().getBuildingAt(tile.x, tile.y) : null;
+        const footprintCells = owner ? owner.footprint : undefined;
+        pixiApp.setHoverTile(tile, footprintCells);
         this.callbacks.onTileHover?.(tile);
       },
       onTileClick: (tile) => {
@@ -270,7 +272,9 @@ export class GameSession {
     // Setup input handlers
     const pointerHandler = new PointerHandler(canvas, camera, world, {
       onTileHover: (tile) => {
-        pixiApp.setHoverTile(tile);
+        const owner = tile ? world.getMap().getBuildings().getBuildingAt(tile.x, tile.y) : null;
+        const footprintCells = owner ? owner.footprint : undefined;
+        pixiApp.setHoverTile(tile, footprintCells);
         this.callbacks.onTileHover?.(tile);
       },
       onTileClick: (tile) => {
@@ -297,9 +301,16 @@ export class GameSession {
         const standardTiles = preview.pathTiles.filter(
           (t) => !rejectedKeys.has(`${t.x},${t.y}`)
         );
+        const buildings = world.getMap().getBuildings();
+        const affectedFootprintTiles: TileCoord[] = [];
+        for (const id of preview.affectedBuildingIds) {
+          const b = buildings.getBuilding(id);
+          if (b !== null) affectedFootprintTiles.push(...b.footprint);
+        }
         selectionRenderer?.setDragPreview({
           standardTiles,
           rejectedTiles: [...preview.rejected],
+          affectedFootprintTiles,
           muted: preview.allOrNothingBlocked,
           standardColor: DRAG_PREVIEW_COLORS[tool] ?? 0x4a4a4a,
         });

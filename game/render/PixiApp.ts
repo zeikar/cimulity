@@ -159,10 +159,11 @@ export class PixiApp {
   }
 
   /**
-   * Update hover tile highlight
+   * Update hover tile highlight. When footprintCells is provided and non-empty,
+   * the whole building footprint is outlined.
    */
-  setHoverTile(tile: TileCoord | null): void {
-    this.selectionRenderer?.setHover(tile);
+  setHoverTile(tile: TileCoord | null, footprintCells?: ReadonlyArray<TileCoord>): void {
+    this.selectionRenderer?.setHover(tile, footprintCells);
   }
 
   /**
