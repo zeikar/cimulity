@@ -19,6 +19,7 @@ import type { World } from '../core/World';
 import type { PixiApp } from '../render/PixiApp';
 import type { TileType } from '../core/Tile';
 import type { Building, BuildingType } from '../core/Building';
+import type { Frontage } from '../core/buildingFootprint';
 
 export interface SeedBuildingSpec {
   id: number;
@@ -28,6 +29,7 @@ export interface SeedBuildingSpec {
   level: number;
   density: 0 | 1 | 2;
   age?: number;
+  frontage: Frontage;
 }
 
 export interface SeedSceneSpec {
@@ -134,6 +136,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
               level: b.level,
               density: b.density,
               age: b.age ?? 0,
+              frontage: b.frontage,
             };
             if (buildings.addExistingBuilding(building)) buildingsAdded++;
           }

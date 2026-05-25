@@ -3,12 +3,12 @@ import { World } from './World';
 import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
-describe('v8 serialization', () => {
-  it('WORLD_SAVE_VERSION is 8 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v9 serialization', () => {
+  it('WORLD_SAVE_VERSION is 9 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(8);
-    expect(parsed.v).toBe(8);
+    expect(WORLD_SAVE_VERSION).toBe(9);
+    expect(parsed.v).toBe(9);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -30,15 +30,17 @@ describe('v8 serialization', () => {
     obj.terrain.tileElevations = [[1]];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
-  it('rejects v7 and older saves without mutating the target world', () => {
+  it('rejects v8 and older saves without mutating the target world', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 7;
+    obj.v = 8;
 
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
 
+    obj.v = 7;
+    expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 6;
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
   });
@@ -233,5 +235,101 @@ describe('v8 serialization', () => {
     // Target must be unchanged.
     expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
     expect(target.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+});
+
+describe('v9 frontage round-trip', () => {
+  it('round-trip preserves frontage: N for a 1×1 building', () => {
+    const src = new World(4, 4, { regenerate: false });
+    const map = src.getMap();
+    // Zone at (1,1), road at (1,0) (north) so frontage will be N via pickFrontage.
+    // We seed it directly with addBuilding since tick is not used here.
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    const ok = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+    });
+    expect(ok).not.toBeNull();
+
+    const dst = new World(4, 4, { regenerate: false });
+    dst.getMap().setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    expect(deserializeWorldInto(dst, serializeWorld(src))).toBe(true);
+    const b = dst.getMap().getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.frontage).toBe('N');
+  });
+
+  it('round-trip preserves frontage: E and full footprint for a 1×2 building', () => {
+    const src = new World(6, 6, { regenerate: false });
+    const map = src.getMap();
+    // 1×2 (w=1, h=2) footprint at (1,1) and (1,2).
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 2, createTile(1, 2, TileType.ZONE_RESIDENTIAL));
+    const ok = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }, { x: 1, y: 2 }],
+      anchor: { x: 1, y: 1 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'E',
+    });
+    expect(ok).not.toBeNull();
+
+    const dst = new World(6, 6, { regenerate: false });
+    dst.getMap().setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    dst.getMap().setTile(1, 2, createTile(1, 2, TileType.ZONE_RESIDENTIAL));
+    expect(deserializeWorldInto(dst, serializeWorld(src))).toBe(true);
+    const b = dst.getMap().getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.frontage).toBe('E');
+    expect(b!.footprint).toHaveLength(2);
+    expect(b!.footprint).toContainEqual({ x: 1, y: 1 });
+    expect(b!.footprint).toContainEqual({ x: 1, y: 2 });
+  });
+
+  it('rejects a v: 8 save', () => {
+    const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    obj.v = 8;
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
+  });
+
+  it('rejects a v: 9 save with f missing from a building entry', () => {
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 0,
+      den: 0,
+      age: 0,
+      // f intentionally omitted
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v: 9 save with f: "X" (invalid frontage value)', () => {
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 0,
+      den: 0,
+      age: 0,
+      f: 'X',
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 });

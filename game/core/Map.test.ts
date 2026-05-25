@@ -69,6 +69,7 @@ describe('GameMap', () => {
       level: 1,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
 
     map.reset();

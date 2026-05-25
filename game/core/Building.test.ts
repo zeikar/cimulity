@@ -37,6 +37,7 @@ function makeBase() {
     level: 1,
     density: 0 as const,
     age: 0,
+    frontage: 'S' as const,
   };
 }
 

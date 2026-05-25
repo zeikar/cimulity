@@ -21,15 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v8' to match WORLD_SAVE_VERSION = 8.
-// Legacy saves at ':v2' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v9' to match WORLD_SAVE_VERSION = 9.
+// Legacy saves at ':v8' and earlier remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v8';
+const STORAGE_KEY = 'cimulity:save:v9';
 
 // Bump this string whenever the stash format changes (e.g. a new required API
 // is added). An HMR singleton carrying a mismatched guard is discarded and
 // rebuilt even if hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'vertex-smooth-v1' as const;
+const WORLD_SINGLETON_GUARD = 'vertex-smooth-frontage-v1' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -59,7 +59,7 @@ function readSave(): string | null {
  * `GameMap`, or `BuildingMap` — stale HMR singletons missing the method
  * break the app.**
  *
- * Checked methods (as of Task 7):
+ * Checked methods (as of Task 5/T1 — v9 with frontage as required on Building):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
@@ -67,6 +67,7 @@ function readSave(): string | null {
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
  *                addBuilding, addExistingBuilding, removeBuilding, setNextIdFloor, clear
+ *   Building.frontage: required Frontage field (added v9)
  */
 function hasCurrentWorldApi(world: World): boolean {
   // World economy + calendar APIs (existing).

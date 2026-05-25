@@ -215,6 +215,7 @@ describe('World.tick() — zone growth', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
 
     // Run exactly one growth tick
@@ -501,6 +502,7 @@ describe('World.tick() — monthly tax settlement', () => {
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      frontage: 'S',
     });
 
     const moneyBefore = world.getMoney();
@@ -555,9 +557,9 @@ describe('World.getPopulation()', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
     // Seed buildings with levels 3, 2, 1 respectively; sum = 6
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0 });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0 });
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0 });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, frontage: 'S' });
     // sum = 3+2+1 = 6; population = 6 * POPULATION_PER_LEVEL
     expect(world.getPopulation()).toBe(6 * POPULATION_PER_LEVEL);
   });
@@ -570,7 +572,7 @@ describe('World.getPopulation()', () => {
     map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
     map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
     // Only the zone at (3,0) has a building
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0 });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S' });
     expect(world.getPopulation()).toBe(2 * POPULATION_PER_LEVEL);
   });
 
@@ -699,6 +701,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       level: 3,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
     expect(building).not.toBeNull();
 
@@ -722,6 +725,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       level: 2,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
     expect(building).not.toBeNull();
 
@@ -746,6 +750,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       level: 1,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
 
     const rec = map.setTileAndReconcile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -769,8 +774,8 @@ describe('World.getPopulation() — building-based formula', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0 });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0 });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' });
     // sum = 2+3 = 5
     expect(world.getPopulation()).toBe(5 * POPULATION_PER_LEVEL);
   });
@@ -877,6 +882,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS + 10,
+      frontage: 'S',
     });
 
     // Run many ticks — density must stay 0 until level reaches ZONE_MAX_LEVEL
@@ -901,6 +907,7 @@ describe('World.tick() — density tier', () => {
       level: 2,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
     // Run just one growth tick
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world2.tick();
@@ -927,6 +934,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
+      frontage: 'S',
     });
 
     // The first growth tick: age → DENSITY_COOLDOWN_INTERVALS; but land value may be 0
@@ -962,6 +970,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
+      frontage: 'S',
     })!;
 
     let densityTickResult: ReturnType<typeof world.tick> | null = null;
@@ -997,6 +1006,7 @@ describe('World.tick() — changedBuildingIds contract', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      frontage: 'S',
     });
 
     // Find the first tick on which the building levels up to 1
@@ -1057,6 +1067,7 @@ describe('World.tick() — multi-tile building guard', () => {
       level: 0,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
     expect(ok).toBe(true);
 
@@ -1433,11 +1444,220 @@ describe('World procedural terrain — constructor default (regenerate: true)', 
       level: 2,
       density: 0,
       age: 0,
+      frontage: 'S',
     });
     expect(map.getBuildings().getBuildingAt(0, 0)).not.toBeNull();
 
     world.regenerateTerrain(DEFAULT_NEWCITY_SEED);
 
     expect(map.getBuildings().getBuildingAt(0, 0)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T1 Task 5 tests — frontage spawn + Branch B road-access gate
+// ---------------------------------------------------------------------------
+
+describe('World.tick() — Branch A spawn: frontage is set correctly', () => {
+  it('zone with road only to the south stores frontage: S', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 2, createTile(1, 2, TileType.ROAD)); // south neighbor
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.frontage).toBe('S');
+  });
+
+  it('zone with road only to the north stores frontage: N', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD)); // north neighbor
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.frontage).toBe('N');
+  });
+
+  it('zone with road both N and S stores frontage: S (tie-break)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD)); // north
+    map.setTile(1, 2, createTile(1, 2, TileType.ROAD)); // south
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.frontage).toBe('S');
+  });
+});
+
+describe('World.tick() — Branch A spawn: same-tick dedup guard', () => {
+  it('building created on first growth tick has age=0, level=0, density=0', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 2, createTile(1, 2, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.age).toBe(0);
+    expect(b!.level).toBe(0);
+    expect(b!.density).toBe(0);
+  });
+});
+
+describe('World.tick() — Branch B road-access gate', () => {
+  it('existing building loses road access: age stops incrementing', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'E',
+    });
+
+    // One growth tick with road: age should become 1.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    const ageWithRoad = map.getBuildings().getBuildingAt(0, 0)!.age;
+    expect(ageWithRoad).toBe(1);
+
+    // Remove the road, run another growth tick: age must NOT increment.
+    map.setTile(1, 0, createTile(1, 0, TileType.GRASS));
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    const ageWithoutRoad = map.getBuildings().getBuildingAt(0, 0)!.age;
+    expect(ageWithoutRoad).toBe(1);
+  });
+
+  it('existing building loses road access: level-up does not fire', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    // Positive control: with road, building should level up.
+    // Seed at level 0, age = cooldown-1 so on the next growth tick it levels up.
+    // id=0, stagger(0)=0 → cooldown = GROWTH_COOLDOWN_INTERVALS.
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1,
+      frontage: 'E',
+    });
+    // Also need land value >= LEVEL_THRESHOLDS[1]=0.1; road at distance 1 should suffice.
+    // Force land value recompute.
+    world.markLandValueDirty();
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)!.level).toBeGreaterThanOrEqual(1);
+
+    // Negative control: rebuild world without road.
+    const world2 = new World(4, 4, { regenerate: false });
+    const map2 = world2.getMap();
+    map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    // No road placed → no building created by Branch A (road required).
+    // Manually seed the building.
+    map2.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1,
+      frontage: 'E',
+    });
+    // No road → hasRoadAccess returns false → age does not increment → level stays 0.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world2.tick();
+    expect(map2.getBuildings().getBuildingAt(0, 0)!.level).toBe(0);
+  });
+
+  it('existing building loses road access: density bump does not fire', () => {
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    // Positive control: seed at ZONE_MAX_LEVEL, density=0, age just under cooldown.
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS - 1,
+      frontage: 'E',
+    });
+    world.markLandValueDirty();
+    // Run enough ticks so density fires (positive control).
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)!.density).toBeGreaterThanOrEqual(1);
+
+    // Negative control: same setup but no road.
+    const world2 = new World(6, 6, { regenerate: false });
+    const map2 = world2.getMap();
+    map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map2.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map2.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    map2.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS - 1,
+      frontage: 'E',
+    });
+    world2.markLandValueDirty();
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world2.tick();
+    // No road → density stays 0.
+    expect(map2.getBuildings().getBuildingAt(0, 0)!.density).toBe(0);
+  });
+
+  it('road re-added: building resumes aging on the next growth tick', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'E',
+    });
+
+    // Tick with road → age becomes 1.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)!.age).toBe(1);
+
+    // Remove road, tick → age stays 1.
+    map.setTile(1, 0, createTile(1, 0, TileType.GRASS));
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)!.age).toBe(1);
+
+    // Re-add road, tick → age becomes 2.
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuildingAt(0, 0)!.age).toBe(2);
   });
 });

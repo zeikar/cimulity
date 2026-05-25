@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v8 is native; older saves are rejected; `worldStore` falls back to a fresh
+ * v9 is native; older saves are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum (no `'water'`); coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -14,20 +14,21 @@ import { ZONE_MAX_LEVEL } from './World';
 import type { World } from './World';
 import { isBuildingType, tileTypeFromBuildingType } from './Building';
 import { isCanonicalFootprintRect } from './buildingFootprint';
+import type { Frontage } from './buildingFootprint';
 import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v8 saves are accepted.
+ * This is the `v` value written to disk. Only native v9 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 8;
+export const WORLD_SAVE_VERSION = 9;
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
 /**
  * Wire format for one building entry in `b[]`.
- * Compact tuple-array style: { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age }.
+ * Compact tuple-array style: { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age, f }.
  */
 interface BuildingSaveEntry {
   id: number;
@@ -37,11 +38,12 @@ interface BuildingSaveEntry {
   lvl: number;
   den: number;
   age: number;
+  f: Frontage;
 }
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 8).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 9).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` is sorted by id ascending for deterministic byte-equality across round-trips.
@@ -69,6 +71,7 @@ export function serializeWorld(world: World): string {
     lvl: building.level,
     den: building.density,
     age: building.age,
+    f: building.frontage,
   }));
 
   const data = {
@@ -122,6 +125,7 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
     if (!Number.isInteger(e.lvl) || e.lvl < 0 || e.lvl > ZONE_MAX_LEVEL) return null;
     if (!Number.isInteger(e.den) || (e.den !== 0 && e.den !== 1 && e.den !== 2)) return null;
     if (!Number.isInteger(e.age) || e.age < 0) return null;
+    if (e.f !== 'N' && e.f !== 'S' && e.f !== 'E' && e.f !== 'W') return null;
     if (!Array.isArray(e.foot) || e.foot.length === 0) return null;
 
     const footprintIndices = new Set<number>();
@@ -167,6 +171,7 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
       level: e.lvl,
       density: e.den as 0 | 1 | 2,
       age: e.age,
+      frontage: e.f,
     });
   }
 
@@ -174,10 +179,10 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
 }
 
 /**
- * Apply a serialized v8 world envelope onto an existing World instance.
+ * Apply a serialized v9 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===8 → dims → m/d → t[] → l[] → b[] → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===9 → dims → m/d → t[] → l[] → b[] → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {

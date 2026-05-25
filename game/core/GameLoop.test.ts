@@ -376,6 +376,7 @@ describe('GameLoop', () => {
       level: 5, // ZONE_MAX_LEVEL
       density: 0,
       age: 23, // DENSITY_COOLDOWN_INTERVALS - 1
+      frontage: 'S',
     })!;
 
     // Advance the world to just before the next growth tick

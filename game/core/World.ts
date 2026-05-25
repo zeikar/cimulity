@@ -9,6 +9,14 @@ import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
+import {
+  pickSpawnSize,
+  enumerateFootprintsContaining,
+  validateFootprintRect,
+  pickFrontage,
+  footprintCells,
+  hasRoadAccess,
+} from './zoneGrowth';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
 
@@ -404,40 +412,46 @@ export class World {
       const buildings = this.map.getBuildings();
       const lv = this.getLandValue();
 
+      const mapW = this.map.getWidth();
+      const mapH = this.map.getHeight();
+
       for (const tile of this.map.iterateTiles()) {
         if (!isZoneType(tile.type)) continue;
         const { x, y } = tile;
 
-        // Grow only if at least one orthogonal neighbor is a ROAD tile.
-        const neighbors = [
-          this.map.getTile(x + 1, y),
-          this.map.getTile(x - 1, y),
-          this.map.getTile(x, y + 1),
-          this.map.getTile(x, y - 1),
-        ];
-        const hasRoad = neighbors.some(n => n !== null && n.type === TileType.ROAD);
-        if (!hasRoad) continue;
-
         const existing = buildings.getBuildingAt(x, y);
 
         if (existing === null) {
-          // Branch A: no building yet — create a level-0 building at this single tile.
-          // landValue/cooldown gating applies only to existing buildings — a tile with
-          // no building yet always creates one (subject to road-adjacency only).
-          // spawn stays strict-flat: building sprites are not tilted-ready (player placement loosened to coplanar separately).
-          if (!this.terrain.isFlatTile(x, y, (xx, yy) => this.isWater(xx, yy))) continue;
+          // Branch A: no building yet — create a building using the helper pipeline.
+          // validateFootprintRect enforces flat-terrain, correct tile type, no overlap,
+          // and road adjacency. pickFrontage determines the entry-facing side.
           const bType = tile.type.replace('zone_', '') as BuildingType;
+          const { w, h } = pickSpawnSize(x, y, this);
+          const candidates = enumerateFootprintsContaining({ x, y }, w, h, mapW, mapH);
+          let chosen = null;
+          for (const rect of candidates) {
+            if (validateFootprintRect(rect, tile.type, this)) { chosen = rect; break; }
+          }
+          if (chosen === null) continue;
+          const frontage = pickFrontage(chosen, this);
+          if (frontage === null) continue; // defensive — validateFootprintRect already enforced
           const created = buildings.addBuilding({
             type: bType,
-            footprint: [{ x, y }],
-            anchor: { x, y },
+            footprint: footprintCells(chosen),
+            anchor: { x: chosen.x, y: chosen.y },
             level: 0,
             density: 0,
             age: 0,
+            frontage,
           });
           if (created !== null) {
+            // T3 NOTE: processedBuildingIds prevents later cells of this multi-tile footprint
+            // from falling into Branch B on the same tick. No-op for T1 1×1 spawns; T3 plugs in W×H>1.
+            processedBuildingIds.add(created.id);
             changedBuildingIds.push(created.id);
-            changedTiles.push({ x, y });
+            for (const cell of created.footprint) {
+              changedTiles.push({ x: cell.x, y: cell.y });
+            }
           }
           continue;
         }
@@ -445,6 +459,9 @@ export class World {
         // Branch B: building exists — de-duplicate multi-tile footprints.
         if (processedBuildingIds.has(existing.id)) continue;
         processedBuildingIds.add(existing.id);
+
+        // Road-access gate: buildings that lose road access do not age or grow.
+        if (!hasRoadAccess(existing, this)) continue;
 
         // Age every building once per growth-opportunity (this tick).
         existing.age += 1;

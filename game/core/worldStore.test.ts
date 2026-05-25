@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { World, STARTING_FUNDS } from './World';
-import { TileType } from './Tile';
+import { TileType, createTile } from './Tile';
 import { WORLD_SAVE_VERSION, serializeWorld } from './mapSerialization';
 import * as terrainGeneratorModule from './terrainGenerator';
 
@@ -40,8 +40,8 @@ function makeFakeStorage(): FakeStorage {
   };
 }
 
-// The storage key mirrors the constant in worldStore.ts (v8 cut).
-const STORAGE_KEY = 'cimulity:save:v8';
+// The storage key mirrors the constant in worldStore.ts (v9 cut).
+const STORAGE_KEY = 'cimulity:save:v9';
 
 // ---- singleton reset helper ----
 
@@ -424,7 +424,7 @@ describe('getWorld — sentinel: Test A — API probe fails → fresh World', ()
     };
     // Set the current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-v1';
+    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-frontage-v1';
 
     const result = getWorld();
 
@@ -457,7 +457,7 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = real;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-v1';
+    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-frontage-v1';
 
     const result = getWorld();
 
@@ -466,13 +466,13 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
 });
 
 describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
-  it('builds a fresh World and writes vertex-smooth-v1 to globalThis.__cimulityWorldGuard', () => {
+  it('builds a fresh World and writes vertex-smooth-frontage-v1 to globalThis.__cimulityWorldGuard', () => {
     // Singleton and guard are already cleared by beforeEach (resetSingleton).
     const result = getWorld();
 
     expect(result).toBeInstanceOf(World);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((globalThis as any).__cimulityWorldGuard).toBe('vertex-smooth-v1');
+    expect((globalThis as any).__cimulityWorldGuard).toBe('vertex-smooth-frontage-v1');
   });
 });
 
@@ -514,5 +514,48 @@ describe('getWorld — spy: generateTerrain call count', () => {
     getWorld();
 
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---- T1 v9 schema tests ----
+
+describe('getWorld — stale v8 key ignored, v9 key absent → fresh procedural world', () => {
+  it('stale cimulity:save:v8 blob with empty v9 key returns STARTING_FUNDS world', () => {
+    // Write something to the old v8 key — the v9 key is absent.
+    const src = new World(64, 64, { regenerate: false });
+    src.trySpend(3000); // treasury = 7000 so we can detect if it was loaded
+    fakeStorage.setItem('cimulity:save:v8', serializeWorld(src));
+    // v9 key is absent — fakeStorage has nothing at that key.
+
+    const world = getWorld();
+
+    // Must be a fresh world: the v8 save is never read.
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getElapsedDays()).toBe(0);
+  });
+});
+
+describe('getWorld — valid v9 save with buildings hydrates frontage', () => {
+  it('hydrated world carries frontage on buildings round-tripped through v9 serialization', () => {
+    const src = new World(64, 64, { regenerate: false });
+    const map = src.getMap();
+    map.setTile(5, 5, createTile(5, 5, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 5, y: 5 }],
+      anchor: { x: 5, y: 5 },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'W',
+    });
+    fakeStorage.setItem(STORAGE_KEY, serializeWorld(src));
+
+    resetSingleton();
+    const restored = getWorld();
+
+    const b = restored.getMap().getBuildings().getBuildingAt(5, 5);
+    expect(b).not.toBeNull();
+    expect(b!.frontage).toBe('W');
   });
 });

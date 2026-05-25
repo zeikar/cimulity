@@ -1,5 +1,6 @@
 import { TileType } from './Tile';
 import { isCanonicalFootprintRect } from './buildingFootprint';
+import type { Frontage } from './buildingFootprint';
 
 export type BuildingType = 'residential' | 'commercial' | 'industrial';
 
@@ -15,6 +16,7 @@ export type Building = {
   level: number;
   density: 0 | 1 | 2;
   age: number;
+  frontage: Frontage;
 };
 
 export function tileTypeFromBuildingType(t: BuildingType): TileType {
