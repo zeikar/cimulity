@@ -67,6 +67,87 @@ export function isBoundingDiamondAccurate(
 }
 
 /**
+ * Returns true iff the footprint is a fully-filled axis-aligned rectangle whose
+ * NW (top-left in tile space) corner exactly equals `anchor`.
+ *
+ * Unlike `isCanonicalFootprintRect` in core, this helper does NOT enforce the
+ * simulation's {1..4} W,H cap — that is `isCanonicalFootprintRect`'s job at the
+ * core boundary. The renderer accepts any W,H ≥ 1.
+ */
+export function isNwAnchoredFullRectFootprint(
+  footprint: ReadonlyArray<{ x: number; y: number }>,
+  anchor: { x: number; y: number },
+): boolean {
+  if (footprint.length === 0) return false;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const c of footprint) {
+    if (c.x < minX) minX = c.x;
+    if (c.x > maxX) maxX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.y > maxY) maxY = c.y;
+  }
+
+  const W = maxX - minX + 1;
+  const H = maxY - minY + 1;
+
+  if (anchor.x !== minX || anchor.y !== minY) return false;
+  if (footprint.length !== W * H) return false;
+
+  const seen = new Set<string>();
+  for (const c of footprint) seen.add(`${c.x},${c.y}`);
+  if (seen.size !== footprint.length) return false;
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (!seen.has(`${x},${y}`)) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Returns the four corners of the iso top-face polygon for a W×H rectangular
+ * footprint anchored at `anchor`, in anchor-local screen coordinates (unlifted,
+ * no inset).
+ *
+ * Returns `null` if the footprint is not a valid NW-anchored full rectangle.
+ *
+ * Vertex table (anchor-local, tile-space origin at anchor):
+ *   N = (0,       0      )   — NW corner of footprint
+ *   E = ( W*hw,   W*hh   )   — NE tip (extends right by W tiles)
+ *   S = ((W-H)*hw,(W+H)*hh)  — SE corner
+ *   W = (-H*hw,   H*hh   )   — SW tip (extends left by H tiles)
+ */
+export function rectangularUnionTopPolygon(
+  footprint: ReadonlyArray<{ x: number; y: number }>,
+  anchor: { x: number; y: number },
+): { N: Point; E: Point; S: Point; W: Point } | null {
+  if (!isNwAnchoredFullRectFootprint(footprint, anchor)) return null;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const c of footprint) {
+    if (c.x < minX) minX = c.x;
+    if (c.x > maxX) maxX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.y > maxY) maxY = c.y;
+  }
+
+  const W = maxX - minX + 1;
+  const H = maxY - minY + 1;
+  const hw = ISO_CONFIG.TILE_WIDTH / 2;
+  const hh = ISO_CONFIG.TILE_HEIGHT / 2;
+
+  return {
+    N: { x: 0,            y: 0            },
+    E: { x: W * hw,       y: W * hh       },
+    S: { x: (W - H) * hw, y: (W + H) * hh },
+    W: { x: -H * hw,      y: H * hh       },
+  };
+}
+
+/**
  * Compute the three visible cube faces (top diamond, left quad, right quad)
  * in anchor-local screen coordinates.
  *
