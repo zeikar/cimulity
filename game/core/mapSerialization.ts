@@ -272,6 +272,14 @@ export function deserializeWorldInto(world: World, json: string): boolean {
     }
   }
 
+  // Defensive: for canonical rectangles (validated separately), per-cell isFlatTile already implies same renderHeight in vertex-smooth mode. This check guards (1) legacy non-canonical footprints in the existing arm, and (2) future terrain modes that may decouple per-cell flatness from cross-cell height equality.
+  for (const b of stagingBuildings) {
+    const expectedH = candidateTerrain.getRenderHeight(b.anchor.x, b.anchor.y);
+    for (const c of b.footprint) {
+      if (candidateTerrain.getRenderHeight(c.x, c.y) !== expectedH) return false;
+    }
+  }
+
   // All validation passed — commit. regenerate: false so procedural terrain does not
   // overwrite the hydrated data we are about to install.
   world.reset({ regenerate: false });

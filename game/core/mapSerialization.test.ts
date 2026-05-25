@@ -70,6 +70,82 @@ describe('v8 serialization', () => {
     expect(dst.getMap().getTile(2, 2)?.type).toBe(TileType.ZONE_RESIDENTIAL);
   });
 
+  it('rejects a save where a disconnected 2-cell footprint has cells at different renderHeights', () => {
+    // Disconnected footprint: cells (0,0) and (5,5) on a 10x10 world.
+    // Both cells are individually flat but at different heights (2 vs 3).
+    // The same-height cross-cell check must reject this.
+    const base = JSON.parse(serializeWorld(new World(10, 10, { regenerate: false })));
+    const w = 10;
+
+    // Set cell (0,0) flat at height 2: vertices (0,0),(1,0),(0,1),(1,1) = 2.
+    base.terrain.vertexHeights[0][0] = 2;
+    base.terrain.vertexHeights[0][1] = 2;
+    base.terrain.vertexHeights[1][0] = 2;
+    base.terrain.vertexHeights[1][1] = 2;
+
+    // Set cell (5,5) flat at height 3: vertices (5,5),(6,5),(5,6),(6,6) = 3.
+    base.terrain.vertexHeights[5][5] = 3;
+    base.terrain.vertexHeights[5][6] = 3;
+    base.terrain.vertexHeights[6][5] = 3;
+    base.terrain.vertexHeights[6][6] = 3;
+
+    // Set tile types to ZONE_RESIDENTIAL for both footprint cells.
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[5 * w + 5] = TileType.ZONE_RESIDENTIAL;
+
+    // Add a residential building with a disconnected 2-cell footprint.
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [5, 5]],
+      anc: [0, 0],
+      lvl: 1,
+      den: 0,
+      age: 0,
+    }];
+
+    expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('accepts a disconnected 2-cell footprint when both cells share the same renderHeight', () => {
+    // Same disconnected footprint: cells (0,0) and (5,5), but both flat at height 2.
+    // This is the pre-Task-4 baseline; shape validation is not yet enforced.
+    const base = JSON.parse(serializeWorld(new World(10, 10, { regenerate: false })));
+    const w = 10;
+
+    // Set cell (0,0) flat at height 2.
+    base.terrain.vertexHeights[0][0] = 2;
+    base.terrain.vertexHeights[0][1] = 2;
+    base.terrain.vertexHeights[1][0] = 2;
+    base.terrain.vertexHeights[1][1] = 2;
+
+    // Set cell (5,5) flat at height 2.
+    base.terrain.vertexHeights[5][5] = 2;
+    base.terrain.vertexHeights[5][6] = 2;
+    base.terrain.vertexHeights[6][5] = 2;
+    base.terrain.vertexHeights[6][6] = 2;
+
+    // Set tile types to ZONE_RESIDENTIAL for both footprint cells.
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[5 * w + 5] = TileType.ZONE_RESIDENTIAL;
+
+    // Add a residential building with a disconnected 2-cell footprint.
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [5, 5]],
+      anc: [0, 0],
+      lvl: 1,
+      den: 0,
+      age: 0,
+    }];
+
+    const target = new World(10, 10, { regenerate: false });
+    expect(deserializeWorldInto(target, JSON.stringify(base))).toBe(true);
+    expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(target.getMap().getTile(5, 5)?.type).toBe(TileType.ZONE_RESIDENTIAL);
+  });
+
   it('rejects a save where a building footprint lands on a coplanar non-flat tile', () => {
     // Construct a save object directly with a coplanar non-flat tile at (2,2)
     // that has a building footprint on it. The strict-flat predicate must reject this.
