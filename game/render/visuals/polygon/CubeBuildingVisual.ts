@@ -18,6 +18,7 @@ import type { Point } from './cubeGeometry';
 import { normalizeFootprint, cubeFacePolygons, isNwAnchoredFullRectFootprint } from './cubeGeometry';
 import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
 import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
+import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 
 // ---------------------------------------------------------------------------
@@ -83,26 +84,6 @@ function rightColor(input: BuildingVisualInput): number {
 function cacheKey(input: BuildingVisualInput): string {
   const shape = normalizeFootprint(input.footprint, input.anchor);
   return `${input.type}:${input.level}:${input.density}:${shape}`;
-}
-
-// ---------------------------------------------------------------------------
-// Z-index formula (handles arbitrary / L-shaped footprints)
-//   depth      = max over footprint cells of (cell.x + cell.y)
-//   tiebreakY  = max y among cells that achieve that max depth
-//   zIndex     = depth * 1000 + tiebreakY
-// ---------------------------------------------------------------------------
-
-function computeZIndex(footprint: ReadonlyArray<{ x: number; y: number }>): number {
-  let maxDepth = -Infinity;
-  for (const c of footprint) {
-    const d = c.x + c.y;
-    if (d > maxDepth) maxDepth = d;
-  }
-  let tiebreakY = -Infinity;
-  for (const c of footprint) {
-    if (c.x + c.y === maxDepth && c.y > tiebreakY) tiebreakY = c.y;
-  }
-  return maxDepth * 1000 + tiebreakY;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
