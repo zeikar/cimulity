@@ -1,0 +1,243 @@
+import { describe, it, expect } from 'vitest';
+import { Demand, DENSITY_DEMAND_THRESHOLD } from './Demand';
+import { BuildingMap } from './Building';
+import type { Building } from './Building';
+
+function makeBuildingMap(): BuildingMap {
+  return new BuildingMap(20, 20);
+}
+
+function addBuilding(
+  map: BuildingMap,
+  id: number,
+  x: number,
+  y: number,
+  type: Building['type'],
+  level: number,
+): void {
+  map.addExistingBuilding({
+    id,
+    type,
+    footprint: [{ x, y }],
+    anchor: { x, y },
+    level,
+    density: 0,
+    age: 0,
+    frontage: 'S',
+  });
+}
+
+function makePRNG(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let z = s;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 0x100000000;
+  };
+}
+
+function shuffle<T>(arr: T[], rng: () => number): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return out;
+}
+
+describe('Demand', () => {
+  it('DENSITY_DEMAND_THRESHOLD is exported', () => {
+    expect(DENSITY_DEMAND_THRESHOLD).toBe(0.6);
+  });
+
+  it('empty BuildingMap returns baseline 0.25 for all three', () => {
+    const demand = new Demand();
+    demand.recompute(makeBuildingMap());
+    const v = demand.get();
+    expect(v.residential).toBe(0.25);
+    expect(v.commercial).toBe(0.25);
+    expect(v.industrial).toBe(0.25);
+  });
+
+  it('get() before recompute returns baseline 0.25', () => {
+    const demand = new Demand();
+    const v = demand.get();
+    expect(v.residential).toBe(0.25);
+    expect(v.commercial).toBe(0.25);
+    expect(v.industrial).toBe(0.25);
+  });
+
+  it('residential-only city: residential at baseline-or-below, industrial and commercial near max', () => {
+    const map = makeBuildingMap();
+    for (let i = 0; i < 5; i++) {
+      addBuilding(map, i, i, 0, 'residential', 1);
+    }
+    const demand = new Demand();
+    demand.recompute(map);
+    const v = demand.get();
+    // No jobs → residential demand should not exceed baseline
+    expect(v.residential).toBeLessThanOrEqual(0.25);
+    // Residents with no jobs → industrial demand high
+    expect(v.industrial).toBeGreaterThan(0.5);
+    // Residents with no commercial → commercial demand high
+    expect(v.commercial).toBeGreaterThan(0.5);
+  });
+
+  it('industrial-only city: industrial at baseline-or-below, residential near max', () => {
+    const map = makeBuildingMap();
+    for (let i = 0; i < 5; i++) {
+      addBuilding(map, i, i, 0, 'industrial', 1);
+    }
+    const demand = new Demand();
+    demand.recompute(map);
+    const v = demand.get();
+    // No residents → industrial demand should be at or below baseline
+    expect(v.industrial).toBeLessThanOrEqual(0.25);
+    // Jobs exist with no homes → residential demand near max
+    expect(v.residential).toBeGreaterThan(0.5);
+  });
+
+  it('balanced city (3R + 3I matched): R and I near baseline, C still pulls', () => {
+    const map = makeBuildingMap();
+    for (let i = 0; i < 3; i++) {
+      addBuilding(map, i, i, 0, 'residential', 1);
+    }
+    for (let i = 3; i < 6; i++) {
+      addBuilding(map, i, i, 0, 'industrial', 1);
+    }
+    const demand = new Demand();
+    demand.recompute(map);
+    const v = demand.get();
+    expect(v.residential).toBeCloseTo(0.25, 1);
+    expect(v.industrial).toBeCloseTo(0.25, 1);
+    // No commercial buildings → commercial demand still pulls high
+    expect(v.commercial).toBeGreaterThan(0.5);
+  });
+
+  it('all values stay in [0, 1] with extreme building counts', () => {
+    const map = makeBuildingMap();
+    // Fill with many residential buildings to push extremes
+    for (let i = 0; i < 10; i++) {
+      addBuilding(map, i, i % 20, Math.floor(i / 20), 'residential', 5);
+    }
+    const demand = new Demand();
+    demand.recompute(map);
+    const v = demand.get();
+    expect(v.residential).toBeGreaterThanOrEqual(0);
+    expect(v.residential).toBeLessThanOrEqual(1);
+    expect(v.commercial).toBeGreaterThanOrEqual(0);
+    expect(v.commercial).toBeLessThanOrEqual(1);
+    expect(v.industrial).toBeGreaterThanOrEqual(0);
+    expect(v.industrial).toBeLessThanOrEqual(1);
+  });
+
+  it('level-0 buildings contribute nothing: 100 level-0 R + 1 level-1 I → residential is high', () => {
+    const map = new BuildingMap(200, 200);
+    // Add 100 level-0 residential buildings
+    for (let i = 0; i < 100; i++) {
+      map.addExistingBuilding({
+        id: i,
+        type: 'residential',
+        footprint: [{ x: i % 200, y: Math.floor(i / 200) }],
+        anchor: { x: i % 200, y: Math.floor(i / 200) },
+        level: 0,
+        density: 0,
+        age: 0,
+        frontage: 'S',
+      });
+    }
+    // Add 1 level-1 industrial building
+    map.addExistingBuilding({
+      id: 100,
+      type: 'industrial',
+      footprint: [{ x: 100, y: 0 }],
+      anchor: { x: 100, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+    });
+
+    const demand = new Demand();
+    demand.recompute(map);
+    const v = demand.get();
+    // level-0 R buildings contribute 0 → effectively industrial-only city → residential high
+    expect(v.residential).toBeGreaterThan(0.5);
+  });
+
+  it('determinism: two recompute calls on identical input yield byte-identical output', () => {
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 2);
+    addBuilding(map, 1, 1, 0, 'commercial', 1);
+    addBuilding(map, 2, 2, 0, 'industrial', 3);
+
+    const d1 = new Demand();
+    d1.recompute(map);
+    const r1 = d1.getRaw();
+
+    const d2 = new Demand();
+    d2.recompute(map);
+    const r2 = d2.getRaw();
+
+    expect(r1.residential).toBe(r2.residential);
+    expect(r1.commercial).toBe(r2.commercial);
+    expect(r1.industrial).toBe(r2.industrial);
+  });
+
+  it('immutability: mutating get() result throws in strict mode', () => {
+    const demand = new Demand();
+    demand.recompute(makeBuildingMap());
+    const v = demand.get();
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (v as any).residential = 999;
+    }).toThrow();
+  });
+
+  it('get() and getRaw() return the same reference', () => {
+    const demand = new Demand();
+    demand.recompute(makeBuildingMap());
+    expect(demand.get()).toBe(demand.getRaw());
+  });
+
+  it('determinism across shuffled building-add orderings', () => {
+    const rng = makePRNG(0xc0ffee);
+
+    type BuildingSpec = { id: number; x: number; y: number; type: Building['type']; level: number };
+    const specs: BuildingSpec[] = [
+      { id: 0, x: 0, y: 0, type: 'residential', level: 2 },
+      { id: 1, x: 1, y: 0, type: 'residential', level: 1 },
+      { id: 2, x: 2, y: 0, type: 'commercial', level: 1 },
+      { id: 3, x: 3, y: 0, type: 'commercial', level: 2 },
+      { id: 4, x: 4, y: 0, type: 'industrial', level: 3 },
+      { id: 5, x: 5, y: 0, type: 'industrial', level: 1 },
+    ];
+
+    // Get reference values from one ordered run
+    const refMap = makeBuildingMap();
+    for (const s of specs) {
+      addBuilding(refMap, s.id, s.x, s.y, s.type, s.level);
+    }
+    const ref = new Demand();
+    ref.recompute(refMap);
+    const refV = ref.getRaw();
+
+    for (let run = 0; run < 50; run++) {
+      const shuffled = shuffle(specs, rng);
+      const map = makeBuildingMap();
+      for (const s of shuffled) {
+        addBuilding(map, s.id, s.x, s.y, s.type, s.level);
+      }
+      const demand = new Demand();
+      demand.recompute(map);
+      const v = demand.getRaw();
+      expect(v.residential).toBe(refV.residential);
+      expect(v.commercial).toBe(refV.commercial);
+      expect(v.industrial).toBe(refV.industrial);
+    }
+  });
+});
