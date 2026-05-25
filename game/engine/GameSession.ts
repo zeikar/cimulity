@@ -270,17 +270,21 @@ export class GameSession {
     installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow(), regenerateTerrain: (seed?: number) => this.regenerateTerrain(seed), resetFlat: () => this.resetFlat() });
 
     // Setup input handlers
+    const refreshHover = (tile: TileCoord | null) => {
+      const owner = tile ? world.getMap().getBuildings().getBuildingAt(tile.x, tile.y) : null;
+      pixiApp.setHoverTile(tile, owner ? owner.footprint : undefined);
+    };
+
     const pointerHandler = new PointerHandler(canvas, camera, world, {
       onTileHover: (tile) => {
-        const owner = tile ? world.getMap().getBuildings().getBuildingAt(tile.x, tile.y) : null;
-        const footprintCells = owner ? owner.footprint : undefined;
-        pixiApp.setHoverTile(tile, footprintCells);
+        refreshHover(tile);
         this.callbacks.onTileHover?.(tile);
       },
       onTileClick: (tile) => {
         // Single-tile execution goes through the dispatcher, same as drags
         const tool = this.toolManager.getCurrentTool();
         this.markIfChanged(executeClick(tool, tile, world));
+        refreshHover(tile);
         pixiApp.setSelectedTile(tile);
         this.callbacks.onTileClick(tile);
       },
@@ -288,6 +292,7 @@ export class GameSession {
         // Resolve path with the current tool at drag time
         const tool = this.toolManager.getCurrentTool();
         this.markIfChanged(executeDrag(tool, start, end, world));
+        refreshHover(end);
       },
       onDragPreview: (start, end) => {
         const tool = this.toolManager.getCurrentTool();
