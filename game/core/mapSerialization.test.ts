@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { World } from './World';
 import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
+import { ZONE_GROWTH_INTERVAL } from './World';
 
 describe('v9 serialization', () => {
   it('WORLD_SAVE_VERSION is 9 and serializeWorld emits vertex-smooth terrain', () => {
@@ -331,5 +332,75 @@ describe('v9 frontage round-trip', () => {
       f: 'X',
     }];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+});
+
+describe('end-to-end integration: spawn → save → load', () => {
+  it('organic spawn round-trip: 1×1 building gets frontage W and survives serialize/deserialize', () => {
+    // World: ROAD at (1,2), ZONE_RESIDENTIAL at (2,2). Road is west of zone → frontage W.
+    const original = new World(6, 6, { regenerate: false });
+    original.getMap().setTile(1, 2, createTile(1, 2, TileType.ROAD));
+    original.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+
+    // Tick ZONE_GROWTH_INTERVAL times so growth fires exactly once.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) {
+      original.tick();
+    }
+
+    const buildings = original.getMap().getBuildings();
+    const allBuildings = [...buildings.getAllBuildings()];
+    expect(allBuildings).toHaveLength(1);
+
+    const b = allBuildings[0];
+    expect(b.footprint).toHaveLength(1);
+    expect(b.footprint[0]).toEqual({ x: 2, y: 2 });
+    expect(b.frontage).toBe('W');
+
+    // Serialize and deserialize into a fresh blank world (no pre-seeding needed —
+    // deserializeWorldInto writes all tiles itself).
+    const serialized = serializeWorld(original);
+    const loaded = new World(6, 6, { regenerate: false });
+    expect(deserializeWorldInto(loaded, serialized)).toBe(true);
+
+    // Byte-equal round-trip.
+    expect(serializeWorld(loaded)).toBe(serialized);
+  });
+
+  it('multi-tile round-trip: 1×2 building footprint + frontage N survive serialize/deserialize', () => {
+    // World: ROAD at (2,1) (north of zone), ZONE_RESIDENTIAL at (2,2) and (3,2).
+    // addBuilding directly with a 1×2 footprint and frontage N.
+    const original = new World(8, 8, { regenerate: false });
+    const map = original.getMap();
+    map.setTile(2, 1, createTile(2, 1, TileType.ROAD));
+    map.setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(3, 2, createTile(3, 2, TileType.ZONE_RESIDENTIAL));
+
+    const ok = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+    });
+    expect(ok).not.toBeNull();
+
+    // Serialize and deserialize into a fresh blank world.
+    const serialized = serializeWorld(original);
+    const loaded = new World(8, 8, { regenerate: false });
+    expect(deserializeWorldInto(loaded, serialized)).toBe(true);
+
+    const lb = loaded.getMap().getBuildings().getBuildingAt(2, 2);
+    expect(lb).not.toBeNull();
+    expect(lb!.footprint).toHaveLength(2);
+    // footprint sorted by y then x (row-major from footprintCells)
+    expect(lb!.footprint).toContainEqual({ x: 2, y: 2 });
+    expect(lb!.footprint).toContainEqual({ x: 3, y: 2 });
+    expect(lb!.anchor).toEqual({ x: 2, y: 2 });
+    expect(lb!.frontage).toBe('N');
+
+    // Byte-equal round-trip.
+    expect(serializeWorld(loaded)).toBe(serialized);
   });
 });
