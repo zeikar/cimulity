@@ -4,7 +4,12 @@ import {
   iterateVisibleTiles,
   isBuildingVisible,
   MAX_TERRAIN_LIFT_PX,
+  MAX_BUILDING_LIFT_PX,
 } from './viewportCulling';
+import { cubeLiftPx } from '@/game/render/visuals/polygon/cubeLift';
+import { cubeTypeHeightPx } from '@/game/render/visuals/polygon/cubeTypeRatios';
+import { ROOF_ACCENT_SPEC } from '@/game/render/visuals/polygon/cubeRoofAccent';
+import { ZONE_MAX_LEVEL } from '@/game/core/World';
 
 describe('viewportCulling', () => {
   // ─── visibleTileBounds ────────────────────────────────────────────────────
@@ -413,5 +418,24 @@ describe('viewportCulling', () => {
 
   it('isBuildingVisible empty footprint → false', () => {
     expect(isBuildingVisible([], { minX: 0, maxX: 10, minY: 0, maxY: 10 })).toBe(false);
+  });
+});
+
+// If this test fails: re-derive MAX_BUILDING_LIFT_PX in viewportCulling.ts.
+describe('worst-case building lift vs MAX_BUILDING_LIFT_PX', () => {
+  it('worst-case cube lift (level=ZONE_MAX_LEVEL, density=2, type=commercial) is ≤ MAX_BUILDING_LIFT_PX', () => {
+    const SLACK_PX = 10;
+    const mainLift = cubeTypeHeightPx(cubeLiftPx(ZONE_MAX_LEVEL, 2), 'commercial');
+    const accentLift = Math.round(mainLift * ROOF_ACCENT_SPEC.commercial.heightScale);
+    const worstCase = mainLift + accentLift + SLACK_PX;
+    expect(worstCase).toBeLessThanOrEqual(MAX_BUILDING_LIFT_PX);
+  });
+
+  it('worst-case value is exactly 195 (cubeLiftPx(5,2)=83, cubeTypeHeightPx(83,commercial)=112, accentLift=round(112*0.65)=73, worstCase=112+73+10=195)', () => {
+    const SLACK_PX = 10;
+    const mainLift = cubeTypeHeightPx(cubeLiftPx(ZONE_MAX_LEVEL, 2), 'commercial');
+    const accentLift = Math.round(mainLift * ROOF_ACCENT_SPEC.commercial.heightScale);
+    const worstCase = mainLift + accentLift + SLACK_PX;
+    expect(worstCase).toBe(195);
   });
 });
