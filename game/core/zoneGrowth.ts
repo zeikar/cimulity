@@ -1,5 +1,6 @@
 import type { World } from './World';
-import type { Building } from './Building';
+import type { Building, BuildingType } from './Building';
+import type { DemandVector } from './Demand';
 import { TileType } from './Tile';
 import type { Frontage, Rect } from './buildingFootprint';
 
@@ -7,9 +8,42 @@ export type SpawnSize = { w: number; h: number };
 
 export type SpawnFootprint = { rect: Rect; frontage: Frontage };
 
-/** T1 implementation: always 1×1. */
-export function pickSpawnSize(_x: number, _y: number, _world: World): SpawnSize {
-  return { w: 1, h: 1 };
+export function spawnSeed(x: number, y: number, tickCount: number): number {
+  const mixed = ((y * 73856093) ^ (x * 19349663) ^ (tickCount * 83492791)) >>> 0;
+  return ((mixed ^ (mixed >>> 16)) * 2654435761) >>> 0;
+}
+
+export function weightsForDemand(d: number): readonly [number, number, number, number] {
+  if (d < 0.25) return [16, 0, 0, 0];
+  if (d < 0.5)  return [8, 4, 0, 0];
+  if (d < 0.75) return [4, 6, 3, 1];
+  return [1, 4, 6, 5];
+}
+
+function pickWeighted(weights: readonly [number, number, number, number], rand16: number): 1 | 2 | 3 | 4 {
+  const total = weights[0] + weights[1] + weights[2] + weights[3];
+  const scaled = Math.floor(rand16 * total / 0x10000);
+  let cumulative = 0;
+  for (let i = 0; i < 4; i++) {
+    cumulative += weights[i];
+    if (scaled < cumulative) return (i + 1) as 1 | 2 | 3 | 4;
+  }
+  return 4;
+}
+
+export function pickSpawnSize(
+  x: number,
+  y: number,
+  tickCount: number,
+  bType: BuildingType,
+  demand: DemandVector,
+): SpawnSize {
+  const d = demand[bType];
+  const seed = spawnSeed(x, y, tickCount);
+  const weights = weightsForDemand(d);
+  const w = pickWeighted(weights, seed & 0xFFFF);
+  const h = pickWeighted(weights, (seed >>> 16) & 0xFFFF);
+  return { w, h };
 }
 
 /**

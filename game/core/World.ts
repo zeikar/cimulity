@@ -447,7 +447,7 @@ export class World {
           // validateFootprintRect enforces flat-terrain, correct tile type, no overlap,
           // and road adjacency. pickFrontage determines the entry-facing side.
           const bType = tile.type.replace('zone_', '') as BuildingType;
-          const { w, h } = pickSpawnSize(x, y, this);
+          const { w, h } = pickSpawnSize(x, y, this.tickCount, bType, demandVec);
           const candidates = enumerateFootprintsContaining({ x, y }, w, h, mapW, mapH);
           let chosen = null;
           for (const rect of candidates) {

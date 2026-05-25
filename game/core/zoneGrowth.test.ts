@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import { World } from './World';
 import { TileType, createTile } from './Tile';
 import {
   pickSpawnSize,
+  spawnSeed,
+  weightsForDemand,
   enumerateFootprintsContaining,
   pickFrontage,
   hasRoadAccess,
@@ -25,12 +29,98 @@ function seedZone(world: World, x: number, y: number, type = TileType.ZONE_RESID
   setTileFlat(world, x, y, 1);
 }
 
-describe('pickSpawnSize', () => {
-  it('always returns { w: 1, h: 1 } regardless of coordinates', () => {
-    const world = new World(4, 4, { regenerate: false });
-    expect(pickSpawnSize(0, 0, world)).toEqual({ w: 1, h: 1 });
-    expect(pickSpawnSize(3, 3, world)).toEqual({ w: 1, h: 1 });
-    expect(pickSpawnSize(99, 99, world)).toEqual({ w: 1, h: 1 });
+// 64 deterministic tuples: cross-product of xs × ys with tickCount=0
+const SEED_XS = [0, 1, 3, 7, 13, 17, 23, 31];
+const SEED_YS = [2, 4, 8, 11, 14, 19, 22, 29];
+const TUPLES: Array<[number, number]> = SEED_YS.flatMap(y => SEED_XS.map(x => [x, y] as [number, number]));
+
+describe('weightsForDemand', () => {
+  it('returns [16,0,0,0] for d=0', () => {
+    expect(weightsForDemand(0)).toEqual([16, 0, 0, 0]);
+  });
+  it('returns [8,4,0,0] for d=0.25 (baseline band)', () => {
+    expect(weightsForDemand(0.25)).toEqual([8, 4, 0, 0]);
+  });
+  it('returns [4,6,3,1] for d=0.5 (mid band)', () => {
+    expect(weightsForDemand(0.5)).toEqual([4, 6, 3, 1]);
+  });
+  it('returns [1,4,6,5] for d=0.9 (high band)', () => {
+    expect(weightsForDemand(0.9)).toEqual([1, 4, 6, 5]);
+  });
+});
+
+describe('spawnSeed', () => {
+  it('returns a uint32 (>= 0) for (0, 0, 0)', () => {
+    const s = spawnSeed(0, 0, 0);
+    expect(s).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(s)).toBe(true);
+  });
+  it('returns a uint32 for large positive inputs', () => {
+    const s = spawnSeed(9999, 9999, 9999);
+    expect(s).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(s)).toBe(true);
+  });
+  it('is deterministic across calls', () => {
+    expect(spawnSeed(5, 7, 16)).toBe(spawnSeed(5, 7, 16));
+  });
+  it('produces different values for different inputs', () => {
+    expect(spawnSeed(1, 2, 3)).not.toBe(spawnSeed(3, 2, 1));
+  });
+});
+
+describe('pickSpawnSize (T3)', () => {
+  it('no-Math.random: zoneGrowth.ts source contains no Math.random call', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, 'zoneGrowth.ts'), 'utf8');
+    expect(src).not.toMatch(/Math\.random/);
+  });
+
+  it('d=0 (strictly below baseline) → every result is {w:1, h:1}', () => {
+    const demand = { residential: 0, commercial: 0, industrial: 0 };
+    for (const [x, y] of TUPLES) {
+      expect(pickSpawnSize(x, y, 0, 'residential', demand)).toEqual({ w: 1, h: 1 });
+    }
+  });
+
+  it('d=0.25 (baseline band) → no size 3 or 4 in any result', () => {
+    const demand = { residential: 0.25, commercial: 0.25, industrial: 0.25 };
+    for (const [x, y] of TUPLES) {
+      const { w, h } = pickSpawnSize(x, y, 0, 'residential', demand);
+      expect(w).toBeLessThanOrEqual(2);
+      expect(h).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('d=0.25 (baseline band) → at least 15 results are {w:1, h:1}', () => {
+    const demand = { residential: 0.25, commercial: 0.25, industrial: 0.25 };
+    const count1x1 = TUPLES.filter(([x, y]) => {
+      const { w, h } = pickSpawnSize(x, y, 0, 'residential', demand);
+      return w === 1 && h === 1;
+    }).length;
+    expect(count1x1).toBeGreaterThanOrEqual(15);
+  });
+
+  it('d=0.9 (high band) → at least one result has a side >= 4', () => {
+    const demand = { residential: 0.9, commercial: 0.9, industrial: 0.9 };
+    const hasLarge = TUPLES.some(([x, y]) => {
+      const { w, h } = pickSpawnSize(x, y, 0, 'residential', demand);
+      return w >= 4 || h >= 4;
+    });
+    expect(hasLarge).toBe(true);
+  });
+
+  it('d=0.9 (high band) → count of {w:1, h:1} is at most 16', () => {
+    const demand = { residential: 0.9, commercial: 0.9, industrial: 0.9 };
+    const count1x1 = TUPLES.filter(([x, y]) => {
+      const { w, h } = pickSpawnSize(x, y, 0, 'residential', demand);
+      return w === 1 && h === 1;
+    }).length;
+    expect(count1x1).toBeLessThanOrEqual(16);
+  });
+
+  it('determinism pin: pickSpawnSize(5, 7, 16, residential, {residential:0.8,...}) returns {w:3, h:3}', () => {
+    const demand = { residential: 0.8, commercial: 0.5, industrial: 0.5 };
+    expect(pickSpawnSize(5, 7, 16, 'residential', demand)).toEqual({ w: 3, h: 3 });
+    expect(pickSpawnSize(5, 7, 16, 'residential', demand)).toEqual({ w: 3, h: 3 });
   });
 });
 
