@@ -80,12 +80,20 @@ export interface ToolPreview {
   readonly rejected: TileCoord[];
   /** True iff the tool is transactional (ROAD) AND `rejected.length > 0`. */
   readonly allOrNothingBlocked: boolean;
+  /** Building IDs whose entire footprint will be REMOVED by this preview when
+   *  the click commits. Populated only for BULLDOZE, and only for cells whose
+   *  current tile is a zone type (i.e. mirrors Map.setTileAndReconcile's
+   *  building-removal precondition, NOT the broader buildBulldozeCommands
+   *  clearable set). Empty for non-bulldoze tools and for bulldoze paths that
+   *  don't touch a removable, owned zone cell. */
+  readonly affectedBuildingIds: ReadonlySet<number>;
 }
 
 export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): ToolPreview {
   const pathTiles = [...tiles];
   let rejected: TileCoord[];
   let allOrNothingBlocked: boolean;
+  const affectedBuildingIds: Set<number> = new Set<number>();
 
   switch (tool) {
     case Tool.ROAD: {
@@ -108,12 +116,29 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
       allOrNothingBlocked = false;
       break;
     }
+    case Tool.BULLDOZE: {
+      rejected = [];
+      allOrNothingBlocked = false;
+      const map = world.getMap();
+      for (const { x, y } of tiles) {
+        const currentTile = map.getTile(x, y);
+        if (!currentTile) continue;
+        // Mirror Map.setTileAndReconcile's building-removal precondition:
+        // only zone tiles trigger building removal, NOT road tiles.
+        if (!isZoneType(currentTile.type)) continue;
+        const building = map.getBuildings().getBuildingAt(x, y);
+        if (building !== null) {
+          affectedBuildingIds.add(building.id);
+        }
+      }
+      break;
+    }
     default:
       rejected = [];
       allOrNothingBlocked = false;
   }
 
-  return { pathTiles, rejected, allOrNothingBlocked };
+  return { pathTiles, rejected, allOrNothingBlocked, affectedBuildingIds };
 }
 
 /**

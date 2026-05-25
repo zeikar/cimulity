@@ -187,7 +187,7 @@ export function previewDrag(
     (t) => world.getMap().getTile(t.x, t.y)
   );
   if (tiles.length === 0) {
-    return { pathTiles: [], rejected: [], allOrNothingBlocked: false };
+    return { pathTiles: [], rejected: [], allOrNothingBlocked: false, affectedBuildingIds: new Set<number>() };
   }
   return buildToolPreview(tool, tiles, world);
 }
