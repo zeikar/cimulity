@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeFootprint,
   cubeFacePolygons,
-  isRectangularFootprint,
-  isBoundingDiamondAccurate,
   isNwAnchoredFullRectFootprint,
   rectangularUnionTopPolygon,
 } from './cubeGeometry';
@@ -69,90 +67,6 @@ describe('normalizeFootprint', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// isRectangularFootprint
-// ---------------------------------------------------------------------------
-describe('isRectangularFootprint', () => {
-  it('single cell is rectangular', () => {
-    expect(isRectangularFootprint([{ x: 0, y: 0 }])).toBe(true);
-  });
-
-  it('1x2 strip is rectangular', () => {
-    expect(isRectangularFootprint([{ x: 0, y: 0 }, { x: 1, y: 0 }])).toBe(true);
-  });
-
-  it('2x2 square is rectangular', () => {
-    expect(isRectangularFootprint([
-      { x: 0, y: 0 }, { x: 1, y: 0 },
-      { x: 0, y: 1 }, { x: 1, y: 1 },
-    ])).toBe(true);
-  });
-
-  it('L-shape (3 cells) is NOT rectangular', () => {
-    expect(isRectangularFootprint([
-      { x: 0, y: 0 }, { x: 1, y: 0 },
-      { x: 0, y: 1 },
-    ])).toBe(false);
-  });
-
-  it('T-shape (5 cells) is NOT rectangular', () => {
-    expect(isRectangularFootprint([
-      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
-      { x: 1, y: 1 }, { x: 1, y: 2 },
-    ])).toBe(false);
-  });
-
-  it('disjoint cells (diagonal) are NOT rectangular', () => {
-    expect(isRectangularFootprint([{ x: 0, y: 0 }, { x: 5, y: 5 }])).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// isBoundingDiamondAccurate
-// ---------------------------------------------------------------------------
-describe('isBoundingDiamondAccurate', () => {
-  it('single cell is accurate (1x1)', () => {
-    expect(isBoundingDiamondAccurate([{ x: 0, y: 0 }])).toBe(true);
-  });
-
-  it('2x2 square rectangular is accurate (bounding diamond == cell-diamond union)', () => {
-    expect(isBoundingDiamondAccurate([
-      { x: 0, y: 0 }, { x: 1, y: 0 },
-      { x: 0, y: 1 }, { x: 1, y: 1 },
-    ])).toBe(true);
-  });
-
-  it('3x3 square rectangular is accurate', () => {
-    const cells = [];
-    for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) cells.push({ x, y });
-    expect(isBoundingDiamondAccurate(cells)).toBe(true);
-  });
-
-  it('1x3 asymmetric strip is NOT accurate (bounding diamond overflows)', () => {
-    expect(isBoundingDiamondAccurate([
-      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
-    ])).toBe(false);
-  });
-
-  it('3x1 asymmetric strip is NOT accurate', () => {
-    expect(isBoundingDiamondAccurate([
-      { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 },
-    ])).toBe(false);
-  });
-
-  it('2x3 asymmetric rectangle is NOT accurate', () => {
-    const cells = [];
-    for (let y = 0; y < 3; y++) for (let x = 0; x < 2; x++) cells.push({ x, y });
-    expect(isBoundingDiamondAccurate(cells)).toBe(false);
-  });
-
-  it('L-shape is NOT accurate (not rectangular at all)', () => {
-    expect(isBoundingDiamondAccurate([
-      { x: 0, y: 0 }, { x: 1, y: 0 },
-      { x: 0, y: 1 },
-    ])).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // cubeFacePolygons
@@ -354,6 +268,138 @@ describe('cubeFacePolygons — per-type silhouette', () => {
     expect(toStr(r0.top)).toBe(toStr(r10.top));
     expect(toStr(r0.left)).toBe(toStr(r10.left));
     expect(toStr(r0.right)).toBe(toStr(r10.right));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cubeFacePolygons — multi-cell rectangular footprints (union polygon path)
+// ---------------------------------------------------------------------------
+describe('cubeFacePolygons — multi-cell rectangular footprints', () => {
+  // Helper: build expected top polygon from rectangularUnionTopPolygon + inset + lift.
+  function expectedTop(
+    footprint: ReadonlyArray<{ x: number; y: number }>,
+    anchor: { x: number; y: number },
+    inset: number,
+    lift: number,
+  ) {
+    const raw = rectangularUnionTopPolygon(footprint, anchor)!;
+    const cx = (raw.N.x + raw.E.x + raw.S.x + raw.W.x) / 4;
+    const cy = (raw.N.y + raw.E.y + raw.S.y + raw.W.y) / 4;
+    const scale = 1 - 2 * inset;
+    const ai = (v: { x: number; y: number }) => ({
+      x: cx + (v.x - cx) * scale,
+      y: cy + (v.y - cy) * scale,
+    });
+    const N = ai(raw.N);
+    const E = ai(raw.E);
+    const S = ai(raw.S);
+    const W = ai(raw.W);
+    return [
+      { x: N.x, y: N.y - lift },
+      { x: E.x, y: E.y - lift },
+      { x: S.x, y: S.y - lift },
+      { x: W.x, y: W.y - lift },
+    ];
+  }
+
+  const toStr = (pts: { x: number; y: number }[]) =>
+    pts.map((p) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`).join('|');
+
+  const SHAPES: Array<{ label: string; W: number; H: number }> = [
+    { label: '1×4', W: 1, H: 4 },
+    { label: '4×1', W: 4, H: 1 },
+    { label: '2×3', W: 2, H: 3 },
+    { label: '3×2', W: 3, H: 2 },
+    { label: '4×2', W: 4, H: 2 },
+    { label: '4×4', W: 4, H: 4 },
+  ];
+
+  const level = 3;
+  const density = 1 as const;
+  const type = 'residential' as const;
+
+  for (const { label, W, H } of SHAPES) {
+    it(`${label} residential level=3 density=1: returns non-null and top equals union+inset+lift`, () => {
+      const fp: { x: number; y: number }[] = [];
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) fp.push({ x, y });
+      const anchor = { x: 0, y: 0 };
+
+      const result = cubeFacePolygons(type, level, density, fp, anchor);
+      expect(result).not.toBeNull();
+
+      const baseLift = cubeLiftPx(level, density);
+      const lift = cubeTypeHeightPx(baseLift, type);
+      const inset = CUBE_TYPE_INSET_RATIO[type];
+      const expTop = expectedTop(fp, anchor, inset, lift);
+
+      expect(toStr(result!.top)).toBe(toStr(expTop));
+    });
+  }
+
+  it('4×2 commercial level=5 density=2: pins all four top-face vertices numerically', () => {
+    const W = 4, H = 2;
+    const fp: { x: number; y: number }[] = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) fp.push({ x, y });
+    const anchor = { x: 0, y: 0 };
+
+    const baseLift = cubeLiftPx(5, 2);
+    const lift = cubeTypeHeightPx(baseLift, 'commercial');
+    const inset = CUBE_TYPE_INSET_RATIO['commercial'];
+    const expTop = expectedTop(fp, anchor, inset, lift);
+
+    const result = cubeFacePolygons('commercial', 5, 2, fp, anchor)!;
+    expect(result).not.toBeNull();
+    expect(toStr(result.top)).toBe(toStr(expTop));
+  });
+
+  it('4×2 and 2×4 produce DIFFERENT top polygons', () => {
+    const fp4x2: { x: number; y: number }[] = [];
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 4; x++) fp4x2.push({ x, y });
+    const fp2x4: { x: number; y: number }[] = [];
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 2; x++) fp2x4.push({ x, y });
+    const anchor = { x: 0, y: 0 };
+
+    const r4x2 = cubeFacePolygons('residential', 3, 1, fp4x2, anchor)!;
+    const r2x4 = cubeFacePolygons('residential', 3, 1, fp2x4, anchor)!;
+
+    expect(toStr(r4x2.top)).not.toBe(toStr(r2x4.top));
+  });
+
+  it('side faces share the top[2] (S) vertex — regression for iso-cube convention', () => {
+    const fp: { x: number; y: number }[] = [];
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 4; x++) fp.push({ x, y });
+    const anchor = { x: 0, y: 0 };
+
+    const result = cubeFacePolygons('residential', 3, 1, fp, anchor)!;
+    const topS = result.top[2];
+    // left[0] and right[1] must equal top[2].
+    expect(result.left[0]).toEqual(topS);
+    expect(result.right[1]).toEqual(topS);
+  });
+
+  it('position independence: 4×2 at anchor (0,0) vs (10,7) produce identical anchor-local polygons', () => {
+    const W = 4, H = 2;
+    const fp0: { x: number; y: number }[] = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) fp0.push({ x, y });
+    const fp10: { x: number; y: number }[] = [];
+    for (let y = 7; y < 7 + H; y++) for (let x = 10; x < 10 + W; x++) fp10.push({ x, y });
+
+    const r0 = cubeFacePolygons('residential', 3, 1, fp0, { x: 0, y: 0 })!;
+    const r10 = cubeFacePolygons('residential', 3, 1, fp10, { x: 10, y: 7 })!;
+
+    expect(toStr(r0.top)).toBe(toStr(r10.top));
+    expect(toStr(r0.left)).toBe(toStr(r10.left));
+    expect(toStr(r0.right)).toBe(toStr(r10.right));
+  });
+
+  it('empty footprint returns null', () => {
+    expect(cubeFacePolygons('residential', 3, 1, [], { x: 0, y: 0 })).toBeNull();
+  });
+
+  it('level=0 returns null for 4×2 footprint', () => {
+    const fp: { x: number; y: number }[] = [];
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 4; x++) fp.push({ x, y });
+    expect(cubeFacePolygons('residential', 0, 1, fp, { x: 0, y: 0 })).toBeNull();
   });
 });
 

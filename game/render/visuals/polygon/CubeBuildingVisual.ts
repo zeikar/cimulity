@@ -15,7 +15,7 @@ import { Graphics, GraphicsContext } from 'pixi.js';
 import type { Container } from 'pixi.js';
 import { tileToScreen, tileToScreenWithHeight } from '@/game/render/IsoTransform';
 import type { Point } from './cubeGeometry';
-import { normalizeFootprint, cubeFacePolygons, isBoundingDiamondAccurate } from './cubeGeometry';
+import { normalizeFootprint, cubeFacePolygons, isNwAnchoredFullRectFootprint } from './cubeGeometry';
 import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
 import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
@@ -178,7 +178,7 @@ function buildShadowContext(input: BuildingVisualInput): GraphicsContext | null 
 
   const ctx = new GraphicsContext();
 
-  if (isBoundingDiamondAccurate(input.footprint)) {
+  if (isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
     if (faces === null) return null;
     drawCubeShadow(ctx, faces, 0, 0);
@@ -209,7 +209,7 @@ function buildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
 
   const ctx = new GraphicsContext();
 
-  if (isBoundingDiamondAccurate(input.footprint)) {
+  if (isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, input.footprint, input.anchor);
     if (faces === null) return null;
     drawCubeFaces(ctx, faces, input, 0, 0);

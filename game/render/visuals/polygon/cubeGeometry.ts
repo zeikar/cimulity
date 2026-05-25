@@ -26,45 +26,6 @@ export function normalizeFootprint(
   return offsets.map((o) => `${o.dx},${o.dy}`).join(';');
 }
 
-// True iff the footprint exactly fills its axis-aligned bounding rectangle
-// (i.e. every cell in [minX..maxX] × [minY..maxY] is present). L-shapes and
-// other holed shapes return false so callers can switch from a single
-// bounding-diamond cube to per-cell cubes.
-export function isRectangularFootprint(
-  footprint: ReadonlyArray<{ x: number; y: number }>,
-): boolean {
-  if (footprint.length <= 1) return true;
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const c of footprint) {
-    if (c.x < minX) minX = c.x;
-    if (c.x > maxX) maxX = c.x;
-    if (c.y < minY) minY = c.y;
-    if (c.y > maxY) maxY = c.y;
-  }
-  const expectedCount = (maxX - minX + 1) * (maxY - minY + 1);
-  return footprint.length === expectedCount;
-}
-
-// True iff `cubeFacePolygons`'s bounding-diamond approximation exactly equals
-// the union of the footprint's cell diamonds in iso space. This holds for
-// 1×1 cells and N×N square rectangles only. Asymmetric rectangles (1×N, N×M
-// with N≠M) and irregular shapes have a bounding diamond strictly larger
-// than the cell union, so a single bounding cube would overflow into
-// neighbouring tiles — callers should fall back to per-cell rendering.
-export function isBoundingDiamondAccurate(
-  footprint: ReadonlyArray<{ x: number; y: number }>,
-): boolean {
-  if (footprint.length <= 1) return true;
-  if (!isRectangularFootprint(footprint)) return false;
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const c of footprint) {
-    if (c.x < minX) minX = c.x;
-    if (c.x > maxX) maxX = c.x;
-    if (c.y < minY) minY = c.y;
-    if (c.y > maxY) maxY = c.y;
-  }
-  return maxX - minX === maxY - minY;
-}
 
 /**
  * Returns true iff the footprint is a fully-filled axis-aligned rectangle whose
@@ -169,29 +130,137 @@ export function cubeFacePolygons(
   anchor: { x: number; y: number },
 ): { top: Point[]; left: Point[]; right: Point[] } | null {
   if (level <= 0) return null;
+  if (footprint.length === 0) return null;
 
+  const baseLift = cubeLiftPx(level, density);
+  const lift = cubeTypeHeightPx(baseLift, type);
+  const inset = cubeTypeInsetRatio(type);
+
+  if (footprint.length === 1) {
+    // Single-cell path — unchanged from before.
+    const anchorScreen = tileToScreen(anchor);
+    const hw = ISO_CONFIG.TILE_WIDTH / 2;
+    const hh = ISO_CONFIG.TILE_HEIGHT / 2;
+
+    const localCorners: Point[] = [];
+    for (const cell of footprint) {
+      const s = tileToScreen(cell);
+      const lx = s.x - anchorScreen.x;
+      const ly = s.y - anchorScreen.y;
+      localCorners.push(
+        { x: lx, y: ly },
+        { x: lx + hw, y: ly + hh },
+        { x: lx, y: ly + ISO_CONFIG.TILE_HEIGHT },
+        { x: lx - hw, y: ly + hh },
+      );
+    }
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of localCorners) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+
+    const midX = (minX + maxX) / 2;
+    const midY = (minY + maxY) / 2;
+    const spanX = (maxX - minX) / 2;
+    const spanY = (maxY - minY) / 2;
+    const drawSpanX = spanX * (1 - 2 * inset);
+    const drawSpanY = spanY * (1 - 2 * inset);
+
+    const top: Point[] = [
+      { x: midX, y: midY - drawSpanY - lift },
+      { x: midX + drawSpanX, y: midY - lift },
+      { x: midX, y: midY + drawSpanY - lift },
+      { x: midX - drawSpanX, y: midY - lift },
+    ];
+
+    const left: Point[] = [
+      top[2],
+      top[3],
+      { x: top[3].x, y: top[3].y + lift },
+      { x: top[2].x, y: top[2].y + lift },
+    ];
+
+    const right: Point[] = [
+      top[1],
+      top[2],
+      { x: top[2].x, y: top[2].y + lift },
+      { x: top[1].x, y: top[1].y + lift },
+    ];
+
+    return { top, left, right };
+  }
+
+  // Multi-cell: canonical NW-anchored rectangle — use union polygon.
+  if (isNwAnchoredFullRectFootprint(footprint, anchor)) {
+    const raw = rectangularUnionTopPolygon(footprint, anchor)!;
+
+    // Centroid of the four raw top-face vertices.
+    const cx = (raw.N.x + raw.E.x + raw.S.x + raw.W.x) / 4;
+    const cy = (raw.N.y + raw.E.y + raw.S.y + raw.W.y) / 4;
+
+    // Apply per-type inset: v_new = centroid + (v - centroid) * (1 - 2*inset).
+    const scale = 1 - 2 * inset;
+    const applyInset = (v: Point): Point => ({
+      x: cx + (v.x - cx) * scale,
+      y: cy + (v.y - cy) * scale,
+    });
+
+    // Apply inset then lift.
+    const N = applyInset(raw.N);
+    const E = applyInset(raw.E);
+    const S = applyInset(raw.S);
+    const W = applyInset(raw.W);
+
+    // Top face: [N, E, S, W] lifted by `lift` (subtract from y).
+    const top: Point[] = [
+      { x: N.x, y: N.y - lift },
+      { x: E.x, y: E.y - lift },
+      { x: S.x, y: S.y - lift },
+      { x: W.x, y: W.y - lift },
+    ];
+
+    // Side faces: top[2]=S, top[3]=W, top[1]=E.
+    // Left face: S → W → W+(0,lift) → S+(0,lift).
+    const left: Point[] = [
+      top[2],
+      top[3],
+      { x: top[3].x, y: top[3].y + lift },
+      { x: top[2].x, y: top[2].y + lift },
+    ];
+
+    // Right face: E → S → S+(0,lift) → E+(0,lift).
+    const right: Point[] = [
+      top[1],
+      top[2],
+      { x: top[2].x, y: top[2].y + lift },
+      { x: top[1].x, y: top[1].y + lift },
+    ];
+
+    return { top, left, right };
+  }
+
+  // Multi-cell, non-canonical (irregular or anchor not at NW): bounding-diamond approximation.
   const anchorScreen = tileToScreen(anchor);
   const hw = ISO_CONFIG.TILE_WIDTH / 2;
   const hh = ISO_CONFIG.TILE_HEIGHT / 2;
-  const baseLift = cubeLiftPx(level, density);
-  const lift = cubeTypeHeightPx(baseLift, type);
 
-  // Compute anchor-local screen corners for every footprint cell.
-  // Each tile contributes 4 corners of its isometric diamond.
   const localCorners: Point[] = [];
   for (const cell of footprint) {
     const s = tileToScreen(cell);
     const lx = s.x - anchorScreen.x;
     const ly = s.y - anchorScreen.y;
     localCorners.push(
-      { x: lx, y: ly },           // top corner
-      { x: lx + hw, y: ly + hh }, // right corner
-      { x: lx, y: ly + ISO_CONFIG.TILE_HEIGHT }, // bottom corner
-      { x: lx - hw, y: ly + hh }, // left corner
+      { x: lx, y: ly },
+      { x: lx + hw, y: ly + hh },
+      { x: lx, y: ly + ISO_CONFIG.TILE_HEIGHT },
+      { x: lx - hw, y: ly + hh },
     );
   }
 
-  // Bounding box of all local corners — defines the overall footprint extent.
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const p of localCorners) {
     if (p.x < minX) minX = p.x;
@@ -200,43 +269,32 @@ export function cubeFacePolygons(
     if (p.y > maxY) maxY = p.y;
   }
 
-  // Top face: the footprint's bounding diamond shifted up by `lift`.
-  // We approximate the full multi-tile top with the bounding-box diamond, which
-  // is correct for rectangular footprints and a reasonable approximation for L-shapes.
   const midX = (minX + maxX) / 2;
   const midY = (minY + maxY) / 2;
   const spanX = (maxX - minX) / 2;
   const spanY = (maxY - minY) / 2;
-  const inset = cubeTypeInsetRatio(type);
   const drawSpanX = spanX * (1 - 2 * inset);
   const drawSpanY = spanY * (1 - 2 * inset);
 
   const top: Point[] = [
-    { x: midX, y: midY - drawSpanY - lift },       // top vertex
-    { x: midX + drawSpanX, y: midY - lift },       // right vertex
-    { x: midX, y: midY + drawSpanY - lift },       // bottom vertex
-    { x: midX - drawSpanX, y: midY - lift },       // left vertex
+    { x: midX, y: midY - drawSpanY - lift },
+    { x: midX + drawSpanX, y: midY - lift },
+    { x: midX, y: midY + drawSpanY - lift },
+    { x: midX - drawSpanX, y: midY - lift },
   ];
 
-  // Side faces share the FRONT (south) vertex `top[2]` and drop to the base.
-  // This is the standard iso cube where the two visible side faces meet at the
-  // front-center vertical edge — that shared edge is what gives the cube its
-  // recognisable 3D silhouette.
-
-  // Left face: SOUTH-WEST quad — from front to left, dropping to base.
   const left: Point[] = [
-    top[2],                                        // south/front vertex of top
-    top[3],                                        // west/left vertex of top
-    { x: top[3].x, y: top[3].y + lift },           // west/left vertex at base level
-    { x: top[2].x, y: top[2].y + lift },           // south/front vertex at base level
+    top[2],
+    top[3],
+    { x: top[3].x, y: top[3].y + lift },
+    { x: top[2].x, y: top[2].y + lift },
   ];
 
-  // Right face: SOUTH-EAST quad — from right to front, dropping to base.
   const right: Point[] = [
-    top[1],                                        // east/right vertex of top
-    top[2],                                        // south/front vertex of top
-    { x: top[2].x, y: top[2].y + lift },           // south/front vertex at base level
-    { x: top[1].x, y: top[1].y + lift },           // east/right vertex at base level
+    top[1],
+    top[2],
+    { x: top[2].x, y: top[2].y + lift },
+    { x: top[1].x, y: top[1].y + lift },
   ];
 
   return { top, left, right };
