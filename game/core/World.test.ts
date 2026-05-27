@@ -2101,3 +2101,160 @@ describe('growthConstants', () => {
     expect(GROWTH_COOLDOWN_INTERVALS).toBe(8);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 4 (T6): structure-grow branch B'
+// ---------------------------------------------------------------------------
+
+describe("World.tick() — structure-grow (Branch B')", () => {
+  // Helper: advance world by exactly one growth tick.
+  // Precondition: world.getTick() % ZONE_GROWTH_INTERVAL === 0 OR we run from 0.
+  // Returns the WorldTickResult of the growth tick itself.
+  function tickOneGrowthInterval(world: World): ReturnType<typeof world.tick> {
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    return world.tick();
+  }
+
+  it('structure-grow happens before level-up on a multi-cell lot', () => {
+    // 1×4 R-zone lot: cells (1,0)..(1,3), frontage='S', road at (1,4).
+    // structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end.
+    // Land value at anchor (1,0): road distance 4, roadScore ≈ 0.429,
+    // lv ≈ 0.3 > LEVEL_THRESHOLDS[2]=0.25. Sufficient to clear the gate.
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+
+    // Paint the 1×4 zone strip and the road.
+    for (let y = 0; y < 4; y++) {
+      map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
+    }
+    map.setTile(1, 4, createTile(1, 4, TileType.ROAD));
+
+    // Seed building at level=1 with structureRect at the south end, age past cooldown.
+    // id=0 → stagger(0)=0 → cooldown=8. Set age so after +1 it is >= 8+0=8.
+    const building = map.getBuildings().addExistingBuilding({
+      id: 0,
+      type: 'residential',
+      footprint: [
+        { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 },
+      ],
+      anchor: { x: 1, y: 0 },
+      level: 1,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1, // after +1 = 8 = cooldown → gate fires
+      frontage: 'S',
+      structureRect: { x: 1, y: 3, w: 1, h: 1 },
+    });
+    expect(building).toBe(true);
+    world.markLandValueDirty();
+
+    const result = tickOneGrowthInterval(world);
+
+    const b = map.getBuildings().getBuilding(0)!;
+    expect(b).not.toBeNull();
+    // Branch B' fires: structure grows 1 cell northward (frontage S → grow y-1, h+1).
+    expect(b.structureRect).toEqual({ x: 1, y: 2, w: 1, h: 2 });
+    // Level must NOT bump — structure-grow leaves level alone.
+    expect(b.level).toBe(1);
+    // Age resets after structure-grow.
+    expect(b.age).toBe(0);
+    // changedBuildingIds and changedTiles populated.
+    expect(result.changedBuildingIds).toContain(0);
+    expect(result.changedTiles).toContainEqual({ x: 1, y: 0 });
+  });
+
+  it('repeated ticks: structureRect fills lot depth, then level bumps', () => {
+    // Same 1×4 lot setup. id=0, stagger(0)=0, cooldown=8.
+    // Sequence of growth events:
+    //   Grow 1: 1×1 → 1×2  (age resets to 0)
+    //   Grow 2: 1×2 → 1×3  (age resets to 0)
+    //   Grow 3: 1×3 → 1×4  (age resets to 0; lot depth=4, now fills)
+    //   Grow 4: structureRect fills → level bumps 1→2 (age resets to 0)
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+
+    for (let y = 0; y < 4; y++) {
+      map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
+    }
+    map.setTile(1, 4, createTile(1, 4, TileType.ROAD));
+
+    map.getBuildings().addExistingBuilding({
+      id: 0,
+      type: 'residential',
+      footprint: [
+        { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 },
+      ],
+      anchor: { x: 1, y: 0 },
+      level: 1,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1,
+      frontage: 'S',
+      structureRect: { x: 1, y: 3, w: 1, h: 1 },
+    });
+    world.markLandValueDirty();
+
+    // Each growth event requires age to reach cooldown=8.
+    // After each event age resets to 0, so run GROWTH_COOLDOWN_INTERVALS growth
+    // intervals (each = ZONE_GROWTH_INTERVAL ticks) between events.
+    // We already have age=7 before the first growth tick.
+
+    // Grow 1 (age 7 → 8, fires): 1×1 → 1×2
+    tickOneGrowthInterval(world);
+    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 2, w: 1, h: 2 });
+    expect(map.getBuildings().getBuilding(0)!.level).toBe(1);
+
+    // Grow 2: need age >= 8 again. Run GROWTH_COOLDOWN_INTERVALS growth intervals.
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS; g++) tickOneGrowthInterval(world);
+    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 1, w: 1, h: 3 });
+    expect(map.getBuildings().getBuilding(0)!.level).toBe(1);
+
+    // Grow 3: 1×3 → 1×4 (fills lot depth)
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS; g++) tickOneGrowthInterval(world);
+    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 0, w: 1, h: 4 });
+    expect(map.getBuildings().getBuilding(0)!.level).toBe(1);
+
+    // Grow 4: structureRect fills lot → Branch B fires → level bumps 1→2
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS; g++) tickOneGrowthInterval(world);
+    expect(map.getBuildings().getBuilding(0)!.level).toBe(2);
+    // structureRect stays at full lot depth after level-up
+    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 0, w: 1, h: 4 });
+  });
+
+  it('1×1 lot — structureRect fills depth immediately → level bumps directly', () => {
+    // 1×1 lot: zone at (1,1), road at (1,2), frontage='S'.
+    // structureRect = {x:1, y:1, w:1, h:1} which fills the 1×1 lot entirely.
+    // extendStructureToward must return null → Branch B (level-up) fires directly.
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 2, createTile(1, 2, TileType.ROAD));
+
+    // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 gate fires.
+    // land value at (1,1): road at distance 1 → roadScore = 1-1/7 ≈ 0.857,
+    // lv ≈ 0.6 >> LEVEL_THRESHOLDS[2]=0.25.
+    map.getBuildings().addExistingBuilding({
+      id: 0,
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 1,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS - 1,
+      frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+    });
+    world.markLandValueDirty();
+
+    const result = tickOneGrowthInterval(world);
+
+    const b = map.getBuildings().getBuilding(0)!;
+    // structureRect fills 1×1 lot → no structure-grow → level bumps.
+    expect(b.level).toBe(2);
+    // structureRect unchanged.
+    expect(b.structureRect).toEqual({ x: 1, y: 1, w: 1, h: 1 });
+    // changedBuildingIds populated.
+    expect(result.changedBuildingIds).toContain(0);
+    // changedTiles contains the footprint cell.
+    expect(result.changedTiles).toContainEqual({ x: 1, y: 1 });
+  });
+});

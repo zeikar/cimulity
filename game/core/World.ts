@@ -17,7 +17,10 @@ import {
   initialStructureRect,
   footprintCells,
   hasRoadAccess,
+  structureRectFillsLotDepth,
+  extendStructureToward,
 } from './zoneGrowth';
+import { lotBboxOf } from './buildingFootprint';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 export { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 
@@ -470,11 +473,26 @@ export class World {
           const threshold = LEVEL_THRESHOLDS[existing.level + 1];
           const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
           if (anchorLandValue >= threshold && existing.age >= cooldown) {
-            existing.level += 1;
-            existing.age = 0;
-            changedBuildingIds.push(existing.id);
-            for (const coord of existing.footprint) {
-              changedTiles.push({ x: coord.x, y: coord.y });
+            const lot = lotBboxOf(existing.footprint);
+            if (!structureRectFillsLotDepth(existing.structureRect, lot, existing.frontage)) {
+              // Branch B' — structure-grow before level-up.
+              const grown = extendStructureToward(existing.structureRect, lot, existing.frontage);
+              if (grown !== null) {
+                existing.structureRect = grown;
+                existing.age = 0;
+                changedBuildingIds.push(existing.id);
+                for (const coord of existing.footprint) {
+                  changedTiles.push({ x: coord.x, y: coord.y });
+                }
+              }
+            } else {
+              // Branch B — structure already fills the lot; level up.
+              existing.level += 1;
+              existing.age = 0;
+              changedBuildingIds.push(existing.id);
+              for (const coord of existing.footprint) {
+                changedTiles.push({ x: coord.x, y: coord.y });
+              }
             }
           }
         } else {
