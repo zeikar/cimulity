@@ -86,7 +86,7 @@ export function composeFacade(input: FacadeComposerInput): FacadeComposerOutput 
         placements.push({
           moduleId,
           x: cellIndex * 64,
-          y: floorIndex * 24,
+          y: (input.level - 1 - floorIndex) * 24,
           face,
         });
       }
@@ -101,14 +101,15 @@ export function composeFacade(input: FacadeComposerInput): FacadeComposerOutput 
     const widthCells = doorFace === 'left' ? w_cells : h_cells;
     const centerCell = Math.floor((widthCells - 1) / 2);
     const doorId = `door.${input.type}`;
+    const groundY = (input.level - 1) * 24;
     const idx = placements.findIndex(
-      (p) => p.face === doorFace && p.y === 0 && p.x === centerCell * 64,
+      (p) => p.face === doorFace && p.y === groundY && p.x === centerCell * 64,
     );
     if (idx >= 0) {
       placements[idx] = {
         moduleId: doorId,
         x: centerCell * 64,
-        y: 0,
+        y: groundY,
         face: doorFace,
       };
     }

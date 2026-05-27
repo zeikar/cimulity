@@ -107,13 +107,13 @@ describe('composeFacade — frontage / door plumbing', () => {
           if (frontage === 'S') {
             expect(doors.length).toBe(1);
             expect(doors[0].face).toBe('left');
-            expect(doors[0].y).toBe(0);
+            expect(doors[0].y).toBe((level - 1) * 24);
             const widthCells = shape.w;
             expect(doors[0].x).toBe(Math.floor((widthCells - 1) / 2) * 64);
           } else if (frontage === 'E') {
             expect(doors.length).toBe(1);
             expect(doors[0].face).toBe('right');
-            expect(doors[0].y).toBe(0);
+            expect(doors[0].y).toBe((level - 1) * 24);
             const widthCells = shape.h;
             expect(doors[0].x).toBe(Math.floor((widthCells - 1) / 2) * 64);
           } else {
@@ -184,8 +184,9 @@ describe('composeFacade — side placements', () => {
     );
     const centerCell = Math.floor((w_cells - 1) / 2);
     const targetX = centerCell * 64;
+    const groundY = (level - 1) * 24;
     const leftSlots = out.placements.filter(
-      (p) => p.face === 'left' && p.x === targetX && p.y === 0,
+      (p) => p.face === 'left' && p.x === targetX && p.y === groundY,
     );
     expect(leftSlots.length).toBe(1);
     expect(leftSlots[0].moduleId).toBe('door.residential');

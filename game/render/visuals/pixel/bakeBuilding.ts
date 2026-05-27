@@ -90,10 +90,11 @@ export function bakeBuildingFacade(args: {
     let t2: Point;
 
     if (faceName === 'top') {
-      // (0,0)→W, (W_top,0)→N, (0,H_top)→S. 4th corner (W_top,H_top)→E by affine linearity.
+      // (0,0)→W, (W_top,0)→S, (0,H_top)→N. Source-width = w_cells axis (W→S edge);
+      // source-height = h_cells axis (W→N edge). 4th corner (W_top,H_top)→E by affine linearity.
       t0 = targets.top[3]; // W
-      t1 = targets.top[0]; // N
-      t2 = targets.top[2]; // S
+      t1 = targets.top[2]; // S  (source-width axis = w_cells)
+      t2 = targets.top[0]; // N  (source-height axis = h_cells)
     } else if (faceName === 'left') {
       // (0,0)→W, (W_left,0)→S, (0,H_left)→W+lift.
       t0 = targets.left[1]; // W

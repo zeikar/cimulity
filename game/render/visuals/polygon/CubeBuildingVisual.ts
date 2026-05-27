@@ -126,7 +126,7 @@ function facadeRepresentable(v: ShellVariation): boolean {
  */
 function bakedEntryKey(input: BuildingVisualInput, atlasVersion: number): string {
   const shape = normalizeFootprint(input.footprint, input.anchor);
-  return `${input.level}:${input.density}:${shape}:${input.frontage}:av${atlasVersion}`;
+  return `${input.type}:${input.level}:${input.density}:${shape}:${input.frontage}:av${atlasVersion}`;
 }
 
 /**
