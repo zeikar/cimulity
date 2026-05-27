@@ -4,12 +4,18 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 import { ZONE_GROWTH_INTERVAL } from './World';
 
-describe('v9 serialization', () => {
-  it('WORLD_SAVE_VERSION is 9 and serializeWorld emits vertex-smooth terrain', () => {
+describe('WORLD_SAVE_VERSION', () => {
+  it('is 10', () => {
+    expect(WORLD_SAVE_VERSION).toBe(10);
+  });
+});
+
+describe('v10 serialization', () => {
+  it('WORLD_SAVE_VERSION is 10 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(9);
-    expect(parsed.v).toBe(9);
+    expect(WORLD_SAVE_VERSION).toBe(10);
+    expect(parsed.v).toBe(10);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -106,6 +112,7 @@ describe('v9 serialization', () => {
       den: 0,
       age: 0,
       f: 'S',
+      sr: [0, 0, 1, 1],
     }];
 
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -145,6 +152,7 @@ describe('v9 serialization', () => {
       den: 0,
       age: 0,
       f: 'S',
+      sr: [0, 0, 1, 1],
     }];
 
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -166,6 +174,7 @@ describe('v9 serialization', () => {
       den: 0,
       age: 0,
       f: 'S',
+      sr: [0, 0, 1, 1],
     }];
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -184,6 +193,7 @@ describe('v9 serialization', () => {
       den: 0,
       age: 0,
       f: 'S',
+      sr: [0, 0, 1, 1],
     }];
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -205,6 +215,7 @@ describe('v9 serialization', () => {
       den: 0,
       age: 0,
       f: 'S',
+      sr: [0, 0, 2, 2],
     }];
     expect(deserializeWorldInto(new World(10, 10, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -232,6 +243,7 @@ describe('v9 serialization', () => {
       den: 0,
       age: 0,
       f: 'S',
+      sr: [2, 2, 1, 1],
     }];
 
     const target = new World(4, 4, { regenerate: false });
@@ -245,7 +257,7 @@ describe('v9 serialization', () => {
   });
 });
 
-describe('v9 frontage round-trip', () => {
+describe('v10 frontage round-trip', () => {
   it('round-trip preserves frontage: N for a 1×1 building', () => {
     const src = new World(4, 4, { regenerate: false });
     const map = src.getMap();
@@ -308,7 +320,7 @@ describe('v9 frontage round-trip', () => {
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 
-  it('rejects a v: 9 save with f missing from a building entry', () => {
+  it('rejects a save with f missing from a building entry', () => {
     const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
     const w = 4;
     base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
@@ -321,11 +333,12 @@ describe('v9 frontage round-trip', () => {
       den: 0,
       age: 0,
       // f intentionally omitted
+      sr: [0, 0, 1, 1],
     }];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v: 9 save with f: "X" (invalid frontage value)', () => {
+  it('rejects a save with f: "X" (invalid frontage value)', () => {
     const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
     const w = 4;
     base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
@@ -338,6 +351,7 @@ describe('v9 frontage round-trip', () => {
       den: 0,
       age: 0,
       f: 'X',
+      sr: [0, 0, 1, 1],
     }];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
@@ -435,5 +449,129 @@ describe('end-to-end integration: spawn → save → load', () => {
 
     // Byte-equal round-trip.
     expect(serializeWorld(loaded)).toBe(serialized);
+  });
+});
+
+describe('structureRect round-trip', () => {
+  it('preserves structureRect for multiple buildings with varying depths', () => {
+    // Build a world with three buildings:
+    //   - 1×1 building at (1,1) frontage N, structureRect = full lot (1×1)
+    //   - 1×2 (w=1,h=2) building at (3,1)+(3,2), frontage N, structureRect 1×1 (shallow)
+    //   - 1×4 (w=1,h=4) building at (5,1)+(5,2)+(5,3)+(5,4), frontage N, structureRect 1×4 (full lot)
+    const src = new World(8, 8, { regenerate: false });
+    const map = src.getMap();
+
+    // Building A: 1×1, structureRect = lot
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    const bA = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 0, density: 0, age: 0,
+      frontage: 'N',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+    });
+    expect(bA).not.toBeNull();
+
+    // Building B: 1×2, structureRect = 1×1 pinned to N edge
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(3, 2, createTile(3, 2, TileType.ZONE_RESIDENTIAL));
+    const bB = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 3, y: 1 }, { x: 3, y: 2 }],
+      anchor: { x: 3, y: 1 },
+      level: 0, density: 0, age: 0,
+      frontage: 'N',
+      structureRect: { x: 3, y: 1, w: 1, h: 1 },
+    });
+    expect(bB).not.toBeNull();
+
+    // Building C: 1×4, structureRect = full lot
+    map.setTile(5, 1, createTile(5, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(5, 2, createTile(5, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(5, 3, createTile(5, 3, TileType.ZONE_RESIDENTIAL));
+    map.setTile(5, 4, createTile(5, 4, TileType.ZONE_RESIDENTIAL));
+    const bC = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 5, y: 1 }, { x: 5, y: 2 }, { x: 5, y: 3 }, { x: 5, y: 4 }],
+      anchor: { x: 5, y: 1 },
+      level: 0, density: 0, age: 0,
+      frontage: 'N',
+      structureRect: { x: 5, y: 1, w: 1, h: 4 },
+    });
+    expect(bC).not.toBeNull();
+
+    const serialized = serializeWorld(src);
+    const dst = new World(8, 8, { regenerate: false });
+    expect(deserializeWorldInto(dst, serialized)).toBe(true);
+
+    const dstBuildings = dst.getMap().getBuildings();
+    const rA = dstBuildings.getBuildingAt(1, 1);
+    expect(rA).not.toBeNull();
+    expect(rA!.structureRect).toEqual({ x: 1, y: 1, w: 1, h: 1 });
+
+    const rB = dstBuildings.getBuildingAt(3, 1);
+    expect(rB).not.toBeNull();
+    expect(rB!.structureRect).toEqual({ x: 3, y: 1, w: 1, h: 1 });
+
+    const rC = dstBuildings.getBuildingAt(5, 1);
+    expect(rC).not.toBeNull();
+    expect(rC!.structureRect).toEqual({ x: 5, y: 1, w: 1, h: 4 });
+  });
+});
+
+describe('structureRect rejection', () => {
+  it('rejects sr: [0,0,0,0] (w=0, fails isCanonicalRect)', () => {
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 0, den: 0, age: 0,
+      f: 'S',
+      sr: [0, 0, 0, 0],
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects sr extending past the footprint bbox', () => {
+    // Lot is 1×1 at (0,0) but sr claims 2×2
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 0, den: 0, age: 0,
+      f: 'S',
+      sr: [0, 0, 2, 2],
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects sr not pinned to frontage edge (1×1 structure in middle of 1×4 lot, frontage S)', () => {
+    // Lot is 1×4 at (0,0)–(0,3), frontage S requires sr.y+sr.h === 4.
+    // sr at (0,1,1,1) is valid canonical but not pinned to S edge.
+    const base = JSON.parse(serializeWorld(new World(8, 8, { regenerate: false })));
+    const w = 8;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[1 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[2 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[3 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [0, 1], [0, 2], [0, 3]],
+      anc: [0, 0],
+      lvl: 0, den: 0, age: 0,
+      f: 'S',
+      sr: [0, 1, 1, 1], // middle of lot, not pinned to S edge (y+h=2 ≠ 4)
+    }];
+    expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 });

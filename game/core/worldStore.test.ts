@@ -40,8 +40,8 @@ function makeFakeStorage(): FakeStorage {
   };
 }
 
-// The storage key mirrors the constant in worldStore.ts (v9 cut).
-const STORAGE_KEY = 'cimulity:save:v9';
+// The storage key mirrors the constant in worldStore.ts (v10 cut).
+const STORAGE_KEY = 'cimulity:save:v10';
 
 // ---- singleton reset helper ----
 
@@ -426,7 +426,7 @@ describe('getWorld — sentinel: Test A — API probe fails → fresh World', ()
     };
     // Set the current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-frontage-demand-v1';
+    (globalThis as any).__cimulityWorldGuard = 'lot-structure-merge-v1';
 
     const result = getWorld();
 
@@ -459,7 +459,7 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = real;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-frontage-demand-v1';
+    (globalThis as any).__cimulityWorldGuard = 'lot-structure-merge-v1';
 
     const result = getWorld();
 
@@ -468,13 +468,13 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
 });
 
 describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
-  it('builds a fresh World and writes vertex-smooth-frontage-demand-v1 to globalThis.__cimulityWorldGuard', () => {
+  it('builds a fresh World and writes lot-structure-merge-v1 to globalThis.__cimulityWorldGuard', () => {
     // Singleton and guard are already cleared by beforeEach (resetSingleton).
     const result = getWorld();
 
     expect(result).toBeInstanceOf(World);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((globalThis as any).__cimulityWorldGuard).toBe('vertex-smooth-frontage-demand-v1');
+    expect((globalThis as any).__cimulityWorldGuard).toBe('lot-structure-merge-v1');
   });
 });
 
@@ -519,26 +519,26 @@ describe('getWorld — spy: generateTerrain call count', () => {
   });
 });
 
-// ---- T1 v9 schema tests ----
+// ---- T1/T6 v10 schema tests ----
 
-describe('getWorld — stale v8 key ignored, v9 key absent → fresh procedural world', () => {
-  it('stale cimulity:save:v8 blob with empty v9 key returns STARTING_FUNDS world', () => {
-    // Write something to the old v8 key — the v9 key is absent.
+describe('getWorld — stale v9 key ignored, v10 key absent → fresh procedural world', () => {
+  it('stale cimulity:save:v9 blob with empty v10 key returns STARTING_FUNDS world', () => {
+    // Write something to the old v9 key — the v10 key is absent.
     const src = new World(64, 64, { regenerate: false });
     src.trySpend(3000); // treasury = 7000 so we can detect if it was loaded
-    fakeStorage.setItem('cimulity:save:v8', serializeWorld(src));
-    // v9 key is absent — fakeStorage has nothing at that key.
+    fakeStorage.setItem('cimulity:save:v9', serializeWorld(src));
+    // v10 key is absent — fakeStorage has nothing at that key.
 
     const world = getWorld();
 
-    // Must be a fresh world: the v8 save is never read.
+    // Must be a fresh world: the v9 save is never read.
     expect(world.getMoney()).toBe(STARTING_FUNDS);
     expect(world.getElapsedDays()).toBe(0);
   });
 });
 
-describe('getWorld — valid v9 save with buildings hydrates frontage', () => {
-  it('hydrated world carries frontage on buildings round-tripped through v9 serialization', () => {
+describe('getWorld — valid v10 save with buildings hydrates frontage', () => {
+  it('hydrated world carries frontage on buildings round-tripped through v10 serialization', () => {
     const src = new World(64, 64, { regenerate: false });
     const map = src.getMap();
     map.setTile(5, 5, createTile(5, 5, TileType.ZONE_RESIDENTIAL));
@@ -575,7 +575,7 @@ describe('getWorld — stale singleton missing getDemand is discarded', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = stale;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'vertex-smooth-frontage-demand-v1';
+    (globalThis as any).__cimulityWorldGuard = 'lot-structure-merge-v1';
 
     const result = getWorld();
 
@@ -583,5 +583,39 @@ describe('getWorld — stale singleton missing getDemand is discarded', () => {
     expect(result).toBeInstanceOf(World);
     expect(typeof result.getDemand).toBe('function');
     expect(typeof result.markDemandDirty).toBe('function');
+  });
+});
+
+describe('WORLD_SINGLETON_GUARD invalidates stale HMR singletons', () => {
+  it('rebuilds when guard differs', () => {
+    const globals = globalThis as unknown as {
+      __cimulityWorld?: World;
+      __cimulityWorldGuard?: string;
+    };
+    // Seed a stale singleton with an old guard value:
+    const stale = new World(64, 64, { regenerate: false });
+    globals.__cimulityWorld = stale;
+    globals.__cimulityWorldGuard = 'vertex-smooth-frontage-demand-v1'; // OLD value
+    // Calling getWorld() should detect the guard mismatch and build a fresh world:
+    const fresh = getWorld();
+    expect(fresh).not.toBe(stale);
+    expect(globals.__cimulityWorldGuard).toBe('lot-structure-merge-v1');
+  });
+});
+
+describe('getWorld — stale v9-keyed save is not read by v10 loader', () => {
+  it('seeds a v9-keyed payload, calls getWorld(), and asserts the loaded world is fresh', () => {
+    // Construct a world and save its JSON to the OLD v9 key.
+    const src = new World(64, 64, { regenerate: false });
+    src.trySpend(4000); // treasury = 6000 so we can detect if it was loaded
+    fakeStorage.setItem('cimulity:save:v9', serializeWorld(src));
+    // v10 key is absent.
+
+    const world = getWorld();
+
+    // Must be a fresh world: the v9-keyed save is at a different localStorage key
+    // and is never read by the v10 loader.
+    expect(world.getMoney()).toBe(STARTING_FUNDS);
+    expect(world.getElapsedDays()).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v9 is native; older saves are rejected; `worldStore` falls back to a fresh
+ * v10 is native; older saves are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum (no `'water'`); coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -13,22 +13,22 @@ import { TileType, createTile, isZoneType } from './Tile';
 import { ZONE_MAX_LEVEL } from './World';
 import type { World } from './World';
 import { isBuildingType, tileTypeFromBuildingType } from './Building';
-import { isCanonicalFootprintRect, lotBboxOf } from './buildingFootprint';
-import type { Frontage } from './buildingFootprint';
+import { isCanonicalFootprintRect, isStructureRectInLot, lotBboxOf } from './buildingFootprint';
+import type { Frontage, Rect } from './buildingFootprint';
 import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v9 saves are accepted.
+ * This is the `v` value written to disk. Only native v10 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 9;
+export const WORLD_SAVE_VERSION = 10;
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
 /**
  * Wire format for one building entry in `b[]`.
- * Compact tuple-array style: { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age, f }.
+ * Compact tuple-array style: { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age, f, sr: [x,y,w,h] }.
  */
 interface BuildingSaveEntry {
   id: number;
@@ -39,11 +39,12 @@ interface BuildingSaveEntry {
   den: number;
   age: number;
   f: Frontage;
+  sr: [number, number, number, number]; // [x, y, w, h] of structureRect
 }
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 9).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 10).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` is sorted by id ascending for deterministic byte-equality across round-trips.
@@ -72,6 +73,7 @@ export function serializeWorld(world: World): string {
     den: building.density,
     age: building.age,
     f: building.frontage,
+    sr: [building.structureRect.x, building.structureRect.y, building.structureRect.w, building.structureRect.h] as [number, number, number, number],
   }));
 
   const data = {
@@ -165,6 +167,15 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
 
     const lot = lotBboxOf(footprint);
 
+    if (!Array.isArray(e.sr) || e.sr.length !== 4) return null;
+    const [srx, sry, srw, srh] = e.sr;
+    if (!Number.isInteger(srx) || srx < 0) return null;
+    if (!Number.isInteger(sry) || sry < 0) return null;
+    if (!Number.isInteger(srw) || srw < 0) return null;
+    if (!Number.isInteger(srh) || srh < 0) return null;
+    const sr: Rect = { x: srx, y: sry, w: srw, h: srh };
+    if (!isStructureRectInLot(sr, lot, e.f)) return null;
+
     staging.push({
       id: e.id,
       type: e.type,
@@ -174,8 +185,7 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
       density: e.den as 0 | 1 | 2,
       age: e.age,
       frontage: e.f,
-      // T6 task 3 (save format): replaced with parsed sr from wire.
-      structureRect: { x: lot.x, y: lot.y, w: lot.w, h: lot.h },
+      structureRect: sr,
     });
   }
 
@@ -183,10 +193,10 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
 }
 
 /**
- * Apply a serialized v9 world envelope onto an existing World instance.
+ * Apply a serialized v10 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===9 → dims → m/d → t[] → l[] → b[] → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===10 → dims → m/d → t[] → l[] → b[] → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
