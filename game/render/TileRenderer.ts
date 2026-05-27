@@ -16,7 +16,8 @@
  * trigger a full rebuild via the signature compare.
  */
 
-import { Container } from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
+import { mountYardCell, updateYardCell } from './visuals/polygon/YardVisual';
 import { VisualRegistry } from './visuals/visualRegistry';
 import { DiamondTileVisual } from './visuals/polygon/DiamondTileVisual';
 import { CubeBuildingVisual } from './visuals/polygon/CubeBuildingVisual';
@@ -84,6 +85,8 @@ export class TileRenderer {
   private tiles: Map<number, TileEntry> = new Map();
   /** building id → mounted building entry */
   private buildingById: Map<number, BuildingEntry> = new Map();
+  /** `${buildingId}:${x}:${y}` → yard Graphics for non-structure lot cells */
+  private yardByKey: Map<string, { gfx: Graphics; type: BuildingType }> = new Map();
   /** Set by markDirty() — triggers a full redraw of all tiles on next render(). */
   private fullDirty: boolean = true;
   /** Incremental queue populated by markTilesChanged(); drained when fullDirty is false. */
@@ -261,6 +264,7 @@ export class TileRenderer {
     } else {
       visual.update(input, existing.displayObject);
     }
+    this.syncYardCellsForBuilding(building, terrain);
   }
 
   /** Unmount a building by id and remove from the map. */
@@ -268,6 +272,53 @@ export class TileRenderer {
     // Route through visual.unmount so sibling Graphics (e.g. drop-shadow) are cleaned up too.
     entry.visual.unmount(entry.displayObject);
     this.buildingById.delete(id);
+    this.unmountYardsForBuilding(id);
+  }
+
+  /** Mount or update yard polygons for non-structure cells of a building. */
+  private syncYardCellsForBuilding(building: Building, terrain: Terrain): void {
+    const sr = building.structureRect;
+    const isInsideStructure = (cell: { x: number; y: number }): boolean =>
+      cell.x >= sr.x && cell.x < sr.x + sr.w && cell.y >= sr.y && cell.y < sr.y + sr.h;
+
+    // Mount or update yards for non-structure cells.
+    for (const cell of building.footprint) {
+      const key = `${building.id}:${cell.x}:${cell.y}`;
+      if (isInsideStructure(cell)) {
+        // Cell is structure now — unmount any pre-existing yard graphic.
+        const prev = this.yardByKey.get(key);
+        if (prev) {
+          prev.gfx.destroy();
+          this.yardByKey.delete(key);
+        }
+        continue;
+      }
+      const existing = this.yardByKey.get(key);
+      if (existing) {
+        // Update — building may have changed type via merge etc.
+        updateYardCell(existing.gfx, cell, building.type, terrain);
+        existing.type = building.type;
+      } else {
+        const gfx = mountYardCell(this.terrainContainer, cell, building.type, terrain);
+        this.yardByKey.set(key, { gfx, type: building.type });
+      }
+    }
+  }
+
+  /** Remove all yard Graphics for a given building id. */
+  private unmountYardsForBuilding(id: number): void {
+    const prefix = `${id}:`;
+    const toRemove: string[] = [];
+    for (const key of this.yardByKey.keys()) {
+      if (key.startsWith(prefix)) toRemove.push(key);
+    }
+    for (const key of toRemove) {
+      const entry = this.yardByKey.get(key);
+      if (entry) {
+        entry.gfx.destroy();
+        this.yardByKey.delete(key);
+      }
+    }
   }
 
   markDirty(): void {
@@ -293,6 +344,9 @@ export class TileRenderer {
       visual.unmount(displayObject);
     }
     this.buildingById.clear();
+
+    for (const entry of this.yardByKey.values()) entry.gfx.destroy();
+    this.yardByKey.clear();
 
     // Let each registered visual destroy its own internal cache (e.g. shared
     // Graphics objects, texture atlases). TileRenderer must not reach into
