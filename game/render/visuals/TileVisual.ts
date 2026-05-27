@@ -8,6 +8,7 @@
 import type { Container } from 'pixi.js';
 import type { TileType } from '@/game/core/Tile';
 import type { BuildingType } from '@/game/core/Building';
+import type { Frontage } from '@/game/core/buildingFootprint';
 import type { CornerHeights } from '../terrain/tileCornerHeights';
 import type { TerrainShape } from '../../core/terrainSlope';
 
@@ -34,6 +35,7 @@ export interface BuildingVisualInput {
   footprint: ReadonlyArray<{ x: number; y: number }>;
   level: number;
   density: 0 | 1 | 2;
+  frontage: Frontage;
   /** Pre-projected elevation height. Renderer populates via world.getTerrain().getRenderHeight(x,y). Test fixtures may omit (treated as 0). */
   renderHeight?: number;
 }

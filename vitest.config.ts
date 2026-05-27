@@ -54,6 +54,7 @@ export default defineConfig({
         'game/render/terrain/terrainZIndex.ts',
         'game/render/visuals/polygon/buildingSeed.ts',
         'game/render/visuals/polygon/shellVariation.ts',
+        'game/render/visuals/polygon/cubePalette.ts',
       ],
       thresholds: {
         lines: 80,

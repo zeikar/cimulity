@@ -270,6 +270,7 @@ describe('cubeDropShadow', () => {
       anchor: { x: 0, y: 0 },
       footprint: [{ x: 0, y: 0 }],
       density: 0 as 0 | 1 | 2,
+      frontage: 'S' as const,
     };
 
     it('mount adds two children (faces + shadow) when level > 0; unmount removes both', () => {

@@ -239,6 +239,7 @@ export class TileRenderer {
       footprint: building.footprint,
       level: building.level,
       density: building.density,
+      frontage: building.frontage,
       renderHeight: terrain.getRenderHeight(building.anchor.x, building.anchor.y),
     };
 
