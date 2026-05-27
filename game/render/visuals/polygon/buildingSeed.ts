@@ -1,6 +1,6 @@
 /** Knuth multiplicative hash — same pattern as `stagger` in game/core/World.ts. */
 export function seedFor(id: number): number {
-  return ((id ^ (id >>> 16)) * 2654435761) >>> 0;
+  return Math.imul(id ^ (id >>> 16), 2654435761) >>> 0;
 }
 
 // Mirrored from game/core/prng.ts `createRng` — kept local to avoid render→core import.

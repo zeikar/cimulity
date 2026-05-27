@@ -102,6 +102,20 @@ describe('shellVariationFor', () => {
         expect(allowed.has(v.liftJitterPct)).toBe(true);
       }
     });
+
+    it('liftJitterPct is stable for the same id across level / area changes', () => {
+      const idsToTest = [1, 7, 42, 99, 1000];
+      for (const id of idsToTest) {
+        const atLow  = shellVariationFor({ id, level: 1 }, { w: 4, h: 4 });
+        const atHigh = shellVariationFor({ id, level: 5 }, { w: 4, h: 4 });
+        expect(atHigh.liftJitterPct).toBe(atLow.liftJitterPct);
+      }
+      for (const id of idsToTest) {
+        const small = shellVariationFor({ id, level: 5 }, { w: 1, h: 1 });
+        const large = shellVariationFor({ id, level: 5 }, { w: 4, h: 4 });
+        expect(small.liftJitterPct).toBe(large.liftJitterPct);
+      }
+    });
   });
 });
 

@@ -20,25 +20,19 @@ export function shellVariationFor(
   const { w, h } = footprint;
   const rng = mulberry32(seedFor(building.id));
 
-  // Draw 1: roof (consume rng even when forced flat to keep draw order stable)
-  let roof: RoofType;
-  if (building.level <= 2) {
-    roof = 'flat';
-  } else {
-    const roofIdx = pickIndex(rng, [0.50, 0.35, 0.15]);
-    roof = (['flat', 'gabled', 'stepped'] as const)[roofIdx];
-  }
+  // Draw 1: roof — ALWAYS advance rng; gate overrides the result.
+  const roofIdx = pickIndex(rng, [0.50, 0.35, 0.15]);
+  let roof: RoofType = (['flat', 'gabled', 'stepped'] as const)[roofIdx];
+  if (building.level <= 2) roof = 'flat';
 
-  // Draw 2: volume split eligibility
+  // Draw 2: volume split eligibility — ALWAYS advance rng; gate controls use of result.
+  const splitRoll = rng();
   let splitKind: VolumeSplitKind = 'none';
-  if (building.level >= 3 && w * h >= 4) {
-    const r1 = rng();
-    if (r1 < 0.5) {
-      if (w >= h && w >= 2) {
-        splitKind = 'x';
-      } else if (h >= 2) {
-        splitKind = 'y';
-      }
+  if (building.level >= 3 && w * h >= 4 && splitRoll < 0.5) {
+    if (w >= h && w >= 2) {
+      splitKind = 'x';
+    } else if (h >= 2) {
+      splitKind = 'y';
     }
   }
 
