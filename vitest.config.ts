@@ -56,6 +56,7 @@ export default defineConfig({
         'game/render/visuals/polygon/shellVariation.ts',
         'game/render/visuals/polygon/cubePalette.ts',
         'game/render/visuals/pixel/facadeComposer.ts',
+        'game/render/visuals/pixel/facadeAtlasLayout.ts',
       ],
       thresholds: {
         lines: 80,
