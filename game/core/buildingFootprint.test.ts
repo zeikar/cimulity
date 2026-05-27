@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isCanonicalFootprintRect } from './buildingFootprint';
+import { isCanonicalFootprintRect, isCanonicalRect, isStructureRectInLot } from './buildingFootprint';
+import type { Rect } from './buildingFootprint';
 
 // Helper: build a full W×H rect starting at (ox, oy)
 function rect(ox: number, oy: number, w: number, h: number) {
@@ -74,5 +75,71 @@ describe('isCanonicalFootprintRect', () => {
   it('rejects a footprint with disconnected cells', () => {
     // Two cells far apart — bounding rect would be 6×6 but only 2 cells present
     expect(isCanonicalFootprintRect([{ x: 0, y: 0 }, { x: 5, y: 5 }], { x: 0, y: 0 })).toBe(false);
+  });
+});
+
+describe('isCanonicalRect', () => {
+  it('accepts a valid rect with positive integer x,y,w,h', () => {
+    expect(isCanonicalRect({ x: 0, y: 0, w: 2, h: 3 })).toBe(true);
+  });
+
+  it('accepts a 1×1 rect at non-zero origin', () => {
+    expect(isCanonicalRect({ x: 5, y: 7, w: 1, h: 1 })).toBe(true);
+  });
+
+  it('rejects negative x', () => {
+    expect(isCanonicalRect({ x: -1, y: 0, w: 1, h: 1 })).toBe(false);
+  });
+
+  it('rejects h=0', () => {
+    expect(isCanonicalRect({ x: 0, y: 0, w: 1, h: 0 })).toBe(false);
+  });
+
+  it('rejects fractional w', () => {
+    expect(isCanonicalRect({ x: 0, y: 0, w: 1.5, h: 1 })).toBe(false);
+  });
+});
+
+describe('isStructureRectInLot', () => {
+  const lot: Rect = { x: 2, y: 3, w: 4, h: 4 };
+
+  it('N frontage: structureRect pinned to north edge, full width → true', () => {
+    // sr.y === lot.y, sr.x === lot.x, sr.w === lot.w
+    expect(isStructureRectInLot({ x: 2, y: 3, w: 4, h: 1 }, lot, 'N')).toBe(true);
+  });
+
+  it('S frontage: structureRect pinned to south edge, full width → true', () => {
+    // sr.y + sr.h === lot.y + lot.h
+    expect(isStructureRectInLot({ x: 2, y: 6, w: 4, h: 1 }, lot, 'S')).toBe(true);
+  });
+
+  it('W frontage: structureRect pinned to west edge, full height → true', () => {
+    expect(isStructureRectInLot({ x: 2, y: 3, w: 1, h: 4 }, lot, 'W')).toBe(true);
+  });
+
+  it('E frontage: structureRect pinned to east edge, full height → true', () => {
+    // sr.x + sr.w === lot.x + lot.w
+    expect(isStructureRectInLot({ x: 5, y: 3, w: 1, h: 4 }, lot, 'E')).toBe(true);
+  });
+
+  it('S frontage: w !== lot.w → false (width-axis full span required)', () => {
+    expect(isStructureRectInLot({ x: 2, y: 6, w: 3, h: 1 }, lot, 'S')).toBe(false);
+  });
+
+  it('out-of-lot: structureRect extends past east border → false', () => {
+    expect(isStructureRectInLot({ x: 2, y: 3, w: 5, h: 1 }, lot, 'N')).toBe(false);
+  });
+
+  it('non-canonical: h=0 → false', () => {
+    expect(isStructureRectInLot({ x: 2, y: 3, w: 4, h: 0 }, lot, 'N')).toBe(false);
+  });
+
+  it('non-canonical: negative x → false', () => {
+    expect(isStructureRectInLot({ x: -1, y: 3, w: 4, h: 1 }, lot, 'N')).toBe(false);
+  });
+
+  it('wrong-edge pin: sr pinned to S edge when frontage=N → false', () => {
+    // sr.y + sr.h === lot.y + lot.h but frontage=N requires sr.y === lot.y
+    expect(isStructureRectInLot({ x: 2, y: 6, w: 4, h: 1 }, lot, 'N')).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import { World } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 import type { Building } from '../core/Building';
+import { lotBboxOf } from '../core/buildingFootprint';
 
 let world: World;
 
@@ -624,6 +625,7 @@ describe('buildToolPreview - BULLDOZE multi-tile affected', () => {
     for (const c of footprint) {
       w.getMap().setTile(c.x, c.y, createTile(c.x, c.y, tileType));
     }
+    const lot = lotBboxOf(footprint);
     const b = w.getMap().getBuildings().addBuilding({
       type: opts.type ?? 'residential',
       footprint,
@@ -632,6 +634,7 @@ describe('buildToolPreview - BULLDOZE multi-tile affected', () => {
       density: opts.density ?? 1,
       age: 0,
       frontage: opts.frontage ?? 'S',
+      structureRect: { x: lot.x, y: lot.y, w: lot.w, h: lot.h },
     });
     if (b === null) throw new Error('seedBuilding: addBuilding returned null — fixture broken');
     return b;

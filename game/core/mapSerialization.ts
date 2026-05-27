@@ -13,7 +13,7 @@ import { TileType, createTile, isZoneType } from './Tile';
 import { ZONE_MAX_LEVEL } from './World';
 import type { World } from './World';
 import { isBuildingType, tileTypeFromBuildingType } from './Building';
-import { isCanonicalFootprintRect } from './buildingFootprint';
+import { isCanonicalFootprintRect, lotBboxOf } from './buildingFootprint';
 import type { Frontage } from './buildingFootprint';
 import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
@@ -163,6 +163,8 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
       occupiedIndices.add(idx);
     }
 
+    const lot = lotBboxOf(footprint);
+
     staging.push({
       id: e.id,
       type: e.type,
@@ -172,6 +174,8 @@ function validateBuildingsArray(data: WorldSaveData, w: number, h: number): Buil
       density: e.den as 0 | 1 | 2,
       age: e.age,
       frontage: e.f,
+      // T6 task 3 (save format): replaced with parsed sr from wire.
+      structureRect: { x: lot.x, y: lot.y, w: lot.w, h: lot.h },
     });
   }
 

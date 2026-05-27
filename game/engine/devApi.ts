@@ -19,6 +19,7 @@ import type { World } from '../core/World';
 import type { PixiApp } from '../render/PixiApp';
 import type { TileType } from '../core/Tile';
 import type { Building, BuildingType } from '../core/Building';
+import { lotBboxOf } from '../core/buildingFootprint';
 import type { Frontage } from '../core/buildingFootprint';
 
 export interface SeedBuildingSpec {
@@ -128,6 +129,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         let buildingsAdded = 0;
         if (spec.buildings && spec.buildings.length > 0) {
           for (const b of spec.buildings) {
+            const lot = lotBboxOf(b.footprint);
             const building: Building = {
               id: b.id,
               type: b.type,
@@ -137,6 +139,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
               density: b.density,
               age: b.age ?? 0,
               frontage: b.frontage,
+              structureRect: { x: lot.x, y: lot.y, w: lot.w, h: lot.h },
             };
             if (buildings.addExistingBuilding(building)) buildingsAdded++;
           }

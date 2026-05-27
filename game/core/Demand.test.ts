@@ -24,6 +24,7 @@ function addBuilding(
     density: 0,
     age: 0,
     frontage: 'S',
+    structureRect: { x, y, w: 1, h: 1 },
   });
 }
 
@@ -148,6 +149,7 @@ describe('Demand', () => {
         density: 0,
         age: 0,
         frontage: 'S',
+        structureRect: { x: i % 200, y: Math.floor(i / 200), w: 1, h: 1 },
       });
     }
     // Add 1 level-1 industrial building
@@ -160,6 +162,7 @@ describe('Demand', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 100, y: 0, w: 1, h: 1 },
     });
 
     const demand = new Demand();

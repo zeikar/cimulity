@@ -455,6 +455,7 @@ export class World {
             density: 0,
             age: 0,
             frontage,
+            structureRect: { x: chosen.x, y: chosen.y, w: chosen.w, h: chosen.h },
           });
           if (created !== null) {
             // T3 NOTE: processedBuildingIds prevents later cells of this multi-tile footprint

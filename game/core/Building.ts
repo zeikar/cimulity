@@ -1,6 +1,6 @@
 import { TileType } from './Tile';
-import { isCanonicalFootprintRect, isFrontage } from './buildingFootprint';
-import type { Frontage } from './buildingFootprint';
+import { isCanonicalFootprintRect, isFrontage, isStructureRectInLot, lotBboxOf } from './buildingFootprint';
+import type { Rect, Frontage } from './buildingFootprint';
 
 export type BuildingType = 'residential' | 'commercial' | 'industrial';
 
@@ -17,6 +17,7 @@ export type Building = {
   density: 0 | 1 | 2;
   age: number;
   frontage: Frontage;
+  structureRect: Rect;
 };
 
 export function tileTypeFromBuildingType(t: BuildingType): TileType {
@@ -95,6 +96,7 @@ export class BuildingMap {
   addBuilding(b: Omit<Building, 'id'>): Building | null {
     if (!isFrontage(b.frontage)) return null;
     if (!this.validateFootprint(b.footprint, b.anchor)) return null;
+    if (!isStructureRectInLot(b.structureRect, lotBboxOf(b.footprint), b.frontage)) return null;
     if (this.hasOverlap(b.footprint)) return null;
 
     const id = this.nextId++;
@@ -117,6 +119,7 @@ export class BuildingMap {
     if (!isFrontage(b.frontage)) return false;
     if (this.buildings.has(b.id)) return false;
     if (!this.validateFootprint(b.footprint, b.anchor)) return false;
+    if (!isStructureRectInLot(b.structureRect, lotBboxOf(b.footprint), b.frontage)) return false;
     if (this.hasOverlap(b.footprint)) return false;
 
     for (const c of b.footprint) {

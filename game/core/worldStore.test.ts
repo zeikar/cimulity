@@ -550,6 +550,7 @@ describe('getWorld — valid v9 save with buildings hydrates frontage', () => {
       density: 0,
       age: 0,
       frontage: 'W',
+      structureRect: { x: 5, y: 5, w: 1, h: 1 },
     });
     fakeStorage.setItem(STORAGE_KEY, serializeWorld(src));
 

@@ -49,6 +49,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 2, y: 3 }],
         anchor: { x: 2, y: 3 },
+        structureRect: { x: 2, y: 3, w: 1, h: 1 },
       });
 
       expect(b).not.toBeNull();
@@ -69,6 +70,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint,
         anchor: { x: 1, y: 1 },
+        structureRect: { x: 1, y: 1, w: 2, h: 2 },
       });
 
       expect(b).not.toBeNull();
@@ -83,6 +85,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
 
       expect(map.removeBuilding(b!.id)).toBe(true);
@@ -96,6 +99,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 5, y: 0 }],
         anchor: { x: 5, y: 0 },
+        structureRect: { x: 5, y: 0, w: 1, h: 1 },
       });
       expect(result).toBeNull();
     });
@@ -106,6 +110,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       expect(result).toBeNull();
     });
@@ -116,6 +121,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 3, y: 3 }],
         anchor: { x: 3, y: 3 },
+        structureRect: { x: 3, y: 3, w: 1, h: 1 },
       });
       expect(first).not.toBeNull();
 
@@ -123,6 +129,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 3, y: 3 }],
         anchor: { x: 3, y: 3 },
+        structureRect: { x: 3, y: 3, w: 1, h: 1 },
       });
       expect(second).toBeNull();
       expect(map.getBuildingAt(3, 3)).toBe(first);
@@ -137,6 +144,7 @@ describe('BuildingMap', () => {
           { x: 1, y: 1 },
         ],
         anchor: { x: 1, y: 1 },
+        structureRect: { x: 1, y: 1, w: 1, h: 1 },
       });
       expect(result).toBeNull();
     });
@@ -148,6 +156,7 @@ describe('BuildingMap', () => {
           ...makeBase(),
           footprint: [{ x: 1.5, y: 0 }],
           anchor: { x: 1.5, y: 0 },
+          structureRect: { x: 0, y: 0, w: 1, h: 1 },
         }),
       ).toBeNull();
     });
@@ -159,6 +168,7 @@ describe('BuildingMap', () => {
           ...makeBase(),
           footprint: [{ x: NaN, y: 0 }],
           anchor: { x: NaN, y: 0 },
+          structureRect: { x: 0, y: 0, w: 1, h: 1 },
         }),
       ).toBeNull();
     });
@@ -170,6 +180,7 @@ describe('BuildingMap', () => {
           ...makeBase(),
           footprint: [{ x: Infinity, y: 0 }],
           anchor: { x: Infinity, y: 0 },
+          structureRect: { x: 0, y: 0, w: 1, h: 1 },
         }),
       ).toBeNull();
     });
@@ -182,6 +193,7 @@ describe('BuildingMap', () => {
         frontage: undefined,
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       expect(result).toBeNull();
     });
@@ -194,6 +206,7 @@ describe('BuildingMap', () => {
         frontage: 'X',
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       expect(result).toBeNull();
     });
@@ -204,6 +217,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 1, y: 1 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       expect(result).toBeNull();
     });
@@ -216,6 +230,7 @@ describe('BuildingMap', () => {
           ...makeBase(),
           footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }],
           anchor: { x: 0, y: 0 },
+          structureRect: { x: 0, y: 0, w: 2, h: 2 },
         }),
       ).toBeNull();
     });
@@ -230,6 +245,7 @@ describe('BuildingMap', () => {
             { x: 3, y: 0 }, { x: 4, y: 0 },
           ],
           anchor: { x: 0, y: 0 },
+          structureRect: { x: 0, y: 0, w: 5, h: 1 },
         }),
       ).toBeNull();
     });
@@ -245,6 +261,7 @@ describe('BuildingMap', () => {
             { x: 0, y: 1 }, { x: 1, y: 1 },
           ],
           anchor: { x: 1, y: 1 },
+          structureRect: { x: 0, y: 0, w: 2, h: 2 },
         }),
       ).toBeNull();
     });
@@ -258,6 +275,7 @@ describe('BuildingMap', () => {
           { x: 2, y: 3 }, { x: 3, y: 3 },
         ],
         anchor: { x: 2, y: 2 },
+        structureRect: { x: 2, y: 2, w: 2, h: 2 },
       });
       expect(result).not.toBeNull();
       expect(map.getBuildingAt(2, 2)).toBe(result);
@@ -273,6 +291,7 @@ describe('BuildingMap', () => {
         id: 42,
         footprint: [{ x: 4, y: 4 }],
         anchor: { x: 4, y: 4 },
+        structureRect: { x: 4, y: 4, w: 1, h: 1 },
       });
       expect(ok).toBe(true);
       expect(map.getBuildingAt(4, 4)?.id).toBe(42);
@@ -285,9 +304,10 @@ describe('BuildingMap', () => {
         id: 42,
         footprint: [{ x: 4, y: 4 }],
         anchor: { x: 4, y: 4 },
+        structureRect: { x: 4, y: 4, w: 1, h: 1 },
       };
       expect(map.addExistingBuilding(b)).toBe(true);
-      expect(map.addExistingBuilding({ ...b, footprint: [{ x: 5, y: 5 }], anchor: { x: 5, y: 5 } })).toBe(false);
+      expect(map.addExistingBuilding({ ...b, footprint: [{ x: 5, y: 5 }], anchor: { x: 5, y: 5 }, structureRect: { x: 5, y: 5, w: 1, h: 1 } })).toBe(false);
     });
 
     it('rejects fractional id', () => {
@@ -297,6 +317,7 @@ describe('BuildingMap', () => {
         id: 1.5,
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       expect(ok).toBe(false);
     });
@@ -309,6 +330,7 @@ describe('BuildingMap', () => {
           id: -1,
           footprint: [{ x: 0, y: 0 }],
           anchor: { x: 0, y: 0 },
+          structureRect: { x: 0, y: 0, w: 1, h: 1 },
         }),
       ).toBe(false);
     });
@@ -323,6 +345,7 @@ describe('BuildingMap', () => {
           id: 1,
           footprint: [{ x: 0, y: 0 }],
           anchor: { x: 0, y: 0 },
+          structureRect: { x: 0, y: 0, w: 1, h: 1 },
         }),
       ).toBe(false);
     });
@@ -337,6 +360,7 @@ describe('BuildingMap', () => {
           id: 1,
           footprint: [{ x: 0, y: 0 }],
           anchor: { x: 0, y: 0 },
+          structureRect: { x: 0, y: 0, w: 1, h: 1 },
         }),
       ).toBe(false);
     });
@@ -350,6 +374,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       expect(b).not.toBeNull();
       expect(b!.id).toBe(8);
@@ -363,6 +388,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 1, y: 1 }],
         anchor: { x: 1, y: 1 },
+        structureRect: { x: 1, y: 1, w: 1, h: 1 },
       });
       map.clear();
       expect([...map.iterBuildings()]).toHaveLength(0);
@@ -374,6 +400,7 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 2, y: 2 }],
         anchor: { x: 2, y: 2 },
+        structureRect: { x: 2, y: 2, w: 1, h: 1 },
       });
       map.clear();
       expect(map.getBuildingAt(2, 2)).toBeNull();
@@ -385,12 +412,14 @@ describe('BuildingMap', () => {
         ...makeBase(),
         footprint: [{ x: 0, y: 0 }],
         anchor: { x: 0, y: 0 },
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
       map.clear();
       const b = map.addBuilding({
         ...makeBase(),
         footprint: [{ x: 1, y: 1 }],
         anchor: { x: 1, y: 1 },
+        structureRect: { x: 1, y: 1, w: 1, h: 1 },
       });
       expect(b).not.toBeNull();
       expect(b!.id).toBe(0);
@@ -410,8 +439,8 @@ describe('BuildingMap', () => {
   describe('getAllBuildings', () => {
     it('returns all stored buildings as a snapshot', () => {
       const map = new BuildingMap(10, 10);
-      map.addBuilding({ ...makeBase(), footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 } });
-      map.addBuilding({ ...makeBase(), footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 } });
+      map.addBuilding({ ...makeBase(), footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, structureRect: { x: 0, y: 0, w: 1, h: 1 } });
+      map.addBuilding({ ...makeBase(), footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, structureRect: { x: 1, y: 1, w: 1, h: 1 } });
       expect(map.getAllBuildings()).toHaveLength(2);
     });
   });

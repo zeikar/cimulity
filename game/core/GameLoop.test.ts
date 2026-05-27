@@ -374,6 +374,7 @@ describe('GameLoop', () => {
       density: 0,
       age: 23, // DENSITY_COOLDOWN_INTERVALS - 1
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     })!;
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     bigMap.getBuildings().addBuilding({
@@ -384,6 +385,7 @@ describe('GameLoop', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     bigMap.getBuildings().addBuilding({
       type: 'industrial',
@@ -393,6 +395,7 @@ describe('GameLoop', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     bigWorld.markDemandDirty();
 

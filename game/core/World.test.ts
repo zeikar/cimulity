@@ -218,6 +218,7 @@ describe('World.tick() — zone growth', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     // Run exactly one growth tick
@@ -505,6 +506,7 @@ describe('World.tick() — monthly tax settlement', () => {
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     const moneyBefore = world.getMoney();
@@ -559,9 +561,9 @@ describe('World.getPopulation()', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
     // Seed buildings with levels 3, 2, 1 respectively; sum = 6
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 1 } });
     // sum = 3+2+1 = 6; population = 6 * POPULATION_PER_LEVEL
     expect(world.getPopulation()).toBe(6 * POPULATION_PER_LEVEL);
   });
@@ -574,7 +576,7 @@ describe('World.getPopulation()', () => {
     map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
     map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
     // Only the zone at (3,0) has a building
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 0, w: 1, h: 1 } });
     expect(world.getPopulation()).toBe(2 * POPULATION_PER_LEVEL);
   });
 
@@ -704,6 +706,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });
     expect(building).not.toBeNull();
 
@@ -728,6 +731,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     expect(building).not.toBeNull();
 
@@ -753,6 +757,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     const rec = map.setTileAndReconcile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -776,8 +781,8 @@ describe('World.getPopulation() — building-based formula', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
     // sum = 2+3 = 5
     expect(world.getPopulation()).toBe(5 * POPULATION_PER_LEVEL);
   });
@@ -885,6 +890,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS + 10,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     // Run many ticks — density must stay 0 until level reaches ZONE_MAX_LEVEL
@@ -910,6 +916,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // Run just one growth tick
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world2.tick();
@@ -935,6 +942,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     map.getBuildings().addBuilding({
@@ -945,6 +953,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
@@ -954,6 +963,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     world.markDemandDirty();
 
@@ -988,6 +998,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     })!;
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     map.getBuildings().addBuilding({
@@ -998,6 +1009,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
@@ -1007,6 +1019,7 @@ describe('World.tick() — density tier', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     world.markDemandDirty();
 
@@ -1044,6 +1057,7 @@ describe('World.tick() — changedBuildingIds contract', () => {
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     // Find the first tick on which the building levels up to 1
@@ -1105,6 +1119,7 @@ describe('World.tick() — multi-tile building guard', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 2, h: 2 },
     });
     expect(ok).toBe(true);
 
@@ -1484,6 +1499,7 @@ describe('World procedural terrain — constructor default (regenerate: true)', 
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     expect(map.getBuildings().getBuildingAt(0, 0)).not.toBeNull();
 
@@ -1572,6 +1588,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: 0,
       frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     // One growth tick with road: age should become 1.
@@ -1602,6 +1619,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
       frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // Also need land value >= LEVEL_THRESHOLDS[1]=0.1; road at distance 1 should suffice.
     // Force land value recompute.
@@ -1623,6 +1641,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
       frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // No road → hasRoadAccess returns false → age does not increment → level stays 0.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world2.tick();
@@ -1645,6 +1664,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     map.getBuildings().addBuilding({
@@ -1655,6 +1675,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
@@ -1664,6 +1685,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     world.markDemandDirty();
     world.markLandValueDirty();
@@ -1685,6 +1707,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world2.markLandValueDirty();
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world2.tick();
@@ -1705,6 +1728,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       density: 0,
       age: 0,
       frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     // Tick with road → age becomes 1.
@@ -1743,9 +1767,9 @@ describe('World.tick() — spawn size (demand-driven)', () => {
     setupZoneBlock(world, 6, 4, 4);
 
     const preSeeded = [
-      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' })!,
-      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' })!,
-      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 4, y: 0 }], anchor: { x: 4, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S' })!,
+      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } })!,
+      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 1 } })!,
+      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 4, y: 0 }], anchor: { x: 4, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 4, y: 0, w: 1, h: 1 } })!,
     ];
     const preSeededIds = new Set(preSeeded.map(b => b.id));
 
@@ -1768,8 +1792,8 @@ describe('World.tick() — spawn size (demand-driven)', () => {
     // Demand recompute only reads building type + level, not tile type.
     // I buildings on road tiles are invisible to zone growth (iterates zone tiles only)
     // but still drive demand via building type + level.
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N' });
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N' });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
 
     const preSeededIds = new Set<number>();
     for (const b of map.getBuildings().iterBuildings()) preSeededIds.add(b.id);
@@ -1792,8 +1816,8 @@ describe('World.tick() — spawn size (demand-driven)', () => {
       const world = new World(8, 7, { regenerate: false });
       const map = world.getMap();
       setupZoneBlock(world, 8, 6, 6);
-      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N' });
-      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N' });
+      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
+      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
       world.markDemandDirty();
       return world;
     }
@@ -1837,8 +1861,8 @@ describe('World.tick() — T3 spawn-size determinism', () => {
       }
       map.setTile(6, 0, createTile(6, 0, TileType.ZONE_INDUSTRIAL));
       map.setTile(7, 0, createTile(7, 0, TileType.ZONE_INDUSTRIAL));
-      map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 6, y: 0 }], anchor: { x: 6, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S' });
-      map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 7, y: 0 }], anchor: { x: 7, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S' });
+      map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 6, y: 0 }], anchor: { x: 6, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 6, y: 0, w: 1, h: 1 } });
+      map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 7, y: 0 }], anchor: { x: 7, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 7, y: 0, w: 1, h: 1 } });
       world.markDemandDirty();
       return world;
     }
@@ -1883,9 +1907,10 @@ describe('World.tick() — T3 density-bump E2E', () => {
     map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 },
       level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, frontage: 'S',
+      structureRect: { x: 3, y: 3, w: 1, h: 1 },
     });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 4, y: 3 }], anchor: { x: 4, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 5, y: 3 }], anchor: { x: 5, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 4, y: 3 }], anchor: { x: 4, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 4, y: 3, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 5, y: 3 }], anchor: { x: 5, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 5, y: 3, w: 1, h: 1 } });
 
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
@@ -1905,9 +1930,9 @@ describe('World.getDemand() — freshness', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
 
@@ -1922,9 +1947,9 @@ describe('World.getDemand() — freshness', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
 
@@ -1937,7 +1962,7 @@ describe('World.getDemand() — freshness', () => {
     const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
     map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, frontage: 'S' });
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 3, w: 1, h: 1 } });
 
     world.markDemandDirty();
     const demandBefore = world.getDemand().industrial;
@@ -1965,6 +1990,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS + 1,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
@@ -1989,6 +2015,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // C+I level-points = 8 → jobsLevels=8, levelSumR=5 → residential=(8-5)/8+0.25=0.625 >= 0.6
     map.getBuildings().addBuilding({
@@ -1999,6 +2026,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
@@ -2008,6 +2036,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     world.markDemandDirty();
 
@@ -2033,6 +2062,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 10,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.markLandValueDirty();
 
@@ -2049,6 +2079,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 10,
       frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
     // Tick until level-up occurs at least once.

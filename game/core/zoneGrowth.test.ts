@@ -224,6 +224,7 @@ describe('hasRoadAccess', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
     expect(hasRoadAccess(building, world)).toBe(true);
   });
@@ -240,6 +241,7 @@ describe('hasRoadAccess', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
     expect(hasRoadAccess(building, world)).toBe(false);
   });
@@ -260,6 +262,7 @@ describe('hasRoadAccess', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 2, w: 2, h: 1 },
     })!;
     expect(hasRoadAccess(building, world)).toBe(true);
   });
@@ -277,6 +280,7 @@ describe('hasRoadAccess', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
     expect(hasRoadAccess(building, world)).toBe(true);
     // Now remove the road
@@ -361,6 +365,7 @@ describe('validateFootprintRect', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });
     expect(
       validateFootprintRect({ x: 2, y: 2, w: 1, h: 1 }, TileType.ZONE_RESIDENTIAL, world)

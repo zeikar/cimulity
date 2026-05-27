@@ -260,6 +260,7 @@ describe('v9 frontage round-trip', () => {
       density: 0,
       age: 0,
       frontage: 'N',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
     expect(ok).not.toBeNull();
 
@@ -285,6 +286,7 @@ describe('v9 frontage round-trip', () => {
       density: 0,
       age: 0,
       frontage: 'E',
+      structureRect: { x: 1, y: 1, w: 1, h: 2 },
     });
     expect(ok).not.toBeNull();
 
@@ -349,10 +351,10 @@ describe('demand freshness on hydrate', () => {
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(4, 1, createTile(4, 1, TileType.ZONE_INDUSTRIAL));
-    src.getMap().getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
-    src.getMap().getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
-    src.getMap().getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
-    src.getMap().getBuildings().addExistingBuilding({ id: 3, type: 'industrial', footprint: [{ x: 4, y: 1 }], anchor: { x: 4, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S' });
+    src.getMap().getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    src.getMap().getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    src.getMap().getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
+    src.getMap().getBuildings().addExistingBuilding({ id: 3, type: 'industrial', footprint: [{ x: 4, y: 1 }], anchor: { x: 4, y: 1 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 4, y: 1, w: 1, h: 1 } });
     src.markDemandDirty();
     expect(src.getDemand().residential).toBeGreaterThanOrEqual(0.6);
 
@@ -413,6 +415,7 @@ describe('end-to-end integration: spawn → save → load', () => {
       density: 0,
       age: 0,
       frontage: 'N',
+      structureRect: { x: 2, y: 2, w: 2, h: 1 },
     });
     expect(ok).not.toBeNull();
 

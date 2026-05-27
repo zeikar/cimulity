@@ -70,6 +70,7 @@ describe('GameMap', () => {
       density: 0,
       age: 0,
       frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
 
     map.reset();
