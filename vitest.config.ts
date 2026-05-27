@@ -53,6 +53,7 @@ export default defineConfig({
         'game/render/terrain/tileCornerHeights.ts',
         'game/render/terrain/terrainZIndex.ts',
         'game/render/visuals/polygon/buildingSeed.ts',
+        'game/render/visuals/polygon/shellVariation.ts',
       ],
       thresholds: {
         lines: 80,
