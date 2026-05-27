@@ -7,6 +7,7 @@ import { tileToScreen, ISO_CONFIG } from '@/game/render/IsoTransform';
 import { cubeLiftPx } from './cubeLift';
 import type { BuildingType } from '@/game/core/Building';
 import { cubeTypeHeightPx, cubeTypeInsetRatio } from './cubeTypeRatios';
+import type { RoofType } from './shellVariation';
 
 export type Point = { x: number; y: number };
 
@@ -128,12 +129,14 @@ export function cubeFacePolygons(
   density: 0 | 1 | 2,
   footprint: ReadonlyArray<{ x: number; y: number }>,
   anchor: { x: number; y: number },
+  liftScale: number = 1,
 ): { top: Point[]; left: Point[]; right: Point[] } | null {
   if (level <= 0) return null;
   if (footprint.length === 0) return null;
 
   const baseLift = cubeLiftPx(level, density);
-  const lift = cubeTypeHeightPx(baseLift, type);
+  // Clamp at 1 so jitter cannot collapse the silhouette into a flat diamond.
+  const lift = Math.max(1, Math.round(cubeTypeHeightPx(baseLift, type) * liftScale));
   const inset = cubeTypeInsetRatio(type);
 
   if (footprint.length === 1) {
@@ -298,4 +301,194 @@ export function cubeFacePolygons(
   ];
 
   return { top, left, right };
+}
+
+/**
+ * Compute roof-cap polygons sitting on top of a cube's lifted top diamond.
+ *
+ * `top` is the 4-vertex top diamond `[N, E, S, W]` already lifted into final
+ * screen coordinates. `baseLiftPx` is the lift used by the cube body — it
+ * scales the gable rise and step rise so taller buildings get taller roofs.
+ *
+ * Returns `null` when the roof is flat, the base lift is non-positive, or the
+ * provided top is not a 4-vertex diamond — the caller renders nothing extra
+ * in those cases.
+ *
+ * `ridgeAxis` only matters for gabled roofs. NS runs the ridge between the
+ * N and S vertices; EW runs it between E and W.
+ */
+export function roofCapPolygons(
+  top: ReadonlyArray<Point>,
+  roof: RoofType,
+  ridgeAxis: 'ns' | 'ew',
+  baseLiftPx: number,
+): { faces: ReadonlyArray<{ poly: Point[]; shading: 'top' | 'left' | 'right' }> } | null {
+  if (roof === 'flat') return null;
+  if (baseLiftPx <= 0) return null;
+  if (top.length !== 4) return null;
+
+  const N = top[0];
+  const E = top[1];
+  const S = top[2];
+  const W = top[3];
+
+  const midpoint = (a: Point, b: Point): Point => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  });
+
+  if (roof === 'gabled') {
+    const midNE = midpoint(N, E);
+    const midSE = midpoint(S, E);
+    const midSW = midpoint(S, W);
+    const midNW = midpoint(N, W);
+    const gableRisePx = Math.max(2, Math.round(baseLiftPx * 0.18));
+
+    if (ridgeAxis === 'ns') {
+      const ridgeN_unraised = midpoint(midNE, midNW);
+      const ridgeS_unraised = midpoint(midSE, midSW);
+      const ridgeN: Point = { x: ridgeN_unraised.x, y: ridgeN_unraised.y - gableRisePx };
+      const ridgeS: Point = { x: ridgeS_unraised.x, y: ridgeS_unraised.y - gableRisePx };
+
+      // East plane and West plane share the ridge segment via the same
+      // ridgeN / ridgeS references (deep-equal coords).
+      const east: Point[] = [ridgeN, N, E, S, ridgeS];
+      const west: Point[] = [ridgeN, ridgeS, S, W, N];
+
+      return {
+        faces: [
+          { poly: east, shading: 'right' },
+          { poly: west, shading: 'left' },
+        ],
+      };
+    }
+
+    // ridgeAxis === 'ew'
+    const ridgeE_unraised = midpoint(midNE, midSE);
+    const ridgeW_unraised = midpoint(midNW, midSW);
+    const ridgeE: Point = { x: ridgeE_unraised.x, y: ridgeE_unraised.y - gableRisePx };
+    const ridgeW: Point = { x: ridgeW_unraised.x, y: ridgeW_unraised.y - gableRisePx };
+
+    const north: Point[] = [ridgeW, W, N, E, ridgeE];
+    const south: Point[] = [ridgeW, ridgeE, E, S, W];
+
+    return {
+      faces: [
+        { poly: north, shading: 'top' },
+        { poly: south, shading: 'right' },
+      ],
+    };
+  }
+
+  // roof === 'stepped': inner mini-diamond top, lifted above the main top.
+  const cx = (E.x + W.x) / 2;
+  const cy = (N.y + S.y) / 2;
+  const spanX = (E.x - W.x) / 2;
+  const spanY = (S.y - N.y) / 2;
+  const stepInsetFrac = 0.35;
+  const stepRisePx = Math.max(2, Math.round(baseLiftPx * 0.22));
+
+  const dx = (1 - stepInsetFrac) * spanX;
+  const dy = (1 - stepInsetFrac) * spanY;
+
+  const Ni: Point = { x: cx,      y: cy - dy - stepRisePx };
+  const Ei: Point = { x: cx + dx, y: cy      - stepRisePx };
+  const Si: Point = { x: cx,      y: cy + dy - stepRisePx };
+  const Wi: Point = { x: cx - dx, y: cy      - stepRisePx };
+
+  // Painter's order: left, right, top.
+  const innerLeft: Point[] = [
+    Si,
+    Wi,
+    { x: Wi.x, y: Wi.y + stepRisePx },
+    { x: Si.x, y: Si.y + stepRisePx },
+  ];
+  const innerRight: Point[] = [
+    Ei,
+    Si,
+    { x: Si.x, y: Si.y + stepRisePx },
+    { x: Ei.x, y: Ei.y + stepRisePx },
+  ];
+  const innerTop: Point[] = [Ni, Ei, Si, Wi];
+
+  return {
+    faces: [
+      { poly: innerLeft, shading: 'left' },
+      { poly: innerRight, shading: 'right' },
+      { poly: innerTop, shading: 'top' },
+    ],
+  };
+}
+
+/**
+ * Compute setback platform polygons stacked on top of a cube's lifted top
+ * diamond, returning both the painted faces (lowest first, highest last) and
+ * the highest platform's top diamond for the caller to use as a roof input.
+ *
+ * Each step shrinks the previous step's top diamond by `setbackInsetFrac`
+ * (compound: step1 = 0.92 × step0, step2 = 0.92 × step1) and lifts it by
+ * `setbackRisePx` per step. Three faces emitted per step (left, right, top).
+ *
+ * Returns `null` when steps=0, baseLift is non-positive, or `top` is not a
+ * 4-vertex diamond.
+ */
+export function setbackTopPolygon(
+  top: ReadonlyArray<Point>,
+  steps: 0 | 1 | 2,
+  baseLiftPx: number,
+): { faces: ReadonlyArray<{ poly: Point[]; shading: 'top' | 'left' | 'right' }>; top: Point[] } | null {
+  if (steps === 0) return null;
+  if (baseLiftPx <= 0) return null;
+  if (top.length !== 4) return null;
+
+  const setbackInsetFrac = 0.08;
+  const setbackRisePx = Math.max(1, Math.round(baseLiftPx * 0.15));
+  const shrink = 1 - setbackInsetFrac;
+
+  const faces: { poly: Point[]; shading: 'top' | 'left' | 'right' }[] = [];
+  let prevTop: Point[] = [top[0], top[1], top[2], top[3]];
+
+  for (let i = 0; i < steps; i++) {
+    const pN = prevTop[0];
+    const pE = prevTop[1];
+    const pS = prevTop[2];
+    const pW = prevTop[3];
+
+    const cx = (pE.x + pW.x) / 2;
+    const cy = (pN.y + pS.y) / 2;
+    const spanX = (pE.x - pW.x) / 2;
+    const spanY = (pS.y - pN.y) / 2;
+    const dx = shrink * spanX;
+    const dy = shrink * spanY;
+
+    const Ni: Point = { x: cx,      y: cy - dy - setbackRisePx };
+    const Ei: Point = { x: cx + dx, y: cy      - setbackRisePx };
+    const Si: Point = { x: cx,      y: cy + dy - setbackRisePx };
+    const Wi: Point = { x: cx - dx, y: cy      - setbackRisePx };
+
+    // Painter's order: left, right, top (lowest layer first within the step).
+    const innerLeft: Point[] = [
+      Si,
+      Wi,
+      { x: Wi.x, y: Wi.y + setbackRisePx },
+      { x: Si.x, y: Si.y + setbackRisePx },
+    ];
+    const innerRight: Point[] = [
+      Ei,
+      Si,
+      { x: Si.x, y: Si.y + setbackRisePx },
+      { x: Ei.x, y: Ei.y + setbackRisePx },
+    ];
+    const innerTop: Point[] = [Ni, Ei, Si, Wi];
+
+    faces.push(
+      { poly: innerLeft, shading: 'left' },
+      { poly: innerRight, shading: 'right' },
+      { poly: innerTop, shading: 'top' },
+    );
+
+    prevTop = [Ni, Ei, Si, Wi];
+  }
+
+  return { faces, top: prevTop };
 }
