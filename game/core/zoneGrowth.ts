@@ -1,76 +1,129 @@
 import type { World } from './World';
-import type { Building, BuildingType } from './Building';
-import type { DemandVector } from './Demand';
+import type { Building } from './Building';
 import { TileType } from './Tile';
 import type { Frontage, Rect } from './buildingFootprint';
+import { lotBboxOf } from './buildingFootprint';
 
-export type SpawnSize = { w: number; h: number };
-
-export type SpawnFootprint = { rect: Rect; frontage: Frontage };
-
-export function spawnSeed(x: number, y: number, tickCount: number): number {
-  const mixed = (Math.imul(y, 73856093) ^ Math.imul(x, 19349663) ^ Math.imul(tickCount, 83492791)) >>> 0;
-  return Math.imul(mixed ^ (mixed >>> 16), 2654435761) >>> 0;
-}
-
-export function weightsForDemand(d: number): readonly [number, number, number, number] {
-  if (d < 0.25) return [16, 0, 0, 0];
-  if (d < 0.5)  return [8, 4, 0, 0];
-  if (d < 0.75) return [4, 6, 3, 1];
-  return [1, 4, 6, 5];
-}
-
-function pickWeighted(weights: readonly [number, number, number, number], rand16: number): 1 | 2 | 3 | 4 {
-  const total = weights[0] + weights[1] + weights[2] + weights[3];
-  const scaled = Math.floor(rand16 * total / 0x10000);
-  let cumulative = 0;
-  for (let i = 0; i < 4; i++) {
-    cumulative += weights[i];
-    if (scaled < cumulative) return (i + 1) as 1 | 2 | 3 | 4;
+export function depthAxisFromFrontage(frontage: Frontage): { dx: number; dy: number } {
+  switch (frontage) {
+    case 'N': return { dx: 0, dy: 1 };
+    case 'S': return { dx: 0, dy: -1 };
+    case 'W': return { dx: 1, dy: 0 };
+    case 'E': return { dx: -1, dy: 0 };
   }
-  return 4;
 }
 
-export function pickSpawnSize(
-  x: number,
-  y: number,
-  tickCount: number,
-  bType: BuildingType,
-  demand: DemandVector,
-): SpawnSize {
-  const d = demand[bType];
-  const seed = spawnSeed(x, y, tickCount);
-  const weights = weightsForDemand(d);
-  const w = pickWeighted(weights, seed & 0xFFFF);
-  const h = pickWeighted(weights, (seed >>> 16) & 0xFFFF);
-  return { w, h };
-}
-
-/**
- * Every in-bounds W×H rect containing the seed tile.
- * Pure geometry — no world access.
- */
-export function enumerateFootprintsContaining(
-  seed: { x: number; y: number },
-  w: number,
-  h: number,
-  mapW: number,
-  mapH: number,
-): Rect[] {
-  const rects: Rect[] = [];
-  // The NW corner of a W×H rect containing seed.x can range from
-  // seed.x - (w-1) to seed.x (so that seed.x <= rectX + w - 1).
-  for (let dy = 0; dy < h; dy++) {
-    for (let dx = 0; dx < w; dx++) {
-      const rx = seed.x - dx;
-      const ry = seed.y - dy;
-      // Clip: rect must fit within [0, mapW) × [0, mapH)
-      if (rx < 0 || ry < 0) continue;
-      if (rx + w > mapW || ry + h > mapH) continue;
-      rects.push({ x: rx, y: ry, w, h });
+export function pickSeedFrontage(seed: { x: number; y: number }, world: World): Frontage | null {
+  const map = world.getMap();
+  // Check distances 1..4, tie-break order S > E > W > N at each distance.
+  const directions: Array<{ dir: Frontage; dx: number; dy: number }> = [
+    { dir: 'S', dx: 0, dy: 1 },
+    { dir: 'E', dx: 1, dy: 0 },
+    { dir: 'W', dx: -1, dy: 0 },
+    { dir: 'N', dx: 0, dy: -1 },
+  ];
+  for (let k = 1; k <= 4; k++) {
+    for (const { dir, dx, dy } of directions) {
+      const nx = seed.x + dx * k;
+      const ny = seed.y + dy * k;
+      const tile = map.getTile(nx, ny);
+      if (tile !== null && tile.type === TileType.ROAD) return dir;
     }
   }
-  return rects;
+  return null;
+}
+
+export function countRoadsOnFace(rect: Rect, frontage: Frontage, world: World): number {
+  const map = world.getMap();
+  let count = 0;
+  switch (frontage) {
+    case 'N':
+      for (let x = rect.x; x < rect.x + rect.w; x++) {
+        const t = map.getTile(x, rect.y - 1);
+        if (t !== null && t.type === TileType.ROAD) count++;
+      }
+      break;
+    case 'S':
+      for (let x = rect.x; x < rect.x + rect.w; x++) {
+        const t = map.getTile(x, rect.y + rect.h);
+        if (t !== null && t.type === TileType.ROAD) count++;
+      }
+      break;
+    case 'W':
+      for (let y = rect.y; y < rect.y + rect.h; y++) {
+        const t = map.getTile(rect.x - 1, y);
+        if (t !== null && t.type === TileType.ROAD) count++;
+      }
+      break;
+    case 'E':
+      for (let y = rect.y; y < rect.y + rect.h; y++) {
+        const t = map.getTile(rect.x + rect.w, y);
+        if (t !== null && t.type === TileType.ROAD) count++;
+      }
+      break;
+  }
+  return count;
+}
+
+export function greedyDepthLot(
+  seed: { x: number; y: number },
+  frontage: Frontage,
+  seedTileType: TileType,
+  world: World,
+): Rect | null {
+  const map = world.getMap();
+  const terrain = world.getTerrain();
+  const isWater = (x: number, y: number) => world.isWater(x, y);
+  const { dx, dy } = depthAxisFromFrontage(frontage);
+  const anchorHeight = terrain.getRenderHeight(seed.x, seed.y);
+
+  const cells: Array<{ x: number; y: number }> = [{ x: seed.x, y: seed.y }];
+
+  for (let step = 1; step < 4; step++) {
+    const nx = seed.x + dx * step;
+    const ny = seed.y + dy * step;
+    const tile = map.getTile(nx, ny);
+    if (tile === null) break;
+    if (tile.type !== seedTileType) break;
+    if (map.getBuildings().getBuildingAt(nx, ny) !== null) break;
+    if (terrain.getRenderHeight(nx, ny) !== anchorHeight) break;
+    if (!terrain.isFlatTile(nx, ny, isWater)) break;
+    cells.push({ x: nx, y: ny });
+  }
+
+  const rect = lotBboxOf(cells);
+
+  if (!validateFootprintRect(rect, seedTileType, world)) return null;
+
+  // Chosen-frontage validation: the chosen frontage face must actually touch a road.
+  if (countRoadsOnFace(rect, frontage, world) === 0) return null;
+
+  return rect;
+}
+
+export function initialStructureRect(lot: Rect, frontage: Frontage): Rect {
+  switch (frontage) {
+    case 'N': return { x: lot.x, y: lot.y, w: lot.w, h: 1 };
+    case 'S': return { x: lot.x, y: lot.y + lot.h - 1, w: lot.w, h: 1 };
+    case 'W': return { x: lot.x, y: lot.y, w: 1, h: lot.h };
+    case 'E': return { x: lot.x + lot.w - 1, y: lot.y, w: 1, h: lot.h };
+  }
+}
+
+export function structureRectFillsLotDepth(sr: Rect, lot: Rect, frontage: Frontage): boolean {
+  if (frontage === 'N' || frontage === 'S') return sr.h === lot.h;
+  return sr.w === lot.w;
+}
+
+export function extendStructureToward(structureRect: Rect, lot: Rect, frontage: Frontage): Rect | null {
+  if (structureRectFillsLotDepth(structureRect, lot, frontage)) return null;
+  const sr = structureRect;
+  switch (frontage) {
+    case 'N': return { x: sr.x, y: sr.y, w: sr.w, h: sr.h + 1 };
+    case 'S': return { x: sr.x, y: sr.y - 1, w: sr.w, h: sr.h + 1 };
+    case 'W': return { x: sr.x, y: sr.y, w: sr.w + 1, h: sr.h };
+    case 'E': return { x: sr.x - 1, y: sr.y, w: sr.w + 1, h: sr.h };
+  }
 }
 
 /**

@@ -1232,8 +1232,6 @@ describe('World.tick() — zone-growth proceeds on plateau interior tile', () =>
     map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
     map.setTile(4, 3, createTile(4, 3, TileType.ROAD)); // orthogonal neighbor (east), inside plateau
 
-    // Run up to several growth intervals: demand-driven pickSpawnSize may return w>1 on the first
-    // attempt; the pipeline retries on subsequent ticks with a different tickCount-derived seed.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
     expect(map.getBuildings().getBuildingAt(3, 3)).not.toBeNull();
@@ -1520,8 +1518,6 @@ describe('World.tick() — Branch A spawn: frontage is set correctly', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD)); // south neighbor
 
-    // Demand-driven pickSpawnSize may return w>1 on some ticks; run enough intervals
-    // for the deterministic hash to produce a 1×1 result that validates.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
     const b = map.getBuildings().getBuildingAt(1, 1);
@@ -1747,7 +1743,7 @@ describe('World.tick() — Branch B road-access gate', () => {
   });
 });
 
-describe('World.tick() — spawn size (demand-driven)', () => {
+describe('World.tick() — spawn size', () => {
   function setupZoneBlock(world: World, zoneW: number, zoneH: number, roadY: number): void {
     const map = world.getMap();
     for (let y = 0; y < zoneH; y++) {
@@ -1761,30 +1757,7 @@ describe('World.tick() — spawn size (demand-driven)', () => {
     }
   }
 
-  it('Fixture C: no demand (residential < 0.25) → every newly spawned building is 1×1', () => {
-    const world = new World(6, 6, { regenerate: false });
-    const map = world.getMap();
-    setupZoneBlock(world, 6, 4, 4);
-
-    const preSeeded = [
-      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } })!,
-      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 1 } })!,
-      map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 4, y: 0 }], anchor: { x: 4, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 4, y: 0, w: 1, h: 1 } })!,
-    ];
-    const preSeededIds = new Set(preSeeded.map(b => b.id));
-
-    world.markDemandDirty();
-    expect(world.getDemand().residential).toBeLessThan(0.25);
-
-    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 6; i++) world.tick();
-
-    for (const b of map.getBuildings().iterBuildings()) {
-      if (preSeededIds.has(b.id)) continue;
-      expect(b.footprint.length).toBe(1);
-    }
-  });
-
-  it('Fixture D: high demand (residential >= 0.75) → at least one newly spawned building has footprint.length > 1', () => {
+  it('Fixture D: zone block with road → at least one newly spawned building has footprint.length > 1', () => {
     const world = new World(8, 7, { regenerate: false });
     const map = world.getMap();
     setupZoneBlock(world, 8, 6, 6);

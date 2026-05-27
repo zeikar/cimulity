@@ -12,10 +12,9 @@ import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
 import {
-  pickSpawnSize,
-  enumerateFootprintsContaining,
-  validateFootprintRect,
-  pickFrontage,
+  pickSeedFrontage,
+  greedyDepthLot,
+  initialStructureRect,
   footprintCells,
   hasRoadAccess,
 } from './zoneGrowth';
@@ -417,9 +416,6 @@ export class World {
       const buildings = this.map.getBuildings();
       const lv = this.getLandValue();
 
-      const mapW = this.map.getWidth();
-      const mapH = this.map.getHeight();
-
       this.markDemandDirty();
       const demandVec = this.getDemand();
 
@@ -430,36 +426,24 @@ export class World {
         const existing = buildings.getBuildingAt(x, y);
 
         if (existing === null) {
-          // Branch A: no building yet — create a building using the helper pipeline.
-          // validateFootprintRect enforces flat-terrain, correct tile type, no overlap,
-          // and road adjacency. pickFrontage determines the entry-facing side.
+          // Branch A: spawn — frontage-first greedy-depth lot selection.
           const bType = tile.type.replace('zone_', '') as BuildingType;
-          const { w: pickedW, h: pickedH } = pickSpawnSize(x, y, this.tickCount, bType, demandVec);
-          let chosen = null;
-          outer: for (let tw = pickedW; tw >= 1; tw--) {
-            for (let th = pickedH; th >= 1; th--) {
-              const candidates = enumerateFootprintsContaining({ x, y }, tw, th, mapW, mapH);
-              for (const rect of candidates) {
-                if (validateFootprintRect(rect, tile.type, this)) { chosen = rect; break outer; }
-              }
-            }
-          }
-          if (chosen === null) continue;
-          const frontage = pickFrontage(chosen, this);
-          if (frontage === null) continue; // defensive — validateFootprintRect already enforced
+          const frontage = pickSeedFrontage({ x, y }, this);
+          if (frontage === null) continue;
+          const lot = greedyDepthLot({ x, y }, frontage, tile.type, this);
+          if (lot === null) continue;
+          const structureRect = initialStructureRect(lot, frontage);
           const created = buildings.addBuilding({
             type: bType,
-            footprint: footprintCells(chosen),
-            anchor: { x: chosen.x, y: chosen.y },
+            footprint: footprintCells(lot),
+            anchor: { x: lot.x, y: lot.y },
             level: 0,
             density: 0,
             age: 0,
             frontage,
-            structureRect: { x: chosen.x, y: chosen.y, w: chosen.w, h: chosen.h },
+            structureRect,
           });
           if (created !== null) {
-            // T3 NOTE: processedBuildingIds prevents later cells of this multi-tile footprint
-            // from falling into Branch B on the same tick. No-op for T1 1×1 spawns; T3 plugs in W×H>1.
             processedBuildingIds.add(created.id);
             changedBuildingIds.push(created.id);
             for (const cell of created.footprint) {
