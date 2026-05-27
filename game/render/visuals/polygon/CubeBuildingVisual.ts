@@ -68,6 +68,25 @@ function rightColor(input: BuildingVisualInput): number {
 }
 
 // ---------------------------------------------------------------------------
+// structureInput helper
+// ---------------------------------------------------------------------------
+
+function structureInputOf(input: BuildingVisualInput): BuildingVisualInput {
+  const sr = input.structureRect;
+  const cells: { x: number; y: number }[] = [];
+  for (let y = sr.y; y < sr.y + sr.h; y++) {
+    for (let x = sr.x; x < sr.x + sr.w; x++) {
+      cells.push({ x, y });
+    }
+  }
+  return {
+    ...input,
+    footprint: cells,
+    anchor: { x: sr.x, y: sr.y },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Cache key
 // ---------------------------------------------------------------------------
 
@@ -594,19 +613,22 @@ export class CubeBuildingVisual implements BuildingVisual {
   }
 
   mount(input: BuildingVisualInput, parent: Container): Container {
+    // input.footprint is the LOT; structureInput.footprint is the STRUCTURE — cube/facade/shadow geometry uses structureInput, yard layer (Task 8) uses input.footprint.
+    const structureInput = structureInputOf(input);
+
     // renderHeight is NOT part of geometry caches — anchor-local geometry is
     // position-independent. Terrain elevation is applied here on the wrapper.
     const h = input.renderHeight ?? 0;
-    const screen = tileToScreenWithHeight(input.anchor, h);
-    const zIndex = computeZIndex(input.footprint);
+    const screen = tileToScreenWithHeight(structureInput.anchor, h);
+    const zIndex = computeZIndex(structureInput.footprint);
 
     const wrapper = new Container();
     wrapper.position.set(screen.x, screen.y);
     wrapper.zIndex = zIndex;
     this.wrapperToBuildingId.set(wrapper, input.buildingId);
 
-    if (shouldUseFacade(input, this.atlas)) {
-      const baked = this.getOrBakeFacade(input);
+    if (shouldUseFacade(structureInput, this.atlas)) {
+      const baked = this.getOrBakeFacade(structureInput);
       const sprite = new Sprite(baked.texture);
       sprite.x = baked.spriteOffset.x;
       sprite.y = baked.spriteOffset.y;
@@ -615,7 +637,7 @@ export class CubeBuildingVisual implements BuildingVisual {
       this.wrapperChild.set(wrapper, sprite);
     } else {
       const facesGfx = new Graphics();
-      const facesCtx = this.getOrBuildFacesContext(input);
+      const facesCtx = this.getOrBuildFacesContext(structureInput);
       if (facesCtx) facesGfx.context = facesCtx;
       wrapper.addChild(facesGfx);
       this.wrapperChild.set(wrapper, facesGfx);
@@ -625,7 +647,7 @@ export class CubeBuildingVisual implements BuildingVisual {
 
     // Shadow Graphics is a sibling of the wrapper (added to `parent`), not a
     // child of the wrapper. Sort order between shadow and faces uses zIndex.
-    const shadowCtx = this.getOrBuildShadowContext(input);
+    const shadowCtx = this.getOrBuildShadowContext(structureInput);
     if (shadowCtx) {
       const shadowGfx = new Graphics();
       shadowGfx.context = shadowCtx;
@@ -641,19 +663,20 @@ export class CubeBuildingVisual implements BuildingVisual {
 
   update(input: BuildingVisualInput, displayObject: Container): void {
     const wrapper = displayObject;
+    const structureInput = structureInputOf(input);
 
     const h = input.renderHeight ?? 0;
-    const screen = tileToScreenWithHeight(input.anchor, h);
-    const zIndex = computeZIndex(input.footprint);
+    const screen = tileToScreenWithHeight(structureInput.anchor, h);
+    const zIndex = computeZIndex(structureInput.footprint);
     wrapper.position.set(screen.x, screen.y);
     wrapper.zIndex = zIndex;
 
-    const useFacade = shouldUseFacade(input, this.atlas);
+    const useFacade = shouldUseFacade(structureInput, this.atlas);
     const existingChild = this.wrapperChild.get(wrapper);
 
     if (useFacade && existingChild instanceof Sprite) {
       // Case A — facade → facade: bake/lookup, reassign texture in place.
-      const baked = this.getOrBakeFacade(input);
+      const baked = this.getOrBakeFacade(structureInput);
       existingChild.texture = baked.texture;
       existingChild.x = baked.spriteOffset.x;
       existingChild.y = baked.spriteOffset.y;
@@ -663,7 +686,7 @@ export class CubeBuildingVisual implements BuildingVisual {
       // remove from wrapper, attach fresh Sprite.
       wrapper.removeChild(existingChild);
       existingChild.destroy({ context: false });
-      const baked = this.getOrBakeFacade(input);
+      const baked = this.getOrBakeFacade(structureInput);
       const sprite = new Sprite(baked.texture);
       sprite.x = baked.spriteOffset.x;
       sprite.y = baked.spriteOffset.y;
@@ -684,20 +707,20 @@ export class CubeBuildingVisual implements BuildingVisual {
       existingChild.destroy({ texture: false, textureSource: false });
 
       const facesGfx = new Graphics();
-      const facesCtx = this.getOrBuildFacesContext(input);
+      const facesCtx = this.getOrBuildFacesContext(structureInput);
       facesGfx.context = facesCtx ?? CubeBuildingVisual.emptyContext;
       wrapper.addChild(facesGfx);
       this.wrapperChild.set(wrapper, facesGfx);
     } else if (!useFacade && existingChild instanceof Graphics) {
       // Case D — polygon → polygon: swap context only (existing logic).
-      const facesCtx = this.getOrBuildFacesContext(input);
+      const facesCtx = this.getOrBuildFacesContext(structureInput);
       existingChild.context = facesCtx ?? CubeBuildingVisual.emptyContext;
     }
     // (No "else" — wrapperChild is always set in mount and maintained by the
     // four branches above. A missing child would indicate a logic bug.)
 
     // Shadow update (unchanged behaviour) — keyed by wrapper now instead of facesGfx.
-    const newShadowCtx = this.getOrBuildShadowContext(input);
+    const newShadowCtx = this.getOrBuildShadowContext(structureInput);
     const existingShadowGfx = this.shadowByFaces.get(wrapper);
 
     if (existingShadowGfx) {

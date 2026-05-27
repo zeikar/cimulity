@@ -13,7 +13,7 @@ import { TileRenderer } from './TileRenderer';
 import { VisualRegistry } from './visuals/visualRegistry';
 import { World } from '../core/World';
 import { TileType } from '../core/Tile';
-import type { TerrainTileVisual, BuildingVisual, TileVisualInput, MapBounds } from './visuals/TileVisual';
+import type { TerrainTileVisual, BuildingVisual, TileVisualInput, BuildingVisualInput, MapBounds } from './visuals/TileVisual';
 import type { CornerHeights } from './terrain/tileCornerHeights';
 import type { TerrainShape } from '../core/terrainSlope';
 
@@ -94,6 +94,59 @@ function makeStubRegistry(terrainVisual: TerrainTileVisual): VisualRegistry {
 
   return registry;
 }
+
+describe('TileRenderer — structureRect propagation', () => {
+  it('passes building.structureRect to the building visual mount call', () => {
+    const world = new World(4, 4, { regenerate: false });
+
+    // 1x4 lot at (0,0..3), frontage='S' → structureRect pins to the S edge: y+h = lot.y+lot.h = 4, so y=3, h=1.
+    const structureRect = { x: 0, y: 3, w: 1, h: 1 };
+    const footprint = [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }];
+    const anchor = { x: 0, y: 0 };
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint,
+      anchor,
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+      structureRect,
+    });
+
+    const terrainContainer = makeContainer();
+    const buildingContainer = makeContainer();
+    const terrainVisual = makeStubTerrainVisual();
+
+    // Build a registry with a stub building visual that captures mount inputs.
+    const mountInputs: BuildingVisualInput[] = [];
+    const stubBuilding: BuildingVisual = {
+      layer: 'building' as const,
+      mount: vi.fn((input: BuildingVisualInput, parent: Container) => {
+        mountInputs.push(input);
+        const o = makeDisplayObject();
+        (parent as ReturnType<typeof makeContainer>).addChild(o);
+        return o;
+      }),
+      update: vi.fn(),
+      unmount: vi.fn((o) => o.destroy()),
+    };
+    const registry = new VisualRegistry();
+    const allTileTypes: TileType[] = [
+      TileType.DIRT, TileType.GRASS, TileType.ROAD,
+      TileType.ZONE_RESIDENTIAL, TileType.ZONE_COMMERCIAL, TileType.ZONE_INDUSTRIAL,
+    ];
+    for (const t of allTileTypes) registry.registerTerrain(t, terrainVisual);
+    const buildingTypes = ['residential', 'commercial', 'industrial'] as const;
+    for (const t of buildingTypes) registry.registerBuilding(t, stubBuilding);
+
+    const renderer = new TileRenderer(terrainContainer, buildingContainer, registry);
+    expect(() => renderer.render(world)).not.toThrow();
+
+    expect(mountInputs).toHaveLength(1);
+    expect(mountInputs[0].structureRect).toEqual(structureRect);
+  });
+});
 
 describe('TileRenderer — terrain revision dirty detection', () => {
   it('re-syncs tiles when terrainRev changes after initial render', () => {
