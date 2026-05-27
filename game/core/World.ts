@@ -22,6 +22,7 @@ import {
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
+import { canMerge, mergedBuildingShape } from './mergePolicy';
 export { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
@@ -509,6 +510,40 @@ export class World {
               changedTiles.push({ x: coord.x, y: coord.y });
             }
           }
+        }
+      }
+
+      // Branch B'' (merge): pairwise width-axis lot consolidation.
+      // Multiple disjoint pairs may merge in a single growth tick — `usedThisTick`
+      // ensures each building participates in at most one merge.
+      const candidates = [...buildings.iterBuildings()];
+      const usedThisTick = new Set<number>();
+      for (let i = 0; i < candidates.length; i++) {
+        const a = candidates[i];
+        if (usedThisTick.has(a.id)) continue;
+        if (!hasRoadAccess(a, this)) continue;
+        for (let j = i + 1; j < candidates.length; j++) {
+          const b = candidates[j];
+          if (usedThisTick.has(b.id)) continue;
+          if (!hasRoadAccess(b, this)) continue;
+          if (!canMerge(a, b, demandVec)) continue;
+
+          const shape = mergedBuildingShape(a, b);
+          buildings.removeBuilding(a.id);
+          buildings.removeBuilding(b.id);
+          const merged = buildings.addBuilding(shape);
+          if (merged === null) {
+            throw new Error(
+              `merge invariant violated: addBuilding(merged) returned null for ` +
+              `a=${a.id} b=${b.id}`,
+            );
+          }
+
+          usedThisTick.add(a.id);
+          usedThisTick.add(b.id);
+          changedBuildingIds.push(a.id, b.id, merged.id);
+          for (const c of merged.footprint) changedTiles.push({ x: c.x, y: c.y });
+          break; // a is used; move to next i
         }
       }
 
