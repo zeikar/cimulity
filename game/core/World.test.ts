@@ -8,11 +8,10 @@ import {
   TAX_PER_POP,
   DAYS_PER_MONTH,
   MONTHS_PER_YEAR,
-  GROWTH_COOLDOWN_INTERVALS,
   DENSITY_COOLDOWN_INTERVALS,
-  stagger,
   DEFAULT_NEWCITY_SEED,
 } from './World';
+import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { Terrain, MIN_LAND_ELEVATION, SEA_LEVEL } from './Terrain';
@@ -2066,5 +2065,35 @@ describe('World.tick() — density gating (demand-driven)', () => {
     const controlDemand = control.getDemand();
     // After level-up, residentialLevels increased → residential demand shifts.
     expect(postTickDemand.residential).not.toBe(controlDemand.residential);
+  });
+});
+
+describe('growthConstants', () => {
+  it('stagger(0) returns a value in [0, 6]', () => {
+    const val = stagger(0);
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThanOrEqual(6);
+  });
+
+  it('stagger(1) returns a value in [0, 6]', () => {
+    const val = stagger(1);
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThanOrEqual(6);
+  });
+
+  it('stagger(2) returns a value in [0, 6]', () => {
+    const val = stagger(2);
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThanOrEqual(6);
+  });
+
+  it('stagger(0xFFFFFFFF) returns a value in [0, 6]', () => {
+    const val = stagger(0xFFFFFFFF);
+    expect(val).toBeGreaterThanOrEqual(0);
+    expect(val).toBeLessThanOrEqual(6);
+  });
+
+  it('GROWTH_COOLDOWN_INTERVALS is 8', () => {
+    expect(GROWTH_COOLDOWN_INTERVALS).toBe(8);
   });
 });

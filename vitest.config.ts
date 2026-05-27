@@ -21,6 +21,7 @@ export default defineConfig({
         'game/core/Building.ts',
         'game/core/Demand.ts',
         'game/core/GameLoop.ts',
+        'game/core/growthConstants.ts',
         'game/core/LandValueMap.ts',
         'game/core/Map.ts',
         'game/core/World.ts',

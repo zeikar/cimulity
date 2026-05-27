@@ -19,6 +19,8 @@ import {
   footprintCells,
   hasRoadAccess,
 } from './zoneGrowth';
+import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
+export { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
 
@@ -41,11 +43,6 @@ export const ZONE_MAX_LEVEL = 5;
  */
 export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
 /**
- * Minimum growth-opportunity count (age) before a building may level up.
- * Unit: growth opportunities (Branch B increments). Stagger adds 0–6 on top.
- */
-export const GROWTH_COOLDOWN_INTERVALS = 8;
-/**
  * Minimum growth-opportunity count (age) before a building may gain density.
  * Unit: growth opportunities (same as GROWTH_COOLDOWN_INTERVALS).
  */
@@ -66,16 +63,6 @@ export const BULLDOZE_COST = 2;
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */
 export const MONTHS_PER_YEAR = 12;
-
-/**
- * Deterministic per-building stagger: Knuth multiplicative hash producing a
- * value in [0, 6]. Yields 0–6 extra growth-opportunity intervals of cooldown
- * jitter so buildings of the same type don't all level up in lockstep.
- * Deterministic by id — save/replay safe.
- */
-export function stagger(id: number): number {
-  return ((id ^ (id >>> 16)) * 2654435761 >>> 0) % 7;
-}
 
 /**
  * Result returned by World.tick().
