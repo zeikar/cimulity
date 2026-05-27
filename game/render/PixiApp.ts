@@ -5,11 +5,12 @@
 
 import { Application, Container } from 'pixi.js';
 import { Camera, type CameraConstraints } from './Camera';
-import { TileRenderer } from './TileRenderer';
+import { TileRenderer, buildPixiAppRegistry } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
+import { initFacadeAtlas, disposeFacadeAtlas, type FacadeAtlas } from './visuals/pixel/facadeAtlas';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 
@@ -32,6 +33,7 @@ export class PixiApp {
   private callbacks: PixiAppCallbacks;
   private fpsUpdateInterval: number = 0;
   private extent: ReturnType<typeof mapWorldExtent> | null = null;
+  private facadeAtlas: FacadeAtlas | null = null;
 
   constructor(world: World, callbacks: PixiAppCallbacks) {
     this.world = world;
@@ -65,6 +67,16 @@ export class PixiApp {
     this.app.canvas.style.display = 'block';
     container.appendChild(this.app.canvas);
 
+    // Bake the facade atlas once per PixiApp lifecycle and wire the cube
+    // visual to it. Atlas init only needs the renderer (not the layer
+    // Containers), so we do it here — before layer Containers are created —
+    // to serialize the one async step out of the way without disturbing
+    // existing init ordering.
+    const { registry, cube } = buildPixiAppRegistry();
+    const atlas = await initFacadeAtlas(this.app.renderer);
+    cube.setFacadeContext(this.app.renderer, atlas);
+    this.facadeAtlas = atlas;
+
     // Setup camera with constraints based on map size
     const map = this.world.getMap();
     this.extent = mapWorldExtent(map.getWidth(), map.getHeight());
@@ -96,8 +108,10 @@ export class PixiApp {
     this.app.stage.addChild(this.buildingContainer);
     this.app.stage.addChild(this.selectionContainer);
 
-    // Initialize renderers, each bound to its own container.
-    this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer);
+    // Initialize renderers, each bound to its own container. `registry`
+    // closed over from the atlas-init block above so the cube visual on the
+    // registry is the same instance we just called setFacadeContext on.
+    this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
@@ -235,6 +249,14 @@ export class PixiApp {
 
     this.tileRenderer?.destroy();
     this.selectionRenderer?.destroy();
+
+    // Atlas destroy comes AFTER tileRenderer.destroy — that path unmounts
+    // every Sprite holding a slice Texture view into the atlas source, so by
+    // the time we get here no live Sprite references the atlas RT.
+    if (this.facadeAtlas) {
+      disposeFacadeAtlas(this.facadeAtlas);
+      this.facadeAtlas = null;
+    }
 
     // Explicitly destroy each layer container before app.destroy().
     // Pixi 8 app.destroy({ children: true }) does cascade to app.stage children,

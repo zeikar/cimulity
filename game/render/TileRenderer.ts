@@ -30,7 +30,13 @@ import type { VisibleTileBounds } from './viewportCulling';
 import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 
-function buildRegistry(): VisualRegistry {
+/**
+ * Build the registry AND expose the underlying CubeBuildingVisual instance so
+ * PixiApp.init can wire the facade renderer/atlas via setFacadeContext.
+ * Headless paths (`buildRegistry`, the default arg in `TileRenderer`) don't
+ * need the cube reference — they consume only the registry half.
+ */
+export function buildPixiAppRegistry(): { registry: VisualRegistry; cube: CubeBuildingVisual } {
   const registry = new VisualRegistry();
   const allTypes: TileType[] = [
     TileType.DIRT,
@@ -52,7 +58,11 @@ function buildRegistry(): VisualRegistry {
     registry.registerBuilding(type, cube);
   }
 
-  return registry;
+  return { registry, cube };
+}
+
+function buildRegistry(): VisualRegistry {
+  return buildPixiAppRegistry().registry;
 }
 
 interface TileEntry {
