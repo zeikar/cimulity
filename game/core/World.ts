@@ -16,7 +16,7 @@ import {
   greedyDepthLot,
   initialStructureRect,
   footprintCells,
-  hasRoadAccess,
+  hasFrontageRoadAccess,
   structureRectFillsLotDepth,
   extendStructureToward,
 } from './zoneGrowth';
@@ -461,8 +461,8 @@ export class World {
         if (processedBuildingIds.has(existing.id)) continue;
         processedBuildingIds.add(existing.id);
 
-        // Road-access gate: buildings that lose road access do not age or grow.
-        if (!hasRoadAccess(existing, this)) continue;
+        // Road-access gate: buildings that lose frontage road access do not age or grow.
+        if (!hasFrontageRoadAccess(existing, this)) continue;
 
         // Age every building once per growth-opportunity (this tick).
         existing.age += 1;
@@ -521,11 +521,11 @@ export class World {
       for (let i = 0; i < candidates.length; i++) {
         const a = candidates[i];
         if (usedThisTick.has(a.id)) continue;
-        if (!hasRoadAccess(a, this)) continue;
+        if (!hasFrontageRoadAccess(a, this)) continue;
         for (let j = i + 1; j < candidates.length; j++) {
           const b = candidates[j];
           if (usedThisTick.has(b.id)) continue;
-          if (!hasRoadAccess(b, this)) continue;
+          if (!hasFrontageRoadAccess(b, this)) continue;
           if (!canMerge(a, b, demandVec)) continue;
 
           const shape = mergedBuildingShape(a, b);

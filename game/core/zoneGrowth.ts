@@ -216,6 +216,14 @@ export function validateFootprintRect(
 }
 
 /**
+ * Returns true iff the building's stored frontage face still touches a road.
+ * Use this for growth/merge gates — not the generic any-side check.
+ */
+export function hasFrontageRoadAccess(building: Building, world: World): boolean {
+  return countRoadsOnFace(lotBboxOf(building.footprint), building.frontage, world) > 0;
+}
+
+/**
  * Convenience wrapper: returns true iff the building's footprint has at least
  * one road-adjacent perimeter cell. Assumes a canonical footprint (Task 4 invariant).
  */

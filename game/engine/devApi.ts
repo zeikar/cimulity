@@ -31,6 +31,7 @@ export interface SeedBuildingSpec {
   density: 0 | 1 | 2;
   age?: number;
   frontage: Frontage;
+  structureRect?: { x: number; y: number; w: number; h: number };
 }
 
 export interface SeedSceneSpec {
@@ -129,7 +130,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         let buildingsAdded = 0;
         if (spec.buildings && spec.buildings.length > 0) {
           for (const b of spec.buildings) {
-            const lot = lotBboxOf(b.footprint);
+            if (b.footprint.length === 0) continue;
+            const lot = b.structureRect ? null : lotBboxOf(b.footprint);
             const building: Building = {
               id: b.id,
               type: b.type,
@@ -139,7 +141,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
               density: b.density,
               age: b.age ?? 0,
               frontage: b.frontage,
-              structureRect: { x: lot.x, y: lot.y, w: lot.w, h: lot.h },
+              structureRect: b.structureRect ?? { x: lot!.x, y: lot!.y, w: lot!.w, h: lot!.h },
             };
             if (buildings.addExistingBuilding(building)) buildingsAdded++;
           }

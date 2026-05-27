@@ -10,6 +10,7 @@ import {
   structureRectFillsLotDepth,
   pickFrontage,
   hasRoadAccess,
+  hasFrontageRoadAccess,
   validateFootprintRect,
   footprintCells,
 } from './zoneGrowth';
@@ -636,6 +637,50 @@ describe('validateFootprintRect', () => {
     expect(
       validateFootprintRect({ x: 2, y: 2, w: 1, h: 1 }, TileType.ZONE_RESIDENTIAL, world)
     ).toBe(false);
+  });
+});
+
+describe('hasFrontageRoadAccess', () => {
+  it('returns true when frontage face has a road', () => {
+    const world = new World(5, 5, { regenerate: false });
+    const map = world.getMap();
+    seedZone(world, 2, 2);
+    map.setTile(2, 3, createTile(2, 3, TileType.ROAD)); // road on S face
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
+    })!;
+    expect(hasFrontageRoadAccess(building, world)).toBe(true);
+  });
+
+  it('returns false when frontage face road is removed but a side road remains', () => {
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+    seedZone(world, 2, 2);
+    map.setTile(2, 3, createTile(2, 3, TileType.ROAD)); // S road (frontage)
+    map.setTile(3, 2, createTile(3, 2, TileType.ROAD)); // E road (side)
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 0,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
+    })!;
+    expect(hasFrontageRoadAccess(building, world)).toBe(true);
+    // Bulldoze the S (frontage) road, leave E road in place
+    map.setTile(2, 3, createTile(2, 3, TileType.GRASS));
+    expect(hasFrontageRoadAccess(building, world)).toBe(false);
+    // hasRoadAccess still returns true due to E road — confirms the distinction
+    expect(hasRoadAccess(building, world)).toBe(true);
   });
 });
 

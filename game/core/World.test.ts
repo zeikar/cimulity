@@ -506,7 +506,7 @@ describe('World.tick() — monthly tax settlement', () => {
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
@@ -942,7 +942,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
@@ -998,7 +998,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     })!;
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
@@ -1057,7 +1057,7 @@ describe('World.tick() — changedBuildingIds contract', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
@@ -1988,7 +1988,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // C+I level-points = 8 → jobsLevels=8, levelSumR=5 → residential=(8-5)/8+0.25=0.625 >= 0.6
@@ -2035,7 +2035,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 10,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.markLandValueDirty();
@@ -2052,7 +2052,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 10,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
 
