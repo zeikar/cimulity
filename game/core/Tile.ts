@@ -12,6 +12,7 @@ export enum TileType {
   ZONE_RESIDENTIAL = 'zone_residential',
   ZONE_COMMERCIAL = 'zone_commercial',
   ZONE_INDUSTRIAL = 'zone_industrial',
+  POWER_PLANT = 'power_plant',
 }
 
 /**

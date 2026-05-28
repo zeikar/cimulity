@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { VisualRegistry } from './visualRegistry';
 import { TileType } from '@/game/core/Tile';
+import { buildPixiAppRegistry } from '@/game/render/TileRenderer';
 import type { BuildingType } from '@/game/core/Building';
 import type { TerrainTileVisual, BuildingVisual } from './TileVisual';
 
@@ -113,5 +114,14 @@ describe('VisualRegistry — disposeAll', () => {
   it('disposeAll on empty registry is a no-op', () => {
     const registry = new VisualRegistry();
     expect(() => registry.disposeAll()).not.toThrow();
+  });
+});
+
+describe('buildPixiAppRegistry — completeness', () => {
+  it('registers a terrain visual for every TileType', () => {
+    const registry = buildPixiAppRegistry();
+    for (const type of Object.values(TileType)) {
+      expect(registry.hasTerrain(type)).toBe(true);
+    }
   });
 });
