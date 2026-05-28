@@ -595,6 +595,23 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     return world.tick();
   }
 
+  // Keep residential demand positive — without a job source, demand for R goes
+  // to 0 (jobsLevels < levelSumR in Demand.recompute) and the level-up gate
+  // refuses to fire. Seed a single commercial building far from the test focus.
+  function seedJobSource(world: World, x: number, y: number): void {
+    world.getMap().getBuildings().addExistingBuilding({
+      id: 999,
+      type: 'commercial',
+      footprint: [{ x, y }],
+      anchor: { x, y },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+      structureRect: { x, y, w: 1, h: 1 },
+    });
+  }
+
   it('structure-grow happens before level-up on a multi-cell lot', () => {
     // 1×4 R-zone lot: cells (1,0)..(1,3), frontage='S', road at (1,4).
     // structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end.
@@ -625,6 +642,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       structureRect: { x: 1, y: 3, w: 1, h: 1 },
     });
     expect(building).toBe(true);
+    seedJobSource(world, 5, 5);
     world.markLandValueDirty();
 
     const result = tickOneGrowthInterval(world);
@@ -671,6 +689,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       frontage: 'S',
       structureRect: { x: 1, y: 3, w: 1, h: 1 },
     });
+    seedJobSource(world, 5, 5);
     world.markLandValueDirty();
 
     // Grow 1 (age 7 → 8, fires): 1×1 → 1×2 (cap)
@@ -708,6 +727,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
+    seedJobSource(world, 3, 3);
     world.markLandValueDirty();
 
     const result = tickOneGrowthInterval(world);

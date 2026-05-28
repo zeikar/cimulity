@@ -322,6 +322,19 @@ describe('World.tick() — monthly tax settlement', () => {
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
+    // Provide a jobs source so residential demand stays positive (otherwise
+    // demand collapses to 0 and the level-up gate refuses to fire).
+    map.getBuildings().addExistingBuilding({
+      id: 999,
+      type: 'commercial',
+      footprint: [{ x: 3, y: 3 }],
+      anchor: { x: 3, y: 3 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+      structureRect: { x: 3, y: 3, w: 1, h: 1 },
+    });
 
     const moneyBefore = world.getMoney();
     const level4Pop = world.getPopulation();
@@ -448,7 +461,10 @@ describe('stagger() — deterministic per-building jitter', () => {
   });
 
   it('stagger differentiates first-level-up tick across 5 buildings in a row', () => {
-    // 5 single-tile zones along a road. Each building gets a distinct id (0-4).
+    // 5 single-tile zones along a road. The seeded jobs-source building below
+    // claims id=999 and advances `nextId`, so the residential spawns get ids
+    // 1000-1004. stagger is mod 7 so some of those collide, but the assertion
+    // only needs at least 2 distinct stagger buckets across the 5 buildings.
     // All spawn at level=1 simultaneously on the first growth interval; the next
     // level-up (to level=2) is gated by GROWTH_COOLDOWN_INTERVALS + stagger(id),
     // which is what differentiates the per-building first-level-2 ticks.
@@ -466,6 +482,21 @@ describe('stagger() — deterministic per-building jitter', () => {
     for (let x = 0; x < 5; x++) {
       map.setTile(x, 2, createTile(x, 2, TileType.ZONE_COMMERCIAL));
     }
+    // Seed an existing commercial building outside the test focus so R demand
+    // stays positive (without jobs, demand for R collapses to 0 and level-up halts).
+    // The C zones above can't spawn naturally because their frontage face is
+    // blocked by R buildings, so a manual seed is the simplest way.
+    map.getBuildings().addExistingBuilding({
+      id: 999,
+      type: 'commercial',
+      footprint: [{ x: 9, y: 1 }],
+      anchor: { x: 9, y: 1 },
+      level: 5,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+      structureRect: { x: 9, y: 1, w: 1, h: 1 },
+    });
 
     const firstLevelTwoTick = new Map<number, number>();
 

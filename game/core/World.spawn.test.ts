@@ -137,8 +137,10 @@ describe('World.tick() — zone growth', () => {
   it('zone building level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
     // Use a larger map to add two more zone types near (0,0) to push diversity to 1.0,
     // which brings landValue above the LEVEL_THRESHOLDS[5]=0.85 threshold needed for
-    // the final level-up. The commercial and industrial tiles are not road-adjacent so
-    // they never create buildings — they only contribute to the diversity score of (0,0).
+    // the final level-up. The industrial tile at (1,1) is road-adjacent via (1,0) and
+    // does spawn a building — load-bearing for the demand>0 gate (without a jobs source
+    // residential demand would collapse to 0). The commercial tile at (0,1) is NOT
+    // road-adjacent and only contributes to the diversity score of (0,0).
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));

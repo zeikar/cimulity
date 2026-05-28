@@ -432,6 +432,9 @@ export class World {
         if (existing === null) {
           // Branch A: spawn — frontage-first greedy-depth lot selection.
           const bType = tile.type.replace('zone_', '') as BuildingType;
+          // No demand for this type → no spawn. Demand at 0 means the city is
+          // fully saturated for this type; let zones sit empty until pressure returns.
+          if (demandVec[bType] <= 0) continue;
           const frontage = pickSeedFrontage({ x, y }, this);
           if (frontage === null) continue;
           const lot = greedyDepthLot({ x, y }, frontage, tile.type, this);
@@ -470,10 +473,11 @@ export class World {
         const anchorLandValue = lv.getValue(existing.anchor.x, existing.anchor.y);
 
         if (existing.level < ZONE_MAX_LEVEL) {
-          // Level-up branch: gated on land value threshold + age cooldown.
+          // Level-up branch: gated on demand, land value threshold, and age cooldown.
+          // Demand at 0 → saturated for this type → no structure-grow, no level-up.
           const threshold = LEVEL_THRESHOLDS[existing.level + 1];
           const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
-          if (anchorLandValue >= threshold && existing.age >= cooldown) {
+          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown) {
             const lot = lotBboxOf(existing.footprint);
             if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
               // Branch B' — structure-grow before level-up.
