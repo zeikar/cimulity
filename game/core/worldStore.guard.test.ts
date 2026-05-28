@@ -40,8 +40,8 @@ function makeFakeStorage(): FakeStorage {
   };
 }
 
-// The storage key mirrors the constant in worldStore.ts (v10 cut).
-const STORAGE_KEY = 'cimulity:save:v10';
+// The storage key mirrors the constant in worldStore.ts (v11 cut).
+const STORAGE_KEY = 'cimulity:save:v11';
 
 // ---- singleton reset helper ----
 
@@ -75,6 +75,17 @@ afterEach(() => {
 
 // Full stub that passes hasCurrentWorldApi — all load-bearing methods present.
 function makeFullApiStub() {
+  const structureMapStub = {
+    getStructureAt: () => null,
+    getStructure: () => null,
+    iterStructures: () => [][Symbol.iterator](),
+    getAllStructures: () => [],
+    addStructure: () => null,
+    addExistingStructure: () => false,
+    removeStructure: () => false,
+    setNextIdFloor: () => {},
+    clear: () => {},
+  };
   return {
     getMoney: () => 0,
     trySpend: () => false,
@@ -109,6 +120,11 @@ function makeFullApiStub() {
     regenerateTerrain: () => {},
     getDemand: () => ({ residential: 0.25, commercial: 0.25, industrial: 0.25 }),
     markDemandDirty: () => {},
+    getPowerMap: () => null,
+    markPowerDirty: () => {},
+    recomputePowerIfDirty: () => {},
+    recomputePower: () => {},
+    getStructureMap: () => structureMapStub,
   };
 }
 
@@ -123,7 +139,7 @@ describe('getWorld — sentinel: Test A — API probe fails → fresh World', ()
     };
     // Set the current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'lot-structure-merge-v1';
+    (globalThis as any).__cimulityWorldGuard = 'power-v1';
 
     const result = getWorld();
 
@@ -156,7 +172,7 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = real;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'lot-structure-merge-v1';
+    (globalThis as any).__cimulityWorldGuard = 'power-v1';
 
     const result = getWorld();
 
@@ -165,13 +181,13 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
 });
 
 describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
-  it('builds a fresh World and writes lot-structure-merge-v1 to globalThis.__cimulityWorldGuard', () => {
+  it('builds a fresh World and writes power-v1 to globalThis.__cimulityWorldGuard', () => {
     // Singleton and guard are already cleared by beforeEach (resetSingleton).
     const result = getWorld();
 
     expect(result).toBeInstanceOf(World);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((globalThis as any).__cimulityWorldGuard).toBe('lot-structure-merge-v1');
+    expect((globalThis as any).__cimulityWorldGuard).toBe('power-v1');
   });
 });
 
@@ -272,7 +288,7 @@ describe('getWorld — stale singleton missing getDemand is discarded', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = stale;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'lot-structure-merge-v1';
+    (globalThis as any).__cimulityWorldGuard = 'power-v1';
 
     const result = getWorld();
 
@@ -296,7 +312,7 @@ describe('WORLD_SINGLETON_GUARD invalidates stale HMR singletons', () => {
     // Calling getWorld() should detect the guard mismatch and build a fresh world:
     const fresh = getWorld();
     expect(fresh).not.toBe(stale);
-    expect(globals.__cimulityWorldGuard).toBe('lot-structure-merge-v1');
+    expect(globals.__cimulityWorldGuard).toBe('power-v1');
   });
 });
 

@@ -21,15 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v10' to match WORLD_SAVE_VERSION = 10.
-// Legacy saves at ':v9 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v11' to match WORLD_SAVE_VERSION = 11.
+// Legacy saves at ':v10 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v10';
+const STORAGE_KEY = 'cimulity:save:v11';
 
 // Bump this string whenever the stash format changes (e.g. a new required API
 // is added). An HMR singleton carrying a mismatched guard is discarded and
 // rebuilt even if hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'lot-structure-merge-v1' as const;
+const WORLD_SINGLETON_GUARD = 'power-v1' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -51,23 +51,27 @@ function readSave(): string | null {
  *
  * A singleton that survived HMR/Fast Refresh may predate any API surface
  * the session/dispatcher/render layer relies on. We check every
- * load-bearing method on `World`, `GameMap`, and `BuildingMap` — checking
- * only a subset leaves stale singletons that have e.g. `iterBuildings`
+ * load-bearing method on `World`, `GameMap`, `BuildingMap`, and `StructureMap` —
+ * checking only a subset leaves stale singletons that have e.g. `iterBuildings`
  * but lack `addExistingBuilding`, which would silently no-op save-hydration.
  *
  * **Update this guard whenever a load-bearing method is added to `World`,
- * `GameMap`, or `BuildingMap` — stale HMR singletons missing the method
- * break the app.**
+ * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
+ * the method break the app.**
  *
- * Checked methods (as of Task 5/T1 — v9 with frontage as required on Building):
+ * Checked methods (as of Task 7/v11 — power + structure persistence):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
  *          isWater, canBuildAt, canBuildRoadAt, regenerateTerrain,
- *          getDemand, markDemandDirty
+ *          getDemand, markDemandDirty,
+ *          getPowerMap, markPowerDirty, recomputePowerIfDirty, recomputePower,
+ *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
  *                addBuilding, addExistingBuilding, removeBuilding, setNextIdFloor, clear
+ *   StructureMap: getStructureAt, getStructure, iterStructures, getAllStructures,
+ *                 addStructure, addExistingStructure, removeStructure, setNextIdFloor, clear
  *   Building.frontage: required Frontage field (added v9)
  */
 function hasCurrentWorldApi(world: World): boolean {
@@ -134,6 +138,31 @@ function hasCurrentWorldApi(world: World): boolean {
   if (typeof world.getDemand !== 'function' || typeof world.markDemandDirty !== 'function') {
     return false;
   }
+  // PowerMap API (added in Task 4 / v11): derived power field + dirty-mark + recompute.
+  if (
+    typeof world.getPowerMap !== 'function' ||
+    typeof world.markPowerDirty !== 'function' ||
+    typeof world.recomputePowerIfDirty !== 'function' ||
+    typeof world.recomputePower !== 'function'
+  ) {
+    return false;
+  }
+  // StructureMap API (added in Task 2 / v11): all load-bearing methods used by save/dispatch/render.
+  if (typeof world.getStructureMap !== 'function') return false;
+  const structures = world.getStructureMap();
+  if (
+    typeof structures.getStructureAt !== 'function' ||
+    typeof structures.getStructure !== 'function' ||
+    typeof structures.iterStructures !== 'function' ||
+    typeof structures.getAllStructures !== 'function' ||
+    typeof structures.addStructure !== 'function' ||
+    typeof structures.addExistingStructure !== 'function' ||
+    typeof structures.removeStructure !== 'function' ||
+    typeof structures.setNextIdFloor !== 'function' ||
+    typeof structures.clear !== 'function'
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -152,6 +181,7 @@ export function getWorld(): World {
       if (!ok) {
         // Bad/corrupt save — fall back to procedural generation.
         world.reset({ regenerate: true });
+        world.recomputePowerIfDirty();
       }
     } else {
       // No save — fresh procedural world.

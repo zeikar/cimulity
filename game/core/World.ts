@@ -385,6 +385,7 @@ export class World {
     if (!regenerate) {
       // Flat default terrain — used by deserialization paths.
       this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
+      this.recomputePowerIfDirty();
       return;
     }
 
@@ -400,6 +401,7 @@ export class World {
       }
     }
     this.installTerrain(terrain);
+    this.recomputePowerIfDirty();
   }
 
   /**

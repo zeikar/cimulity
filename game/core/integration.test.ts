@@ -21,16 +21,17 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
  * Build the canonical acceptance world:
  *   6×6, regenerate: false (flat terrain at MIN_LAND_ELEVATION=1)
  *   x=0..3, y=0..3 → ZONE_RESIDENTIAL
- *   x=0..4, y=4    → ROAD
+ *   x=0..3, y=4    → ROAD
  *   x=4..5, y=0..3 → GRASS (default; no zone, no spawn)
- *   power plant at (4,3)–(5,4): cell (4,4) is ROAD → all road y=4 powered
+ *   power plant at (4,3)–(5,4): footprint cells set to POWER_PLANT.
+ *   Plant cell (4,4) is orthogonally adjacent to road at (3,4) → entire road row powered.
  */
 function buildAcceptanceWorld(): World {
   const world = new World(6, 6, { regenerate: false });
   const map = world.getMap();
 
-  // Road row at y=4 (spans full width so all zone columns have road access).
-  for (let x = 0; x <= 4; x++) {
+  // Road row at y=4, x=0..3 (zone columns only; x=4 is plant footprint).
+  for (let x = 0; x <= 3; x++) {
     map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
   }
 
@@ -41,7 +42,11 @@ function buildAcceptanceWorld(): World {
     }
   }
 
-  // Power the road so zone tiles can spawn buildings.
+  // Power plant at (4,3)-(5,4): set tiles to POWER_PLANT then register.
+  map.setTile(4, 3, createTile(4, 3, TileType.POWER_PLANT));
+  map.setTile(5, 3, createTile(5, 3, TileType.POWER_PLANT));
+  map.setTile(4, 4, createTile(4, 4, TileType.POWER_PLANT));
+  map.setTile(5, 4, createTile(5, 4, TileType.POWER_PLANT));
   world.getStructureMap().addStructure({
     type: 'power_plant',
     anchor: { x: 4, y: 3 },

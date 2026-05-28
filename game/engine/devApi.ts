@@ -12,6 +12,11 @@
  * tree-shaking of the namespace assignment. The legacy `__cimulityWorld`
  * singleton on globalThis (owned by `worldStore.ts`) is **untouched** — tests
  * still rely on it for HMR-survive semantics. This is an additive dev surface.
+ *
+ * Dev paths bypass `applyCommands`, so they must manually mark+drain `power`
+ * (and any other derived-field) dirty flags after writing graph-relevant tiles.
+ * `recomputePowerIfDirty()` alone is insufficient — the flag is only set
+ * automatically by the dispatcher.
  */
 
 import { tileToScreen } from '../render/IsoTransform';
@@ -159,6 +164,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
 
         pixiApp.getTileRenderer()?.markDirty();
         world.markDemandDirty();
+        world.markPowerDirty();
+        world.recomputePowerIfDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

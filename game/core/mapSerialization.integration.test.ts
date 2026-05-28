@@ -5,6 +5,12 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 import { ZONE_GROWTH_INTERVAL } from './World';
 
 function seedPower(world: World, ax: number, ay: number): void {
+  const map = world.getMap();
+  // Set POWER_PLANT tile types so the tile-structure invariant holds for serialization.
+  map.setTile(ax, ay, createTile(ax, ay, TileType.POWER_PLANT));
+  map.setTile(ax + 1, ay, createTile(ax + 1, ay, TileType.POWER_PLANT));
+  map.setTile(ax, ay + 1, createTile(ax, ay + 1, TileType.POWER_PLANT));
+  map.setTile(ax + 1, ay + 1, createTile(ax + 1, ay + 1, TileType.POWER_PLANT));
   world.getStructureMap().addStructure({
     type: 'power_plant',
     anchor: { x: ax, y: ay },
