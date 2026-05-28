@@ -35,21 +35,26 @@ describe('ToolCategory', () => {
     it('maps BULLDOZE to DEMOLISH', () => {
       expect(TOOL_CATEGORY[Tool.BULLDOZE]).toBe(ToolCategory.DEMOLISH);
     });
+
+    it('maps POWER_PLANT to POWER', () => {
+      expect(TOOL_CATEGORY[Tool.POWER_PLANT]).toBe(ToolCategory.POWER);
+    });
   });
 
   describe('CATEGORY_ORDER', () => {
-    it('defines exact category order [CURSOR, TERRAIN, BUILD, ZONE, DEMOLISH]', () => {
+    it('defines exact category order [CURSOR, TERRAIN, BUILD, ZONE, POWER, DEMOLISH]', () => {
       expect(CATEGORY_ORDER).toEqual([
         ToolCategory.CURSOR,
         ToolCategory.TERRAIN,
         ToolCategory.BUILD,
         ToolCategory.ZONE,
+        ToolCategory.POWER,
         ToolCategory.DEMOLISH,
       ]);
     });
 
-    it('has exactly 5 categories in order', () => {
-      expect(CATEGORY_ORDER).toHaveLength(5);
+    it('has exactly 6 categories in order', () => {
+      expect(CATEGORY_ORDER).toHaveLength(6);
     });
   });
 });

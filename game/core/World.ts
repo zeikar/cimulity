@@ -68,6 +68,10 @@ export const ROAD_COST = 10;
 export const ZONE_COST = 5;
 /** Cost to bulldoze one tile. */
 export const BULLDOZE_COST = 2;
+/**
+ * Cost to place a power plant (2×2 footprint). 10% of STARTING_FUNDS by design.
+ */
+export const POWER_PLANT_COST = 1000;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */

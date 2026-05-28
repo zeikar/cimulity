@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildToolCommands } from './ToolActions';
+import { buildToolCommands, buildToolPreview } from './ToolActions';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from './Tool';
 import { World } from '../core/World';
@@ -572,5 +572,206 @@ describe('buildToolCommands - POWER_PLANT cell rejection', () => {
     const writtenVertices = commands[0].writes.map(w => `${w.vx},${w.vy}`);
     expect(writtenVertices).toContain('4,2');
     expect(writtenVertices).toContain('4,3');
+  });
+});
+
+describe('buildToolCommands - POWER_PLANT placement', () => {
+  it('accepts on flat grass with no obstacles — emits one place-structure command', () => {
+    // World is 8×8 flat grass by default (regenerate: false).
+    const result = buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toEqual([{ kind: 'place-structure', x: 2, y: 2, structureType: 'power_plant' }]);
+  });
+
+  it('rejects when the 2×2 extends out of bounds (anchor at width-1, height-1)', () => {
+    // 8×8 map — anchor at (7,7) means (8,8) OOB.
+    const result = buildToolCommands(Tool.POWER_PLANT, [{ x: 7, y: 7 }], world, { x: 7, y: 7 });
+    expect(result).toEqual([]);
+  });
+
+  it('rejects when any of the 4 cells is a road', () => {
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ROAD));
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when any of the 4 cells is a zone tile', () => {
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.ZONE_RESIDENTIAL));
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when any of the 4 cells is DIRT', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.DIRT));
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when any of the 4 cells is already POWER_PLANT', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when any cell is owned by a building', () => {
+    // Place a building that occupies (3,3).
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 3, y: 3 }],
+      anchor: { x: 3, y: 3 },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'south',
+      structureRect: { x: 3, y: 3, w: 1, h: 1 },
+    });
+    // Anchor at (2,2) — cells (3,3) is owned by the building.
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when any cell is owned by an existing structure', () => {
+    // Place a structure at (2,2)–(3,3).
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.POWER_PLANT));
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.POWER_PLANT));
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.POWER_PLANT));
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+      anchor: { x: 2, y: 2 },
+    });
+    // Overlapping anchor — (2,2) is occupied.
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+    // Partially overlapping anchor — (3,3) is occupied.
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 3, y: 3 }], world, { x: 3, y: 3 })).toEqual([]);
+  });
+
+  it('rejects when the 2×2 fails canBuildAt (non-flat slab)', () => {
+    // Raise one corner inside the 2×2 footprint to break flatness.
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 3);
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+});
+
+describe('buildToolPreview - POWER_PLANT', () => {
+  it('populates rejected=[] for accepted placement', () => {
+    const preview = buildToolPreview(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.pathTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+
+  it('populates rejected=[tile] for rejected placement (OOB)', () => {
+    const preview = buildToolPreview(Tool.POWER_PLANT, [{ x: 7, y: 7 }], world);
+    expect(preview.rejected).toEqual([{ x: 7, y: 7 }]);
+    expect(preview.pathTiles).toEqual([{ x: 7, y: 7 }]);
+  });
+
+  it('populates rejected=[tile] when anchor cell is road', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const preview = buildToolPreview(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world);
+    expect(preview.rejected).toEqual([{ x: 2, y: 2 }]);
+  });
+
+  it('returns empty rejected for empty tiles array', () => {
+    const preview = buildToolPreview(Tool.POWER_PLANT, [], world);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.pathTiles).toEqual([]);
+  });
+});
+
+describe('buildToolCommands - BULLDOZE with POWER_PLANT', () => {
+  function placePlant(w: World, ax: number, ay: number): void {
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        w.getMap().setTile(ax + dx, ay + dy, createTile(ax + dx, ay + dy, TileType.POWER_PLANT));
+      }
+    }
+    w.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [
+        { x: ax,     y: ay     },
+        { x: ax + 1, y: ay     },
+        { x: ax,     y: ay + 1 },
+        { x: ax + 1, y: ay + 1 },
+      ],
+      anchor: { x: ax, y: ay },
+    });
+  }
+
+  it('single plant cell → 1 remove-structure command', () => {
+    placePlant(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+
+  it('3 of 4 plant cells → exactly 1 remove-structure command (dedup)', () => {
+    placePlant(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [
+      { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 },
+    ], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+
+  it('two separate plants → 2 remove-structure commands', () => {
+    placePlant(world, 0, 0);
+    placePlant(world, 4, 4);
+    const result = buildToolCommands(Tool.BULLDOZE, [
+      { x: 0, y: 0 }, { x: 4, y: 4 },
+    ], world, { x: 0, y: 0 });
+    expect(result).toHaveLength(2);
+    expect(result.every(c => c.kind === 'remove-structure')).toBe(true);
+    // Each references a different structure id.
+    if (result[0].kind === 'remove-structure' && result[1].kind === 'remove-structure') {
+      expect(result[0].structureId).not.toBe(result[1].structureId);
+    }
+  });
+
+  it('mixed batch (1 road + 2 plant cells + 1 grass) → 1 tile→DIRT for road + 1 remove-structure for plant', () => {
+    placePlant(world, 2, 2);
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    const result = buildToolCommands(Tool.BULLDOZE, [
+      { x: 0, y: 0 }, // road
+      { x: 2, y: 2 }, // plant cell 1
+      { x: 3, y: 2 }, // plant cell 2
+      { x: 5, y: 5 }, // grass — untouched
+    ], world, { x: 0, y: 0 });
+    const tileCommands = result.filter(c => c.kind === 'tile');
+    const removeCommands = result.filter(c => c.kind === 'remove-structure');
+    expect(tileCommands).toHaveLength(1);
+    expect(removeCommands).toHaveLength(1);
+    if (tileCommands[0].kind === 'tile') {
+      expect(tileCommands[0].tile.type).toBe(TileType.DIRT);
+    }
+  });
+});
+
+describe('buildToolPreview - BULLDOZE with POWER_PLANT', () => {
+  function placePlant(w: World, ax: number, ay: number): void {
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        w.getMap().setTile(ax + dx, ay + dy, createTile(ax + dx, ay + dy, TileType.POWER_PLANT));
+      }
+    }
+    w.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [
+        { x: ax,     y: ay     },
+        { x: ax + 1, y: ay     },
+        { x: ax,     y: ay + 1 },
+        { x: ax + 1, y: ay + 1 },
+      ],
+      anchor: { x: ax, y: ay },
+    });
+  }
+
+  it('POWER_PLANT cells are NOT classified as rejected in BULLDOZE preview', () => {
+    placePlant(world, 2, 2);
+    const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 2, y: 2 }, { x: 3, y: 2 }], world);
+    expect(preview.rejected).toEqual([]);
+  });
+
+  it('affectedBuildingIds does not include the plant', () => {
+    placePlant(world, 2, 2);
+    const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 2, y: 2 }], world);
+    expect(preview.affectedBuildingIds.size).toBe(0);
   });
 });

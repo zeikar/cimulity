@@ -34,6 +34,7 @@ const TOOL_BUTTONS: Record<Tool, ToolButton> = {
   [Tool.ZONE_RESIDENTIAL]: { tool: Tool.ZONE_RESIDENTIAL, label: 'Residential', shortcut: 'Q' },
   [Tool.ZONE_COMMERCIAL]: { tool: Tool.ZONE_COMMERCIAL, label: 'Commercial', shortcut: 'W' },
   [Tool.ZONE_INDUSTRIAL]: { tool: Tool.ZONE_INDUSTRIAL, label: 'Industrial', shortcut: 'E' },
+  [Tool.POWER_PLANT]: { tool: Tool.POWER_PLANT, label: 'Power Plant', shortcut: 'P' },
   [Tool.TERRAIN_UP]: { tool: Tool.TERRAIN_UP, label: 'Raise', shortcut: 'R' },
   [Tool.TERRAIN_DOWN]: { tool: Tool.TERRAIN_DOWN, label: 'Lower', shortcut: 'F' },
   [Tool.TERRAIN_LEVEL]: { tool: Tool.TERRAIN_LEVEL, label: 'Level', shortcut: 'G' },
@@ -44,6 +45,7 @@ const CATEGORY_LABELS: Record<ToolCategory, string> = {
   [ToolCategory.TERRAIN]: 'Terrain',
   [ToolCategory.BUILD]: 'Build',
   [ToolCategory.ZONE]: 'Zone',
+  [ToolCategory.POWER]: 'Power',
   [ToolCategory.DEMOLISH]: 'Demolish',
 };
 

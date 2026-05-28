@@ -6,6 +6,8 @@
  *
  * `TileWriteCommand`      — write a tile at a grid coordinate
  * `VertexEditCommand`    — set terrain vertex heights in deterministic order
+ * `PlaceStructureCommand` — place a 2×2 power plant anchored at (x, y)
+ * `RemoveStructureCommand`— atomically remove a structure by id
  * `ToolCommand`           — discriminated union of the above
  */
 
@@ -31,4 +33,23 @@ export interface VertexEditCommand {
   }>;
 }
 
-export type ToolCommand = TileWriteCommand | VertexEditCommand;
+export interface PlaceStructureCommand {
+  readonly kind: 'place-structure';
+  /** NW anchor x */
+  readonly x: number;
+  /** NW anchor y */
+  readonly y: number;
+  readonly structureType: 'power_plant';
+}
+
+/**
+ * Atomic removal by structure id. Writes DIRT to every footprint cell and
+ * unregisters the StructureMap entry. A drag-rect bulldoze that overlaps N
+ * cells of one plant produces exactly one of these commands — cost charged once.
+ */
+export interface RemoveStructureCommand {
+  readonly kind: 'remove-structure';
+  readonly structureId: number;
+}
+
+export type ToolCommand = TileWriteCommand | VertexEditCommand | PlaceStructureCommand | RemoveStructureCommand;

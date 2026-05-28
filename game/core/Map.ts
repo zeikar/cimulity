@@ -63,6 +63,9 @@ export class GameMap {
    * If the current tile is zoned AND the new type differs, snapshots the owning Building (if any) BEFORE
    * removing it, then writes the new tile. Returns the snapshot so callers can emit the removed id + footprint.
    * For non-zoned → non-zoned rewrites (e.g. ROAD→DIRT bulldoze) no building removal occurs.
+   *
+   * POWER_PLANT tile rewrites at this layer do NOT auto-remove the owning StructureMap entry — that is the
+   * dispatcher's responsibility via the `remove-structure` command path.
    */
   setTileAndReconcile(x: number, y: number, tile: Tile): { changed: boolean; removedBuilding: Building | null } {
     const current = this.getTile(x, y);

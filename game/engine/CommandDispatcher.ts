@@ -12,7 +12,7 @@ import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
 import { buildToolCommands, buildToolPreview } from '../tools';
-import { ROAD_COST, ZONE_COST, BULLDOZE_COST } from '../core/World';
+import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST } from '../core/World';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
 import type { World } from '../core/World';
@@ -40,6 +40,9 @@ function pathForTool(
     case Tool.TERRAIN_DOWN:
     case Tool.TERRAIN_LEVEL:
       return rectDragPath(start, end);
+    case Tool.POWER_PLANT:
+      // Drag collapses to a single-click at start — the NW anchor.
+      return [start];
     default:
       return [];
   }
@@ -51,9 +54,18 @@ function pathForTool(
  * so BULLDOZE_COST is charged for any bulldoze command regardless of the
  * source tile type. Zone types share ZONE_COST when being placed.
  * Elevation writes are always free.
+ *
+ * Cost is per-command. A power-plant placement pays POWER_PLANT_COST once.
+ * A remove-structure pays BULLDOZE_COST once per plant — drag-rect dedup
+ * happens at the tool layer, so one plant cannot be billed twice.
  */
 function commandCost(cmd: ToolCommand): number {
   if (cmd.kind === 'vertex-edit') return 0;
+  if (cmd.kind === 'place-structure') {
+    if (cmd.structureType === 'power_plant') return POWER_PLANT_COST;
+    return 0;
+  }
+  if (cmd.kind === 'remove-structure') return BULLDOZE_COST;
   const t = cmd.tile.type;
   if (t === TileType.ROAD) return ROAD_COST;
   if (isZoneType(t)) return ZONE_COST;
@@ -73,8 +85,17 @@ function tileKey(x: number, y: number): string {
  * Cost is charged on the whole batch before any tile write (all-or-nothing).
  * Same-zone repaint emits no commands → zero total → free, no trySpend call.
  * Insufficient funds → silent no-op, empty changedTiles.
+ *
+ * Power is recomputed at the end of `applyCommands` whenever any command
+ * dirtied it, so the next render frame always reads a fresh snapshot — even
+ * when the simulation is paused. Tick-path `recomputePowerIfDirty` remains
+ * as defense-in-depth.
+ *
+ * Exported so invariant-throw branches can be exercised directly in tests
+ * without routing through the tool-command builders that normally prevent
+ * those states from occurring.
  */
-function applyCommands(commands: ToolCommand[], world: World): ToolResult {
+export function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   if (commands.length === 0) return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
 
   const total = commands.reduce((s, c) => s + commandCost(c), 0);
@@ -88,6 +109,7 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   const affectedTiles: TileCoord[] = [];
   const removedBuildingIds: number[] = [];
   let landValueInvalidated = false;
+  let powerInvalidated = false;
   const pushedChanged = new Set<string>();
   const pushChanged = (x: number, y: number): void => {
     const key = tileKey(x, y);
@@ -125,6 +147,49 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
           }
         }
       }
+    } else if (cmd.kind === 'place-structure') {
+      // Build the 4-cell footprint from the NW anchor.
+      const footprint = [
+        { x: cmd.x,     y: cmd.y     },
+        { x: cmd.x + 1, y: cmd.y     },
+        { x: cmd.x,     y: cmd.y + 1 },
+        { x: cmd.x + 1, y: cmd.y + 1 },
+      ];
+      // Invariant: classifyPowerPlant passed, so addStructure must succeed.
+      const structure = world.getStructureMap().addStructure({
+        type: cmd.structureType,
+        footprint,
+        anchor: { x: cmd.x, y: cmd.y },
+      });
+      // This branch should never fire: addStructure returned null despite classifyPowerPlant passing.
+      // This can only happen if two place-structure commands overlap (the tool layer never produces that).
+      if (structure === null) {
+        throw new Error('invariant: addStructure returned null after classifyPowerPlant passed');
+      }
+      for (const { x: cx, y: cy } of footprint) {
+        const rec = map.setTileAndReconcile(cx, cy, createTile(cx, cy, TileType.POWER_PLANT));
+        pushChanged(cx, cy);
+        // Defensively handle any removed building (classifier should have prevented this).
+        if (rec.removedBuilding !== null) {
+          removedBuildingIds.push(rec.removedBuilding.id);
+          for (const coord of rec.removedBuilding.footprint) {
+            affectedTiles.push(coord);
+          }
+        }
+      }
+      powerInvalidated = true;
+    } else if (cmd.kind === 'remove-structure') {
+      const s = world.getStructureMap().getStructure(cmd.structureId);
+      // Invariant: tool layer dedupes by id; a stale id cannot reach applyCommands through normal flow.
+      if (s === null) {
+        throw new Error('invariant: remove-structure references a missing structureId');
+      }
+      for (const { x: cx, y: cy } of s.footprint) {
+        map.setTileAndReconcile(cx, cy, createTile(cx, cy, TileType.DIRT));
+        pushChanged(cx, cy);
+      }
+      world.getStructureMap().removeStructure(s.id);
+      powerInvalidated = true;
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
@@ -138,6 +203,14 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
             (prevTile !== null && (prevTile.type === TileType.ROAD || isZoneType(prevTile.type))))
         ) {
           landValueInvalidated = true;
+        }
+        // Mark power dirty when a ROAD tile is placed or a ROAD tile is replaced.
+        if (
+          !powerInvalidated &&
+          (cmd.tile.type === TileType.ROAD ||
+            (prevTile !== null && prevTile.type === TileType.ROAD))
+        ) {
+          powerInvalidated = true;
         }
       }
       if (rec.removedBuilding !== null) {
@@ -153,6 +226,12 @@ function applyCommands(commands: ToolCommand[], world: World): ToolResult {
   }
   if (removedBuildingIds.length > 0) {
     world.markDemandDirty();
+  }
+  // Post-apply recompute: if any command dirtied power, mark + drain immediately so the
+  // next render frame sees a fresh snapshot even when the simulation is paused.
+  if (powerInvalidated) {
+    world.markPowerDirty();
+    world.recomputePowerIfDirty();
   }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }

@@ -132,8 +132,12 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
       for (const { x, y } of tiles) {
         const currentTile = map.getTile(x, y);
         if (!currentTile) continue;
+        // POWER_PLANT cells are clearable — treated the same as roads (not rejected).
+        // Structures (power plants) are removed at dispatch time; they do not surface in affectedBuildingIds.
+        if (currentTile.type === TileType.POWER_PLANT) continue;
         // Mirror Map.setTileAndReconcile's building-removal precondition:
         // only zone tiles trigger building removal, NOT road tiles.
+        // affectedBuildingIds: zone buildings only; structures (power plants) are removed at dispatch time and do not surface here.
         if (!isZoneType(currentTile.type)) continue;
         const building = map.getBuildings().getBuildingAt(x, y);
         if (building !== null) {
@@ -141,6 +145,17 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
         }
       }
       break;
+    }
+    case Tool.POWER_PLANT: {
+      // `tiles[0]` IS the NW anchor — `pathForTool(Tool.POWER_PLANT, start, end)` returns
+      // `[start]`, so the preview path has exactly one tile.
+      if (tiles.length > 0 && classifyPowerPlant(world, tiles[0].x, tiles[0].y) === 'reject') {
+        rejected = [tiles[0]];
+      } else {
+        rejected = [];
+      }
+      allOrNothingBlocked = false;
+      return { pathTiles, rejected, allOrNothingBlocked, affectedBuildingIds };
     }
     default:
       rejected = [];
@@ -180,6 +195,8 @@ export function buildToolCommands(
       return buildTerrainDownCommands(tiles, world);
     case Tool.TERRAIN_LEVEL:
       return buildTerrainLevelCommands(tiles, world, dragStart);
+    case Tool.POWER_PLANT:
+      return buildPowerPlantCommands(dragStart, world);
     default:
       return [];
   }
@@ -198,32 +215,73 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
 }
 
 /**
- * Build bulldoze commands
+ * Build bulldoze commands.
  * Clears roads and zone tiles to a dirt scar that the simulation regrows to
  * grass on the next tick. Natural terrain (water, grass, dirt) is left
- * untouched.
+ * untouched. A bulldoze on any cell of a power plant emits one
+ * `remove-structure` per plant in the batch — cost is charged once per plant
+ * regardless of how many of its cells the bulldoze path overlaps.
  */
 function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
   const commands: ToolCommand[] = [];
+  const seenStructures = new Set<number>();
 
   for (const coord of tiles) {
-    const currentTile = map.getTile(coord.x, coord.y);
+    const { x, y } = coord;
+    const currentTile = map.getTile(x, y);
 
     if (!currentTile) continue;
+
+    if (currentTile.type === TileType.POWER_PLANT) {
+      const s = world.getStructureMap().getStructureAt(x, y);
+      // Defensive: by invariant (Task 5 + Task 7) s is never null when tile is POWER_PLANT.
+      // If null, skip — the dispatcher's invariant check enforces correctness for production.
+      if (s === null) continue;
+      if (!seenStructures.has(s.id)) {
+        commands.push({ kind: 'remove-structure', structureId: s.id });
+        seenStructures.add(s.id);
+      }
+      continue;
+    }
 
     const clearable = currentTile.type === TileType.ROAD || isZoneType(currentTile.type);
     if (!clearable) continue;
 
     commands.push({
       kind: 'tile',
-      x: coord.x,
-      y: coord.y,
-      tile: createTile(coord.x, coord.y, TileType.DIRT),
+      x,
+      y,
+      tile: createTile(x, y, TileType.DIRT),
     });
   }
 
   return commands;
+}
+
+function classifyPowerPlant(world: World, x: number, y: number): 'emit' | 'reject' {
+  const map = world.getMap();
+  // Reject if anchor or SE corner is out of bounds.
+  if (!map.getTile(x, y) || !map.getTile(x + 1, y + 1)) return 'reject';
+  // Check all 4 cells of the 2×2 footprint.
+  for (let dy = 0; dy <= 1; dy++) {
+    for (let dx = 0; dx <= 1; dx++) {
+      const cx = x + dx;
+      const cy = y + dy;
+      const tile = map.getTile(cx, cy);
+      if (!tile || tile.type !== TileType.GRASS) return 'reject';
+      if (map.getBuildings().getBuildingAt(cx, cy) !== null) return 'reject';
+      if (world.getStructureMap().getStructureAt(cx, cy) !== null) return 'reject';
+    }
+  }
+  // Reject if the 2×2 slab is not flat (delegates to Terrain.isFlatArea).
+  if (!world.canBuildAt(x, y, 2, 2)) return 'reject';
+  return 'emit';
+}
+
+function buildPowerPlantCommands(tile: TileCoord, world: World): ToolCommand[] {
+  if (classifyPowerPlant(world, tile.x, tile.y) === 'reject') return [];
+  return [{ kind: 'place-structure', x: tile.x, y: tile.y, structureType: 'power_plant' }];
 }
 
 function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: World): ToolCommand[] {

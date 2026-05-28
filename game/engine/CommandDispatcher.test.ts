@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
+import { executeClick, executeDrag, previewDrag, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
+import { POWER_PLANT_COST, BULLDOZE_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 
@@ -129,6 +130,193 @@ describe('CommandDispatcher terrain vertex edits', () => {
     }
     expect(result.changedTiles).toContainEqual({ x: 0, y: 0 });
     expect(result.changedTiles).toContainEqual({ x: 1, y: 0 });
+  });
+});
+
+describe('CommandDispatcher POWER_PLANT placement', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('places 4 POWER_PLANT tiles, registers structure, and deducts POWER_PLANT_COST', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    const result = executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // 4 tiles changed.
+    expect(result.changedTiles).toHaveLength(4);
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(result.changedTiles).toContainEqual({ x: 3, y: 2 });
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 3 });
+    expect(result.changedTiles).toContainEqual({ x: 3, y: 3 });
+    // All 4 cells are POWER_PLANT.
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        expect(world.getMap().getTile(2 + dx, 2 + dy)?.type).toBe(TileType.POWER_PLANT);
+      }
+    }
+    // StructureMap registered.
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+    expect(world.getStructureMap().getStructureAt(3, 3)).not.toBeNull();
+    // Cost deducted.
+    expect(world.getMoney()).toBe(before - POWER_PLANT_COST);
+  });
+
+  it('post-apply power recompute: a road connected to the plant is isPowered immediately (no tick)', () => {
+    const world = makeWorld8();
+    // Place the plant at (2,2).
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // Place a road adjacent to the plant at (1,2) — orthogonally adjacent to plant cell (2,2).
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    // The road should be powered immediately without any tick.
+    expect(world.getPowerMap().isPowered(1, 2)).toBe(true);
+  });
+
+  it('insufficient funds → no tile writes, no structure, no cost deducted', () => {
+    const world = makeWorld8();
+    world.trySpend(world.getMoney()); // drain to 0
+    const before = world.getMoney();
+    const result = executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('drag from (5,5) to (10,10) behaves identically to click at (5,5)', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    // executeDrag collapses to [start] via pathForTool(POWER_PLANT).
+    const result = executeDrag(Tool.POWER_PLANT, { x: 5, y: 5 }, { x: 10, y: 10 }, world);
+    // (5,5) anchor — (6,6) is the SE corner; both must be in-bounds on 8×8.
+    expect(result.changedTiles).toHaveLength(4);
+    expect(world.getStructureMap().getStructureAt(5, 5)).not.toBeNull();
+    expect(world.getMoney()).toBe(before - POWER_PLANT_COST);
+  });
+
+  it('placing a road adjacent to an existing plant makes that road isPowered immediately (no tick)', () => {
+    const world = makeWorld8();
+    // Plant at (2,2)–(3,3).
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // Road adjacent to plant: (4,2) is orthogonally adjacent to plant cell (3,2).
+    executeClick(Tool.ROAD, { x: 4, y: 2 }, world);
+    expect(world.getPowerMap().isPowered(4, 2)).toBe(true);
+  });
+});
+
+describe('CommandDispatcher POWER_PLANT removal (bulldoze)', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  function placePlant(world: World, ax: number, ay: number): void {
+    executeClick(Tool.POWER_PLANT, { x: ax, y: ay }, world);
+  }
+
+  it('bulldozing NW cell writes 4 DIRT, removes structure, deducts BULLDOZE_COST once', () => {
+    const world = makeWorld8();
+    placePlant(world, 2, 2);
+    const before = world.getMoney();
+    const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    // 4 tiles should change to DIRT.
+    expect(result.changedTiles).toHaveLength(4);
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        expect(world.getMap().getTile(2 + dx, 2 + dy)?.type).toBe(TileType.DIRT);
+      }
+    }
+    // Structure removed.
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    expect(world.getStructureMap().getStructureAt(3, 3)).toBeNull();
+    // Cost deducted once.
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST);
+  });
+
+  it('bulldozing SE cell behaves identically (whole-footprint atomicity)', () => {
+    const world = makeWorld8();
+    placePlant(world, 2, 2);
+    const before = world.getMoney();
+    const result = executeClick(Tool.BULLDOZE, { x: 3, y: 3 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST);
+  });
+
+  it('bulldoze removal triggers post-apply recompute — powered road loses power immediately', () => {
+    const world = makeWorld8();
+    // Plant at (2,2). Road adjacent at (1,2).
+    placePlant(world, 2, 2);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getPowerMap().isPowered(1, 2)).toBe(true);
+    // Remove the plant.
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(world.getPowerMap().isPowered(1, 2)).toBe(false);
+  });
+
+  it('drag-rect covering 3 plant cells + 1 grass → 4 DIRT, structure removed, BULLDOZE_COST once', () => {
+    const world = makeWorld8();
+    placePlant(world, 2, 2);
+    const before = world.getMoney();
+    const result = executeDrag(Tool.BULLDOZE, { x: 2, y: 2 }, { x: 3, y: 3 }, world);
+    // All 4 plant cells replaced with DIRT.
+    expect(result.changedTiles).toHaveLength(4);
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        expect(world.getMap().getTile(2 + dx, 2 + dy)?.type).toBe(TileType.DIRT);
+      }
+    }
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    // Cost charged once for one plant.
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST);
+  });
+
+  it('drag-rect covering two adjacent plants → 8 DIRT, both structures removed, BULLDOZE_COST × 2', () => {
+    const world = makeWorld8();
+    placePlant(world, 0, 0);
+    placePlant(world, 0, 2);
+    const before = world.getMoney();
+    const result = executeDrag(Tool.BULLDOZE, { x: 0, y: 0 }, { x: 1, y: 3 }, world);
+    // 8 plant cells → 8 DIRT.
+    expect(result.changedTiles).toHaveLength(8);
+    expect(world.getStructureMap().getStructureAt(0, 0)).toBeNull();
+    expect(world.getStructureMap().getStructureAt(0, 2)).toBeNull();
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST * 2);
+  });
+
+  it('bulldozing a road tile dirties power — orphan side loses power immediately (regression guard)', () => {
+    const world = makeWorld8();
+    // Plant at (0,0). Road chain: (2,0),(3,0),(4,0). Road at (2,0) bridges from plant.
+    placePlant(world, 0, 0);
+    executeClick(Tool.ROAD, { x: 2, y: 0 }, world);
+    executeClick(Tool.ROAD, { x: 3, y: 0 }, world);
+    executeClick(Tool.ROAD, { x: 4, y: 0 }, world);
+    // (2,0) is adjacent to plant cell (1,0), so the whole chain is powered.
+    expect(world.getPowerMap().isPowered(4, 0)).toBe(true);
+    // Bulldoze the bridge road at (2,0) — (3,0) and (4,0) lose power.
+    executeClick(Tool.BULLDOZE, { x: 2, y: 0 }, world);
+    expect(world.getPowerMap().isPowered(4, 0)).toBe(false);
+  });
+});
+
+describe('CommandDispatcher applyCommands invariant throws', () => {
+  it('place-structure throws when addStructure returns null (footprint already occupied)', () => {
+    // Place a plant via the normal tool path so the cells are occupied in StructureMap.
+    const world = new World(8, 8, { regenerate: false });
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // Confirm the structure is registered.
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+
+    // Craft a place-structure command that overlaps the existing plant.
+    // applyCommands will call addStructure on already-occupied cells → returns null → invariant throw.
+    const cmd = { kind: 'place-structure' as const, x: 2, y: 2, structureType: 'power_plant' as const };
+    expect(() => applyCommands([cmd], world)).toThrow(/invariant/i);
+  });
+
+  it('remove-structure throws when structureId does not exist in StructureMap', () => {
+    // World with no structures at all — id 999 will not be found.
+    const world = new World(8, 8, { regenerate: false });
+
+    const cmd = { kind: 'remove-structure' as const, structureId: 999 };
+    expect(() => applyCommands([cmd], world)).toThrow(/invariant/i);
   });
 });
 
