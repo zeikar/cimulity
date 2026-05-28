@@ -97,7 +97,7 @@ describe('World.tick() — zone growth', () => {
     expect(map.getTile(1, 0)?.level).toBe(0);
   });
 
-  it('ROAD-adjacent zone creates a building (level 0) on tick N; returned changed includes the creation', () => {
+  it('ROAD-adjacent zone creates a building (level 1) on tick N; returned changed includes the creation', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
@@ -106,8 +106,8 @@ describe('World.tick() — zone growth', () => {
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     const result = world.tick(); // tick N
 
-    // Growth creates a building at level 0; tile.level is legacy (never written by growth).
-    expect(map.getBuildings().getBuildingAt(1, 0)?.level).toBe(0);
+    // Growth creates a building at level 1; tile.level is legacy (never written by growth).
+    expect(map.getBuildings().getBuildingAt(1, 0)?.level).toBe(1);
     expect(result.changed).toBeGreaterThanOrEqual(1);
   });
 
@@ -238,7 +238,7 @@ describe('WorldTickResult.changedTiles — canonical delta', () => {
 });
 
 describe('World.tick() — building creation and changedBuildingIds', () => {
-  it('zone-grows-creates-building: first growth tick on a road-adjacent zone creates a building at level 0', () => {
+  it('zone-grows-creates-building: first growth tick on a road-adjacent zone creates a building at level 1', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -248,7 +248,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
 
     const building = map.getBuildings().getBuildingAt(0, 0);
     expect(building).not.toBeNull();
-    expect(building?.level).toBe(0);
+    expect(building?.level).toBe(1);
     expect(building?.type).toBe('residential');
   });
 
@@ -459,8 +459,8 @@ describe('World.tick() — multi-tile building guard', () => {
   });
 });
 
-describe('World.tick() — no-building branch creates level-0 building', () => {
-  it('zone tile next to road with no building: one tick creates level-0 building AND coord in changedTiles', () => {
+describe('World.tick() — no-building branch creates level-1 building', () => {
+  it('zone tile next to road with no building: one tick creates level-1 building AND coord in changedTiles', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
@@ -471,7 +471,7 @@ describe('World.tick() — no-building branch creates level-0 building', () => {
 
     const building = map.getBuildings().getBuildingAt(0, 0);
     expect(building).not.toBeNull();
-    expect(building!.level).toBe(0);
+    expect(building!.level).toBe(1);
     // The creation tick result — need to capture it
     // Re-run from scratch to capture the result
     const world2 = new World(4, 4, { regenerate: false });
@@ -553,7 +553,7 @@ describe('World.tick() — zone-growth proceeds on plateau interior tile', () =>
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
     expect(map.getBuildings().getBuildingAt(3, 3)).not.toBeNull();
-    expect(map.getBuildings().getBuildingAt(3, 3)?.level).toBe(0);
+    expect(map.getBuildings().getBuildingAt(3, 3)?.level).toBe(1);
   });
 });
 
@@ -604,7 +604,7 @@ describe('World.tick() — Branch A spawn: frontage is set correctly', () => {
 });
 
 describe('World.tick() — Branch A spawn: same-tick dedup guard', () => {
-  it('building is eventually created with level=0 and density=0', () => {
+  it('building is eventually created with level=1 and density=0', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
@@ -615,7 +615,7 @@ describe('World.tick() — Branch A spawn: same-tick dedup guard', () => {
 
     const b = map.getBuildings().getBuildingAt(1, 1);
     expect(b).not.toBeNull();
-    expect(b!.level).toBe(0);
+    expect(b!.level).toBe(1);
     expect(b!.density).toBe(0);
   });
 });

@@ -17,7 +17,7 @@ import {
   initialStructureRect,
   footprintCells,
   hasFrontageRoadAccess,
-  structureRectFillsLotDepth,
+  canExtendStructure,
   extendStructureToward,
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
@@ -441,7 +441,7 @@ export class World {
             type: bType,
             footprint: footprintCells(lot),
             anchor: { x: lot.x, y: lot.y },
-            level: 0,
+            level: 1,
             density: 0,
             age: 0,
             frontage,
@@ -475,7 +475,7 @@ export class World {
           const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
           if (anchorLandValue >= threshold && existing.age >= cooldown) {
             const lot = lotBboxOf(existing.footprint);
-            if (!structureRectFillsLotDepth(existing.structureRect, lot, existing.frontage)) {
+            if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
               // Branch B' — structure-grow before level-up.
               const grown = extendStructureToward(existing.structureRect, lot, existing.frontage);
               if (grown !== null) {
@@ -487,7 +487,7 @@ export class World {
                 }
               }
             } else {
-              // Branch B — structure already fills the lot; level up.
+              // Branch B — structure cannot grow further (lot filled or cap hit); level up.
               existing.level += 1;
               existing.age = 0;
               changedBuildingIds.push(existing.id);

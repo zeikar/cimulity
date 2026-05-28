@@ -3,6 +3,7 @@ import type { Building } from './Building';
 import { TileType } from './Tile';
 import type { Frontage, Rect } from './buildingFootprint';
 import { lotBboxOf } from './buildingFootprint';
+import { MIN_STRUCTURE_DEPTH_CAP } from './growthConstants';
 
 export function depthAxisFromFrontage(frontage: Frontage): { dx: number; dy: number } {
   switch (frontage) {
@@ -115,8 +116,32 @@ export function structureRectFillsLotDepth(sr: Rect, lot: Rect, frontage: Fronta
   return sr.w === lot.w;
 }
 
+// Depth of the structure along the lot's depth axis.
+function structureDepth(sr: Rect, frontage: Frontage): number {
+  return (frontage === 'N' || frontage === 'S') ? sr.h : sr.w;
+}
+
+// Width of the lot along its frontage axis (parallel to the road).
+function lotWidthAlongFrontage(lot: Rect, frontage: Frontage): number {
+  return (frontage === 'N' || frontage === 'S') ? lot.w : lot.h;
+}
+
+// Cap structure depth at max(MIN_STRUCTURE_DEPTH_CAP, lot width). This keeps
+// narrow lots from growing into thin slabs while letting wider (merged) lots
+// progress toward a square footprint up to the lot's bounds.
+function structureDepthCap(lot: Rect, frontage: Frontage): number {
+  return Math.max(MIN_STRUCTURE_DEPTH_CAP, lotWidthAlongFrontage(lot, frontage));
+}
+
+// A structure can grow further only when it has neither hit the depth cap
+// nor saturated the lot's depth.
+export function canExtendStructure(sr: Rect, lot: Rect, frontage: Frontage): boolean {
+  if (structureRectFillsLotDepth(sr, lot, frontage)) return false;
+  return structureDepth(sr, frontage) < structureDepthCap(lot, frontage);
+}
+
 export function extendStructureToward(structureRect: Rect, lot: Rect, frontage: Frontage): Rect | null {
-  if (structureRectFillsLotDepth(structureRect, lot, frontage)) return null;
+  if (!canExtendStructure(structureRect, lot, frontage)) return null;
   const sr = structureRect;
   switch (frontage) {
     case 'N': return { x: sr.x, y: sr.y, w: sr.w, h: sr.h + 1 };

@@ -178,7 +178,10 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     }
 
     const moneyAfterTicks = world.getMoney();
-    const zoneLevel = world.getMap().getTile(0, 0)?.level;
+    // tile.level is derived from the building's level at serialization time
+    // (see mapSerialization.ts's `l[]` build), so the round-trip should preserve
+    // the building's level on the tile of the dst world.
+    const buildingLevel = world.getMap().getBuildings().getBuildingAt(0, 0)?.level ?? 0;
 
     const json = serializeWorld(world);
     const dst = new World(6, 6, { regenerate: false });
@@ -188,7 +191,7 @@ describe('serializeWorld / deserializeWorldInto round-trip — end-to-end', () =
     expect(dst.getElapsedDays()).toBe(world.getElapsedDays());
     expect(dst.getTick()).toBe(world.getTick());
     expect(dst.getDate()).toEqual(world.getDate());
-    expect(dst.getMap().getTile(0, 0)?.level).toBe(zoneLevel);
+    expect(dst.getMap().getTile(0, 0)?.level).toBe(buildingLevel);
     expect(dst.getMap().getTile(1, 0)?.type).toBe(TileType.ROAD);
   });
 });

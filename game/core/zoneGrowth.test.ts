@@ -8,6 +8,7 @@ import {
   initialStructureRect,
   extendStructureToward,
   structureRectFillsLotDepth,
+  canExtendStructure,
 } from './zoneGrowth';
 import { isStructureRectInLot } from './buildingFootprint';
 
@@ -367,6 +368,52 @@ describe('extendStructureToward', () => {
     const sr = { x: 0, y: 0, w: 4, h: 1 }; // already full depth
     expect(extendStructureToward(sr, lot, 'W')).toBeNull();
     expect(extendStructureToward(sr, lot, 'E')).toBeNull();
+  });
+
+  it('cap = max(MIN_STRUCTURE_DEPTH_CAP, lot width): 1×4 lot stops growing at depth 2', () => {
+    // 1-wide lot: cap = max(2, 1) = 2. Structure 1×2 cannot extend further.
+    const lot = { x: 0, y: 0, w: 1, h: 4 };
+    const sr = { x: 0, y: 0, w: 1, h: 2 };
+    expect(extendStructureToward(sr, lot, 'N')).toBeNull();
+  });
+
+  it('cap = max(MIN_STRUCTURE_DEPTH_CAP, lot width): 4×4 lot grows depth all the way to 4', () => {
+    // 4-wide lot: cap = max(2, 4) = 4. Structure 4×3 still has room to grow.
+    const lot = { x: 0, y: 0, w: 4, h: 4 };
+    const sr = { x: 0, y: 0, w: 4, h: 3 };
+    expect(extendStructureToward(sr, lot, 'N')).toEqual({ x: 0, y: 0, w: 4, h: 4 });
+  });
+
+  it('cap = max(MIN_STRUCTURE_DEPTH_CAP, lot width): 3×4 lot stops growing at depth 3', () => {
+    // 3-wide lot: cap = max(2, 3) = 3. Structure 3×3 cannot extend further even though lot has depth 4.
+    const lot = { x: 0, y: 0, w: 3, h: 4 };
+    const sr = { x: 0, y: 0, w: 3, h: 3 };
+    expect(extendStructureToward(sr, lot, 'N')).toBeNull();
+  });
+});
+
+describe('canExtendStructure', () => {
+  it('false when structure depth equals lot width-based cap', () => {
+    // 1×4 lot (width=1, cap=2). 1×2 structure → at cap.
+    expect(canExtendStructure({ x: 0, y: 0, w: 1, h: 2 }, { x: 0, y: 0, w: 1, h: 4 }, 'N')).toBe(false);
+  });
+
+  it('true when structure depth below lot width-based cap and lot has room', () => {
+    // 4×4 lot (width=4, cap=4). 4×2 structure → cap allows growth.
+    expect(canExtendStructure({ x: 0, y: 0, w: 4, h: 2 }, { x: 0, y: 0, w: 4, h: 4 }, 'N')).toBe(true);
+  });
+
+  it('false when structure already fills lot depth even if below cap', () => {
+    // 4×4 lot, 4×4 structure → lot full overrides cap.
+    expect(canExtendStructure({ x: 0, y: 0, w: 4, h: 4 }, { x: 0, y: 0, w: 4, h: 4 }, 'N')).toBe(false);
+  });
+
+  it('width-axis flipped for W/E frontage: cap derives from lot.h', () => {
+    // 4×3 lot, frontage='W' (depth axis = x). Width axis = y, so width = lot.h = 3, cap = max(2, 3) = 3.
+    // Structure 3×3 → at cap (sr.w = 3 = cap, lot.w=4 still has room but cap caps it).
+    const lot = { x: 0, y: 0, w: 4, h: 3 };
+    const sr = { x: 0, y: 0, w: 3, h: 3 };
+    expect(canExtendStructure(sr, lot, 'W')).toBe(false);
   });
 });
 

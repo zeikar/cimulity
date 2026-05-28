@@ -642,13 +642,14 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(result.changedTiles).toContainEqual({ x: 1, y: 0 });
   });
 
-  it('repeated ticks: structureRect fills lot depth, then level bumps', () => {
-    // Same 1×4 lot setup. id=0, stagger(0)=0, cooldown=8.
+  it('repeated ticks: structureRect grows to MIN_STRUCTURE_DEPTH_CAP, then level bumps (yard kept beyond cap)', () => {
+    // Same 1×4 lot setup. id=0, stagger(0)=0, cooldown=8. lot.w=1 so the cap is
+    // max(MIN_STRUCTURE_DEPTH_CAP=2, 1) = 2; structure stops at 1×2.
     // Sequence of growth events:
-    //   Grow 1: 1×1 → 1×2  (age resets to 0)
-    //   Grow 2: 1×2 → 1×3  (age resets to 0)
-    //   Grow 3: 1×3 → 1×4  (age resets to 0; lot depth=4, now fills)
-    //   Grow 4: structureRect fills → level bumps 1→2 (age resets to 0)
+    //   Grow 1: 1×1 → 1×2  (structure hits cap; lot still has 2 yard cells)
+    //   Grow 2: structure cannot extend (cap reached) → level bumps 1→2;
+    //           structureRect stays at cap (further level-ups would need land
+    //           value past LEVEL_THRESHOLDS[3]=0.45, unreachable for this lot).
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
 
@@ -672,31 +673,15 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     });
     world.markLandValueDirty();
 
-    // Each growth event requires age to reach cooldown=8.
-    // After each event age resets to 0, so run GROWTH_COOLDOWN_INTERVALS growth
-    // intervals (each = ZONE_GROWTH_INTERVAL ticks) between events.
-    // We already have age=7 before the first growth tick.
-
-    // Grow 1 (age 7 → 8, fires): 1×1 → 1×2
+    // Grow 1 (age 7 → 8, fires): 1×1 → 1×2 (cap)
     tickOneGrowthInterval(world);
     expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 2, w: 1, h: 2 });
     expect(map.getBuildings().getBuilding(0)!.level).toBe(1);
 
-    // Grow 2: need age >= 8 again. Run GROWTH_COOLDOWN_INTERVALS growth intervals.
+    // Grow 2: structure at cap → Branch B fires → level bumps 1→2; structureRect frozen.
     for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS; g++) tickOneGrowthInterval(world);
-    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 1, w: 1, h: 3 });
-    expect(map.getBuildings().getBuilding(0)!.level).toBe(1);
-
-    // Grow 3: 1×3 → 1×4 (fills lot depth)
-    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS; g++) tickOneGrowthInterval(world);
-    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 0, w: 1, h: 4 });
-    expect(map.getBuildings().getBuilding(0)!.level).toBe(1);
-
-    // Grow 4: structureRect fills lot → Branch B fires → level bumps 1→2
-    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS; g++) tickOneGrowthInterval(world);
+    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 2, w: 1, h: 2 });
     expect(map.getBuildings().getBuilding(0)!.level).toBe(2);
-    // structureRect stays at full lot depth after level-up
-    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 0, w: 1, h: 4 });
   });
 
   it('1×1 lot — structureRect fills depth immediately → level bumps directly', () => {

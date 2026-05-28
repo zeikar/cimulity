@@ -448,8 +448,10 @@ describe('stagger() — deterministic per-building jitter', () => {
   });
 
   it('stagger differentiates first-level-up tick across 5 buildings in a row', () => {
-    // 5 zones along a road. Each building gets a distinct id (0-4).
-    // With the Knuth hash, their stagger values differ, so level-up ticks differ.
+    // 5 single-tile zones along a road. Each building gets a distinct id (0-4).
+    // All spawn at level=1 simultaneously on the first growth interval; the next
+    // level-up (to level=2) is gated by GROWTH_COOLDOWN_INTERVALS + stagger(id),
+    // which is what differentiates the per-building first-level-2 ticks.
     const world = new World(10, 4, { regenerate: false });
     const map = world.getMap();
     // Road along the top row
@@ -465,23 +467,23 @@ describe('stagger() — deterministic per-building jitter', () => {
       map.setTile(x, 2, createTile(x, 2, TileType.ZONE_COMMERCIAL));
     }
 
-    const firstLevelOneTick = new Map<number, number>();
+    const firstLevelTwoTick = new Map<number, number>();
 
-    // Run enough ticks: buildings are created on tick ZONE_GROWTH_INTERVAL;
-    // level-up needs cooldown=8+stagger(id) growth ticks after creation.
-    // Max stagger=6 → max cooldown=14. With 15 growth intervals that covers all.
+    // Run enough ticks: spawn at growth tick 1; first level-2 hits at
+    // GROWTH_COOLDOWN_INTERVALS+stagger growth intervals later. Max stagger=6 →
+    // max cooldown=14. 20 growth intervals covers all.
     for (let tick = 1; tick <= ZONE_GROWTH_INTERVAL * 20; tick++) {
       const result = world.tick();
       for (const id of result.changedBuildingIds) {
         const b = map.getBuildings().getBuilding(id);
-        if (b && b.level === 1 && !firstLevelOneTick.has(id)) {
-          firstLevelOneTick.set(id, tick);
+        if (b && b.level === 2 && !firstLevelTwoTick.has(id)) {
+          firstLevelTwoTick.set(id, tick);
         }
       }
     }
 
-    // At least 2 distinct first-level-1 ticks across the 5 buildings
-    expect(new Set(firstLevelOneTick.values()).size).toBeGreaterThanOrEqual(2);
+    // At least 2 distinct first-level-2 ticks across the 5 buildings
+    expect(new Set(firstLevelTwoTick.values()).size).toBeGreaterThanOrEqual(2);
   });
 });
 
