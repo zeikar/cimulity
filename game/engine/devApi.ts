@@ -22,7 +22,7 @@
 import { tileToScreen } from '../render/IsoTransform';
 import type { World } from '../core/World';
 import type { PixiApp } from '../render/PixiApp';
-import type { TileType } from '../core/Tile';
+import { TileType, createTile } from '../core/Tile';
 import type { Building, BuildingType } from '../core/Building';
 import { lotBboxOf } from '../core/buildingFootprint';
 import type { Frontage } from '../core/buildingFootprint';
@@ -40,7 +40,7 @@ export interface SeedBuildingSpec {
 }
 
 export interface SeedSceneSpec {
-  /** Tiles to write via `map.setTile`. Existing tiles at the same coord are overwritten. */
+  /** Tiles to write via `map.setTile`. Existing tiles at the same coord are overwritten. POWER_PLANT is forbidden — place plants via `executeClick(Tool.POWER_PLANT, ...)`. */
   tiles?: ReadonlyArray<{ x: number; y: number; type: TileType; level?: number }>;
   /** Buildings to hydrate via `buildings.addExistingBuilding`. */
   buildings?: ReadonlyArray<SeedBuildingSpec>;
@@ -115,9 +115,22 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
     pixiApp,
     dev: {
       seedScene(spec: SeedSceneSpec): { tilesPlaced: number; buildingsAdded: number; elevationsApplied: number } {
+        for (const t of spec.tiles ?? []) {
+          if (t.type === TileType.POWER_PLANT) {
+            throw new Error('seedScene cannot seed POWER_PLANT tiles directly — place plants via executeClick(Tool.POWER_PLANT, ...).');
+          }
+        }
         const map = world.getMap();
         const buildings = map.getBuildings();
-        if (spec.clearExisting !== false) buildings.clear();
+        if (spec.clearExisting !== false) {
+          buildings.clear();
+          for (const s of world.getStructureMap().getAllStructures()) {
+            for (const cell of s.footprint) {
+              map.setTile(cell.x, cell.y, createTile(cell.x, cell.y, TileType.GRASS));
+            }
+          }
+          world.getStructureMap().clear();
+        }
 
         let tilesPlaced = 0;
         if (spec.tiles) {

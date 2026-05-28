@@ -611,16 +611,17 @@ describe('buildToolCommands - POWER_PLANT placement', () => {
   it('rejects when any cell is owned by a building', () => {
     // Place a building that occupies (3,3).
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
-    world.getMap().getBuildings().addBuilding({
+    const placed = world.getMap().getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 3, y: 3 }],
       anchor: { x: 3, y: 3 },
       level: 1,
       density: 0,
       age: 0,
-      frontage: 'south',
+      frontage: 'S',
       structureRect: { x: 3, y: 3, w: 1, h: 1 },
     });
+    expect(placed).not.toBeNull();
     // Anchor at (2,2) — cells (3,3) is owned by the building.
     expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
   });
