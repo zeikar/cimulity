@@ -123,7 +123,6 @@ cimulity/
 │   │           ├── CubeBuildingVisual.ts
 │   │           ├── cubeGeometry.ts
 │   │           ├── cubeLift.ts
-│   │           ├── cubeRoofAccent.ts
 │   │           ├── cubeTypeRatios.ts
 │   │           └── cubeDropShadow.ts
 │   │

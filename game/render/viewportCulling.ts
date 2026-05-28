@@ -10,8 +10,7 @@ const HALF_H = ISO_CONFIG.TILE_HEIGHT / 2;  // 16 px
 export const PADDING_TILES = 1;
 
 // Covers main cube body (cubeLiftPx(level=5, density=2) * CUBE_TYPE_HEIGHT_MULT.commercial ≈ 112 px)
-// PLUS rooftop accent height (see cubeRoofAccent.ts, per-type range ~15–75 px: industrial smokestack ~15 px → commercial antenna ~75 px) PLUS slack.
-// Revisit when any of cubeLift.ts / cubeTypeRatios.ts / cubeRoofAccent.ts change.
+// PLUS slack. Revisit when any of cubeLift.ts / cubeTypeRatios.ts change.
 export const MAX_BUILDING_LIFT_PX = 220;
 
 /** Worst-case vertical screen offset due to terrain elevation.

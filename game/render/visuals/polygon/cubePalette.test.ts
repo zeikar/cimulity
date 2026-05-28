@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseColor, shadeColor, lerpToWhite, densityShade, ROOF_ACCENT_BRIGHTEN } from './cubePalette';
+import { baseColor, shadeColor, lerpToWhite, densityShade } from './cubePalette';
 
 // Helpers for assertions
 const isFiniteInt = (n: number) => Number.isFinite(n) && Number.isInteger(n);
@@ -112,19 +112,12 @@ describe('cubePalette', () => {
       expect(lerpToWhite(baseColor('commercial'), 1)).toBe(0xffffff);
     });
 
-    it('result is a finite integer in [0, 0xffffff] for all types at ROOF_ACCENT_BRIGHTEN', () => {
+    it('result is a finite integer in [0, 0xffffff] for all types at a small mix factor', () => {
       for (const type of ['residential', 'commercial', 'industrial'] as const) {
-        const result = lerpToWhite(baseColor(type), ROOF_ACCENT_BRIGHTEN);
+        const result = lerpToWhite(baseColor(type), 0.12);
         expect(isFiniteInt(result)).toBe(true);
         expect(inColorRange(result)).toBe(true);
       }
     });
-  });
-
-  // ------------------------------------------------------------------
-  // ROOF_ACCENT_BRIGHTEN
-  // ------------------------------------------------------------------
-  it('ROOF_ACCENT_BRIGHTEN is 0.12', () => {
-    expect(ROOF_ACCENT_BRIGHTEN).toBe(0.12);
   });
 });

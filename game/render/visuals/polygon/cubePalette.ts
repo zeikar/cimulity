@@ -17,8 +17,6 @@ export function baseColor(type: CubeBuildingType): number {
   }
 }
 
-export const ROOF_ACCENT_BRIGHTEN = 0.12;
-
 // Multiply an RGB color channel-wise by `k`, clamped to [0, 255].
 export function shadeColor(rgb: number, k: number): number {
   const r = Math.max(0, Math.min(255, Math.round(((rgb >> 16) & 0xff) * k)));

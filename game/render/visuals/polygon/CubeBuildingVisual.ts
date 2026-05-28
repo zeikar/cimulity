@@ -1,5 +1,5 @@
 /**
- * BuildingVisual that draws an isometric cube for level > 0.
+ * BuildingVisual that draws a plain isometric cube (no variation) for level > 0.
  *
  * The visual returns a stable wrapper `Container` whose child is a polygon
  * `Graphics` driven by a cached anchor-local `GraphicsContext`. The shadow
@@ -22,26 +22,16 @@ import {
   normalizeFootprint,
   cubeFacePolygons,
   isNwAnchoredFullRectFootprint,
-  roofCapPolygons,
-  setbackTopPolygon,
 } from './cubeGeometry';
-import { shouldShowRoofAccent, roofAccentFaces } from './cubeRoofAccent';
 import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
 import { computeZIndex } from './cubeBuildingZIndex';
-import {
-  shellVariationFor,
-  shellVariationToken,
-  volumeSplitGeometry,
-} from './shellVariation';
-import type { ShellVariation } from './shellVariation';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 import {
   baseColor,
   shadeColor,
-  lerpToWhite,
   densityShade,
-  ROOF_ACCENT_BRIGHTEN,
 } from './cubePalette';
+
 function topColor(input: BuildingVisualInput): number {
   // Top face: building palette × density tint. Brighter / more saturated than
   // either side face so the cube reads as 3D against the ground.
@@ -81,38 +71,9 @@ function structureInputOf(input: BuildingVisualInput): BuildingVisualInput {
 // Cache key
 // ---------------------------------------------------------------------------
 
-function variationFor(input: BuildingVisualInput): {
-  v: ShellVariation;
-  w: number;
-  h: number;
-} {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const c of input.footprint) {
-    if (c.x < minX) minX = c.x;
-    if (c.x > maxX) maxX = c.x;
-    if (c.y < minY) minY = c.y;
-    if (c.y > maxY) maxY = c.y;
-  }
-  const w = maxX - minX + 1;
-  const h = maxY - minY + 1;
-  return {
-    v: shellVariationFor(
-      { id: input.buildingId, level: input.level },
-      { w, h },
-    ),
-    w,
-    h,
-  };
-}
-
 function cacheKey(input: BuildingVisualInput): string {
   const shape = normalizeFootprint(input.footprint, input.anchor);
-  const base = `${input.type}:${input.level}:${input.density}:${shape}`;
-  if (!isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
-    return base; // irregular footprint: legacy path, no variation token
-  }
-  const { v } = variationFor(input);
-  return `${base}:${shellVariationToken(v)}`;
+  return `${input.type}:${input.level}:${input.density}:${shape}`;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
@@ -167,135 +128,25 @@ function drawCubeFaces(
   input: BuildingVisualInput,
   ox: number,
   oy: number,
-  allowRoofAccent: boolean,
 ): void {
   drawPoly(ctx, faces.left, leftColor(input), 0.5, ox, oy);
   drawPoly(ctx, faces.right, rightColor(input), 0.5, ox, oy);
   drawPoly(ctx, faces.top, topColor(input), 0.55, ox, oy);
-
-  if (allowRoofAccent && shouldShowRoofAccent(input.level)) {
-    const mainLift = faces.left[2].y - faces.left[1].y;
-    const accent = roofAccentFaces(faces.top, mainLift, input.type);
-    if (accent !== null) {
-      drawPoly(ctx, accent.left, lerpToWhite(leftColor(input), ROOF_ACCENT_BRIGHTEN), 0.5, ox, oy);
-      drawPoly(ctx, accent.right, lerpToWhite(rightColor(input), ROOF_ACCENT_BRIGHTEN), 0.5, ox, oy);
-      drawPoly(ctx, accent.top, lerpToWhite(topColor(input), ROOF_ACCENT_BRIGHTEN), 0.55, ox, oy);
-    }
-  }
-}
-
-// Sub-cube descriptor used by both face + shadow split sub-paths.
-type SubCube = {
-  footprint: { x: number; y: number }[];
-  anchor: { x: number; y: number };
-  isTall: boolean;
-};
-
-// Derive the two sub-cube descriptors (footprint + sub-anchor + isTall) for a
-// canonical NW-anchored rectangle whose splitKind is 'x' or 'y'. Sorted back-
-// to-front by (anchor.x + anchor.y, then anchor.y).
-function buildSplitSubCubes(
-  input: BuildingVisualInput,
-  v: ShellVariation,
-  w: number,
-  h: number,
-): SubCube[] {
-  // Invariant: v.splitKind !== 'none' inside this branch, so
-  // volumeSplitGeometry returns non-null per its contract.
-  const split = volumeSplitGeometry(v.splitKind, { w, h })!;
-  const ax = input.anchor.x;
-  const ay = input.anchor.y;
-
-  const subs: SubCube[] = [];
-
-  if (v.splitKind === 'x') {
-    const loCells: { x: number; y: number }[] = [];
-    for (let y = ay; y < ay + h; y++) {
-      for (let x = ax; x < ax + split.offset; x++) {
-        loCells.push({ x, y });
-      }
-    }
-    const hiCells: { x: number; y: number }[] = [];
-    for (let y = ay; y < ay + h; y++) {
-      for (let x = ax + split.offset; x < ax + w; x++) {
-        hiCells.push({ x, y });
-      }
-    }
-    subs.push({ footprint: loCells, anchor: { x: ax, y: ay }, isTall: split.tallSide === 'lo' });
-    subs.push({ footprint: hiCells, anchor: { x: ax + split.offset, y: ay }, isTall: split.tallSide !== 'lo' });
-  } else {
-    // 'y'
-    const loCells: { x: number; y: number }[] = [];
-    for (let y = ay; y < ay + split.offset; y++) {
-      for (let x = ax; x < ax + w; x++) {
-        loCells.push({ x, y });
-      }
-    }
-    const hiCells: { x: number; y: number }[] = [];
-    for (let y = ay + split.offset; y < ay + h; y++) {
-      for (let x = ax; x < ax + w; x++) {
-        hiCells.push({ x, y });
-      }
-    }
-    subs.push({ footprint: loCells, anchor: { x: ax, y: ay }, isTall: split.tallSide === 'lo' });
-    subs.push({ footprint: hiCells, anchor: { x: ax, y: ay + split.offset }, isTall: split.tallSide !== 'lo' });
-  }
-
-  subs.sort((a, b) => {
-    const sa = a.anchor.x + a.anchor.y;
-    const sb = b.anchor.x + b.anchor.y;
-    if (sa !== sb) return sa - sb;
-    return a.anchor.y - b.anchor.y;
-  });
-  return subs;
-}
-
-function subFootprintWH(sub: SubCube): { w: number; h: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const c of sub.footprint) {
-    if (c.x < minX) minX = c.x;
-    if (c.x > maxX) maxX = c.x;
-    if (c.y < minY) minY = c.y;
-    if (c.y > maxY) maxY = c.y;
-  }
-  return { w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
 function buildShadowContext(input: BuildingVisualInput): GraphicsContext | null {
-  if (input.level <= 0) return null;
+  if (input.level === 0) return null;
 
   const ctx = new GraphicsContext();
 
   if (isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
-    const { v, w, h } = variationFor(input);
-    const liftScale = 1 + v.liftJitterPct / 100;
-
-    if (v.splitKind === 'none') {
-      const faces = cubeFacePolygons(
-        input.type, input.level, input.density,
-        input.footprint, input.anchor, liftScale,
-      );
-      if (faces === null) return null;
-      drawCubeShadow(ctx, faces, 0, 0);
-      return ctx;
-    }
-
-    // Split: two shadow polygons, one per sub-cube, in back-to-front order.
-    const subs = buildSplitSubCubes(input, v, w, h);
-    const anchorScreen = tileToScreen(input.anchor);
-    let drew = false;
-    for (const sub of subs) {
-      const subScale = sub.isTall ? liftScale : liftScale * 0.65;
-      const subFaces = cubeFacePolygons(
-        input.type, input.level, input.density,
-        sub.footprint, sub.anchor, subScale,
-      );
-      if (subFaces === null) continue;
-      const subScreen = tileToScreen(sub.anchor);
-      drawCubeShadow(ctx, subFaces, subScreen.x - anchorScreen.x, subScreen.y - anchorScreen.y);
-      drew = true;
-    }
-    return drew ? ctx : null;
+    const faces = cubeFacePolygons(
+      input.type, input.level, input.density,
+      input.footprint, input.anchor,
+    );
+    if (faces === null) return null;
+    drawCubeShadow(ctx, faces, 0, 0);
+    return ctx;
   }
 
   // Irregular footprint: one shadow polygon per cell, back-to-front.
@@ -305,7 +156,6 @@ function buildShadowContext(input: BuildingVisualInput): GraphicsContext | null 
     const db = b.x + b.y;
     return da !== db ? da - db : a.y - b.y;
   });
-
   let drew = false;
   for (const cell of sorted) {
     const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
@@ -323,100 +173,13 @@ function buildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
   const ctx = new GraphicsContext();
 
   if (isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
-    const { v, w, h } = variationFor(input);
-    const liftScale = 1 + v.liftJitterPct / 100;
-
-    if (v.splitKind === 'none') {
-      // No-split sub-path: single cube + setback + roof cap
-      const faces = cubeFacePolygons(
-        input.type, input.level, input.density,
-        input.footprint, input.anchor, liftScale,
-      );
-      if (faces === null) return null;
-
-      const allowRoofAccent = (v.roof === 'flat' && v.setbackSteps === 0);
-      drawCubeFaces(ctx, faces, input, 0, 0, allowRoofAccent);
-
-      const mainLift = faces.left[2].y - faces.left[1].y;
-      let currentTop = faces.top;
-
-      if (v.setbackSteps > 0) {
-        const sb = setbackTopPolygon(currentTop, v.setbackSteps, mainLift);
-        if (sb !== null) {
-          for (const f of sb.faces) {
-            const color = f.shading === 'top' ? topColor(input)
-                        : f.shading === 'left' ? leftColor(input)
-                        : rightColor(input);
-            drawPoly(ctx, f.poly, color, 0.5, 0, 0);
-          }
-          currentTop = sb.top;
-        }
-      }
-
-      // ridgeAxis derived from footprint shape.
-      const ridgeAxis: 'ns' | 'ew' = (w >= h) ? 'ns' : 'ew';
-      const cap = roofCapPolygons(currentTop, v.roof, ridgeAxis, mainLift);
-      if (cap !== null) {
-        for (const f of cap.faces) {
-          const color = f.shading === 'top' ? topColor(input)
-                      : f.shading === 'left' ? leftColor(input)
-                      : rightColor(input);
-          drawPoly(ctx, f.poly, color, 0.5, 0, 0);
-        }
-      }
-      return ctx;
-    }
-
-    // Split sub-path: TWO sub-cubes drawn back-to-front.
-    const subs = buildSplitSubCubes(input, v, w, h);
-    const anchorScreen = tileToScreen(input.anchor);
-    let drew = false;
-
-    for (const sub of subs) {
-      const subScale = sub.isTall ? liftScale : liftScale * 0.65;
-      const subFaces = cubeFacePolygons(
-        input.type, input.level, input.density,
-        sub.footprint, sub.anchor, subScale,
-      );
-      if (subFaces === null) continue;
-      const subScreen = tileToScreen(sub.anchor);
-      const ox = subScreen.x - anchorScreen.x;
-      const oy = subScreen.y - anchorScreen.y;
-      drawCubeFaces(ctx, subFaces, input, ox, oy, false);
-      drew = true;
-
-      if (!sub.isTall) continue;
-
-      // Tall sub-cube: apply setback (low-to-high) then roof cap.
-      const subMainLift = subFaces.left[2].y - subFaces.left[1].y;
-      let subCurrentTop = subFaces.top;
-
-      if (v.setbackSteps > 0) {
-        const sb = setbackTopPolygon(subCurrentTop, v.setbackSteps, subMainLift);
-        if (sb !== null) {
-          for (const f of sb.faces) {
-            const color = f.shading === 'top' ? topColor(input)
-                        : f.shading === 'left' ? leftColor(input)
-                        : rightColor(input);
-            drawPoly(ctx, f.poly, color, 0.5, ox, oy);
-          }
-          subCurrentTop = sb.top;
-        }
-      }
-
-      const { w: subW, h: subH } = subFootprintWH(sub);
-      const subRidgeAxis: 'ns' | 'ew' = (subW >= subH) ? 'ns' : 'ew';
-      const cap = roofCapPolygons(subCurrentTop, v.roof, subRidgeAxis, subMainLift);
-      if (cap !== null) {
-        for (const f of cap.faces) {
-          const color = f.shading === 'top' ? topColor(input)
-                      : f.shading === 'left' ? leftColor(input)
-                      : rightColor(input);
-          drawPoly(ctx, f.poly, color, 0.5, ox, oy);
-        }
-      }
-    }
-    return drew ? ctx : null;
+    const faces = cubeFacePolygons(
+      input.type, input.level, input.density,
+      input.footprint, input.anchor,
+    );
+    if (faces === null) return null;
+    drawCubeFaces(ctx, faces, input, 0, 0);
+    return ctx;
   }
 
   // Irregular footprint: one cube per cell, back-to-front.
@@ -432,7 +195,7 @@ function buildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
     const faces = cubeFacePolygons(input.type, input.level, input.density, [cell], cell);
     if (faces === null) continue;
     const cellScreen = tileToScreen(cell);
-    drawCubeFaces(ctx, faces, input, cellScreen.x - anchorScreen.x, cellScreen.y - anchorScreen.y, true);
+    drawCubeFaces(ctx, faces, input, cellScreen.x - anchorScreen.x, cellScreen.y - anchorScreen.y);
     drew = true;
   }
   return drew ? ctx : null;

@@ -39,7 +39,6 @@ export default defineConfig({
         'game/render/visuals/polygon/cubeGeometry.ts',
         'game/render/visuals/polygon/cubeLift.ts',
         'game/render/visuals/polygon/cubeTypeRatios.ts',
-        'game/render/visuals/polygon/cubeRoofAccent.ts',
         'game/render/visuals/polygon/cubeDropShadow.ts',
         'game/render/visuals/polygon/cubeBuildingZIndex.ts',
         'game/render/visuals/polygon/DiamondOOBSkirt.ts',
@@ -54,8 +53,6 @@ export default defineConfig({
         'game/core/terrainGenerator.ts',
         'game/render/terrain/tileCornerHeights.ts',
         'game/render/terrain/terrainZIndex.ts',
-        'game/render/visuals/polygon/buildingSeed.ts',
-        'game/render/visuals/polygon/shellVariation.ts',
         'game/render/visuals/polygon/cubePalette.ts',
       ],
       thresholds: {

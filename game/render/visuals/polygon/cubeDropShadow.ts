@@ -17,7 +17,7 @@ export const SHADOW_ALPHA = 0.35;
 export const SHADOW_MIN_LENGTH = 4;
 
 export function cubeShadowPolygon(faces: CubeFaces): Point[] {
-  // left[1] = west top, left[2] = west base — same lift extraction as cubeRoofAccent.
+  // left[1] = west top, left[2] = west base — lift = base.y − top.y.
   const mainLift = faces.left[2].y - faces.left[1].y;
   // Recover world-height from pixel lift. The shadow geometry is linear in z, so we
   // probe the light direction with z=1 once and scale by magnitude (not by dx alone)
