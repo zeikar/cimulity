@@ -1,5 +1,5 @@
 /**
- * Pure palette helpers shared by CubeBuildingVisual and the facade-atlas composer.
+ * Pure palette helpers used by CubeBuildingVisual.
  * No imports from game/core, game/engine, game/tools, or game/input.
  */
 

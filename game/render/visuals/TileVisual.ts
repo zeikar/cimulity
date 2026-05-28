@@ -38,7 +38,7 @@ export interface BuildingVisualInput {
   frontage: Frontage;
   /** Pre-projected elevation height. Renderer populates via world.getTerrain().getRenderHeight(x,y). Test fixtures may omit (treated as 0). */
   renderHeight?: number;
-  // Sub-rect of footprint where the actual building geometry stands; cube/facade pipeline reads from this. Lot cells outside structureRect are yards (Task 8).
+  // Sub-rect of footprint where the actual building geometry stands; cube pipeline reads from this. Lot cells outside structureRect are yards.
   structureRect: Rect;
 }
 
