@@ -26,11 +26,13 @@ import {
 import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
 import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
+import type { Terrain } from '@/game/core/Terrain';
 import {
   baseColor,
   shadeColor,
   densityShade,
 } from './cubePalette';
+import { cubeBodyHeightPx } from './cubeLift';
 
 function topColor(input: BuildingVisualInput): number {
   // Top face: building palette × density tint. Brighter / more saturated than
@@ -342,6 +344,22 @@ export class CubeBuildingVisual implements BuildingVisual {
 
     // Wrapper itself — child already destroyed explicitly above.
     wrapper.destroy({ children: false });
+  }
+
+  /**
+   * Returns the screen-y of the cube's top face for the given building, using the EXACT
+   * positioning chain `mount()` uses (`tileToScreenWithHeight` of the structure anchor at
+   * `terrain.getRenderHeight`, plus the cube body height). The overlay reads this to anchor
+   * floating icons above the cube top without duplicating cube geometry math.
+   */
+  getCubeTopScreenY(building: BuildingVisualInput, terrain: Terrain): number {
+    const structureInput = structureInputOf(building);
+    const h = terrain.getRenderHeight(structureInput.anchor.x, structureInput.anchor.y);
+    const screen = tileToScreenWithHeight(structureInput.anchor, h);
+    const lift = cubeBodyHeightPx(building.level, building.density, building.type);
+    // Cube top is ABOVE the anchor in screen space — subtract the lift.
+    // For level-0 buildings (lift === 0), returns the terrain-top screen-y.
+    return screen.y - lift;
   }
 
   dispose(): void {

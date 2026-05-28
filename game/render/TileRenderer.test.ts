@@ -88,6 +88,7 @@ function makeStubRegistry(terrainVisual: TerrainTileVisual): VisualRegistry {
     mount: vi.fn((_input, parent) => { const o = makeDisplayObject(); (parent as ReturnType<typeof makeContainer>).addChild(o); return o; }),
     update: vi.fn(),
     unmount: vi.fn((o) => o.destroy()),
+    getCubeTopScreenY: () => 0,
   };
   const buildingTypes = ['residential', 'commercial', 'industrial'] as const;
   for (const t of buildingTypes) registry.registerBuilding(t, stubBuilding);
@@ -130,6 +131,7 @@ describe('TileRenderer — structureRect propagation', () => {
       }),
       update: vi.fn(),
       unmount: vi.fn((o) => o.destroy()),
+      getCubeTopScreenY: () => 0,
     };
     const registry = new VisualRegistry();
     const allTileTypes: TileType[] = [

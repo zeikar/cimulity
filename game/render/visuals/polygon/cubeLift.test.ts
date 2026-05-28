@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { ZONE_MAX_LEVEL } from '@/game/core/World';
 import {
   cubeLiftPx,
+  cubeBodyHeightPx,
   CUBE_LIFT_BASE_MIN_PX,
   CUBE_LIFT_BASE_MAX_PX,
   CUBE_LIFT_DENSITY_MULT,
 } from './cubeLift';
+import { CUBE_TYPE_HEIGHT_MULT } from './cubeTypeRatios';
 
 describe('cubeLiftPx', () => {
   it('returns 0 for level === 0', () => {
@@ -64,5 +66,35 @@ describe('cubeLiftPx', () => {
     const base = CUBE_LIFT_BASE_MIN_PX + (CUBE_LIFT_BASE_MAX_PX - CUBE_LIFT_BASE_MIN_PX) * eased;
     expect(base * CUBE_LIFT_DENSITY_MULT[1]).not.toBe(Math.round(base * CUBE_LIFT_DENSITY_MULT[1]));
     expect(cubeLiftPx(2, 1)).toBe(Math.round(base * CUBE_LIFT_DENSITY_MULT[1]));
+  });
+});
+
+describe('cubeBodyHeightPx', () => {
+  it('returns 0 for level <= 0', () => {
+    expect(cubeBodyHeightPx(0, 0, 'residential')).toBe(0);
+    expect(cubeBodyHeightPx(-1, 0, 'residential')).toBe(0);
+  });
+
+  it('returns a positive value for level 1, density 0, residential matching the formula', () => {
+    // baseLift = cubeLiftPx(1, 0) = CUBE_LIFT_BASE_MIN_PX
+    // cubeTypeHeightPx(baseLift, 'residential') = Math.round(baseLift * 1.0) = baseLift
+    // Math.max(1, ...) = baseLift (which is > 1)
+    const baseLift = CUBE_LIFT_BASE_MIN_PX;
+    const expected = Math.max(1, Math.round(baseLift * CUBE_TYPE_HEIGHT_MULT['residential']));
+    expect(cubeBodyHeightPx(1, 0, 'residential')).toBe(expected);
+    expect(cubeBodyHeightPx(1, 0, 'residential')).toBeGreaterThan(0);
+  });
+
+  it('higher level returns a larger value than lower level (monotonic in level)', () => {
+    expect(cubeBodyHeightPx(ZONE_MAX_LEVEL, 0, 'residential')).toBeGreaterThan(
+      cubeBodyHeightPx(1, 0, 'residential'),
+    );
+  });
+
+  it('commercial returns taller value than industrial at same level and density', () => {
+    // commercial multiplier (1.35) > industrial multiplier (0.6)
+    expect(cubeBodyHeightPx(3, 1, 'commercial')).toBeGreaterThan(
+      cubeBodyHeightPx(3, 1, 'industrial'),
+    );
   });
 });

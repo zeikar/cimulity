@@ -11,6 +11,7 @@ import type { BuildingType } from '@/game/core/Building';
 import type { Frontage, Rect } from '@/game/core/buildingFootprint';
 import type { CornerHeights } from '../terrain/tileCornerHeights';
 import type { TerrainShape } from '../../core/terrainSlope';
+import type { Terrain } from '@/game/core/Terrain';
 
 export interface MapBounds { width: number; height: number }
 
@@ -56,4 +57,9 @@ export interface BuildingVisual {
   update(input: BuildingVisualInput, displayObject: Container): void;
   unmount(displayObject: Container): void;
   dispose?(): void;
+  /** Returns the screen-y of the building's top face for the given building, in the same
+   * coordinate frame `mount()` uses for the wrapper. The overlay layer reads this to anchor
+   * floating icons (e.g. no-power lightning bolt) above the building top without duplicating
+   * geometry math. For level-0 buildings (no cube drawn), returns the terrain-top screen-y. */
+  getCubeTopScreenY(building: BuildingVisualInput, terrain: Terrain): number;
 }

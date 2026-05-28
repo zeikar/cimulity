@@ -22,6 +22,7 @@ function makeBuildingVisual(dispose?: () => void): BuildingVisual {
     update: vi.fn(),
     unmount: vi.fn(),
     dispose,
+    getCubeTopScreenY: () => 0,
   };
 }
 

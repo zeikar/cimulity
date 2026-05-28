@@ -7,6 +7,7 @@ import { Application, Container } from 'pixi.js';
 import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer, buildPixiAppRegistry } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
+import { PowerStatusOverlay } from './overlays/PowerStatusOverlay';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
@@ -25,8 +26,10 @@ export class PixiApp {
   private camera: Camera | null = null;
   private tileRenderer: TileRenderer | null = null;
   private selectionRenderer: SelectionRenderer | null = null;
+  private powerOverlay: PowerStatusOverlay | null = null;
   private terrainContainer: Container | null = null;
   private buildingContainer: Container | null = null;
+  private overlayContainer: Container | null = null;
   private selectionContainer: Container | null = null;
   private world: World;
   private callbacks: PixiAppCallbacks;
@@ -81,7 +84,7 @@ export class PixiApp {
 
     this.camera = new Camera(this.app.stage, constraints);
 
-    // Create explicit layer containers in draw order: terrain → building → selection.
+    // Create explicit layer containers in draw order: terrain → building → overlay → selection.
     // addChild order enforces z-layering; no zIndex tricks needed for cross-layer ordering.
     this.terrainContainer = new Container();
     // Elevation-aware iso depth sort: higher cells (and their south/east walls)
@@ -91,15 +94,20 @@ export class PixiApp {
     this.buildingContainer = new Container();
     this.buildingContainer.sortableChildren = true; // buildings sort within their own layer
 
+    this.overlayContainer = new Container();
+    this.overlayContainer.sortableChildren = false;
+
     this.selectionContainer = new Container();
     this.selectionContainer.sortableChildren = false;
 
     this.app.stage.addChild(this.terrainContainer);
     this.app.stage.addChild(this.buildingContainer);
+    this.app.stage.addChild(this.overlayContainer);
     this.app.stage.addChild(this.selectionContainer);
 
     // Initialize renderers, each bound to its own container.
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer, registry);
+    this.powerOverlay = new PowerStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
@@ -108,8 +116,12 @@ export class PixiApp {
 
     // Setup render loop
     this.app.ticker.add(() => {
+      const visibleBounds = this.computeVisibleBounds();
       if (this.tileRenderer && this.world) {
-        this.tileRenderer.render(this.world, this.computeVisibleBounds());
+        this.tileRenderer.render(this.world, visibleBounds);
+      }
+      if (this.powerOverlay && this.world) {
+        this.powerOverlay.render(this.world, visibleBounds);
       }
       if (this.selectionRenderer && this.world) {
         const rev = this.world.getTerrainRevision();
@@ -236,6 +248,7 @@ export class PixiApp {
     }
 
     this.tileRenderer?.destroy();
+    this.powerOverlay?.destroy();
     this.selectionRenderer?.destroy();
 
     // Explicitly destroy each layer container before app.destroy().
@@ -245,6 +258,7 @@ export class PixiApp {
     // deterministically, before the renderer context is torn down.
     this.terrainContainer?.destroy({ children: true });
     this.buildingContainer?.destroy({ children: true });
+    this.overlayContainer?.destroy({ children: true });
     this.selectionContainer?.destroy({ children: true });
     // When sprite-based visuals land, destroy spritesheets here with
     // `destroy({ texture: true, textureSource: true })`.
@@ -258,9 +272,11 @@ export class PixiApp {
 
     this.camera = null;
     this.tileRenderer = null;
+    this.powerOverlay = null;
     this.selectionRenderer = null;
     this.terrainContainer = null;
     this.buildingContainer = null;
+    this.overlayContainer = null;
     this.selectionContainer = null;
   }
 }
