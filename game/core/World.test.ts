@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   World,
   ZONE_GROWTH_INTERVAL,
@@ -8,6 +8,7 @@ import {
   TAX_PER_POP,
   DAYS_PER_MONTH,
   MONTHS_PER_YEAR,
+  POWER_INTERVAL,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { TileType, createTile } from './Tile';
@@ -551,3 +552,123 @@ describe('growthConstants', () => {
 // ---------------------------------------------------------------------------
 // Task 4 (T6): structure-grow branch B'
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Power + StructureMap wiring into World
+// ---------------------------------------------------------------------------
+
+describe('World.getPowerMap() — lazy allocation', () => {
+  it('first call returns a non-null PowerMap instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getPowerMap()).not.toBeNull();
+  });
+
+  it('subsequent calls return the same instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const first = world.getPowerMap();
+    const second = world.getPowerMap();
+    expect(second).toBe(first);
+  });
+});
+
+describe('World.markPowerDirty() + recomputePowerIfDirty()', () => {
+  it('recomputePowerIfDirty() after markPowerDirty() triggers recompute exactly once; second call is a no-op', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputePower');
+
+    world.markPowerDirty();
+    world.recomputePowerIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // No further dirty mark — second call is a no-op.
+    world.recomputePowerIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+});
+
+describe('World.reset() — power and structure cleanup', () => {
+  it('clears getStructureMap().getAllStructures() to empty AND zeroes getPowerMap().getRaw() AND clears the dirty flag', () => {
+    const world = new World(4, 4, { regenerate: false });
+
+    // Populate the StructureMap.
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      anchor: { x: 0, y: 0 },
+      footprint: [
+        { x: 0, y: 0 }, { x: 1, y: 0 },
+        { x: 0, y: 1 }, { x: 1, y: 1 },
+      ],
+    });
+    // Trigger a power recompute so the backing array is non-zero somewhere.
+    world.recomputePower();
+    world.markPowerDirty();
+
+    world.reset({ regenerate: false });
+
+    expect(world.getStructureMap().getAllStructures()).toHaveLength(0);
+
+    const raw = world.getPowerMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
+
+    // Dirty flag is cleared: a recomputePowerIfDirty call should be a no-op.
+    const spy = vi.spyOn(world, 'recomputePower');
+    world.recomputePowerIfDirty();
+    expect(spy).toHaveBeenCalledTimes(0);
+    spy.mockRestore();
+  });
+});
+
+describe('World.tick() — power periodic cadence', () => {
+  it('at tickCount === POWER_INTERVAL, tick() triggers recomputePower even when powerDirty is false', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputePower');
+
+    // Advance to one tick before the cadence fires.
+    for (let i = 0; i < POWER_INTERVAL - 1; i++) world.tick();
+    const callsBefore = spy.mock.calls.length;
+
+    // This tick brings tickCount to POWER_INTERVAL — force recompute fires.
+    world.tick();
+    expect(spy.mock.calls.length).toBe(callsBefore + 1);
+
+    spy.mockRestore();
+  });
+});
+
+describe('World.reset({ regenerate: true }) — isPowered returns false everywhere after reset', () => {
+  it('isPowered returns false everywhere even if the prior world had powered cells', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Place a power plant and a road so some cells become powered.
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      anchor: { x: 0, y: 0 },
+      footprint: [
+        { x: 0, y: 0 }, { x: 1, y: 0 },
+        { x: 0, y: 1 }, { x: 1, y: 1 },
+      ],
+    });
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+    world.recomputePower();
+
+    // Confirm at least one cell is powered before reset.
+    expect(world.getPowerMap().isPowered(2, 0)).toBe(true);
+
+    world.reset({ regenerate: true });
+
+    // After reset, isPowered must return false for every cell.
+    const pm = world.getPowerMap();
+    const w = world.getMap().getWidth();
+    const h = world.getMap().getHeight();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        expect(pm.isPowered(x, y)).toBe(false);
+      }
+    }
+  });
+});

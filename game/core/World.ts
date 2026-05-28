@@ -11,6 +11,8 @@ import { Demand, DENSITY_DEMAND_THRESHOLD } from './Demand';
 import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
+import { PowerMap } from './PowerMap';
+import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
   greedyDepthLot,
@@ -37,6 +39,10 @@ export const ZONE_GROWTH_INTERVAL = 8;
  * forget to dirty-mark.
  */
 export const LAND_VALUE_INTERVAL = 16;
+/**
+ * Defense-in-depth periodic force-recompute cadence for power, mirrors LAND_VALUE_INTERVAL.
+ */
+export const POWER_INTERVAL = 16;
 /** Maximum zone growth level a tile may reach. */
 export const ZONE_MAX_LEVEL = 5;
 /**
@@ -81,6 +87,10 @@ export const MONTHS_PER_YEAR = 12;
  * Corollary: if `changedBuildingIds.length > 0` then `changedTiles.length > 0`.
  * `changedBuildingIds` is an additional channel for building-keyed render lookup —
  * it is NEVER the sole signal of change.
+ *
+ * Power and land value are both recomputed (if dirty or on their periodic cadence)
+ * as frozen snapshots before the growth pass. The growth pass reads but does not
+ * mutate either map.
  */
 export interface WorldTickResult {
   /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups + density bumps). */
@@ -111,9 +121,13 @@ export class World {
   private landValueDirty: boolean = false;
   private demand: Demand | null = null;
   private demandDirty: boolean = true;
+  private structures!: StructureMap;
+  private power: PowerMap | null = null;
+  private powerDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
+    this.structures = new StructureMap(this.map.getWidth(), this.map.getHeight());
     // Step 1: install a flat terrain so the field is never null.
     // installTerrain must come AFTER this.map is set so map.getWidth/Height() are available.
     this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
@@ -280,6 +294,33 @@ export class World {
     this.landValueDirty = true;
   }
 
+  getStructureMap(): StructureMap {
+    return this.structures;
+  }
+
+  /** Lazy-allocate and return the PowerMap instance. */
+  getPowerMap(): PowerMap {
+    if (this.power === null) this.power = new PowerMap(this.map.getWidth(), this.map.getHeight());
+    return this.power;
+  }
+
+  markPowerDirty(): void {
+    this.powerDirty = true;
+  }
+
+  /** Recompute power only if dirty; clears the flag. */
+  recomputePowerIfDirty(): void {
+    if (!this.powerDirty) return;
+    this.recomputePower();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputePower(): void {
+    const pm = this.getPowerMap();
+    pm.recompute(this.map, this.structures);
+    this.powerDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -315,6 +356,8 @@ export class World {
 
   /**
    * Reset to a blank city: clear the map, the tick counter, the calendar, and the treasury.
+   * Also clears the StructureMap and zeroes the PowerMap backing array so subsequent
+   * `isPowered` reads start clean.
    * installTerrain creates a fresh Terrain and bumps terrainRev — SelectionRenderer's
    * lastRev will differ from the world rev on the next frame and forceRedraw() fires once.
    *
@@ -331,6 +374,9 @@ export class World {
 
     this.demandDirty = true;
     this.map.reset();
+    this.structures.clear();
+    if (this.power !== null) this.power.clear();
+    this.powerDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -388,6 +434,13 @@ export class World {
     this.day++; // 1 tick = 1 day
     const changedTiles: { x: number; y: number }[] = [];
     const changedBuildingIds: number[] = [];
+
+    // Power: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % POWER_INTERVAL === 0) {
+      this.recomputePower();
+    } else {
+      this.recomputePowerIfDirty();
+    }
 
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
     if (this.tickCount % LAND_VALUE_INTERVAL === 0) {
