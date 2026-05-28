@@ -13,9 +13,16 @@ import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
 
+/**
+ * POWER_PLANT tiles are structured — terrain tools refuse to edit vertices
+ * under them, just like under a road/zone. Invariant: POWER_PLANT tile ⟺
+ * StructureMap occupancy (enforced by save validation + dispatcher); checking
+ * tile.type is sufficient.
+ */
 function isStructuredCell(world: World, tile: Tile, x: number, y: number): boolean {
   if (tile.type === TileType.ROAD) return true;
   if (isZoneType(tile.type)) return true;
+  if (tile.type === TileType.POWER_PLANT) return true;
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
 }
 
@@ -49,6 +56,7 @@ function classifyRoadTile(world: World, x: number, y: number): PlaceClassificati
   if (!tile) return 'reject';
   if (tile.type === TileType.ROAD) return 'skip';
   if (isZoneType(tile.type)) return 'reject';
+  if (tile.type === TileType.POWER_PLANT) return 'reject';
   if (!world.canBuildRoadAt(x, y)) return 'reject';
   return 'emit';
 }
@@ -58,6 +66,7 @@ function classifyZoneTile(
 ): PlaceClassification {
   const tile = world.getMap().getTile(x, y);
   if (!tile) return 'reject';
+  if (tile.type === TileType.POWER_PLANT) return 'reject';
   if (tile.type === zoneType) return 'skip';
   const paintable =
     tile.type === TileType.GRASS ||

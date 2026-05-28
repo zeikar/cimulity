@@ -532,3 +532,45 @@ describe('buildToolCommands - TERRAIN_LEVEL vertex edits', () => {
     ]);
   });
 });
+
+describe('buildToolCommands - POWER_PLANT cell rejection', () => {
+  it('ROAD rejects a single POWER_PLANT tile (transactional: returns empty)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ROAD rejects a mixed path containing a POWER_PLANT tile (transactional: all-or-nothing)', () => {
+    world.getMap().setTile(2, 0, createTile(2, 0, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }], world, { x: 0, y: 0 })).toEqual([]);
+  });
+
+  it('ZONE_RESIDENTIAL rejects a POWER_PLANT tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL rejects a POWER_PLANT tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_INDUSTRIAL rejects a POWER_PLANT tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP skips a POWER_PLANT cell — no vertex writes for that tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP skips POWER_PLANT cells in a mixed path and raises vertices for non-POWER_PLANT cells only', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POWER_PLANT));
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }, { x: 3, y: 2 }], world, { x: 2, y: 2 });
+    expect(commands).toHaveLength(1);
+    if (commands[0].kind !== 'vertex-edit') throw new Error('expected vertex-edit');
+    const writtenVertices = commands[0].writes.map(w => `${w.vx},${w.vy}`);
+    expect(writtenVertices).toContain('4,2');
+    expect(writtenVertices).toContain('4,3');
+  });
+});
