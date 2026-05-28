@@ -11,6 +11,19 @@ function setTileCorners(world: World, x: number, y: number, h: number): void {
   terrain.unsafeSetVertexHeight(x, y + 1, h);
 }
 
+function seedPower(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
+}
+
 describe('World.tick() — heal rule', () => {
   it('converts a DIRT tile to GRASS and returns changed === 1', () => {
     const world = new World(4, 4, { regenerate: false });
@@ -102,6 +115,7 @@ describe('World.tick() — zone growth', () => {
     const map = world.getMap();
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+    seedPower(world, 2, 1); // plant at (2,1)–(3,2) powers road (2,0)
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     const result = world.tick(); // tick N
@@ -148,6 +162,7 @@ describe('World.tick() — zone growth', () => {
     // Two extra zone types in the 3×3 neighborhood of (0,0) to reach diversity=1.0
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0) via adjacency
 
     // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
     // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.
@@ -217,6 +232,7 @@ describe('WorldTickResult.changedTiles — canonical delta', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1); // plant at (1,1)–(2,2) powers road (1,0)
 
     // Advance to one tick before the first growth tick.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
@@ -245,6 +261,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
 
@@ -259,6 +276,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     const result = world.tick();
@@ -278,6 +296,7 @@ describe('World.tick() — building creation and changedBuildingIds', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
 
@@ -366,6 +385,7 @@ describe('World.tick() — changedBuildingIds contract', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1);
 
     // Seed a building at level 0, age sufficient for level-up.
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 = 8 >= 8 → level-up on next growth tick.
@@ -467,6 +487,7 @@ describe('World.tick() — no-building branch creates level-1 building', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1);
 
     // Advance to the first growth tick
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
@@ -480,6 +501,7 @@ describe('World.tick() — no-building branch creates level-1 building', () => {
     const map2 = world2.getMap();
     map2.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map2.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world2, 1, 1);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world2.tick();
     const result = world2.tick(); // the creation tick
@@ -551,6 +573,7 @@ describe('World.tick() — zone-growth proceeds on plateau interior tile', () =>
     }
     map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
     map.setTile(4, 3, createTile(4, 3, TileType.ROAD)); // orthogonal neighbor (east), inside plateau
+    seedPower(world, 4, 4); // plant at (4,4)–(5,5) powers road (4,3)
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
@@ -569,6 +592,7 @@ describe('World.tick() — Branch A spawn: frontage is set correctly', () => {
     const map = world.getMap();
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD)); // south neighbor
+    seedPower(world, 2, 2); // plant at (2,2)–(3,3) powers road (1,2)
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
@@ -582,6 +606,7 @@ describe('World.tick() — Branch A spawn: frontage is set correctly', () => {
     const map = world.getMap();
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD)); // north neighbor
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
@@ -596,6 +621,7 @@ describe('World.tick() — Branch A spawn: frontage is set correctly', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD)); // north
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD)); // south
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
 
@@ -611,6 +637,7 @@ describe('World.tick() — Branch A spawn: same-tick dedup guard', () => {
     const map = world.getMap();
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD));
+    seedPower(world, 2, 2); // plant at (2,2)–(3,3) powers road (1,2)
 
     // Run enough intervals for the hash to land on 1×1 for this isolated zone tile.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 4; i++) world.tick();
@@ -646,6 +673,7 @@ describe('World.tick() — spawn size', () => {
     // but still drive demand via building type + level.
     map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
     map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
+    seedPower(world, 6, 5); // plant at (6,5)–(7,6); cell (6,5) adj to road (6,6) → all road y=6 powered
 
     const preSeededIds = new Set<number>();
     for (const b of map.getBuildings().iterBuildings()) preSeededIds.add(b.id);
@@ -670,6 +698,7 @@ describe('World.tick() — spawn size', () => {
       setupZoneBlock(world, 8, 6, 6);
       map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
       map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
+      seedPower(world, 6, 5);
       world.markDemandDirty();
       return world;
     }
@@ -715,6 +744,7 @@ describe('World.tick() — T3 spawn-size determinism', () => {
       map.setTile(7, 0, createTile(7, 0, TileType.ZONE_INDUSTRIAL));
       map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 6, y: 0 }], anchor: { x: 6, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 6, y: 0, w: 1, h: 1 } });
       map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 7, y: 0 }], anchor: { x: 7, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 7, y: 0, w: 1, h: 1 } });
+      seedPower(world, 0, 3); // plant at (0,3)–(1,4); (0,4) ROAD adj to (0,3) → all road y=4 powered
       world.markDemandDirty();
       return world;
     }

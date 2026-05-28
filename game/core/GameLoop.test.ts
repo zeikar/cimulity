@@ -11,6 +11,19 @@ import {
 import { World } from './World';
 import { TileType, createTile } from './Tile';
 
+function seedPower(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
+}
+
 /**
  * We use two separate controls per test:
  *   - fakeNow: a counter advanced manually that the GameLoop's injected clock reads.
@@ -362,6 +375,7 @@ describe('GameLoop', () => {
     bigMap.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     bigMap.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     bigMap.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(bigWorld, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     // DENSITY_COOLDOWN_INTERVALS=24, ZONE_GROWTH_INTERVAL=8.
     // Seed a ZONE_MAX_LEVEL building with age DENSITY_COOLDOWN_INTERVALS-1

@@ -4,6 +4,19 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 import { ZONE_GROWTH_INTERVAL } from './World';
 
+function seedPower(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
+}
+
 describe('demand freshness on hydrate', () => {
   it('getDemand() reflects hydrated buildings immediately after deserializeWorldInto', () => {
     const src = new World(8, 8, { regenerate: false });
@@ -34,6 +47,7 @@ describe('end-to-end integration: spawn → save → load', () => {
     const original = new World(6, 6, { regenerate: false });
     original.getMap().setTile(1, 2, createTile(1, 2, TileType.ROAD));
     original.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    seedPower(original, 1, 3); // plant at (1,3)–(2,4) powers road (1,2)
 
     // Tick ZONE_GROWTH_INTERVAL times so growth fires exactly once.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) {

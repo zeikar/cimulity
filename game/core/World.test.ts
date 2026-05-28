@@ -13,6 +13,19 @@ import {
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { TileType, createTile } from './Tile';
 
+function seedPower(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
+}
+
 describe('World', () => {
   it('builds a map of the requested size', () => {
     const world = new World(8, 6, { regenerate: false });
@@ -306,6 +319,7 @@ describe('World.tick() — monthly tax settlement', () => {
     // Extra zone types to push diversity score to 1.0 so landValue at (0,0) ≈ 0.9 >= LEVEL_THRESHOLDS[5]=0.85.
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     // Next tick: tickCount = 8*30 = 240 (240 % 8 === 0 → growth) and
     // day = 240 (240 % 30 === 0 → month boundary).
@@ -498,6 +512,7 @@ describe('stagger() — deterministic per-building jitter', () => {
       frontage: 'N',
       structureRect: { x: 9, y: 1, w: 1, h: 1 },
     });
+    seedPower(world, 5, 0); // plant at (5,0)–(6,1); (5,0) ROAD adj to (5,1) → all road y=0 powered
 
     const firstLevelTwoTick = new Map<number, number>();
 

@@ -11,7 +11,7 @@ import { Demand, DENSITY_DEMAND_THRESHOLD } from './Demand';
 import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
-import { PowerMap } from './PowerMap';
+import { PowerMap, isBuildingPowered } from './PowerMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -472,6 +472,7 @@ export class World {
       const processedBuildingIds = new Set<number>();
       const buildings = this.map.getBuildings();
       const lv = this.getLandValue();
+      const pw = this.getPowerMap();
 
       this.markDemandDirty();
       const demandVec = this.getDemand();
@@ -488,6 +489,8 @@ export class World {
           // No demand for this type → no spawn. Demand at 0 means the city is
           // fully saturated for this type; let zones sit empty until pressure returns.
           if (demandVec[bType] <= 0) continue;
+          // Spawn uses the seed tile directly — lot/footprint do not exist yet.
+          if (!pw.isPowered(x, y)) continue;
           const frontage = pickSeedFrontage({ x, y }, this);
           if (frontage === null) continue;
           const lot = greedyDepthLot({ x, y }, frontage, tile.type, this);
@@ -519,6 +522,7 @@ export class World {
 
         // Road-access gate: buildings that lose frontage road access do not age or grow.
         if (!hasFrontageRoadAccess(existing, this)) continue;
+        if (!isBuildingPowered(existing, pw)) continue;
 
         // Age every building once per growth-opportunity (this tick).
         existing.age += 1;
@@ -579,10 +583,12 @@ export class World {
         const a = candidates[i];
         if (usedThisTick.has(a.id)) continue;
         if (!hasFrontageRoadAccess(a, this)) continue;
+        if (!isBuildingPowered(a, pw)) continue;
         for (let j = i + 1; j < candidates.length; j++) {
           const b = candidates[j];
           if (usedThisTick.has(b.id)) continue;
           if (!hasFrontageRoadAccess(b, this)) continue;
+          if (!isBuildingPowered(b, pw)) continue;
           if (!canMerge(a, b, demandVec)) continue;
 
           const shape = mergedBuildingShape(a, b);

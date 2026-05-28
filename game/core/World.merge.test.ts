@@ -6,6 +6,19 @@ import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
 
+function seedPower(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
+}
+
 describe("World.tick() — merge (Branch B'')", () => {
   // Shared helper: build a world with N side-by-side 1×4 R lots, frontage='S',
   // road at y=4, all merge-eligible. Returns { world, map, ids } where ids[i]
@@ -93,6 +106,9 @@ describe("World.tick() — merge (Branch B'')", () => {
       structureRect: { x: n + 1, y: 4, w: 1, h: 1 },
     });
 
+    // Plant at (n, 3)–(n+1, 4): cell (n,4) ROAD adj to (n,3) → all road y=4 powered.
+    // Building footprint cells at y=3 are then powered via adjacency to road y=4.
+    seedPower(world, n, 3);
     world.markDemandDirty();
     return { world, ids };
   }

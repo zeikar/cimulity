@@ -19,13 +19,14 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 /**
  * Build the canonical acceptance world:
- *   5×5, regenerate: false (flat terrain at MIN_LAND_ELEVATION=1)
+ *   6×6, regenerate: false (flat terrain at MIN_LAND_ELEVATION=1)
  *   x=0..3, y=0..3 → ZONE_RESIDENTIAL
  *   x=0..4, y=4    → ROAD
- *   x=4, y=0..3    → GRASS (default; no zone, no spawn)
+ *   x=4..5, y=0..3 → GRASS (default; no zone, no spawn)
+ *   power plant at (4,3)–(5,4): cell (4,4) is ROAD → all road y=4 powered
  */
 function buildAcceptanceWorld(): World {
-  const world = new World(5, 5, { regenerate: false });
+  const world = new World(6, 6, { regenerate: false });
   const map = world.getMap();
 
   // Road row at y=4 (spans full width so all zone columns have road access).
@@ -39,6 +40,18 @@ function buildAcceptanceWorld(): World {
       map.setTile(x, y, createTile(x, y, TileType.ZONE_RESIDENTIAL));
     }
   }
+
+  // Power the road so zone tiles can spawn buildings.
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: 4, y: 3 },
+    footprint: [
+      { x: 4, y: 3 }, { x: 5, y: 3 },
+      { x: 4, y: 4 }, { x: 5, y: 4 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
 
   return world;
 }
@@ -125,7 +138,7 @@ describe('integration — save round-trip smoke', () => {
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
 
     const json = serializeWorld(world);
-    const fresh = new World(5, 5, { regenerate: false });
+    const fresh = new World(6, 6, { regenerate: false });
     expect(deserializeWorldInto(fresh, json)).toBe(true);
   });
 
@@ -142,7 +155,7 @@ describe('integration — save round-trip smoke', () => {
     );
 
     const json = serializeWorld(world);
-    const fresh = new World(5, 5, { regenerate: false });
+    const fresh = new World(6, 6, { regenerate: false });
     deserializeWorldInto(fresh, json);
 
     const afterBuildings = [...fresh.getMap().getBuildings().iterBuildings()];

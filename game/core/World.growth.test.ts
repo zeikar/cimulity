@@ -10,6 +10,20 @@ import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
+import { MERGE_LEVEL_THRESHOLD } from './mergePolicy';
+
+function seedPower(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'power_plant',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markPowerDirty();
+  world.recomputePower();
+}
 
 describe('World.tick() — land value gating of growth', () => {
   it('zones near a road reach higher levels than zones far from any road', () => {
@@ -24,6 +38,7 @@ describe('World.tick() — land value gating of growth', () => {
     // but with much lower road score. No road adjacent → no buildings created at all.
     map.setTile(8, 0, createTile(8, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(9, 0, createTile(9, 0, TileType.ZONE_RESIDENTIAL));
+    seedPower(world, 2, 1); // plant at (2,1)–(3,2) powers road (2,0)
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 40; i++) world.tick();
 
@@ -97,6 +112,7 @@ describe('World.tick() — density tier', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     // Seed building at ZONE_MAX_LEVEL with age just under DENSITY_COOLDOWN_INTERVALS.
     map.getBuildings().addBuilding({
@@ -154,6 +170,7 @@ describe('World.tick() — density tier', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     const building = map.getBuildings().addBuilding({
       type: 'residential',
@@ -221,6 +238,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     // One growth tick with road: age should become 1.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
@@ -229,6 +247,7 @@ describe('World.tick() — Branch B road-access gate', () => {
 
     // Remove the road, run another growth tick: age must NOT increment.
     map.setTile(1, 0, createTile(1, 0, TileType.GRASS));
+    world.markPowerDirty();
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
     const ageWithoutRoad = map.getBuildings().getBuildingAt(0, 0)!.age;
     expect(ageWithoutRoad).toBe(1);
@@ -255,6 +274,7 @@ describe('World.tick() — Branch B road-access gate', () => {
     // Also need land value >= LEVEL_THRESHOLDS[1]=0.1; road at distance 1 should suffice.
     // Force land value recompute.
     world.markLandValueDirty();
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
     expect(map.getBuildings().getBuildingAt(0, 0)!.level).toBeGreaterThanOrEqual(1);
 
@@ -286,6 +306,7 @@ describe('World.tick() — Branch B road-access gate', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
     // Positive control: seed at ZONE_MAX_LEVEL, density=0, age just under cooldown.
     map.getBuildings().addBuilding({
       type: 'residential',
@@ -361,6 +382,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     // Tick with road → age becomes 1.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
@@ -368,11 +390,13 @@ describe('World.tick() — Branch B road-access gate', () => {
 
     // Remove road, tick → age stays 1.
     map.setTile(1, 0, createTile(1, 0, TileType.GRASS));
+    world.markPowerDirty();
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
     expect(map.getBuildings().getBuildingAt(0, 0)!.age).toBe(1);
 
     // Re-add road, tick → age becomes 2.
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    world.markPowerDirty();
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
     expect(map.getBuildings().getBuildingAt(0, 0)!.age).toBe(2);
   });
@@ -390,6 +414,7 @@ describe('World.tick() — T3 density-bump E2E', () => {
     map.setTile(2, 3, createTile(2, 3, TileType.ZONE_COMMERCIAL));
     map.setTile(4, 3, createTile(4, 3, TileType.ZONE_INDUSTRIAL));
     map.setTile(5, 3, createTile(5, 3, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 0, 3); // plant at (0,3)–(1,4); (0,4) ROAD adj to (0,3) → all road y=4 powered
 
     map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 },
@@ -493,6 +518,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     map.getBuildings().addBuilding({
       type: 'residential',
@@ -552,6 +578,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.markLandValueDirty();
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
 
     // Control world: same setup, no ticks.
     const control = new World(4, 4, { regenerate: false });
@@ -644,6 +671,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(building).toBe(true);
     seedJobSource(world, 5, 5);
     world.markLandValueDirty();
+    seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
 
     const result = tickOneGrowthInterval(world);
 
@@ -691,6 +719,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     });
     seedJobSource(world, 5, 5);
     world.markLandValueDirty();
+    seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
 
     // Grow 1 (age 7 → 8, fires): 1×1 → 1×2 (cap)
     tickOneGrowthInterval(world);
@@ -729,6 +758,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     });
     seedJobSource(world, 3, 3);
     world.markLandValueDirty();
+    seedPower(world, 2, 2); // plant at (2,2)–(3,3) powers road (1,2)
 
     const result = tickOneGrowthInterval(world);
 
@@ -747,3 +777,185 @@ describe("World.tick() — structure-grow (Branch B')", () => {
 // ---------------------------------------------------------------------------
 // Task 6 (T6): merge pass — Branch B''
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Task 6: power gate on spawn / level-up / merge
+// ---------------------------------------------------------------------------
+
+describe('World.tick() — power gate: spawn blocked without power', () => {
+  it('zone with full road adjacency does NOT spawn without a power source', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    expect(map.getBuildings().getBuildingAt(0, 0)).toBeNull();
+  });
+
+  it('zone with road and a connected power plant spawns a level-1 building', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 1, 1); // plant at (1,1)–(2,2) powers road (1,0)
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuildingAt(0, 0);
+    expect(b).not.toBeNull();
+    expect(b!.level).toBe(1);
+  });
+});
+
+describe('World.tick() — power gate: footprint-scan vs anchor-only', () => {
+  it('2-cell building whose anchor is unpowered but tail cell is powered still ages (footprint-scan wins)', () => {
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+
+    // Road at (2,0). Plant at (2,1)–(3,2) powers road (2,0).
+    // Cell (1,0) is adjacent to powered road (2,0) → powered.
+    // Cell (0,0) is NOT adjacent to any road → not powered.
+    // Anchor = (0,0) is unpowered; tail (1,0) is powered.
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+    seedPower(world, 2, 1);
+
+    map.getBuildings().addExistingBuilding({
+      id: 0,
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 2, h: 1 },
+    });
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const b = map.getBuildings().getBuilding(0)!;
+    expect(b.age).toBeGreaterThan(0);
+  });
+});
+
+describe('World.tick() — power gate: building loses power → stops aging', () => {
+  it('building stops aging after the power plant is removed', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+
+    const plantId = 0;
+    const planted = world.getStructureMap().addExistingStructure({
+      id: plantId,
+      type: 'power_plant',
+      anchor: { x: 2, y: 0 },
+      footprint: [
+        { x: 2, y: 0 }, { x: 3, y: 0 },
+        { x: 2, y: 1 }, { x: 3, y: 1 },
+      ],
+    });
+    expect(planted).toBe(true);
+    world.markPowerDirty();
+    world.recomputePower();
+
+    map.getBuildings().addExistingBuilding({
+      id: 1,
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+
+    // Run one growth tick with power: building ages.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    const ageWithPower = map.getBuildings().getBuilding(1)!.age;
+    expect(ageWithPower).toBe(1);
+
+    // Remove plant, mark power dirty.
+    world.getStructureMap().removeStructure(plantId);
+    world.markPowerDirty();
+
+    // Run more growth ticks: building must NOT age further.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    const ageAfterLoss = map.getBuildings().getBuilding(1)!.age;
+    expect(ageAfterLoss).toBe(ageWithPower);
+  });
+});
+
+describe('World.tick() — power gate: merge blocked without power, succeeds with power', () => {
+  it('no merge when both buildings are unpowered; merge succeeds once power is added', () => {
+    // Use a 1×4 lot layout (road at y=4) so land value at anchor y=0 is low enough
+    // (≈0.43 < LEVEL_THRESHOLDS[3]=0.45) that Branch B level-up does NOT fire
+    // and age is not reset by a level-up before the merge pass.
+    const world = new World(6, 6, { regenerate: false });
+    const map = world.getMap();
+
+    for (let x = 0; x < 6; x++) {
+      map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
+    }
+    for (let y = 0; y < 4; y++) {
+      map.setTile(0, y, createTile(0, y, TileType.ZONE_RESIDENTIAL));
+      map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
+    }
+
+    map.getBuildings().addExistingBuilding({
+      id: 0,
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }],
+      anchor: { x: 0, y: 0 },
+      level: MERGE_LEVEL_THRESHOLD,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS + 6,
+      frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 4 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 1,
+      type: 'residential',
+      footprint: [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 }],
+      anchor: { x: 1, y: 0 },
+      level: MERGE_LEVEL_THRESHOLD,
+      density: 0,
+      age: GROWTH_COOLDOWN_INTERVALS + 6,
+      frontage: 'S',
+      structureRect: { x: 1, y: 0, w: 1, h: 4 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 2,
+      type: 'industrial',
+      footprint: [{ x: 4, y: 4 }],
+      anchor: { x: 4, y: 4 },
+      level: 8, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 4, y: 4, w: 1, h: 1 },
+    });
+    world.markDemandDirty();
+
+    // No power — first growth tick: no merge (buildings are unpowered).
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    world.tick();
+    expect(map.getBuildings().getBuilding(0)).not.toBeNull();
+    expect(map.getBuildings().getBuilding(1)).not.toBeNull();
+
+    // Add power for both buildings: plant at (4,3)–(5,4) powers all road y=4.
+    // Buildings have NOT aged (unpowered), so age still satisfies cooldown.
+    seedPower(world, 4, 3);
+
+    // Run another growth tick: both powered → merge succeeds.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    world.tick();
+
+    const aExists = map.getBuildings().getBuilding(0) !== null;
+    const bExists = map.getBuildings().getBuilding(1) !== null;
+    expect(aExists && bExists).toBe(false);
+  });
+});
+
