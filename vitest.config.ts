@@ -17,6 +17,7 @@ export default defineConfig({
       // them out of the denominator keeps the % honest.
       include: [
         'game/core/buildingFootprint.ts',
+        'game/core/PowerMap.ts',
         'game/core/StructureMap.ts',
         'game/core/zoneGrowth.ts',
         'game/core/Building.ts',
