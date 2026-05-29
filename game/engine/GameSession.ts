@@ -14,11 +14,13 @@ import { ToolManager } from '../input/ToolManager';
 import { Tool } from '../tools/Tool';
 import { KeyboardHandler } from '../input/KeyboardHandler';
 import { executeClick, executeDrag, previewDrag, previewClick } from './CommandDispatcher';
+import { inspectTile } from './inspectTile';
+import type { TileInfo } from './inspectTile';
 import { GameLoop, DEFAULT_SPEED_MULTIPLIER } from '../core/GameLoop';
 import type { World, WorldDate } from '../core/World';
 import type { DemandVector } from '../core/Demand';
 import { STARTING_FUNDS } from '../core/World';
-import type { TileCoord } from '../types/coordinates';
+import type { TileCoord, ScreenCoord } from '../types/coordinates';
 import type { ToolResult, ToolPreview } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
 import { TILE_COLORS } from '../render/visuals/palette';
@@ -37,6 +39,13 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
 export interface GameSessionCallbacks {
   onTileHover?: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
+  /**
+   * Fires on a SELECT-tool click with a snapshot of the inspected tile, or
+   * null when a non-SELECT tool clicks (which dismisses the info panel). The
+   * snapshot is captured once at click time — it does not live-update.
+   * `screen` is the viewport-relative click position used to anchor the panel.
+   */
+  onTileInspect?: (info: TileInfo | null, screen: ScreenCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
@@ -320,7 +329,7 @@ export class GameSession {
         }
         this.callbacks.onTileHover?.(tile);
       },
-      onTileClick: (tile) => {
+      onTileClick: (tile, screen) => {
         // Single-tile execution goes through the dispatcher, same as drags
         const tool = this.toolManager.getCurrentTool();
         this.markIfChanged(executeClick(tool, tile, world));
@@ -330,6 +339,12 @@ export class GameSession {
         this.applyToolPreview(previewClick(tool, tile, world), tool);
         pixiApp.setSelectedTile(tile);
         this.callbacks.onTileClick(tile);
+        // SELECT clicks emit a one-shot info snapshot anchored at the cursor;
+        // other tools clear the panel.
+        this.callbacks.onTileInspect?.(
+          tool === Tool.SELECT ? inspectTile(world, tile) : null,
+          screen
+        );
       },
       onTileDrag: (start, end) => {
         // Resolve path with the current tool at drag time

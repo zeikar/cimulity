@@ -11,14 +11,17 @@
 
 import { useEffect, useRef } from 'react';
 import { GameSession } from '@/game/engine';
+import type { TileInfo } from '@/game/engine';
 import { Tool } from '@/game/tools';
-import type { TileCoord } from '@/game/types/coordinates';
+import type { TileCoord, ScreenCoord } from '@/game/types/coordinates';
 import type { WorldDate } from '@/game/core/World';
 import type { DemandVector } from '@/game/core/Demand';
 
 export interface GameCanvasProps {
   onTileHover?: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
+  /** SELECT-click tile snapshot (null when a non-SELECT tool clicks); `screen` anchors the panel. */
+  onTileInspect?: (info: TileInfo | null, screen: ScreenCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector) => void;
@@ -41,6 +44,7 @@ export interface GameCanvasProps {
 export function GameCanvas({
   onTileHover,
   onTileClick,
+  onTileInspect,
   onFpsUpdate,
   onCameraUpdate,
   onTickUpdate,
@@ -61,6 +65,7 @@ export function GameCanvas({
   const callbacksRef = useRef({
     onTileHover,
     onTileClick,
+    onTileInspect,
     onFpsUpdate,
     onCameraUpdate,
     onTickUpdate,
@@ -73,6 +78,8 @@ export function GameCanvas({
   const stableForwarders = useRef({
     onTileHover: (t: TileCoord | null) => callbacksRef.current.onTileHover?.(t),
     onTileClick: (t: TileCoord) => callbacksRef.current.onTileClick(t),
+    onTileInspect: (info: TileInfo | null, screen: ScreenCoord) =>
+      callbacksRef.current.onTileInspect?.(info, screen),
     onFpsUpdate: (fps: number) => callbacksRef.current.onFpsUpdate(fps),
     onCameraUpdate: (x: number, y: number, zoom: number) =>
       callbacksRef.current.onCameraUpdate(x, y, zoom),
@@ -93,6 +100,7 @@ export function GameCanvas({
     callbacksRef.current = {
       onTileHover,
       onTileClick,
+      onTileInspect,
       onFpsUpdate,
       onCameraUpdate,
       onTickUpdate,

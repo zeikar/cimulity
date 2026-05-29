@@ -9,7 +9,8 @@ import type { World } from '../core/World';
 
 export interface PointerCallbacks {
   onTileHover: (tile: TileCoord | null) => void;
-  onTileClick: (tile: TileCoord) => void;
+  /** `screen` is the viewport-relative click position, used to anchor the inspector panel near the cursor. */
+  onTileClick: (tile: TileCoord, screen: ScreenCoord) => void;
   onTileDrag?: (start: TileCoord, end: TileCoord) => void;
   onDragPreview?: (start: TileCoord, end: TileCoord | null) => void;
 }
@@ -186,7 +187,7 @@ export class PointerHandler {
 
     const tile = this.canvasToTile(canvasX, canvasY);
     if (tile) {
-      this.callbacks.onTileClick(tile);
+      this.callbacks.onTileClick(tile, { x: event.clientX, y: event.clientY });
     }
   };
 

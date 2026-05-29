@@ -34,6 +34,7 @@ export default defineConfig({
         'game/tools/BulldozeTool.ts',
         'game/tools/ToolActions.ts',
         'game/engine/CommandDispatcher.ts',
+        'game/engine/inspectTile.ts',
         'game/render/IsoTransform.ts',
         'game/render/cameraConstraints.ts',
         'game/render/viewportCulling.ts',

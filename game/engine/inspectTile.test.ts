@@ -1,0 +1,99 @@
+import { describe, it, expect } from 'vitest';
+import { World } from '../core/World';
+import { TileType, createTile } from '../core/Tile';
+import { inspectTile } from './inspectTile';
+
+function makeWorld(size = 6): World {
+  return new World(size, size, { regenerate: false });
+}
+
+describe('inspectTile', () => {
+  it('returns null for out-of-bounds coordinates', () => {
+    const world = makeWorld();
+    expect(inspectTile(world, { x: -1, y: 0 })).toBeNull();
+    expect(inspectTile(world, { x: 0, y: 99 })).toBeNull();
+  });
+
+  it('reports tile type and zone level', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL, 3));
+    const info = inspectTile(world, { x: 2, y: 2 });
+    expect(info).not.toBeNull();
+    expect(info!.type).toBe(TileType.ZONE_RESIDENTIAL);
+    expect(info!.level).toBe(3);
+    expect(info!.x).toBe(2);
+    expect(info!.y).toBe(2);
+  });
+
+  it('reports power state from the power map', () => {
+    const world = makeWorld();
+    const info = inspectTile(world, { x: 1, y: 1 });
+    // A fresh flat world has no power source, so no tile is powered.
+    expect(info!.powered).toBe(false);
+  });
+
+  it('reports land value in [0, 1]', () => {
+    const world = makeWorld();
+    const info = inspectTile(world, { x: 1, y: 1 });
+    expect(info!.landValue).toBeGreaterThanOrEqual(0);
+    expect(info!.landValue).toBeLessThanOrEqual(1);
+  });
+
+  it('drains the dirty land-value cache so a fresh edit is not reported stale', () => {
+    const world = makeWorld();
+    // Establish a baseline cache (flat grass → 0) with the dirty flag cleared.
+    world.recomputeLandValue();
+    expect(world.getLandValue().getValue(2, 2)).toBe(0);
+
+    // Place a road and mark dirty WITHOUT recomputing — simulates building
+    // while paused, before the next tick drains land value.
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    world.markLandValueDirty();
+
+    // A road raises its own tile's land value; inspecting must reflect it.
+    const info = inspectTile(world, { x: 2, y: 2 });
+    expect(info!.landValue).toBeGreaterThan(0);
+  });
+
+  it('surfaces a grown building occupying the tile', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 1,
+      density: 2,
+      age: 5,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
+    });
+    const info = inspectTile(world, { x: 2, y: 2 });
+    expect(info!.building).toEqual({ type: 'residential', level: 1, density: 2, age: 5 });
+    expect(info!.structure).toBeNull();
+  });
+
+  it('surfaces a placed structure occupying the tile', () => {
+    const world = makeWorld();
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        { x: 1, y: 2 },
+        { x: 2, y: 2 },
+      ],
+      anchor: { x: 1, y: 1 },
+    });
+    const info = inspectTile(world, { x: 2, y: 2 });
+    expect(info!.structure).toEqual({ type: 'power_plant' });
+    expect(info!.building).toBeNull();
+  });
+
+  it('reports no building or structure on empty terrain', () => {
+    const world = makeWorld();
+    const info = inspectTile(world, { x: 0, y: 0 });
+    expect(info!.building).toBeNull();
+    expect(info!.structure).toBeNull();
+  });
+});
