@@ -65,6 +65,8 @@ export function GameHUD({
   speedMultiplier,
   paused,
 }: GameHUDProps) {
+  // Debug section is inlined out of production builds via the same gate devApi uses.
+  const isDev = process.env.NODE_ENV === 'development';
   return (
     <div
       style={{
@@ -82,25 +84,13 @@ export function GameHUD({
       }}
     >
       <div>
-        <strong>FPS:</strong> {fps}
-      </div>
-      <div>
-        <strong>Speed:</strong> {speedMultiplier}x
-      </div>
-      <div>
-        <strong>Status:</strong> {paused ? 'Paused' : 'Running'}
-      </div>
-      <div>
         <strong>Date:</strong> Year {date.year}, Month {date.month}, Day {date.day}
       </div>
       <div>
-        <strong>Tick:</strong> {tick}
-      </div>
-      <div>
-        <strong>Dirt:</strong> {dirt}
-      </div>
-      <div>
         <strong>Population:</strong> {population}
+      </div>
+      <div>
+        <strong>Money:</strong> {money}
       </div>
       <div>
         <strong>R:</strong> <BarBlocks value={demand.residential} color="#4caf50" /> {demand.residential.toFixed(2)}
@@ -111,21 +101,39 @@ export function GameHUD({
       <div>
         <strong>I:</strong> <BarBlocks value={demand.industrial} color="#ffeb3b" /> {demand.industrial.toFixed(2)}
       </div>
-      <div>
-        <strong>Money:</strong> {money}
-      </div>
-      {currentTool && (
-        <div>
-          <strong>Tool:</strong> {TOOL_LABELS[currentTool]}
+
+      {isDev && (
+        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.2)', opacity: 0.7, fontSize: '12px' }}>
+          <div style={{ marginBottom: '4px', letterSpacing: '1px' }}>DEBUG</div>
+          <div>
+            <strong>FPS:</strong> {fps}
+          </div>
+          <div>
+            <strong>Speed:</strong> {speedMultiplier}x
+          </div>
+          <div>
+            <strong>Status:</strong> {paused ? 'Paused' : 'Running'}
+          </div>
+          <div>
+            <strong>Tick:</strong> {tick}
+          </div>
+          <div>
+            <strong>Dirt:</strong> {dirt}
+          </div>
+          {currentTool && (
+            <div>
+              <strong>Tool:</strong> {TOOL_LABELS[currentTool]}
+            </div>
+          )}
+          <div>
+            <strong>Selected Tile:</strong>{' '}
+            {selectedTile ? `(${selectedTile.x}, ${selectedTile.y})` : 'None'}
+          </div>
+          <div>
+            <strong>Camera:</strong> ({Math.round(cameraX)}, {Math.round(cameraY)}) | Zoom: {cameraZoom.toFixed(2)}
+          </div>
         </div>
       )}
-      <div>
-        <strong>Selected Tile:</strong>{' '}
-        {selectedTile ? `(${selectedTile.x}, ${selectedTile.y})` : 'None'}
-      </div>
-      <div>
-        <strong>Camera:</strong> ({Math.round(cameraX)}, {Math.round(cameraY)}) | Zoom: {cameraZoom.toFixed(2)}
-      </div>
     </div>
   );
 }
