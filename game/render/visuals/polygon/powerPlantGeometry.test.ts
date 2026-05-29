@@ -7,6 +7,9 @@ import {
 } from './powerPlantGeometry';
 import { tileToScreen, ISO_CONFIG } from '@/game/render/IsoTransform';
 import { rectangularUnionTopPolygon } from './cubeGeometry';
+// Ensure the chimney's own height (above the body roof) still reads as a
+// smokestack — it should be positive so there is visible extrusion above BODY_HEIGHT_PX.
+// The combined top = BODY_HEIGHT_PX + CHIMNEY_HEIGHT_PX.
 
 // ─── (d) constant invariant ────────────────────────────────────────────────
 
@@ -50,9 +53,10 @@ describe('powerPlantCubeSpecs', () => {
     expect(body.anchor).toEqual(anchor);
   });
 
-  it('body spec uses BODY_HEIGHT_PX', () => {
+  it('body spec uses BODY_HEIGHT_PX and baseHeightPx 0', () => {
     const body = specs.find((s) => s.role === 'body')!;
     expect(body.heightPx).toBe(BODY_HEIGHT_PX);
+    expect(body.baseHeightPx).toBe(0);
   });
 
   // (c) every chimney spec's cells ⊆ the 2×2 footprint
@@ -72,10 +76,11 @@ describe('powerPlantCubeSpecs', () => {
     }
   });
 
-  it('chimney specs use CHIMNEY_HEIGHT_PX', () => {
+  it('chimney specs use CHIMNEY_HEIGHT_PX and baseHeightPx BODY_HEIGHT_PX', () => {
     const chimneys = specs.filter((s) => s.role === 'chimney');
     for (const c of chimneys) {
       expect(c.heightPx).toBe(CHIMNEY_HEIGHT_PX);
+      expect(c.baseHeightPx).toBe(BODY_HEIGHT_PX);
     }
   });
 
@@ -163,8 +168,10 @@ describe('powerPlantCubeFaces', () => {
     // The unlifted S point of a single cell diamond (the bottom vertex) is at
     // (0, TILE_HEIGHT) in spec-anchor-local, so in structure-local it is at
     // (expectedDx + 0, expectedDy + TILE_HEIGHT) = (expectedDx, expectedDy + TILE_HEIGHT).
-    // After lifting, top face S (index 2) should be at y = expectedDy + TILE_HEIGHT - lift.
-    const liftedSy = expectedDy + ISO_CONFIG.TILE_HEIGHT - CHIMNEY_HEIGHT_PX;
+    // Chimney totalLift = baseHeightPx(BODY_HEIGHT_PX) + heightPx(CHIMNEY_HEIGHT_PX).
+    // After lifting, top face S (index 2) should be at y = expectedDy + TILE_HEIGHT - totalLift.
+    const chimTotalLift = BODY_HEIGHT_PX + CHIMNEY_HEIGHT_PX;
+    const liftedSy = expectedDy + ISO_CONFIG.TILE_HEIGHT - chimTotalLift;
     // top[2] = S vertex in our convention
     expect(faces.top[2].y).toBeCloseTo(liftedSy);
     // And the x offset of the top N vertex should equal expectedDx (no horizontal shift from lift)
@@ -189,9 +196,10 @@ describe('powerPlantCubeFaces', () => {
     expect(expectedDx).toBe(-(ISO_CONFIG.TILE_WIDTH / 2));
     expect(expectedDy).toBe(ISO_CONFIG.TILE_HEIGHT / 2);
 
-    // N vertex of this chimney's top face should be at (expectedDx, expectedDy - lift)
+    // N vertex of this chimney's top face should be at (expectedDx, expectedDy - totalLift)
+    // where totalLift = BODY_HEIGHT_PX + CHIMNEY_HEIGHT_PX.
     expect(faces.top[0].x).toBeCloseTo(expectedDx);
-    expect(faces.top[0].y).toBeCloseTo(expectedDy - CHIMNEY_HEIGHT_PX);
+    expect(faces.top[0].y).toBeCloseTo(expectedDy - (BODY_HEIGHT_PX + CHIMNEY_HEIGHT_PX));
   });
 
   // (g) left/right side quads correctly connect top face bottom vertices to ground
@@ -208,5 +216,41 @@ describe('powerPlantCubeFaces', () => {
     const lift = BODY_HEIGHT_PX;
     expect(faces.right[2].y).toBeCloseTo(faces.right[1].y + lift);
     expect(faces.right[3].y).toBeCloseTo(faces.right[0].y + lift);
+  });
+
+  // Regression guard: chimney cube sits on the body roof, not on the ground.
+  // For the same tile anchor, body top and chimney bottom must coincide, and
+  // chimney top must be strictly above body top.
+  it('chimney bottom (side face lower edge) sits at body roof, not at tile plane', () => {
+    // Use a single-tile anchor so both body and chimney NE share computable coords.
+    // Build a body spec and chimney spec at the same anchor (NE corner = anchor.x+1, anchor.y).
+    const testAnchor = { x: 0, y: 0 };
+    const testSpecs = powerPlantCubeSpecs(testAnchor);
+    const testBody = testSpecs.find((s) => s.role === 'body')!;
+    // Use the NE chimney at (1, 0) for a clean single-tile comparison.
+    const neChimney = testSpecs.find(
+      (s) => s.role === 'chimney' && s.anchor.x === 1 && s.anchor.y === 0,
+    )!;
+
+    const bodyFaces = powerPlantCubeFaces(testBody, testAnchor);
+    const chimFaces = powerPlantCubeFaces(neChimney, testAnchor);
+
+    // Chimney side wall must descend only CHIMNEY_HEIGHT_PX, not the full base+own height.
+    // This guards against the original bug where side faces closed back to ground instead of
+    // the body roof.
+    expect(chimFaces.left[2].y).toBeCloseTo(chimFaces.left[1].y + CHIMNEY_HEIGHT_PX);
+    expect(chimFaces.left[3].y).toBeCloseTo(chimFaces.left[0].y + CHIMNEY_HEIGHT_PX);
+
+    // The 2×2 body top E vertex sits at the same screen y as the NE chimney cell's W vertex
+    // (both land on the iso diagonal where tile (1,0) meets the body roof). Asserting
+    // chimney left-face bottom y == bodyFaces.top[1].y ties the chimney bottom directly to
+    // the real body roof geometry rather than relying on constant arithmetic alone.
+    // bodyFaces.top[1] is the E vertex of the 2×2 body top diamond.
+    expect(chimFaces.left[2].y).toBeCloseTo(bodyFaces.top[1].y);
+
+    // Chimney roof must be strictly higher than the body roof (chimney totalLift > body totalLift).
+    const chimTotalLift = neChimney.baseHeightPx + neChimney.heightPx;
+    const bodyTotalLift = testBody.baseHeightPx + testBody.heightPx;
+    expect(chimTotalLift).toBeGreaterThan(bodyTotalLift);
   });
 });

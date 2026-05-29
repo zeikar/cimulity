@@ -10,16 +10,22 @@ import { rectangularUnionTopPolygon } from './cubeGeometry';
 import type { Point } from './cubeGeometry';
 import { tileToScreen } from '@/game/render/IsoTransform';
 
-// Tuned so the body sits visibly above neighboring residential cubes and the
-// chimney rises clearly above the body — together they read as a power plant.
+// BODY_HEIGHT_PX: how tall the body block is (its own vertical extent).
+// CHIMNEY_HEIGHT_PX: how tall each chimney is above the body roof (its own
+// vertical extent). Chimneys sit on the body roof (baseHeightPx = BODY_HEIGHT_PX)
+// and rise by CHIMNEY_HEIGHT_PX above it, so their top ends at
+// BODY_HEIGHT_PX + CHIMNEY_HEIGHT_PX above the tile plane.
 export const BODY_HEIGHT_PX = 40;
-export const CHIMNEY_HEIGHT_PX = 80;
+export const CHIMNEY_HEIGHT_PX = 50;
 
 export interface PowerPlantCubeSpec {
   cells: ReadonlyArray<{ x: number; y: number }>;
   /** NW cell of this spec (body anchor = structureAnchor; chimney anchor = its single corner cell). */
   anchor: { x: number; y: number };
+  /** Cube's own vertical extent (top minus bottom). */
   heightPx: number;
+  /** Height of the cube's bottom above the tile plane. Body = 0; chimneys = BODY_HEIGHT_PX. */
+  baseHeightPx: number;
   role: 'body' | 'chimney';
 }
 
@@ -52,18 +58,21 @@ export function powerPlantCubeSpecs(
       cells: bodyCells,
       anchor: { x: ax, y: ay },
       heightPx: BODY_HEIGHT_PX,
+      baseHeightPx: 0,
       role: 'body',
     },
     {
       cells: [chimneyNE],
       anchor: chimneyNE,
       heightPx: CHIMNEY_HEIGHT_PX,
+      baseHeightPx: BODY_HEIGHT_PX,
       role: 'chimney',
     },
     {
       cells: [chimneySW],
       anchor: chimneySW,
       heightPx: CHIMNEY_HEIGHT_PX,
+      baseHeightPx: BODY_HEIGHT_PX,
       role: 'chimney',
     },
   ];
@@ -81,7 +90,9 @@ export function powerPlantCubeFaces(
   spec: PowerPlantCubeSpec,
   structureAnchor: { x: number; y: number },
 ): { top: Point[]; left: Point[]; right: Point[] } {
-  const lift = spec.heightPx;
+  const { heightPx, baseHeightPx } = spec;
+  // Total lift from the tile plane to the cube's top (roof).
+  const totalLift = baseHeightPx + heightPx;
 
   // Screen offset of this spec's anchor relative to the structure anchor.
   const specScreen = tileToScreen(spec.anchor);
@@ -93,29 +104,31 @@ export function powerPlantCubeFaces(
   // also a valid NW-anchored 1×1 rect) are structurally guaranteed non-null.
   const unlifted = rectangularUnionTopPolygon(spec.cells, spec.anchor)!;
 
-  // Translate to structure-anchor-local frame and lift.
-  const N: Point = { x: unlifted.N.x + dx, y: unlifted.N.y + dy - lift };
-  const E: Point = { x: unlifted.E.x + dx, y: unlifted.E.y + dy - lift };
-  const S: Point = { x: unlifted.S.x + dx, y: unlifted.S.y + dy - lift };
-  const W: Point = { x: unlifted.W.x + dx, y: unlifted.W.y + dy - lift };
+  // Translate to structure-anchor-local frame and lift to the cube roof.
+  const N: Point = { x: unlifted.N.x + dx, y: unlifted.N.y + dy - totalLift };
+  const E: Point = { x: unlifted.E.x + dx, y: unlifted.E.y + dy - totalLift };
+  const S: Point = { x: unlifted.S.x + dx, y: unlifted.S.y + dy - totalLift };
+  const W: Point = { x: unlifted.W.x + dx, y: unlifted.W.y + dy - totalLift };
 
-  // Top face: diamond [N, E, S, W] lifted.
+  // Top face: diamond [N, E, S, W] at the cube roof.
   const top: Point[] = [N, E, S, W];
 
-  // Left face: S → W → W+(0,lift) → S+(0,lift).
+  // Side walls descend by heightPx only (the cube's own extent), so the cube
+  // bottom lands at tilePlane - baseHeightPx (body roof for chimneys, ground for body).
+  // Left face: S → W → W+(0,heightPx) → S+(0,heightPx).
   const left: Point[] = [
     S,
     W,
-    { x: W.x, y: W.y + lift },
-    { x: S.x, y: S.y + lift },
+    { x: W.x, y: W.y + heightPx },
+    { x: S.x, y: S.y + heightPx },
   ];
 
-  // Right face: E → S → S+(0,lift) → E+(0,lift).
+  // Right face: E → S → S+(0,heightPx) → E+(0,heightPx).
   const right: Point[] = [
     E,
     S,
-    { x: S.x, y: S.y + lift },
-    { x: E.x, y: E.y + lift },
+    { x: S.x, y: S.y + heightPx },
+    { x: E.x, y: E.y + heightPx },
   ];
 
   return { top, left, right };
