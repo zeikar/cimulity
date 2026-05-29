@@ -45,6 +45,8 @@ export class PointerHandler {
     this.canvas.addEventListener('pointermove', this.handlePointerMove);
     this.canvas.addEventListener('pointerdown', this.handlePointerDown);
     this.canvas.addEventListener('pointerup', this.handlePointerUp);
+    this.canvas.addEventListener('pointercancel', this.handlePointerCancel);
+    this.canvas.addEventListener('pointerleave', this.handlePointerLeave);
     this.canvas.addEventListener('click', this.handleClick);
   }
 
@@ -86,32 +88,67 @@ export class PointerHandler {
       this.isDragging = true;
       this.dragStartTile = tile;
       this.dragEndTile = tile;
+      // Capture so pointerup fires even if the pointer leaves the canvas.
+      this.canvas.setPointerCapture(event.pointerId);
+      // Drag takes over the shared preview layer immediately so the hover ghost
+      // doesn't linger until the first pointermove.
+      this.callbacks.onDragPreview?.(tile, tile);
     }
   };
 
-  private handlePointerUp = (): void => {
+  /**
+   * Single source of drag-end cleanup so pointerup and pointercancel cannot
+   * drift apart.  A cancelled drag does NOT commit (no onTileDrag).
+   */
+  private endDrag(pointerId: number, commit: boolean): void {
     if (!this.isDragging) return;
 
-    // Fire drag callback only for a true multi-tile drag (start != end).
-    // A single-tile pointer-up is left for the subsequent click to select.
-    if (
-      this.dragStartTile &&
-      this.dragEndTile &&
-      !this.tilesEqual(this.dragStartTile, this.dragEndTile)
-    ) {
-      this.callbacks.onTileDrag?.(this.dragStartTile, this.dragEndTile);
-      this.justDragged = true; // Mark that we just completed a drag
+    // Release pointer capture before resetting drag state.
+    if (this.canvas.hasPointerCapture?.(pointerId)) {
+      this.canvas.releasePointerCapture(pointerId);
     }
 
-    // Clear drag preview
+    if (commit) {
+      // Fire drag callback only for a true multi-tile drag (start != end).
+      // A single-tile pointer-up is left for the subsequent click to select.
+      if (
+        this.dragStartTile &&
+        this.dragEndTile &&
+        !this.tilesEqual(this.dragStartTile, this.dragEndTile)
+      ) {
+        this.callbacks.onTileDrag?.(this.dragStartTile, this.dragEndTile);
+        this.justDragged = true; // Mark that we just completed a drag
+      }
+    }
+
+    // Clear drag preview regardless of commit/cancel.
     if (this.dragStartTile) {
       this.callbacks.onDragPreview?.(this.dragStartTile, null);
     }
 
-    // Reset drag state
+    // Reset drag state.
     this.isDragging = false;
     this.dragStartTile = null;
     this.dragEndTile = null;
+  }
+
+  private handlePointerUp = (event: PointerEvent): void => {
+    this.endDrag(event.pointerId, /* commit= */ true);
+  };
+
+  private handlePointerCancel = (event: PointerEvent): void => {
+    // An interrupted drag (e.g. touch cancel, OS gesture) — release capture and
+    // clear the preview but do NOT commit the drag.
+    this.endDrag(event.pointerId, /* commit= */ false);
+  };
+
+  private handlePointerLeave = (): void => {
+    // A captured drag owns the preview layer; pointerup/pointercancel clears it.
+    if (this.isDragging) return;
+    if (this.lastHoverTile !== null) {
+      this.lastHoverTile = null;
+      this.callbacks.onTileHover(null);
+    }
   };
 
   private handlePointerMove = (event: PointerEvent): void => {
@@ -163,6 +200,8 @@ export class PointerHandler {
     this.canvas.removeEventListener('pointermove', this.handlePointerMove);
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
     this.canvas.removeEventListener('pointerup', this.handlePointerUp);
+    this.canvas.removeEventListener('pointercancel', this.handlePointerCancel);
+    this.canvas.removeEventListener('pointerleave', this.handlePointerLeave);
     this.canvas.removeEventListener('click', this.handleClick);
   }
 }
