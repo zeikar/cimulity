@@ -287,15 +287,20 @@ export function previewClick(
   if (world.getMap().getTile(tile.x, tile.y) === null) return empty;
   if (tool === Tool.SELECT) return empty;
 
-  // Compute the visual footprint from the anchor. POWER_PLANT occupies a 2×2
-  // slab; all other tools target a single tile.
-  const footprint: TileCoord[] = tool === Tool.POWER_PLANT
-    ? powerPlantFootprint(tile)
-    : [tile];
-
   // A click has exactly one target tile, so pass the single hovered tile as
   // the tile list (vs a drag path which passes a multi-tile span).
+  // buildToolPreview handles footprint expansion for BULLDOZE (structure cells),
+  // so base.pathTiles is already the correct visual footprint for all tools
+  // except POWER_PLANT placement (which buildToolPreview returns as [anchor]
+  // only — the 2×2 visual slab must be derived from powerPlantFootprint).
   const base = buildToolPreview(tool, [tile], world);
+
+  // Footprint: POWER_PLANT uses its 2×2 anchor-derived slab; everything else
+  // (including BULLDOZE-over-structure which buildToolPreview already expanded)
+  // uses base.pathTiles directly — no duplication of expansion logic.
+  const footprint: TileCoord[] = tool === Tool.POWER_PLANT
+    ? powerPlantFootprint(tile)
+    : base.pathTiles;
 
   // Whole footprint is red when the classifier signals any rejection.
   const rejected: TileCoord[] = base.rejected.length > 0 ? footprint : [];

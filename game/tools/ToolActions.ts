@@ -129,12 +129,32 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
       rejected = [];
       allOrNothingBlocked = false;
       const map = world.getMap();
+      // Expanded pathTiles: raw drag cells, but power-plant cells are replaced by
+      // their full structure footprint so the ghost covers all cells the bulldoze
+      // will destroy. Dedup by key so overlapping drags don't double-list cells.
+      const seenPathKeys = new Set<string>();
+      const expandedPathTiles: TileCoord[] = [];
+      const addPathTile = (coord: TileCoord): void => {
+        const key = `${coord.x},${coord.y}`;
+        if (seenPathKeys.has(key)) return;
+        seenPathKeys.add(key);
+        expandedPathTiles.push(coord);
+      };
       for (const { x, y } of tiles) {
         const currentTile = map.getTile(x, y);
         if (!currentTile) continue;
-        // POWER_PLANT cells are clearable — treated the same as roads (not rejected).
-        // Structures (power plants) are removed at dispatch time; they do not surface in affectedBuildingIds.
-        if (currentTile.type === TileType.POWER_PLANT) continue;
+        if (currentTile.type === TileType.POWER_PLANT) {
+          // Expand to the full structure footprint so the drag preview covers all
+          // cells the bulldoze will destroy, not just the hovered cell.
+          const structure = world.getStructureMap().getStructureAt(x, y);
+          if (structure !== null) {
+            for (const cell of structure.footprint) addPathTile(cell);
+          } else {
+            addPathTile({ x, y });
+          }
+          continue;
+        }
+        addPathTile({ x, y });
         // Mirror Map.setTileAndReconcile's building-removal precondition:
         // only zone tiles trigger building removal, NOT road tiles.
         // affectedBuildingIds: zone buildings only; structures (power plants) are removed at dispatch time and do not surface here.
@@ -144,7 +164,7 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
           affectedBuildingIds.add(building.id);
         }
       }
-      break;
+      return { pathTiles: expandedPathTiles, rejected, allOrNothingBlocked, affectedBuildingIds };
     }
     case Tool.POWER_PLANT: {
       // `tiles[0]` IS the NW anchor — `pathForTool(Tool.POWER_PLANT, start, end)` returns

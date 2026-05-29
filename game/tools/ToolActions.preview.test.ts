@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { buildToolPreview } from './ToolActions';
+import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from './Tool';
 import { World } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
@@ -171,6 +172,36 @@ describe('buildToolPreview - BULLDOZE multi-tile affected', () => {
     world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
     const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 3, y: 3 }], world);
     expect(preview.affectedBuildingIds.size).toBe(0);
+  });
+
+  it('BULLDOZE single power-plant cell → pathTiles expands to full 4-cell structure footprint', () => {
+    // Place plant at anchor (2,2): footprint (2,2),(3,2),(2,3),(3,3).
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 3, y: 3 }], world);
+    const expected = [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }];
+    expect(preview.pathTiles).toHaveLength(4);
+    expect(preview.pathTiles).toEqual(expect.arrayContaining(expected));
+    expect(preview.rejected).toEqual([]);
+    // No mutation: structure still present.
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+  });
+
+  it('BULLDOZE drag spanning two plant cells (same plant) → pathTiles is deduped 4-cell footprint', () => {
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // Drag over NW + SE cells of the same plant — footprint should appear exactly once.
+    const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 2, y: 2 }, { x: 3, y: 3 }], world);
+    expect(preview.pathTiles).toHaveLength(4);
+  });
+
+  it('BULLDOZE drag covering one plant cell + one grass cell → plant footprint + grass cell', () => {
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // (1,1) is grass; (2,2) is a plant cell.
+    const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 1, y: 1 }, { x: 2, y: 2 }], world);
+    // 1 grass cell + 4 plant footprint cells = 5
+    expect(preview.pathTiles).toHaveLength(5);
+    expect(preview.pathTiles).toContainEqual({ x: 1, y: 1 });
+    expect(preview.pathTiles).toContainEqual({ x: 2, y: 2 });
+    expect(preview.pathTiles).toContainEqual({ x: 3, y: 3 });
   });
 
   it('zone-guard DIRT: building whose tile was overwritten to DIRT → size 0', () => {

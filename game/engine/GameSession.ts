@@ -325,6 +325,9 @@ export class GameSession {
         const tool = this.toolManager.getCurrentTool();
         this.markIfChanged(executeClick(tool, tile, world));
         refreshHover(tile);
+        // Reapply the hover ghost for the post-click world state (e.g. a freshly
+        // placed road now classifies differently on the next hover pass).
+        this.applyToolPreview(previewClick(tool, tile, world), tool);
         pixiApp.setSelectedTile(tile);
         this.callbacks.onTileClick(tile);
       },

@@ -398,6 +398,54 @@ describe('previewClick', () => {
     expect(preview.allOrNothingBlocked).toBe(false);
     expect(preview.affectedBuildingIds.size).toBe(0);
   });
+
+  it('BULLDOZE hovering a power-plant cell → pathTiles equals the full 4-cell structure footprint', () => {
+    const world = makeWorld8();
+    // Place a plant at anchor (2,2): footprint cells (2,2),(3,2),(2,3),(3,3).
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    const expectedFootprint = [
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+    ];
+    // Hover over the SE cell — should expand to the full footprint via buildToolPreview.
+    const preview = previewClick(Tool.BULLDOZE, { x: 3, y: 3 }, world);
+    expect(preview.pathTiles).toEqual(expect.arrayContaining(expectedFootprint));
+    expect(preview.pathTiles).toHaveLength(4);
+    // No mutation: structure still present.
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+  });
+
+  it('BULLDOZE over empty ground → pathTiles is [tile] (1 cell)', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.BULLDOZE, { x: 3, y: 3 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 3, y: 3 }]);
+  });
+});
+
+describe('previewDrag BULLDOZE structure-footprint expansion', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('previewDrag BULLDOZE over a single plant cell → pathTiles equals the full 4-cell footprint', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    // Drag from one plant cell to itself (mirrors onDragPreview(tile,tile) on pointerdown).
+    const preview = previewDrag(Tool.BULLDOZE, { x: 3, y: 3 }, { x: 3, y: 3 }, world);
+    const expected = [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }];
+    expect(preview.pathTiles).toHaveLength(4);
+    expect(preview.pathTiles).toEqual(expect.arrayContaining(expected));
+    // No mutation.
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+  });
+
+  it('previewDrag BULLDOZE over empty ground → pathTiles is [tile]', () => {
+    const world = makeWorld8();
+    const preview = previewDrag(Tool.BULLDOZE, { x: 1, y: 1 }, { x: 1, y: 1 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 1, y: 1 }]);
+  });
 });
 
 describe('CommandDispatcher TERRAIN_LEVEL', () => {
