@@ -11,7 +11,7 @@
 import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
-import { buildToolCommands, buildToolPreview } from '../tools';
+import { buildToolCommands, buildToolPreview, powerPlantFootprint } from '../tools';
 import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST } from '../core/World';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
@@ -148,13 +148,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
         }
       }
     } else if (cmd.kind === 'place-structure') {
-      // Build the 4-cell footprint from the NW anchor.
-      const footprint = [
-        { x: cmd.x,     y: cmd.y     },
-        { x: cmd.x + 1, y: cmd.y     },
-        { x: cmd.x,     y: cmd.y + 1 },
-        { x: cmd.x + 1, y: cmd.y + 1 },
-      ];
+      const footprint = powerPlantFootprint({ x: cmd.x, y: cmd.y });
       // Invariant: classifyPowerPlant passed, so addStructure must succeed.
       const structure = world.getStructureMap().addStructure({
         type: cmd.structureType,
@@ -272,4 +266,44 @@ export function previewDrag(
     return { pathTiles: [], rejected: [], allOrNothingBlocked: false, affectedBuildingIds: new Set<number>() };
   }
   return buildToolPreview(tool, tiles, world);
+}
+
+/**
+ * Pure hover preview for a single-tile click at `tile`.
+ *
+ * Returns the tool's target footprint (2×2 for POWER_PLANT, 1×1 otherwise)
+ * with rejection derived from the existing buildToolPreview classifier —
+ * the whole footprint turns red when the classifier rejects the anchor.
+ * Never mutates core; never calls buildToolCommands or applyCommands.
+ */
+export function previewClick(
+  tool: Tool,
+  tile: TileCoord,
+  world: World
+): ToolPreview {
+  const empty: ToolPreview = { pathTiles: [], rejected: [], allOrNothingBlocked: false, affectedBuildingIds: new Set<number>() };
+
+  // OOB tiles and SELECT produce no preview.
+  if (world.getMap().getTile(tile.x, tile.y) === null) return empty;
+  if (tool === Tool.SELECT) return empty;
+
+  // Compute the visual footprint from the anchor. POWER_PLANT occupies a 2×2
+  // slab; all other tools target a single tile.
+  const footprint: TileCoord[] = tool === Tool.POWER_PLANT
+    ? powerPlantFootprint(tile)
+    : [tile];
+
+  // A click has exactly one target tile, so pass the single hovered tile as
+  // the tile list (vs a drag path which passes a multi-tile span).
+  const base = buildToolPreview(tool, [tile], world);
+
+  // Whole footprint is red when the classifier signals any rejection.
+  const rejected: TileCoord[] = base.rejected.length > 0 ? footprint : [];
+
+  return {
+    pathTiles: footprint,
+    rejected,
+    allOrNothingBlocked: base.allOrNothingBlocked,
+    affectedBuildingIds: base.affectedBuildingIds,
+  };
 }

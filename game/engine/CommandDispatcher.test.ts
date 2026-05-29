@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { executeClick, executeDrag, previewDrag, applyCommands } from './CommandDispatcher';
+import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
 import { POWER_PLANT_COST, BULLDOZE_COST } from '../core/World';
@@ -317,6 +317,86 @@ describe('CommandDispatcher applyCommands invariant throws', () => {
 
     const cmd = { kind: 'remove-structure' as const, structureId: 999 };
     expect(() => applyCommands([cmd], world)).toThrow(/invariant/i);
+  });
+});
+
+describe('previewClick', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('POWER_PLANT over a valid flat 2×2 → pathTiles has 4 footprint cells, rejected empty', () => {
+    const world = makeWorld8();
+    // Default world is flat grass — classifyPowerPlant accepts anchor (2,2).
+    const preview = previewClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    expect(preview.pathTiles).toEqual([
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+    ]);
+    expect(preview.rejected).toEqual([]);
+    // No mutation: tile remains GRASS.
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+
+  it('POWER_PLANT on non-flat ground (classifier rejects) → pathTiles has 4 cells AND rejected equals all 4', () => {
+    const world = makeWorld8();
+    // Sink one corner of the footprint below SEA_LEVEL so the slab is not flat+dry.
+    world.getTerrain().unsafeSetVertexHeight(3, 3, SEA_LEVEL);
+    const preview = previewClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    const expectedFootprint = [
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+    ];
+    expect(preview.pathTiles).toEqual(expectedFootprint);
+    expect(preview.rejected).toEqual(expectedFootprint);
+  });
+
+  it('ROAD over a buildable tile → pathTiles length 1, rejected empty', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.ROAD, { x: 3, y: 3 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 3, y: 3 }]);
+    expect(preview.rejected).toEqual([]);
+  });
+
+  it('ROAD over water (classifier rejects) → pathTiles [tile], rejected [tile]', () => {
+    const world = makeWorld8();
+    // Sink one corner of tile (3,3) to SEA_LEVEL so canBuildRoadAt rejects.
+    world.getTerrain().unsafeSetVertexHeight(3, 3, SEA_LEVEL);
+    const preview = previewClick(Tool.ROAD, { x: 3, y: 3 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 3, y: 3 }]);
+    expect(preview.rejected).toEqual([{ x: 3, y: 3 }]);
+  });
+
+  it('ROAD over an existing ROAD tile (classifier returns skip, not reject) → pathTiles [tile], rejected EMPTY', () => {
+    const world = makeWorld8();
+    // Pre-place a road so classifyRoadTile returns 'skip' (not 'reject').
+    executeClick(Tool.ROAD, { x: 3, y: 3 }, world);
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.ROAD);
+    const preview = previewClick(Tool.ROAD, { x: 3, y: 3 }, world);
+    expect(preview.pathTiles).toEqual([{ x: 3, y: 3 }]);
+    expect(preview.rejected).toEqual([]);
+  });
+
+  it('SELECT → empty preview', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.SELECT, { x: 3, y: 3 }, world);
+    expect(preview.pathTiles).toEqual([]);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+    expect(preview.affectedBuildingIds.size).toBe(0);
+  });
+
+  it('out-of-bounds tile → empty preview', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.ROAD, { x: 99, y: 99 }, world);
+    expect(preview.pathTiles).toEqual([]);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+    expect(preview.affectedBuildingIds.size).toBe(0);
   });
 });
 

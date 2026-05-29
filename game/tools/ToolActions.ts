@@ -259,6 +259,19 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
   return commands;
 }
 
+/**
+ * Power plant occupies a 2×2 slab. Single source of truth for its footprint
+ * so applyCommands and previewClick never drift from each other.
+ */
+export function powerPlantFootprint(anchor: TileCoord): TileCoord[] {
+  return [
+    { x: anchor.x,     y: anchor.y     },
+    { x: anchor.x + 1, y: anchor.y     },
+    { x: anchor.x,     y: anchor.y + 1 },
+    { x: anchor.x + 1, y: anchor.y + 1 },
+  ];
+}
+
 function classifyPowerPlant(world: World, x: number, y: number): 'emit' | 'reject' {
   const map = world.getMap();
   // Reject if anchor or SE corner is out of bounds.
