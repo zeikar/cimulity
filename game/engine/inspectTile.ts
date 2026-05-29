@@ -17,6 +17,7 @@ import type { TileCoord } from '../types/coordinates';
 import type { TileType } from '../core/Tile';
 import type { BuildingType } from '../core/Building';
 import type { StructureType } from '../core/StructureMap';
+import { isBuildingPowered } from '../core/PowerMap';
 
 export interface TileBuildingInfo {
   readonly type: BuildingType;
@@ -54,13 +55,28 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
 
   const building = world.getMap().getBuildings().getBuildingAt(coord.x, coord.y);
   const structure = world.getStructureMap().getStructureAt(coord.x, coord.y);
+  const power = world.getPowerMap();
+
+  // Report power at the entity level, not the raw cell, to match how the
+  // simulation reasons about it:
+  //  - A power plant is a SOURCE; its footprint cells are never marked powered,
+  //    but reporting "No Power" on the plant itself is nonsensical — show powered.
+  //  - A building counts as powered if ANY footprint cell is (isBuildingPowered),
+  //    which is the predicate growth uses; per-cell would falsely show interior
+  //    tiles as unpowered even though the building is served.
+  //  - A bare tile reports its own cell.
+  const powered = structure
+    ? true
+    : building
+      ? isBuildingPowered(building, power)
+      : power.isPowered(coord.x, coord.y);
 
   return {
     x: coord.x,
     y: coord.y,
     type: tile.type,
     level: tile.level,
-    powered: world.getPowerMap().isPowered(coord.x, coord.y),
+    powered,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
     building: building
       ? {
