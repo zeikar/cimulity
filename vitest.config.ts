@@ -56,6 +56,7 @@ export default defineConfig({
         'game/render/terrain/tileCornerHeights.ts',
         'game/render/terrain/terrainZIndex.ts',
         'game/render/visuals/polygon/cubePalette.ts',
+        'game/render/visuals/polygon/powerPlantGeometry.ts',
       ],
       thresholds: {
         lines: 80,
