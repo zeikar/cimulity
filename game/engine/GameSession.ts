@@ -80,6 +80,8 @@ export class GameSession {
 
   setTool(tool: Tool): void {
     this.toolManager.setTool(tool);
+    // Clear the stale hover ghost from the previous tool; next mouse-move repaints for the new tool.
+    this.pixiApp?.getSelectionRenderer()?.clearDragPreview();
   }
 
   // Both are command entry points (Toolbar AND keyboard both reach the engine through here).
@@ -243,7 +245,7 @@ export class GameSession {
     // GameSession.setSpeedMultiplier/togglePaused queue when gameLoop is still null.
     const keyboardHandler = new KeyboardHandler({
       onToolChange: (tool) => {
-        this.toolManager.setTool(tool);
+        this.setTool(tool);
         this.callbacks.onToolChange?.(tool);
       },
       onSpeedChange: (tier) => this.setSpeedMultiplier(tier),
