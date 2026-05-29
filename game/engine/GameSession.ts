@@ -13,13 +13,13 @@ import { CameraController } from '../input/CameraController';
 import { ToolManager } from '../input/ToolManager';
 import { Tool } from '../tools/Tool';
 import { KeyboardHandler } from '../input/KeyboardHandler';
-import { executeClick, executeDrag, previewDrag } from './CommandDispatcher';
+import { executeClick, executeDrag, previewDrag, previewClick } from './CommandDispatcher';
 import { GameLoop, DEFAULT_SPEED_MULTIPLIER } from '../core/GameLoop';
 import type { World, WorldDate } from '../core/World';
 import type { DemandVector } from '../core/Demand';
 import { STARTING_FUNDS } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
-import type { ToolResult } from '../tools';
+import type { ToolResult, ToolPreview } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
 import { TILE_COLORS } from '../render/visuals/palette';
 import { installDevApi, uninstallDevApi } from './devApi';
@@ -206,6 +206,37 @@ export class GameSession {
     this.saveNow();
   }
 
+  /**
+   * Translates a ToolPreview into a SelectionRenderer setDragPreview call.
+   * Shared by drag preview and single-tile hover preview so there is one
+   * mapping between the two.
+   */
+  private applyToolPreview(preview: ToolPreview, tool: Tool): void {
+    const selectionRenderer = this.pixiApp?.getSelectionRenderer();
+    if (!selectionRenderer) return;
+    if (preview.pathTiles.length === 0) {
+      selectionRenderer.clearDragPreview();
+      return;
+    }
+    const rejectedKeys = new Set(preview.rejected.map((t) => `${t.x},${t.y}`));
+    const standardTiles = preview.pathTiles.filter(
+      (t) => !rejectedKeys.has(`${t.x},${t.y}`)
+    );
+    const buildings = this.world!.getMap().getBuildings();
+    const affectedFootprintTiles: TileCoord[] = [];
+    for (const id of preview.affectedBuildingIds) {
+      const b = buildings.getBuilding(id);
+      if (b !== null) affectedFootprintTiles.push(...b.footprint);
+    }
+    selectionRenderer.setDragPreview({
+      standardTiles,
+      rejectedTiles: [...preview.rejected],
+      affectedFootprintTiles,
+      muted: preview.allOrNothingBlocked,
+      standardColor: DRAG_PREVIEW_COLORS[tool] ?? 0x4a4a4a,
+    });
+  }
+
   async start(container: HTMLElement, width: number, height: number): Promise<void> {
     console.log('GameCanvas: Initializing world...');
     // Attach keyboard FIRST so early key presses during async Pixi init are captured.
@@ -279,6 +310,12 @@ export class GameSession {
     const pointerHandler = new PointerHandler(canvas, camera, world, {
       onTileHover: (tile) => {
         refreshHover(tile);
+        const tool = this.toolManager.getCurrentTool();
+        if (tile === null) {
+          pixiApp.getSelectionRenderer()?.clearDragPreview();
+        } else {
+          this.applyToolPreview(previewClick(tool, tile, world), tool);
+        }
         this.callbacks.onTileHover?.(tile);
       },
       onTileClick: (tile) => {
@@ -297,29 +334,11 @@ export class GameSession {
       },
       onDragPreview: (start, end) => {
         const tool = this.toolManager.getCurrentTool();
-        const selectionRenderer = pixiApp.getSelectionRenderer();
         if (end === null) {
-          selectionRenderer?.clearDragPreview();
+          pixiApp.getSelectionRenderer()?.clearDragPreview();
           return;
         }
-        const preview = previewDrag(tool, start, end, world);
-        const rejectedKeys = new Set(preview.rejected.map((t) => `${t.x},${t.y}`));
-        const standardTiles = preview.pathTiles.filter(
-          (t) => !rejectedKeys.has(`${t.x},${t.y}`)
-        );
-        const buildings = world.getMap().getBuildings();
-        const affectedFootprintTiles: TileCoord[] = [];
-        for (const id of preview.affectedBuildingIds) {
-          const b = buildings.getBuilding(id);
-          if (b !== null) affectedFootprintTiles.push(...b.footprint);
-        }
-        selectionRenderer?.setDragPreview({
-          standardTiles,
-          rejectedTiles: [...preview.rejected],
-          affectedFootprintTiles,
-          muted: preview.allOrNothingBlocked,
-          standardColor: DRAG_PREVIEW_COLORS[tool] ?? 0x4a4a4a,
-        });
+        this.applyToolPreview(previewDrag(tool, start, end, world), tool);
       },
     });
     this.pointerHandler = pointerHandler;
