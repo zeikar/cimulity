@@ -8,6 +8,7 @@ import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer, buildPixiAppRegistry } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { PowerStatusOverlay } from './overlays/PowerStatusOverlay';
+import { PowerPlantRenderer } from './PowerPlantRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
@@ -27,6 +28,7 @@ export class PixiApp {
   private tileRenderer: TileRenderer | null = null;
   private selectionRenderer: SelectionRenderer | null = null;
   private powerOverlay: PowerStatusOverlay | null = null;
+  private powerPlantRenderer: PowerPlantRenderer | null = null;
   private terrainContainer: Container | null = null;
   private buildingContainer: Container | null = null;
   private overlayContainer: Container | null = null;
@@ -107,18 +109,24 @@ export class PixiApp {
 
     // Initialize renderers, each bound to its own container.
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer, registry);
+    this.powerPlantRenderer = new PowerPlantRenderer(this.buildingContainer);
     this.powerOverlay = new PowerStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
     this.centerCameraOnMap();
-    this.tileRenderer.render(this.world, this.computeVisibleBounds());
+    const visibleBounds = this.computeVisibleBounds();
+    this.tileRenderer.render(this.world, visibleBounds);
+    this.powerPlantRenderer.render(this.world, visibleBounds);
 
     // Setup render loop
     this.app.ticker.add(() => {
       const visibleBounds = this.computeVisibleBounds();
       if (this.tileRenderer && this.world) {
         this.tileRenderer.render(this.world, visibleBounds);
+      }
+      if (this.powerPlantRenderer && this.world) {
+        this.powerPlantRenderer.render(this.world, visibleBounds);
       }
       if (this.powerOverlay && this.world) {
         this.powerOverlay.render(this.world, visibleBounds);
@@ -248,6 +256,7 @@ export class PixiApp {
     }
 
     this.tileRenderer?.destroy();
+    this.powerPlantRenderer?.destroy();
     this.powerOverlay?.destroy();
     this.selectionRenderer?.destroy();
 
@@ -272,6 +281,7 @@ export class PixiApp {
 
     this.camera = null;
     this.tileRenderer = null;
+    this.powerPlantRenderer = null;
     this.powerOverlay = null;
     this.selectionRenderer = null;
     this.terrainContainer = null;
