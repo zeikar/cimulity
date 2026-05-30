@@ -5,6 +5,7 @@ import {
   depthAxisFromFrontage,
   pickSeedFrontage,
   greedyDepthLot,
+  classifyEmptyZoneSpawnBlock,
   initialStructureRect,
   extendStructureToward,
   structureRectFillsLotDepth,
@@ -290,6 +291,107 @@ describe('greedyDepthLot', () => {
     // No road at south (y=3) — so frontage 'S' face has no road
     const lot = greedyDepthLot({ x: 0, y: 2 }, 'S', TileType.ZONE_RESIDENTIAL, world);
     expect(lot).toBeNull();
+  });
+});
+
+describe('classifyEmptyZoneSpawnBlock', () => {
+  /** Seed a vertical 1×N R-zone strip at column x, rows y0..y0+n-1, all flat at h=1. */
+  function seedStrip(world: World, x: number, y0: number, n: number): void {
+    for (let y = y0; y < y0 + n; y++) seedZone(world, x, y, TileType.ZONE_RESIDENTIAL);
+  }
+
+  const NONE_POWERED = () => false;
+  const ALL_POWERED = () => true;
+  /** isPowered predicate that reports only cell (sx,sy) as powered. */
+  const onlyPowered = (sx: number, sy: number) => (x: number, y: number) => x === sx && y === sy;
+
+  it('road-adjacent seed, frontage powered → null (will spawn)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    seedZone(world, 2, 2, TileType.ZONE_RESIDENTIAL);
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.ROAD)); // adjacent south
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, onlyPowered(2, 2))).toBeNull();
+  });
+
+  it('road-adjacent seed, unpowered → power (bolt)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    seedZone(world, 2, 2, TileType.ZONE_RESIDENTIAL);
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.ROAD)); // adjacent south
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, NONE_POWERED)).toBe('power');
+  });
+
+  it('no road within reach → road (even if power is everywhere — road > power)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    seedZone(world, 2, 2, TileType.ZONE_RESIDENTIAL);
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, ALL_POWERED)).toBe('road');
+  });
+
+  it('deep interior cell with a powered frontage seed → null (no false bolt, no false road)', () => {
+    // Strip (2,0)..(2,3), road at (2,4). The frontage seed (2,3) is the only powered cell (power
+    // reaches road-adjacent cells only). It spawns a 1×4 lot covering the whole strip, so the
+    // deepest interior cell (2,0) needs no power/road of its own. A per-tile power or face test
+    // would paint a false bolt / road glyph here; coverage must report null.
+    const world = new World(8, 8, { regenerate: false });
+    seedStrip(world, 2, 0, 4);
+    world.getMap().setTile(2, 4, createTile(2, 4, TileType.ROAD));
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 0 }, world, onlyPowered(2, 3))).toBeNull(); // depth 3
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, onlyPowered(2, 3))).toBeNull(); // depth 1
+  });
+
+  it('deep interior cell, frontage seed unpowered → power (whole strip awaits power)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    seedStrip(world, 2, 0, 4);
+    world.getMap().setTile(2, 4, createTile(2, 4, TileType.ROAD));
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 0 }, world, NONE_POWERED)).toBe('power');
+  });
+
+  it('road across UNZONED land → road (contiguity required, unlike pickSeedFrontage)', () => {
+    // Road 4 tiles south of a lone zone tile, nothing zoned between. pickSeedFrontage returns 'S'
+    // (a road is within the 4-cell radius), but no contiguous same-type lot reaches it, so the tile
+    // is genuinely road-blocked. Gating on pickSeedFrontage alone would wrongly suppress the cue.
+    const world = new World(8, 8, { regenerate: false });
+    seedZone(world, 2, 2, TileType.ZONE_RESIDENTIAL);
+    world.getMap().setTile(2, 6, createTile(2, 6, TileType.ROAD)); // distance 4, unzoned gap
+    expect(pickSeedFrontage({ x: 2, y: 2 }, world)).toBe('S'); // nearby-road test passes...
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, ALL_POWERED)).toBe('road'); // ...coverage does not
+  });
+
+  it('cell beyond the lot depth cap → road', () => {
+    // 1×5 strip (2,0)..(2,4), road at (2,5). The frontage seed (2,4) covers only depth 0..3
+    // (cells 2,4..2,1); the 5th cell (2,0) is one past LOT_MAX_DEPTH, so no lot reaches it.
+    const world = new World(8, 8, { regenerate: false });
+    seedStrip(world, 2, 0, 5);
+    world.getMap().setTile(2, 5, createTile(2, 5, TileType.ROAD));
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 1 }, world, onlyPowered(2, 4))).toBeNull(); // depth 3 — covered
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 0 }, world, ALL_POWERED)).toBe('road');     // depth 4 — beyond cap
+  });
+
+  it('walled off from the road by an already-spawned building → road (mirrors spawn occupancy)', () => {
+    // Strip (2,0)..(2,3) with road at (2,4), but a building already occupies the road-front cell
+    // (2,3) (it spawned with a 1×1 lot, then the player zoned behind it). greedyDepthLot stops at
+    // the occupied cell, so no lot can reach the empty back cell (2,2) — it IS road-blocked.
+    // Skipping occupancy would walk through the building to the road and wrongly hide the cue.
+    const world = new World(8, 8, { regenerate: false });
+    seedStrip(world, 2, 0, 4);
+    world.getMap().setTile(2, 4, createTile(2, 4, TileType.ROAD));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential', footprint: [{ x: 2, y: 3 }], anchor: { x: 2, y: 3 },
+      level: 1, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 3, w: 1, h: 1 },
+    });
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, ALL_POWERED)).toBe('road');
+  });
+
+  it('decoupled from terrain: road-adjacent slope tile is NOT road-blocked', () => {
+    // A zone on a coplanar ramp (allowed by the zone tool) with a road directly south. The strict-
+    // flat spawn check rejects it (greedyDepthLot/validateFootprintRect → null), but the BLOCKER is
+    // terrain, not road. The classifier must NOT report 'road' (a road can't fix it): with the
+    // frontage seed powered it reports null (left unbadged), and unpowered it reports 'power'.
+    const world = new World(8, 8, { regenerate: false });
+    seedZone(world, 2, 2, TileType.ZONE_RESIDENTIAL); // flats tile (2,2) at h=1
+    world.getTerrain().unsafeSetVertexHeight(2, 2, 2); // tilt one corner → tile (2,2) non-flat
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.ROAD)); // adjacent south
+    expect(greedyDepthLot({ x: 2, y: 2 }, 'S', TileType.ZONE_RESIDENTIAL, world)).toBeNull(); // terrain-blocked
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, onlyPowered(2, 2))).toBeNull(); // not 'road'
+    expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, NONE_POWERED)).toBe('power');   // not 'road'
   });
 });
 

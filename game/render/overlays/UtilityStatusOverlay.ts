@@ -6,12 +6,27 @@
  * Recompute is owned by World.tick, CommandDispatcher.applyCommands, and the bulk-rebuild
  * drains (save/reset/regenerate).
  *
- * Empty zones (zoned, no building yet) get a bolt iff they are UNpowered — power gates spawn,
- * so an unpowered empty zone is exactly why nothing is growing there, and the bolt explains it.
- * A powered empty zone gets no icon (it will spawn). Water is NEVER shown on empty zones: water
- * gates only level-up/density, not spawn, so an unwatered-but-powered zone still spawns a level-1
- * building — that building then carries a drop badge until a tower reaches it. Power plants and
- * water towers are structures, not buildings/zones — they never get a badge.
+ * Empty zones (zoned, no building yet) get AT MOST ONE icon explaining why nothing is growing
+ * there, priority ROAD > POWER (mirrors the building badge's one-icon rule). Road comes FIRST
+ * because it is the more fundamental gate: power only ever reaches a cell orthogonally adjacent
+ * to a road (see roadNetworkPropagation), so a roadless zone can never be powered AND can never
+ * spawn (the spawn frontage gate). Conversely a powered empty zone is ALWAYS road-adjacent, so
+ * "powered but roadless" cannot happen. Both gates follow lot COVERAGE via
+ * classifyEmptyZoneSpawnBlock: it finds the frontage seed whose road-fronting lot (grown along
+ * contiguous same-type empty cells) would cover this tile, and takes the road AND power verdicts on
+ * that seed — because the spawner checks power on the seed and the lot then absorbs deeper cells.
+ * So interior cells of a deep lot are NOT mislabeled (neither a road glyph nor a false bolt); a
+ * road across unzoned land does not count (contiguity required); terrain is ignored (a slope-only
+ * blocker is not road/power-fixable, so it stays unbadged). Thus:
+ *   - no road-fronting lot reaches the tile → road glyph (build/extend a road; also unblocks power),
+ *   - a lot reaches it but no covering frontage seed is powered → bolt (common early-game: zoned by
+ *     a road, no power plant connected yet),
+ *   - a powered frontage seed will spawn a covering lot → no icon (and terrain/demand-only blockers
+ *     stay unbadged, since a road/power can't fix them).
+ * Water is NEVER shown on empty zones: water gates only level-up/density, not spawn, so an
+ * unwatered-but-powered zone still spawns a level-1 building — that building then carries a drop
+ * badge until a tower reaches it. Power plants and water towers are structures, not
+ * buildings/zones — they never get a badge.
  */
 
 import { Graphics, Container } from 'pixi.js';
@@ -23,6 +38,7 @@ import { isBuildingVisible, iterateVisibleTiles } from '../viewportCulling';
 import type { VisualRegistry } from '../visuals/visualRegistry';
 import { tileToScreenWithHeight, ISO_CONFIG } from '../IsoTransform';
 import { isZoneType } from '@/game/core/Tile';
+import { classifyEmptyZoneSpawnBlock } from '@/game/core/zoneGrowth';
 import type { Building } from '@/game/core/Building';
 import type { BuildingVisualInput } from '../visuals/TileVisual';
 
@@ -51,7 +67,19 @@ const DROP_POINTS: ReadonlyArray<{ x: number; y: number }> = [
   { x: -3, y: -3 }, // upper-left shoulder
 ];
 
-type GlyphKind = 'bolt' | 'drop';
+// Road glyph: a horizontal grey road bar with two white centerline dashes — its horizontal
+// orientation reads distinctly from the vertical bolt and the drop. Grey on a colored zone
+// tile, with bright dashes so it pops. Means "no road frontage in reach → can't spawn".
+const ROAD_BAR_COLOR = 0x555555;
+const ROAD_DASH_COLOR = 0xf2f2f2;
+const ROAD_BAR_POINTS: ReadonlyArray<{ x: number; y: number }> = [
+  { x: -7, y: -3 },
+  { x:  7, y: -3 },
+  { x:  7, y:  3 },
+  { x: -7, y:  3 },
+];
+
+type GlyphKind = 'bolt' | 'drop' | 'road';
 
 function drawBolt(gfx: Graphics): void {
   gfx.clear();
@@ -75,6 +103,28 @@ function drawDrop(gfx: Graphics): void {
   gfx.fill({ color: DROP_COLOR });
 }
 
+function drawRoad(gfx: Graphics): void {
+  gfx.clear();
+  // Road bar.
+  gfx.beginPath();
+  gfx.moveTo(ROAD_BAR_POINTS[0].x, ROAD_BAR_POINTS[0].y);
+  for (let i = 1; i < ROAD_BAR_POINTS.length; i++) {
+    gfx.lineTo(ROAD_BAR_POINTS[i].x, ROAD_BAR_POINTS[i].y);
+  }
+  gfx.closePath();
+  gfx.fill({ color: ROAD_BAR_COLOR });
+  // Two white centerline dashes so it reads as a road, not a plain bar.
+  gfx.rect(-5, -0.7, 3, 1.4);
+  gfx.rect(2, -0.7, 3, 1.4);
+  gfx.fill({ color: ROAD_DASH_COLOR });
+}
+
+function drawGlyph(gfx: Graphics, kind: GlyphKind): void {
+  if (kind === 'bolt') drawBolt(gfx);
+  else if (kind === 'drop') drawDrop(gfx);
+  else drawRoad(gfx);
+}
+
 function buildingToVisualInput(building: Building, renderHeight: number): BuildingVisualInput {
   return {
     buildingId: building.id,
@@ -95,9 +145,10 @@ export class UtilityStatusOverlay {
   private iconsByBuildingId: Map<number, Graphics> = new Map();
   // Tracks which glyph is currently drawn per building so we can redraw on kind change.
   private glyphKindByBuildingId: Map<number, GlyphKind> = new Map();
-  // Bolt icons on unpowered EMPTY zone tiles (keyed by tile index y*width+x). These only
-  // ever show a bolt (power gates spawn), so no glyph-kind tracking is needed.
-  private zoneBoltsByTile: Map<number, Graphics> = new Map();
+  // Icons on EMPTY zone tiles that can't spawn (keyed by tile index y*width+x), with the glyph
+  // kind tracked per tile so we redraw on a power↔road switch (e.g. a tower powers a roadless zone).
+  private zoneIconsByTile: Map<number, Graphics> = new Map();
+  private zoneGlyphKindByTile: Map<number, GlyphKind> = new Map();
 
   constructor(container: Container, registry: VisualRegistry) {
     this.container = container;
@@ -141,12 +192,7 @@ export class UtilityStatusOverlay {
       const currentKind = this.glyphKindByBuildingId.get(building.id);
       if (currentKind !== kind) {
         // Kind changed or newly mounted — (re)draw.
-        if (kind === 'bolt') {
-          drawBolt(gfx);
-        } else {
-          // kind === 'drop'
-          drawDrop(gfx);
-        }
+        drawGlyph(gfx, kind);
         this.glyphKindByBuildingId.set(building.id, kind);
       }
 
@@ -168,42 +214,52 @@ export class UtilityStatusOverlay {
       }
     }
 
-    // Empty-zone bolts: a zoned tile with no building yet that is UNpowered gets a bolt,
-    // since power gates spawn — this is the player-facing "why nothing is growing here" cue.
-    // (Powered empty zones will spawn → no cue; water never gates spawn → never shown here.)
+    // Empty-zone icons: a zoned tile with no building yet that can't spawn gets ONE icon,
+    // priority road > power — the player-facing "why nothing is growing here" cue. Both gates
+    // follow lot COVERAGE (the road/power verdict is taken on the frontage seed that would spawn a
+    // lot covering this tile), so deep interior cells aren't mislabeled. (Road-reachable + powered
+    // empty zones will spawn → no cue; water never gates spawn.)
     const width = map.getWidth();
     const height = map.getHeight();
     const tileBounds = visibleBounds
       ? visibleBounds.terrain
       : { minX: 0, maxX: width, minY: 0, maxY: height };
     const halfTileH = ISO_CONFIG.TILE_HEIGHT / 2;
-    const needsZoneBolt = new Set<number>();
+    const isPoweredAt = (px: number, py: number) => pw.isPowered(px, py);
+    const needsZoneIcon = new Set<number>();
 
     for (const { x, y } of iterateVisibleTiles(tileBounds)) {
       const tile = map.getTile(x, y);
       if (!tile || !isZoneType(tile.type)) continue;
       if (map.getBuildings().getBuildingAt(x, y) !== null) continue; // occupied — handled above
-      if (pw.isPowered(x, y)) continue; // powered empty zone will spawn — no cue needed
+
+      const block = classifyEmptyZoneSpawnBlock({ x, y }, world, isPoweredAt);
+      if (block === null) continue; // will spawn, or only terrain/demand-blocked → no cue
+      const kind: GlyphKind = block === 'road' ? 'road' : 'bolt';
 
       const idx = y * width + x;
-      needsZoneBolt.add(idx);
-      let gfx = this.zoneBoltsByTile.get(idx);
+      needsZoneIcon.add(idx);
+      let gfx = this.zoneIconsByTile.get(idx);
       if (!gfx) {
         gfx = new Graphics();
-        drawBolt(gfx);
         this.container.addChild(gfx);
-        this.zoneBoltsByTile.set(idx, gfx);
+        this.zoneIconsByTile.set(idx, gfx);
       }
-      // Float the bolt near the tile's surface center.
+      if (this.zoneGlyphKindByTile.get(idx) !== kind) {
+        drawGlyph(gfx, kind);
+        this.zoneGlyphKindByTile.set(idx, kind);
+      }
+      // Float the icon near the tile's surface center.
       const renderHeight = terrain.getRenderHeight(x, y);
       const s = tileToScreenWithHeight({ x, y }, renderHeight);
       gfx.position.set(s.x, s.y + halfTileH - 6);
     }
 
-    for (const [idx, gfx] of this.zoneBoltsByTile) {
-      if (!needsZoneBolt.has(idx)) {
+    for (const [idx, gfx] of this.zoneIconsByTile) {
+      if (!needsZoneIcon.has(idx)) {
         gfx.destroy();
-        this.zoneBoltsByTile.delete(idx);
+        this.zoneIconsByTile.delete(idx);
+        this.zoneGlyphKindByTile.delete(idx);
       }
     }
   }
@@ -212,12 +268,13 @@ export class UtilityStatusOverlay {
     for (const gfx of this.iconsByBuildingId.values()) {
       gfx.destroy();
     }
-    for (const gfx of this.zoneBoltsByTile.values()) {
+    for (const gfx of this.zoneIconsByTile.values()) {
       gfx.destroy();
     }
     this.iconsByBuildingId.clear();
     this.glyphKindByBuildingId.clear();
-    this.zoneBoltsByTile.clear();
+    this.zoneIconsByTile.clear();
+    this.zoneGlyphKindByTile.clear();
     // container is owned by PixiApp — not destroyed here.
   }
 }

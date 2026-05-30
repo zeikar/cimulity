@@ -66,6 +66,12 @@ export function countRoadsOnFace(rect: Rect, frontage: Frontage, world: World): 
   return count;
 }
 
+/**
+ * Max cells a greedy-depth lot spans (frontage seed + interior, measured along the depth axis).
+ * Shared with hasSpawnRoadAccess so the overlay's road cue uses the same reach the spawner does.
+ */
+const LOT_MAX_DEPTH = 4;
+
 export function greedyDepthLot(
   seed: { x: number; y: number },
   frontage: Frontage,
@@ -80,7 +86,7 @@ export function greedyDepthLot(
 
   const cells: Array<{ x: number; y: number }> = [{ x: seed.x, y: seed.y }];
 
-  for (let step = 1; step < 4; step++) {
+  for (let step = 1; step < LOT_MAX_DEPTH; step++) {
     const nx = seed.x + dx * step;
     const ny = seed.y + dy * step;
     const tile = map.getTile(nx, ny);
@@ -100,6 +106,67 @@ export function greedyDepthLot(
   if (countRoadsOnFace(rect, frontage, world) === 0) return null;
 
   return rect;
+}
+
+/**
+ * Classify why an empty zone tile is not spawning, for the player-facing empty-zone cue. Walks the
+ * same road-fronting lot COVERAGE the spawner uses (contiguous same-type, EMPTY cells within
+ * LOT_MAX_DEPTH; terrain ignored), looking for a frontage seed — a cell whose next cell is a road —
+ * whose lot (footprint claimed whole at spawn) would cover `seed`. `isPowered(x,y)` is injected
+ * (the overlay passes the PowerMap) and is consulted on the FRONTAGE SEED, not on `seed` itself:
+ * World.tick checks power on the seed it spawns from (World.ts ~547), then the lot absorbs deeper
+ * cells, so an interior cell needs no power of its own. Returns:
+ *   'road'  — no road-fronting lot can reach the tile (build/extend a road),
+ *   'power' — a lot reaches it but NO covering frontage seed is powered (connect power),
+ *   null    — a powered frontage seed will spawn a covering lot (or only terrain/demand blocks it,
+ *             which roads/power can't fix) → no cue.
+ * Priority is road > power: a tile with no road access reports 'road' even when unpowered, since
+ * power can't reach a cell with no adjacent road anyway.
+ *
+ * Why coverage, not a per-tile test: a road-on-own-face test is too STRICT (interior cells of a
+ * deep lot have no road/power on their own face yet are covered by the frontage seed), while a
+ * road-within-4 test (pickSeedFrontage) is too LOOSE (it ignores zone-type contiguity, so a road
+ * across unzoned land would falsely suppress the cue). Occupancy mirrors the spawn gate too: a
+ * building anywhere in the run (including the frontage seed) breaks it, since greedyDepthLot stops
+ * at occupied cells and World.tick spawns only from empty seeds.
+ */
+export function classifyEmptyZoneSpawnBlock(
+  seed: { x: number; y: number },
+  world: World,
+  isPowered: (x: number, y: number) => boolean,
+): 'road' | 'power' | null {
+  const map = world.getMap();
+  const buildings = map.getBuildings();
+  const seedTile = map.getTile(seed.x, seed.y);
+  if (seedTile === null) return null;
+  const seedType = seedTile.type;
+  if (buildings.getBuildingAt(seed.x, seed.y) !== null) return null; // occupied — not an empty zone
+
+  let roadReachable = false;
+  // `seed` sits at depth `step` behind a frontage cell; the road is one cell beyond that cell.
+  for (const { dx, dy } of [
+    { dx: 0, dy: 1 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: -1 },
+  ]) {
+    for (let step = 0; step < LOT_MAX_DEPTH; step++) {
+      const cx = seed.x + dx * step;
+      const cy = seed.y + dy * step;
+      if (step > 0) {
+        const t = map.getTile(cx, cy);
+        if (t === null || t.type !== seedType) break; // contiguity broken before any road frontage
+        if (buildings.getBuildingAt(cx, cy) !== null) break; // an occupied cell blocks the lot
+      }
+      const road = map.getTile(cx + dx, cy + dy);
+      if (road !== null && road.type === TileType.ROAD) {
+        // (cx,cy) is a frontage seed whose lot covers `seed`. If it's powered, a building spawns
+        // there and covers `seed` → no cue. Otherwise this approach is power-blocked; another
+        // direction may still have a powered seed, so keep looking.
+        if (isPowered(cx, cy)) return null;
+        roadReachable = true;
+        break; // deeper cells are past the road; this direction's frontage seed is unpowered
+      }
+    }
+  }
+  return roadReachable ? 'power' : 'road';
 }
 
 export function initialStructureRect(lot: Rect, frontage: Frontage): Rect {
