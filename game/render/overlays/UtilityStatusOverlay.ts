@@ -4,10 +4,14 @@
  * glyph-switched by the missing utility with priority POWER > WATER (bolt = no power; drop =
  * powered but no water). One badge avoids the two-stacked-icon collision at cubeTopY - 6.
  * Recompute is owned by World.tick, CommandDispatcher.applyCommands, and the bulk-rebuild
- * drains (save/reset/regenerate). Empty unserviced zones (no building yet) intentionally get
- * no icon. Power plants and water towers are structures, not buildings — they never get a badge.
- * Water gates growth, not spawn, so an unwatered city still grows level-1 buildings that then
- * carry a drop badge until a tower reaches them.
+ * drains (save/reset/regenerate).
+ *
+ * Empty zones (zoned, no building yet) get a bolt iff they are UNpowered — power gates spawn,
+ * so an unpowered empty zone is exactly why nothing is growing there, and the bolt explains it.
+ * A powered empty zone gets no icon (it will spawn). Water is NEVER shown on empty zones: water
+ * gates only level-up/density, not spawn, so an unwatered-but-powered zone still spawns a level-1
+ * building — that building then carries a drop badge until a tower reaches it. Power plants and
+ * water towers are structures, not buildings/zones — they never get a badge.
  */
 
 import { Graphics, Container } from 'pixi.js';
@@ -15,9 +19,10 @@ import type { World } from '@/game/core/World';
 import { isBuildingPowered } from '@/game/core/PowerMap';
 import { isBuildingWatered } from '@/game/core/WaterMap';
 import type { VisibleTileBounds } from '../viewportCulling';
-import { isBuildingVisible } from '../viewportCulling';
+import { isBuildingVisible, iterateVisibleTiles } from '../viewportCulling';
 import type { VisualRegistry } from '../visuals/visualRegistry';
-import { tileToScreenWithHeight } from '../IsoTransform';
+import { tileToScreenWithHeight, ISO_CONFIG } from '../IsoTransform';
+import { isZoneType } from '@/game/core/Tile';
 import type { Building } from '@/game/core/Building';
 import type { BuildingVisualInput } from '../visuals/TileVisual';
 
@@ -90,6 +95,9 @@ export class UtilityStatusOverlay {
   private iconsByBuildingId: Map<number, Graphics> = new Map();
   // Tracks which glyph is currently drawn per building so we can redraw on kind change.
   private glyphKindByBuildingId: Map<number, GlyphKind> = new Map();
+  // Bolt icons on unpowered EMPTY zone tiles (keyed by tile index y*width+x). These only
+  // ever show a bolt (power gates spawn), so no glyph-kind tracking is needed.
+  private zoneBoltsByTile: Map<number, Graphics> = new Map();
 
   constructor(container: Container, registry: VisualRegistry) {
     this.container = container;
@@ -159,14 +167,57 @@ export class UtilityStatusOverlay {
         this.glyphKindByBuildingId.delete(id);
       }
     }
+
+    // Empty-zone bolts: a zoned tile with no building yet that is UNpowered gets a bolt,
+    // since power gates spawn — this is the player-facing "why nothing is growing here" cue.
+    // (Powered empty zones will spawn → no cue; water never gates spawn → never shown here.)
+    const width = map.getWidth();
+    const height = map.getHeight();
+    const tileBounds = visibleBounds
+      ? visibleBounds.terrain
+      : { minX: 0, maxX: width, minY: 0, maxY: height };
+    const halfTileH = ISO_CONFIG.TILE_HEIGHT / 2;
+    const needsZoneBolt = new Set<number>();
+
+    for (const { x, y } of iterateVisibleTiles(tileBounds)) {
+      const tile = map.getTile(x, y);
+      if (!tile || !isZoneType(tile.type)) continue;
+      if (map.getBuildings().getBuildingAt(x, y) !== null) continue; // occupied — handled above
+      if (pw.isPowered(x, y)) continue; // powered empty zone will spawn — no cue needed
+
+      const idx = y * width + x;
+      needsZoneBolt.add(idx);
+      let gfx = this.zoneBoltsByTile.get(idx);
+      if (!gfx) {
+        gfx = new Graphics();
+        drawBolt(gfx);
+        this.container.addChild(gfx);
+        this.zoneBoltsByTile.set(idx, gfx);
+      }
+      // Float the bolt near the tile's surface center.
+      const renderHeight = terrain.getRenderHeight(x, y);
+      const s = tileToScreenWithHeight({ x, y }, renderHeight);
+      gfx.position.set(s.x, s.y + halfTileH - 6);
+    }
+
+    for (const [idx, gfx] of this.zoneBoltsByTile) {
+      if (!needsZoneBolt.has(idx)) {
+        gfx.destroy();
+        this.zoneBoltsByTile.delete(idx);
+      }
+    }
   }
 
   destroy(): void {
     for (const gfx of this.iconsByBuildingId.values()) {
       gfx.destroy();
     }
+    for (const gfx of this.zoneBoltsByTile.values()) {
+      gfx.destroy();
+    }
     this.iconsByBuildingId.clear();
     this.glyphKindByBuildingId.clear();
+    this.zoneBoltsByTile.clear();
     // container is owned by PixiApp — not destroyed here.
   }
 }
