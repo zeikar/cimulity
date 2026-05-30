@@ -25,6 +25,19 @@ function seedPower(world: World, ax: number, ay: number): void {
   world.recomputePower();
 }
 
+function seedWater(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'water_tower',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markWaterDirty();
+  world.recomputeWater();
+}
+
 describe('World.tick() — land value gating of growth', () => {
   it('zones near a road reach higher levels than zones far from any road', () => {
     // Near-road zones at x=0,1 with road at x=2; far zones at x=4,5 with no road anywhere near
@@ -106,13 +119,18 @@ describe('World.tick() — density tier', () => {
   });
 
   it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + demand[type] >= DENSITY_DEMAND_THRESHOLD', () => {
+    // Decision-A: water gates density-bump. (0,1) changed from ZONE_COMMERCIAL to ROAD to allow
+    // an isolated road+tower connection. The commercial demand-seeder building still placed via
+    // addBuilding (tile type not checked). Tower at (0,2)-(1,3) waters road (0,1); zone (0,0)
+    // adj to watered road (0,1) → watered. No LV check for density gate so this is safe.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); (0,2) adj to road (0,1) → waters (0,1); zone (0,0) adj to (0,1) → watered
 
     // Seed building at ZONE_MAX_LEVEL with age just under DENSITY_COOLDOWN_INTERVALS.
     map.getBuildings().addBuilding({
@@ -164,13 +182,15 @@ describe('World.tick() — density tier', () => {
   });
 
   it('density bump emits changedTiles with footprint coords and changedBuildingIds with building id', () => {
+    // Decision-A: same (0,1) ROAD approach as the adjacent density test.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); waters road (0,1); zone (0,0) adj → watered
 
     const building = map.getBuildings().addBuilding({
       type: 'residential',
@@ -258,9 +278,11 @@ describe('World.tick() — Branch B road-access gate', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    // Positive control: with road, building should level up.
-    // Seed at level 0, age = cooldown-1 so on the next growth tick it levels up.
-    // id=0, stagger(0)=0 → cooldown = GROWTH_COOLDOWN_INTERVALS.
+    // Positive control: with road AND water, building should level up.
+    // Decision-A: add isolated road (0,1) + tower (0,2)-(1,3). Zone (0,0) adj to watered road (0,1) → watered.
+    // LV >= LEVEL_THRESHOLDS[1]=0.1 satisfied by road at distance 1 (roadScore≈0.857).
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // isolated road for water routing
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); (0,2) adj road (0,1) → waters (0,1); zone (0,0) adj → watered
     map.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
@@ -300,13 +322,15 @@ describe('World.tick() — Branch B road-access gate', () => {
   });
 
   it('existing building loses road access: density bump does not fire', () => {
+    // Decision-A: same isolated road+tower pattern; (0,1) changed from ZONE_COMMERCIAL to ROAD.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); waters road (0,1); zone (0,0) adj → watered
     // Positive control: seed at ZONE_MAX_LEVEL, density=0, age just under cooldown.
     map.getBuildings().addBuilding({
       type: 'residential',
@@ -415,6 +439,9 @@ describe('World.tick() — T3 density-bump E2E', () => {
     map.setTile(4, 3, createTile(4, 3, TileType.ZONE_INDUSTRIAL));
     map.setTile(5, 3, createTile(5, 3, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 0, 3); // plant at (0,3)–(1,4); (0,4) ROAD adj to (0,3) → all road y=4 powered
+    // Decision-A: add road (3,5) + tower (3,6)-(4,7) to water road y=4. Road (3,5) adj to (3,4)=ROAD → connected. Zone (3,3) adj (3,4) → watered.
+    map.setTile(3, 5, createTile(3, 5, TileType.ROAD));
+    seedWater(world, 3, 6); // tower at (3,6)–(4,7); (3,6) adj road (3,5) → waters (3,5) → chain to (3,4) → zone (3,3) watered
 
     map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 },
@@ -512,13 +539,15 @@ describe('World.tick() — density gating (demand-driven)', () => {
   });
 
   it('Fixture B: sufficient C/I level-points → residentialDemand >= threshold → density bumps to 1', () => {
+    // Decision-A: same isolated road+tower pattern; (0,1) from ZONE_COMMERCIAL to ROAD.
     const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); waters road (0,1); zone (0,0) adj → watered
 
     map.getBuildings().addBuilding({
       type: 'residential',
@@ -563,10 +592,13 @@ describe('World.tick() — density gating (demand-driven)', () => {
 
   it("Fixture B': post-tick getDemand() reflects level-up totals vs control world that did not tick", () => {
     // World with a low-level R building near road, no C/I — tick until it levels up.
+    // Decision-A: (0,1) is GRASS here, so add isolated road+tower without changing anything else.
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // isolated road for water routing
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); (0,2) adj road (0,1) → watered; zone (0,0) adj (0,1) → watered
     map.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
@@ -644,7 +676,8 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end.
     // Land value at anchor (1,0): road distance 4, roadScore ≈ 0.429,
     // lv ≈ 0.3 > LEVEL_THRESHOLDS[2]=0.25. Sufficient to clear the gate.
-    const world = new World(6, 6, { regenerate: false });
+    // Decision-A: bump to World(6,7); add road (0,4) + tower (0,5)-(1,6) to water road (1,4).
+    const world = new World(6, 7, { regenerate: false });
     const map = world.getMap();
 
     // Paint the 1×4 zone strip and the road.
@@ -652,6 +685,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
     }
     map.setTile(1, 4, createTile(1, 4, TileType.ROAD));
+    map.setTile(0, 4, createTile(0, 4, TileType.ROAD)); // connects to (1,4) for water routing
 
     // Seed building at level=1 with structureRect at the south end, age past cooldown.
     // id=0 → stagger(0)=0 → cooldown=8. Set age so after +1 it is >= 8+0=8.
@@ -672,6 +706,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     seedJobSource(world, 5, 5);
     world.markLandValueDirty();
     seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
+    seedWater(world, 0, 5); // tower at (0,5)–(1,6); (0,5) adj road (0,4) → waters (0,4)→(1,4); zone (1,3) adj (1,4) → watered
 
     const result = tickOneGrowthInterval(world);
 
@@ -696,13 +731,15 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     //   Grow 2: structure cannot extend (cap reached) → level bumps 1→2;
     //           structureRect stays at cap (further level-ups would need land
     //           value past LEVEL_THRESHOLDS[3]=0.45, unreachable for this lot).
-    const world = new World(6, 6, { regenerate: false });
+    // Decision-A: bump to World(6,7), add road(0,4)+tower(0,5)-(1,6).
+    const world = new World(6, 7, { regenerate: false });
     const map = world.getMap();
 
     for (let y = 0; y < 4; y++) {
       map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
     }
     map.setTile(1, 4, createTile(1, 4, TileType.ROAD));
+    map.setTile(0, 4, createTile(0, 4, TileType.ROAD)); // connects to (1,4) for water routing
 
     map.getBuildings().addExistingBuilding({
       id: 0,
@@ -720,6 +757,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     seedJobSource(world, 5, 5);
     world.markLandValueDirty();
     seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
+    seedWater(world, 0, 5); // tower at (0,5)–(1,6); (0,5) adj road (0,4) → waters (0,4)→(1,4) → zone (1,3) watered
 
     // Grow 1 (age 7 → 8, fires): 1×1 → 1×2 (cap)
     tickOneGrowthInterval(world);
@@ -736,11 +774,14 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // 1×1 lot: zone at (1,1), road at (1,2), frontage='S'.
     // structureRect = {x:1, y:1, w:1, h:1} which fills the 1×1 lot entirely.
     // extendStructureToward must return null → Branch B (level-up) fires directly.
-    const world = new World(4, 4, { regenerate: false });
+    // Decision-A: bump to World(4,6); add road(0,2) adj to (1,2) + tower(0,3)-(1,4).
+    // Zone (1,1) adj to road (1,2) which connects to (0,2) → (0,2) watered → (1,2) watered → zone watered.
+    const world = new World(4, 6, { regenerate: false });
     const map = world.getMap();
 
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD));
+    map.setTile(0, 2, createTile(0, 2, TileType.ROAD)); // extends road for water routing; (0,2) adj to (1,2)
 
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 gate fires.
     // land value at (1,1): road at distance 1 → roadScore = 1-1/7 ≈ 0.857,
@@ -759,6 +800,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     seedJobSource(world, 3, 3);
     world.markLandValueDirty();
     seedPower(world, 2, 2); // plant at (2,2)–(3,3) powers road (1,2)
+    seedWater(world, 0, 3); // tower at (0,3)–(1,4); (0,3) adj road (0,2) → waters (0,2)→(1,2) → zone (1,1) watered
 
     const result = tickOneGrowthInterval(world);
 
@@ -896,7 +938,10 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
     // Use a 1×4 lot layout (road at y=4) so land value at anchor y=0 is low enough
     // (≈0.43 < LEVEL_THRESHOLDS[3]=0.45) that Branch B level-up does NOT fire
     // and age is not reset by a level-up before the merge pass.
-    const world = new World(6, 6, { regenerate: false });
+    // Decision-A: bump to World(6,7); tower (0,5)-(1,6) added from start to water buildings.
+    // No power → first tick: no merge (power gate blocks). Power added → merge fires.
+    // Water is present throughout; only the power gate creates the negative/positive contrast.
+    const world = new World(6, 7, { regenerate: false });
     const map = world.getMap();
 
     for (let x = 0; x < 6; x++) {
@@ -937,9 +982,13 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       level: 8, density: 0, age: 0, frontage: 'N',
       structureRect: { x: 4, y: 4, w: 1, h: 1 },
     });
+    // Add water from the start so the positive-control tick (after power is added) fires.
+    // Tower at (0,5)–(1,6): (0,5) adj to (0,4)=ROAD → waters road (0,4)→(1,4)→(2,4)→(3,4).
+    // Zone cells at y=0..3 adj to road y=4 → watered. No-power first tick: merge still blocked by power gate.
+    seedWater(world, 0, 5);
     world.markDemandDirty();
 
-    // No power — first growth tick: no merge (buildings are unpowered).
+    // No power — first growth tick: no merge (buildings are unpowered; water alone is not enough).
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     world.tick();
     expect(map.getBuildings().getBuilding(0)).not.toBeNull();

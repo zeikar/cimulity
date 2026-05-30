@@ -19,6 +19,19 @@ function seedPower(world: World, ax: number, ay: number): void {
   world.recomputePower();
 }
 
+function seedWater(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'water_tower',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markWaterDirty();
+  world.recomputeWater();
+}
+
 describe("World.tick() — merge (Branch B'')", () => {
   // Shared helper: build a world with N side-by-side 1×4 R lots, frontage='S',
   // road at y=4, all merge-eligible. Returns { world, map, ids } where ids[i]
@@ -35,8 +48,9 @@ describe("World.tick() — merge (Branch B'')", () => {
     world: World;
     ids: number[];
   } {
-    // Map wide enough: n R lots + 2 industrial seeders
-    const world = new World(n + 2, 6, { regenerate: false });
+    // Map wide enough: n R lots + 2 industrial seeders.
+    // Decision-A: height bumped to 7 so tower (0,5)-(1,6) fits adjacent to road y=4.
+    const world = new World(n + 2, 7, { regenerate: false });
     const map = world.getMap();
 
     // Road row at y=4
@@ -109,6 +123,8 @@ describe("World.tick() — merge (Branch B'')", () => {
     // Plant at (n, 3)–(n+1, 4): cell (n,4) ROAD adj to (n,3) → all road y=4 powered.
     // Building footprint cells at y=3 are then powered via adjacency to road y=4.
     seedPower(world, n, 3);
+    // Decision-A: tower at (0,5)–(1,6): (0,5) adj to (0,4)=ROAD → waters road y=4; zone cells y=0..3 adj y=4 → watered.
+    seedWater(world, 0, 5);
     world.markDemandDirty();
     return { world, ids };
   }

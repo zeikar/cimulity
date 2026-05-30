@@ -9,6 +9,8 @@ import {
   DAYS_PER_MONTH,
   MONTHS_PER_YEAR,
   POWER_INTERVAL,
+  WATER_INTERVAL,
+  DENSITY_COOLDOWN_INTERVALS,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { TileType, createTile } from './Tile';
@@ -24,6 +26,19 @@ function seedPower(world: World, ax: number, ay: number): void {
   });
   world.markPowerDirty();
   world.recomputePower();
+}
+
+function seedWater(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'water_tower',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markWaterDirty();
+  world.recomputeWater();
 }
 
 describe('World', () => {
@@ -312,43 +327,59 @@ describe('World.tick() — monthly tax settlement', () => {
   });
 
   it('a coincident growth + month-boundary tick taxes the PRE-growth population and still levels the zone up', () => {
-    const world = new World(4, 4, { regenerate: false });
-    const map = world.getMap();
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    // Extra zone types to push diversity score to 1.0 so landValue at (0,0) ≈ 0.9 >= LEVEL_THRESHOLDS[5]=0.85.
-    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
+    // Decision-A: water now gates level-up, so this fixture adds a water tower adjacent
+    // to the road network so the building can still level up. Spawn is NOT water-gated.
+    //
+    // Layout (10x8 map):
+    //   Road row at y=2: all 10 cells connected.
+    //   Zone (0,1)=RESIDENTIAL, frontage='S' adj to road (0,2).
+    //   Diversity in 3×3 around (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → all 3 types → LV ≈ 0.9.
+    //   Plant at (4,3)–(5,4): (4,3) adj to road (4,2) → powers road row.
+    //   Tower at (7,3)–(8,4): (7,3) adj to road (7,2) → waters road row.
+    //   Road (0,2) is powered+watered; zone (0,1) adj to (0,2) → powered+watered ✓.
+    const world = new World(10, 8, { regenerate: false });
+    const mapF = world.getMap();
+    // Road row.
+    for (let x = 0; x < 10; x++) mapF.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    // Zone + diversity (all in 3×3 window around (0,1)).
+    mapF.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    mapF.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    mapF.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+    // Plant and tower — both adjacent to the road row.
+    seedPower(world, 4, 3); // plant at (4,3)–(5,4); cell (4,3) adj to road (4,2)
+    seedWater(world, 7, 3); // tower at (7,3)–(8,4); cell (7,3) adj to road (7,2)
 
-    // Next tick: tickCount = 8*30 = 240 (240 % 8 === 0 → growth) and
-    // day = 240 (240 % 30 === 0 → month boundary).
-    // 240 % 16 === 0 → land value is force-recomputed before the growth pass.
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
-    // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 so it will level up on the growth tick.
-    // id=0 (first building), stagger(0)=0, cooldown=8. age=7 → after age+1 = 8 >= 8 → level-up fires.
-    map.getBuildings().addBuilding({
+
+    // Verify road (0,2) is powered and watered, and zone (0,1) inherits both.
+    expect(world.getPowerMap().isPowered(0, 2)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 2)).toBe(true);
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+
+    // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 to level up on this growth tick.
+    // stagger(first-alloc-id)=0, cooldown=8. age=7 → after age+1=8 >= 8 → level-up fires.
+    mapF.getBuildings().addBuilding({
       type: 'residential',
-      footprint: [{ x: 0, y: 0 }],
-      anchor: { x: 0, y: 0 },
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
-      frontage: 'E',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      frontage: 'S', // road is south at (0,2)
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
-    // Provide a jobs source so residential demand stays positive (otherwise
-    // demand collapses to 0 and the level-up gate refuses to fire).
-    map.getBuildings().addExistingBuilding({
+    // Jobs source so residential demand stays positive.
+    mapF.getBuildings().addExistingBuilding({
       id: 999,
       type: 'commercial',
-      footprint: [{ x: 3, y: 3 }],
-      anchor: { x: 3, y: 3 },
+      footprint: [{ x: 9, y: 7 }],
+      anchor: { x: 9, y: 7 },
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
       frontage: 'N',
-      structureRect: { x: 3, y: 3, w: 1, h: 1 },
+      structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
     const moneyBefore = world.getMoney();
@@ -358,7 +389,7 @@ describe('World.tick() — monthly tax settlement', () => {
     expect(world.getMoney()).toBe(
       moneyBefore + Math.floor(level4Pop * TAX_PER_POP) * DAYS_PER_MONTH,
     );
-    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+    expect(mapF.getBuildings().getBuildingAt(0, 1)?.level).toBe(ZONE_MAX_LEVEL);
   });
 
   it('money is unchanged even on a month-boundary tick when population is 0', () => {
@@ -512,7 +543,9 @@ describe('stagger() — deterministic per-building jitter', () => {
       frontage: 'N',
       structureRect: { x: 9, y: 1, w: 1, h: 1 },
     });
-    seedPower(world, 5, 0); // plant at (5,0)–(6,1); (5,0) ROAD adj to (5,1) → all road y=0 powered
+    seedPower(world, 8, 1); // plant at (8,1)–(9,2); cell (8,1) adj to road (8,0) → all road y=0 powered
+    // Decision-A: water gates level-up. Add tower adj to road y=0 so all 5 buildings can level up.
+    seedWater(world, 6, 1); // tower at (6,1)–(7,2); cell (6,1) adj to road (6,0) → waters road y=0
 
     const firstLevelTwoTick = new Map<number, number>();
 
@@ -685,5 +718,424 @@ describe('World.reset({ regenerate: true }) — isPowered returns false everywhe
         expect(pm.isPowered(x, y)).toBe(false);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WaterMap API on World
+// ---------------------------------------------------------------------------
+
+describe('World.getWaterMap() — lazy allocation', () => {
+  it('first call returns a non-null WaterMap instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getWaterMap()).not.toBeNull();
+  });
+
+  it('subsequent calls return the same instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const first = world.getWaterMap();
+    const second = world.getWaterMap();
+    expect(second).toBe(first);
+  });
+});
+
+describe('World.markWaterDirty() + recomputeWaterIfDirty()', () => {
+  it('recomputeWaterIfDirty() after markWaterDirty() triggers recompute exactly once; second call is a no-op', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeWater');
+
+    world.markWaterDirty();
+    world.recomputeWaterIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // No further dirty mark — second call is a no-op.
+    world.recomputeWaterIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+});
+
+describe('World.reset() — water cleanup', () => {
+  it('zeroes getWaterMap().getRaw() AND clears the dirty flag after reset', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+
+    // Place a tower and a road so some cells become watered.
+    world.getStructureMap().addStructure({
+      type: 'water_tower',
+      anchor: { x: 0, y: 0 },
+      footprint: [
+        { x: 0, y: 0 }, { x: 1, y: 0 },
+        { x: 0, y: 1 }, { x: 1, y: 1 },
+      ],
+    });
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+    world.recomputeWater();
+    world.markWaterDirty();
+
+    world.reset({ regenerate: false });
+
+    const raw = world.getWaterMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
+
+    // Dirty flag is cleared: a recomputeWaterIfDirty call should be a no-op.
+    const spy = vi.spyOn(world, 'recomputeWater');
+    world.recomputeWaterIfDirty();
+    expect(spy).toHaveBeenCalledTimes(0);
+    spy.mockRestore();
+  });
+});
+
+describe('World.tick() — water periodic cadence', () => {
+  it('at tickCount === WATER_INTERVAL, tick() triggers recomputeWater even when waterDirty is false', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeWater');
+
+    // Advance to one tick before the cadence fires.
+    for (let i = 0; i < WATER_INTERVAL - 1; i++) world.tick();
+    const callsBefore = spy.mock.calls.length;
+
+    // This tick brings tickCount to WATER_INTERVAL — force recompute fires.
+    world.tick();
+    expect(spy.mock.calls.length).toBe(callsBefore + 1);
+
+    spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Water gate semantics (Major-5): unwatered buildings STILL AGE but don't grow
+// ---------------------------------------------------------------------------
+
+describe('World.tick() water gate — level-up/density/merge gated, spawn and aging NOT gated', () => {
+  it('(a) powered-but-unwatered building STILL AGES but does NOT level up', () => {
+    const world = new World(10, 10, { regenerate: false });
+    const map = world.getMap();
+    // Road + zone + power setup (no water tower).
+    map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    // Zone diversity for land value.
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
+    // Plant adjacent to road at (0,0): place plant at (0,2)–(1,3) — seeds road (0,1)? No.
+    // Place road at (1,0) and plant at (2,0)–(3,1).
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    seedPower(world, 2, 0);
+
+    // Seed a level-1 building ready to level up: age just below cooldown.
+    const cooldown = GROWTH_COOLDOWN_INTERVALS; // stagger(0) = 0 for id 0
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 1,
+      density: 0,
+      age: cooldown - 1, // next growth tick will age → cooldown met
+      frontage: 'N',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+    // Confirm building's footprint cell is powered (not just the road), and not watered.
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(false);
+
+    // Run enough growth ticks for the building to age significantly.
+    const GROWTH_TICKS = 5;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * GROWTH_TICKS; i++) world.tick();
+
+    const after = map.getBuildings().getBuilding(bid);
+    expect(after).not.toBeNull();
+    // Level must NOT have increased (water gate blocked it).
+    expect(after!.level).toBe(1);
+    // Age MUST have increased (aging is NOT water-gated).
+    expect(after!.age).toBeGreaterThan(cooldown - 1);
+  });
+
+  it('(b) once watered, the same building levels up given demand/land-value/cooldown satisfied', () => {
+    // Layout (10x8): road row at y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Plant at (4,3)–(5,4) adj to road (4,2) → powers road row.
+    // Tower at (7,3)–(8,4) adj to road (7,2) → waters road row.
+    // Building at (0,1) is powered and watered. With age past cooldown and demand positive,
+    // the building should level up within a few growth ticks.
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 4, 3);
+    seedWater(world, 7, 3);
+
+    // Jobs source for residential demand.
+    map.getBuildings().addExistingBuilding({
+      id: 999,
+      type: 'commercial',
+      footprint: [{ x: 9, y: 7 }],
+      anchor: { x: 9, y: 7 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+      structureRect: { x: 9, y: 7, w: 1, h: 1 },
+    });
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 1,
+      density: 0,
+      age: cooldown + 5, // age already past cooldown
+      frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+
+    // Confirm powered and watered.
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+
+    // Run growth ticks — with water present, building should level up.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
+  });
+
+  it('(c) spawn is NOT water-gated: powered road-adjacent unwatered zone tile STILL spawns level-1 building', () => {
+    const world = new World(10, 10, { regenerate: false });
+    const map = world.getMap();
+    // Road + zone + power (no water tower).
+    map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0);
+    // Add jobs source for residential demand.
+    map.getBuildings().addExistingBuilding({
+      id: 999,
+      type: 'commercial',
+      footprint: [{ x: 9, y: 9 }],
+      anchor: { x: 9, y: 9 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: 0,
+      frontage: 'N',
+      structureRect: { x: 9, y: 9, w: 1, h: 1 },
+    });
+
+    // Confirm NOT watered.
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(false);
+
+    // Run growth ticks: spawn should happen despite no water.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+
+    // A building should have spawned at (0,1).
+    expect(map.getBuildings().getBuildingAt(0, 1)).not.toBeNull();
+    expect(map.getBuildings().getBuildingAt(0, 1)?.level).toBe(1);
+  });
+
+  // Two separate it-blocks for the merge water gate (no if-guards around assertions).
+  //
+  // Layout (12×6 map):
+  //   Building A: 2-wide 1-deep lot at (5,2),(6,2), frontage 'S'. South face road: (5,3),(6,3).
+  //   Building B: 2-wide 1-deep lot at (7,2),(8,2), frontage 'S'. South face road: (7,3),(8,3) BUT
+  //     (7,3)=GRASS in the negative scenario — only (8,3) is road for B, giving ≥1 road on face ✓.
+  //   canMerge geometry: same frontage 'S', h=1=h, A.x+w=5+2=7=B.x, A.y+h=3=B.y+h → all pass.
+  //   Road A: (5,3),(6,3). Road B (negative): (8,3) isolated by GRASS at (7,3).
+  //   Power A: plant (3,3)–(4,4); cell (4,3) adj (5,3)=ROAD A → seeds A network.
+  //   Power B: plant (9,2)–(10,3); cell (9,3) adj (8,3)=ROAD B → seeds B.
+  //   Water (negative): tower (5,4)–(6,5); (5,4) adj (5,3) + (6,4) adj (6,3) → BFS seeds A network,
+  //     stops at GRASS (7,3). B road (8,3) unreachable → B NOT watered.
+  //   Water (positive): (7,3) is ROAD (gap filled); same tower waters full (5,3)→(8,3) row.
+
+  it('(d-neg) merge water gate — one unwatered candidate: no merge (asserts unconditionally)', () => {
+    // NEGATIVE: building B has an isolated road (8,3); tower only waters A's network → B NOT watered.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+
+    // Zone row y=2.
+    map.setTile(5, 2, createTile(5, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(6, 2, createTile(6, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(7, 2, createTile(7, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(8, 2, createTile(8, 2, TileType.ZONE_RESIDENTIAL));
+    // Road A at (5,3),(6,3). GRASS GAP at (7,3). Road B at (8,3) — isolated from A.
+    map.setTile(5, 3, createTile(5, 3, TileType.ROAD));
+    map.setTile(6, 3, createTile(6, 3, TileType.ROAD));
+    // (7,3) intentionally GRASS — road-to-road BFS cannot reach (8,3) from A's network.
+    map.setTile(8, 3, createTile(8, 3, TileType.ROAD));
+    // Power A: plant (3,3)–(4,4); (4,3) adj (5,3)=ROAD A.
+    seedPower(world, 3, 3);
+    // Power B: plant (9,2)–(10,3); (9,3) adj (8,3)=ROAD B.
+    seedPower(world, 9, 2);
+    // Water A only: tower (5,4)–(6,5); (5,4) adj (5,3) + (6,4) adj (6,3); BFS stops at GRASS (7,3).
+    seedWater(world, 5, 4);
+
+    // Unconditional precondition pins — test fails loudly if water wiring regresses.
+    expect(world.getWaterMap().isWatered(5, 3)).toBe(true);  // A road watered
+    expect(world.getWaterMap().isWatered(6, 3)).toBe(true);  // A road watered
+    expect(world.getWaterMap().isWatered(8, 3)).toBe(false); // B road NOT watered (isolated by gap)
+    expect(world.getWaterMap().isWatered(5, 2)).toBe(true);  // A footprint cell watered
+    expect(world.getWaterMap().isWatered(8, 2)).toBe(false); // B footprint cell NOT watered
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    // Jobs source: level 20 so residential demand stays well above DENSITY_DEMAND_THRESHOLD.
+    // Total R levels = 2×ZONE_MAX_LEVEL = 10; commercial level 20 → demand = (20-10)/20+0.25 = 0.75 ≥ 0.6.
+    map.getBuildings().addExistingBuilding({
+      id: 900, type: 'commercial',
+      footprint: [{ x: 11, y: 5 }], anchor: { x: 11, y: 5 },
+      level: 20, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 11, y: 5, w: 1, h: 1 },
+    });
+    const okA = map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential',
+      footprint: [{ x: 5, y: 2 }, { x: 6, y: 2 }], anchor: { x: 5, y: 2 },
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      structureRect: { x: 5, y: 2, w: 2, h: 1 },
+    });
+    const okB = map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 7, y: 2 }, { x: 8, y: 2 }], anchor: { x: 7, y: 2 },
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      structureRect: { x: 7, y: 2, w: 2, h: 1 },
+    });
+    expect(okA).toBe(true);
+    expect(okB).toBe(true);
+    world.markDemandDirty();
+
+    // One growth tick. B unwatered → merge water gate blocks → both buildings survive.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    world.tick();
+
+    // Unconditional — no if-guard.
+    expect(map.getBuildings().getBuilding(0)).not.toBeNull();
+    expect(map.getBuildings().getBuilding(1)).not.toBeNull();
+  });
+
+  it('(d-pos) merge water gate — both candidates watered: merge succeeds (asserts unconditionally)', () => {
+    // POSITIVE: (7,3) is now ROAD (gap filled) → A+B connected → tower waters both → merge fires.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+
+    map.setTile(5, 2, createTile(5, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(6, 2, createTile(6, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(7, 2, createTile(7, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(8, 2, createTile(8, 2, TileType.ZONE_RESIDENTIAL));
+    map.setTile(5, 3, createTile(5, 3, TileType.ROAD));
+    map.setTile(6, 3, createTile(6, 3, TileType.ROAD));
+    map.setTile(7, 3, createTile(7, 3, TileType.ROAD)); // gap now filled → single connected road component
+    map.setTile(8, 3, createTile(8, 3, TileType.ROAD));
+    // Single plant powers the full row.
+    seedPower(world, 3, 3);
+    // Same tower position as negative scenario; now BFS reaches (5,3)→(8,3) all watered.
+    seedWater(world, 5, 4);
+
+    // Unconditional precondition pins.
+    expect(world.getWaterMap().isWatered(8, 3)).toBe(true);  // B road watered (connected now)
+    expect(world.getWaterMap().isWatered(8, 2)).toBe(true);  // B footprint cell watered
+    expect(world.getWaterMap().isWatered(5, 2)).toBe(true);  // A footprint cell watered
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    // Jobs source: level 20 → residential demand = (20-10)/20+0.25 = 0.75 ≥ 0.6.
+    map.getBuildings().addExistingBuilding({
+      id: 900, type: 'commercial',
+      footprint: [{ x: 11, y: 5 }], anchor: { x: 11, y: 5 },
+      level: 20, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 11, y: 5, w: 1, h: 1 },
+    });
+    const okA = map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential',
+      footprint: [{ x: 5, y: 2 }, { x: 6, y: 2 }], anchor: { x: 5, y: 2 },
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      structureRect: { x: 5, y: 2, w: 2, h: 1 },
+    });
+    const okB = map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 7, y: 2 }, { x: 8, y: 2 }], anchor: { x: 7, y: 2 },
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      structureRect: { x: 7, y: 2, w: 2, h: 1 },
+    });
+    expect(okA).toBe(true);
+    expect(okB).toBe(true);
+    world.markDemandDirty();
+
+    // One growth tick. Both watered → merge fires.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    world.tick();
+
+    // Unconditional: at least one original gone, merged 4-cell building exists.
+    const aGone = map.getBuildings().getBuilding(0) === null;
+    const bGone = map.getBuildings().getBuilding(1) === null;
+    expect(aGone || bGone).toBe(true);
+    const allRes = [...map.getBuildings().iterBuildings()].filter(b => b.type === 'residential');
+    expect(allRes.some(b => b.footprint.length === 4)).toBe(true);
+  });
+
+  it('(e) density-bump requires water: unwatered building does NOT get density bump; watered does', () => {
+    // Two-phase test mirroring test (b). Water is the SOLE variable: demand is satisfied throughout.
+    // Layout (10×8, road row at y=2): building at (0,1) frontage 'S' adj to road (0,2).
+    // Demand sources: commercial buildings at level 20 → residentialDemand = (20-5)/20+0.25 ≈ 1.0 >> 0.6.
+    // Power: plant at (4,3)–(5,4) adj to road (4,2). No tower initially → not watered.
+    // Phase 1: run ticks WITHOUT water → density stays 0, age increases (not water-gated).
+    // Phase 2: add tower (7,3)–(8,4) adj road (7,2) → building watered → density bumps to 1.
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    seedPower(world, 4, 3); // plant (4,3)–(5,4); (4,3) adj road (4,2) → powers road row
+
+    // Demand sources: commercial buildings supply jobs so residentialDemand >> DENSITY_DEMAND_THRESHOLD.
+    // Two commercial buildings at level 10 each → jobsLevels=20, levelSumR=5 → demand≈1.0.
+    map.getBuildings().addExistingBuilding({
+      id: 800, type: 'commercial',
+      footprint: [{ x: 7, y: 7 }], anchor: { x: 7, y: 7 },
+      level: 10, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 7, y: 7, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 801, type: 'commercial',
+      footprint: [{ x: 8, y: 7 }], anchor: { x: 8, y: 7 },
+      level: 10, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 8, y: 7, w: 1, h: 1 },
+    });
+
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS + 10,
+      frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+
+    // Assert demand precondition so the test fails loudly if demand (not water) ever becomes the blocker.
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+
+    // Phase 1: NOT watered → density must NOT advance.
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(false);
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    const mid = map.getBuildings().getBuilding(bid)!;
+    expect(mid.density).toBe(0);
+    // Age increased — aging is NOT water-gated.
+    expect(mid.age).toBeGreaterThan(DENSITY_COOLDOWN_INTERVALS);
+
+    // Phase 2: add tower → building becomes watered → density MUST advance.
+    seedWater(world, 7, 3); // tower (7,3)–(8,4); (7,3) adj road (7,2) → waters road row
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true); // confirm water reached building
+    // Reset age so the next growth tick fires the density gate (age >= DENSITY_COOLDOWN_INTERVALS guaranteed).
+    mid.age = DENSITY_COOLDOWN_INTERVALS + 10;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expect(map.getBuildings().getBuilding(bid)?.density).toBeGreaterThan(0);
   });
 });

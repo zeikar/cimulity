@@ -489,6 +489,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.markPowerDirty();
   // Drain power dirty here so the first render frame after load never sees a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
   world.recomputePowerIfDirty();
+  world.markWaterDirty();
+  // Drain water dirty here so the first render frame after load never sees a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
+  world.recomputeWaterIfDirty();
 
   return true;
 }

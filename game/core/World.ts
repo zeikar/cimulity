@@ -12,6 +12,7 @@ import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
 import { PowerMap, isBuildingPowered } from './PowerMap';
+import { WaterMap, isBuildingWatered } from './WaterMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -43,6 +44,10 @@ export const LAND_VALUE_INTERVAL = 16;
  * Defense-in-depth periodic force-recompute cadence for power, mirrors LAND_VALUE_INTERVAL.
  */
 export const POWER_INTERVAL = 16;
+/**
+ * Defense-in-depth periodic force-recompute cadence for water, mirrors POWER_INTERVAL.
+ */
+export const WATER_INTERVAL = 16;
 /** Maximum zone growth level a tile may reach. */
 export const ZONE_MAX_LEVEL = 5;
 /**
@@ -92,9 +97,9 @@ export const MONTHS_PER_YEAR = 12;
  * `changedBuildingIds` is an additional channel for building-keyed render lookup —
  * it is NEVER the sole signal of change.
  *
- * Power and land value are both recomputed (if dirty or on their periodic cadence)
- * as frozen snapshots before the growth pass. The growth pass reads but does not
- * mutate either map.
+ * Power, water, and land value are all recomputed (if dirty or on their periodic
+ * cadence) as frozen snapshots before the growth pass. The growth pass reads but
+ * does not mutate any of those maps.
  */
 export interface WorldTickResult {
   /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups + density bumps). */
@@ -128,6 +133,8 @@ export class World {
   private structures!: StructureMap;
   private power: PowerMap | null = null;
   private powerDirty: boolean = false;
+  private water: WaterMap | null = null;
+  private waterDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -325,6 +332,29 @@ export class World {
     this.powerDirty = false;
   }
 
+  /** Lazy-allocate and return the WaterMap instance. */
+  getWaterMap(): WaterMap {
+    if (this.water === null) this.water = new WaterMap(this.map.getWidth(), this.map.getHeight());
+    return this.water;
+  }
+
+  markWaterDirty(): void {
+    this.waterDirty = true;
+  }
+
+  /** Recompute water only if dirty; clears the flag. */
+  recomputeWaterIfDirty(): void {
+    if (!this.waterDirty) return;
+    this.recomputeWater();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputeWater(): void {
+    const wm = this.getWaterMap();
+    wm.recompute(this.map, this.structures);
+    this.waterDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -369,6 +399,7 @@ export class World {
    *   Pass `{ regenerate: false }` to restore a flat all-MIN_LAND_ELEVATION terrain (used by
    *   deserialization hydration paths so loaded terrain is not overwritten).
    *   Water is derived from elevation — no flat canvas contains water by default.
+   *   Power and water maps are both cleared and their dirty flags reset.
    * @param opts.seed - Seed for procedural generation (only used when regenerate is true).
    *   Defaults to DEFAULT_NEWCITY_SEED.
    */
@@ -381,6 +412,8 @@ export class World {
     this.structures.clear();
     if (this.power !== null) this.power.clear();
     this.powerDirty = false;
+    if (this.water !== null) this.water.clear();
+    this.waterDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -390,6 +423,7 @@ export class World {
       // Flat default terrain — used by deserialization paths.
       this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
       this.recomputePowerIfDirty();
+      this.recomputeWaterIfDirty();
       return;
     }
 
@@ -406,6 +440,7 @@ export class World {
     }
     this.installTerrain(terrain);
     this.recomputePowerIfDirty();
+    this.recomputeWaterIfDirty();
   }
 
   /**
@@ -448,6 +483,13 @@ export class World {
       this.recomputePowerIfDirty();
     }
 
+    // Water: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % WATER_INTERVAL === 0) {
+      this.recomputeWater();
+    } else {
+      this.recomputeWaterIfDirty();
+    }
+
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
     if (this.tickCount % LAND_VALUE_INTERVAL === 0) {
       this.recomputeLandValue();
@@ -479,6 +521,7 @@ export class World {
       const buildings = this.map.getBuildings();
       const lv = this.getLandValue();
       const pw = this.getPowerMap();
+      const wm = this.getWaterMap();
 
       this.markDemandDirty();
       const demandVec = this.getDemand();
@@ -540,7 +583,12 @@ export class World {
           // Demand at 0 → saturated for this type → no structure-grow, no level-up.
           const threshold = LEVEL_THRESHOLDS[existing.level + 1];
           const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
-          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown) {
+          // Water gates the level-up/structure-grow mutation only — the building still ages above.
+          // Power gates spawn AND existing-building aging/growth (the isBuildingPowered check above
+          // runs before age++). Water gates only the level-up / structure-grow / density / merge
+          // MUTATIONS — an unwatered but powered building still ages, it just can't grow
+          // (SimCity 2000/4 'city starts, density limited').
+          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm)) {
             const lot = lotBboxOf(existing.footprint);
             if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
               // Branch B' — structure-grow before level-up.
@@ -568,7 +616,8 @@ export class World {
           if (
             demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
-            existing.density < 2
+            existing.density < 2 &&
+            isBuildingWatered(existing, wm)
           ) {
             existing.density += 1 as 0 | 1 | 2;
             existing.age = 0;
@@ -590,11 +639,13 @@ export class World {
         if (usedThisTick.has(a.id)) continue;
         if (!hasFrontageRoadAccess(a, this)) continue;
         if (!isBuildingPowered(a, pw)) continue;
+        if (!isBuildingWatered(a, wm)) continue;
         for (let j = i + 1; j < candidates.length; j++) {
           const b = candidates[j];
           if (usedThisTick.has(b.id)) continue;
           if (!hasFrontageRoadAccess(b, this)) continue;
           if (!isBuildingPowered(b, pw)) continue;
+          if (!isBuildingWatered(b, wm)) continue;
           if (!canMerge(a, b, demandVec)) continue;
 
           const shape = mergedBuildingShape(a, b);

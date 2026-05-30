@@ -26,10 +26,10 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v12';
 
-// Bumped to 'water-save-v1' for the v12 save-format change (WATER_TOWER type added).
+// Bumped to 'water-v1' for the World water API surface (WaterMap methods added to World).
 // An HMR singleton carrying a mismatched guard is discarded and rebuilt even if
 // hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'water-save-v1' as const;
+const WORLD_SINGLETON_GUARD = 'water-v1' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -59,13 +59,14 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of Task 7/v11 — power + structure persistence):
+ * Checked methods (as of Task 3/water — WaterMap API added to World):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
  *          isWater, canBuildAt, canBuildRoadAt, regenerateTerrain,
  *          getDemand, markDemandDirty,
  *          getPowerMap, markPowerDirty, recomputePowerIfDirty, recomputePower,
+ *          getWaterMap, markWaterDirty, recomputeWaterIfDirty, recomputeWater,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -147,6 +148,15 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // WaterMap API (added in Task 3 / water): derived water field + dirty-mark + recompute.
+  if (
+    typeof world.getWaterMap !== 'function' ||
+    typeof world.markWaterDirty !== 'function' ||
+    typeof world.recomputeWaterIfDirty !== 'function' ||
+    typeof world.recomputeWater !== 'function'
+  ) {
+    return false;
+  }
   // StructureMap API (added in Task 2 / v11): all load-bearing methods used by save/dispatch/render.
   if (typeof world.getStructureMap !== 'function') return false;
   const structures = world.getStructureMap();
@@ -182,6 +192,7 @@ export function getWorld(): World {
         // Bad/corrupt save — fall back to procedural generation.
         world.reset({ regenerate: true });
         world.recomputePowerIfDirty();
+        world.recomputeWaterIfDirty();
       }
     } else {
       // No save — fresh procedural world.

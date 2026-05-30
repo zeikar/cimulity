@@ -59,6 +59,7 @@ export default defineConfig({
         'game/render/visuals/polygon/cubePalette.ts',
         'game/render/visuals/polygon/powerPlantGeometry.ts',
         'game/core/roadNetworkPropagation.ts',
+        'game/core/WaterMap.ts',
       ],
       thresholds: {
         lines: 80,

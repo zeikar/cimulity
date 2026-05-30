@@ -24,6 +24,19 @@ function seedPower(world: World, ax: number, ay: number): void {
   world.recomputePower();
 }
 
+function seedWater(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'water_tower',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markWaterDirty();
+  world.recomputeWater();
+}
+
 describe('World.tick() — heal rule', () => {
   it('converts a DIRT tile to GRASS and returns changed === 1', () => {
     const world = new World(4, 4, { regenerate: false });
@@ -149,26 +162,26 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('zone building level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
-    // Use a larger map to add two more zone types near (0,0) to push diversity to 1.0,
-    // which brings landValue above the LEVEL_THRESHOLDS[5]=0.85 threshold needed for
-    // the final level-up. The industrial tile at (1,1) is road-adjacent via (1,0) and
-    // does spawn a building — load-bearing for the demand>0 gate (without a jobs source
-    // residential demand would collapse to 0). The commercial tile at (0,1) is NOT
-    // road-adjacent and only contributes to the diversity score of (0,0).
-    const world = new World(6, 6, { regenerate: false });
+    // Decision-A: water gates level-up. New layout on 10×8 (same as coincident-growth fixture):
+    // Road row at y=2. Zone (0,1)=RESIDENTIAL (adj road (0,2), frontage S).
+    // Diversity in 3×3 of (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → LV ≈ 0.9 >= 0.85.
+    // Plant at (4,3)-(5,4) powers road (4,2). Tower at (7,3)-(8,4) waters road (7,2).
+    // Whole road row powered+watered → zone (0,1) both powered+watered.
+    const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    // Two extra zone types in the 3×3 neighborhood of (0,0) to reach diversity=1.0
-    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0) via adjacency
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL)); // diversity for LV; road-adjacent → spawns C buildings
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL)); // road-adjacent → spawns I buildings (demand flywheel)
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL)); // diversity in 3×3 of (0,1) for LV
+    seedPower(world, 4, 3); // plant at (4,3)–(5,4); (4,3) adj road (4,2)
+    seedWater(world, 7, 3); // tower at (7,3)–(8,4); (7,3) adj road (7,2)
 
     // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
     // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 80; i++) world.tick();
 
-    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+    expect(map.getBuildings().getBuildingAt(0, 1)?.level).toBe(ZONE_MAX_LEVEL);
   });
 
   it('at cap, zone no longer contributes to changed', () => {
@@ -381,11 +394,15 @@ describe('World — bulldoze and repaint remove buildings', () => {
 
 describe('World.tick() — changedBuildingIds contract', () => {
   it('changedBuildingIds contains right id on level-up and is empty on non-growth/no-change ticks', () => {
+    // Decision-A: plant moved from (1,1) to (2,0) so tower (0,2)-(1,3) can be placed without conflict.
+    // (0,1) is GRASS → add isolated road + tower there. Zone (0,0) adj to watered road (0,1) → watered.
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    seedPower(world, 1, 1);
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // isolated road for water routing
+    seedPower(world, 2, 0); // plant at (2,0)–(3,1); (2,0) adj road (1,0) → powers it
+    seedWater(world, 0, 2); // tower at (0,2)–(1,3); (0,2) adj road (0,1) → waters (0,1); zone (0,0) adj → watered
 
     // Seed a building at level 0, age sufficient for level-up.
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 = 8 >= 8 → level-up on next growth tick.

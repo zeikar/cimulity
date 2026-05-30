@@ -715,4 +715,49 @@ describe('v12 structure persistence', () => {
     // Both structures present in the destination.
     expect(dst.getStructureMap().getAllStructures()).toHaveLength(2);
   });
+
+  it('hydrate: isWatered reflects tower+roads immediately after deserializeWorldInto (no tick/recompute needed)', () => {
+    // Tower at (2,2)-(3,3), roads at (2,4),(1,4),(0,4) — road chain adjacent to tower's south edge.
+    // After load, all three road cells should be watered. No tick or manual recompute.
+    const W = 8;
+    // Build a valid save with a water tower and adjacent roads.
+    const src = new World(W, W, { regenerate: false });
+    for (let vy = 0; vy <= W; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        src.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const map = src.getMap();
+    // Water tower at (2,2).
+    map.setTile(2, 2, createTile(2, 2, TileType.WATER_TOWER));
+    map.setTile(3, 2, createTile(3, 2, TileType.WATER_TOWER));
+    map.setTile(2, 3, createTile(2, 3, TileType.WATER_TOWER));
+    map.setTile(3, 3, createTile(3, 3, TileType.WATER_TOWER));
+    src.getStructureMap().addExistingStructure({
+      id: 0,
+      type: 'water_tower',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+      anchor: { x: 2, y: 2 },
+    });
+    // Roads adjacent to tower's south edge.
+    map.setTile(0, 4, createTile(0, 4, TileType.ROAD));
+    map.setTile(1, 4, createTile(1, 4, TileType.ROAD));
+    map.setTile(2, 4, createTile(2, 4, TileType.ROAD));
+
+    const dst = new World(W, W, { regenerate: false });
+    expect(deserializeWorldInto(dst, serializeWorld(src))).toBe(true);
+
+    // Roads watered immediately — no tick or manual recompute needed.
+    expect(dst.getWaterMap().isWatered(2, 4)).toBe(true);
+    expect(dst.getWaterMap().isWatered(1, 4)).toBe(true);
+    expect(dst.getWaterMap().isWatered(0, 4)).toBe(true);
+  });
+
+  it('World.reset({ regenerate: true }) then isWatered(0,0) returns false without manual recompute', () => {
+    const world = new World(8, 8, { regenerate: true });
+    // reset clears structures and drains the water flag.
+    world.reset({ regenerate: true });
+    // No structures or roads → nothing watered.
+    expect(world.getWaterMap().isWatered(0, 0)).toBe(false);
+  });
 });

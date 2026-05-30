@@ -24,6 +24,19 @@ function seedPower(world: World, ax: number, ay: number): void {
   world.recomputePower();
 }
 
+function seedWater(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'water_tower',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markWaterDirty();
+  world.recomputeWater();
+}
+
 /**
  * We use two separate controls per test:
  *   - fakeNow: a counter advanced manually that the GameLoop's injected clock reads.
@@ -369,13 +382,16 @@ describe('GameLoop', () => {
 
   // (w) catch-up ≥2 ticks including a density bump: aggregated changedTiles + changedBuildingIds
   it('(w) catch-up drain with density bump: aggregated changedTiles contains footprint coord and changedBuildingIds contains building id', () => {
+    // Decision-A: (0,1) changed from ZONE_COMMERCIAL to ROAD for water routing. Demand driven by
+    // seeded buildings (addBuilding calls below), not tile type. No LV check for density gate.
     const bigWorld = new World(6, 6, { regenerate: false });
     const bigMap = bigWorld.getMap();
     bigMap.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     bigMap.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    bigMap.setTile(0, 1, createTile(0, 1, TileType.ZONE_COMMERCIAL));
+    bigMap.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
     bigMap.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(bigWorld, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
+    seedWater(bigWorld, 0, 2); // tower at (0,2)–(1,3); (0,2) adj road (0,1) → waters (0,1); zone (0,0) adj → watered
 
     // DENSITY_COOLDOWN_INTERVALS=24, ZONE_GROWTH_INTERVAL=8.
     // Seed a ZONE_MAX_LEVEL building with age DENSITY_COOLDOWN_INTERVALS-1

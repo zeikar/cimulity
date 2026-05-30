@@ -14,9 +14,9 @@
  * still rely on it for HMR-survive semantics. This is an additive dev surface.
  *
  * Dev paths bypass `applyCommands`, so they must manually mark+drain `power`
- * (and any other derived-field) dirty flags after writing graph-relevant tiles.
- * `recomputePowerIfDirty()` alone is insufficient — the flag is only set
- * automatically by the dispatcher.
+ * and `water` (and any other derived-field) dirty flags after writing
+ * graph-relevant tiles. `recomputePowerIfDirty()` / `recomputeWaterIfDirty()`
+ * alone are insufficient — the flags are only set automatically by the dispatcher.
  */
 
 import { tileToScreen } from '../render/IsoTransform';
@@ -182,6 +182,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         world.markDemandDirty();
         world.markPowerDirty();
         world.recomputePowerIfDirty();
+        world.markWaterDirty();
+        world.recomputeWaterIfDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

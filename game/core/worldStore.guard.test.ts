@@ -124,6 +124,10 @@ function makeFullApiStub() {
     markPowerDirty: () => {},
     recomputePowerIfDirty: () => {},
     recomputePower: () => {},
+    getWaterMap: () => null,
+    markWaterDirty: () => {},
+    recomputeWaterIfDirty: () => {},
+    recomputeWater: () => {},
     getStructureMap: () => structureMapStub,
   };
 }
@@ -139,7 +143,7 @@ describe('getWorld — sentinel: Test A — API probe fails → fresh World', ()
     };
     // Set the current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'water-save-v1';
+    (globalThis as any).__cimulityWorldGuard = 'water-v1';
 
     const result = getWorld();
 
@@ -172,7 +176,7 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = real;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'water-save-v1';
+    (globalThis as any).__cimulityWorldGuard = 'water-v1';
 
     const result = getWorld();
 
@@ -181,13 +185,13 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
 });
 
 describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
-  it('builds a fresh World and writes water-save-v1 to globalThis.__cimulityWorldGuard', () => {
+  it('builds a fresh World and writes water-v1 to globalThis.__cimulityWorldGuard', () => {
     // Singleton and guard are already cleared by beforeEach (resetSingleton).
     const result = getWorld();
 
     expect(result).toBeInstanceOf(World);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((globalThis as any).__cimulityWorldGuard).toBe('water-save-v1');
+    expect((globalThis as any).__cimulityWorldGuard).toBe('water-v1');
   });
 });
 
@@ -288,7 +292,7 @@ describe('getWorld — stale singleton missing getDemand is discarded', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = stale;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'water-save-v1';
+    (globalThis as any).__cimulityWorldGuard = 'water-v1';
 
     const result = getWorld();
 
@@ -312,7 +316,7 @@ describe('WORLD_SINGLETON_GUARD invalidates stale HMR singletons', () => {
     // Calling getWorld() should detect the guard mismatch and build a fresh world:
     const fresh = getWorld();
     expect(fresh).not.toBe(stale);
-    expect(globals.__cimulityWorldGuard).toBe('water-save-v1');
+    expect(globals.__cimulityWorldGuard).toBe('water-v1');
   });
 });
 
