@@ -14,6 +14,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Vertex-based terrain with smooth slopes, elevation-derived water, and coplanar road/zone placement
 - Fixed-timestep simulation with zone growth, population, money, speed/pause controls, autosave, and New City reset
 - Power plants + binary reachability gate zone growth
+- Water towers gate zone level-ups/density (power gates initial spawn)
 
 Next focus: replace placeholder colored geometry with sprites/textures, add more terrain variety, and continue tightening tool feedback.
 
@@ -34,7 +35,7 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 - **Zoom**: Mouse wheel (zooms around cursor)
 - **Select Tile**: Left-click on any tile
 - **Hover**: Move mouse over tiles to see highlight
-- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant
+- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant, A water tower
 - **Terrain**: R raise, F lower, G level/flatten
 - **Time**: Space pause/resume, 1/2/3 speed
 
@@ -61,7 +62,6 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 
 ### MVP-2 (Future)
 
-- [ ] **Water system** - Utility network (power has shipped)
 - [ ] **Services** - Police, fire, hospitals
 - [ ] **Happiness/statistics** - Citizen happiness, budget charts
 - [ ] **Sound effects** - Audio feedback
