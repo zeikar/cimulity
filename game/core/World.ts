@@ -77,6 +77,11 @@ export const BULLDOZE_COST = 2;
  * Cost to place a power plant (2×2 footprint). 10% of STARTING_FUNDS by design.
  */
 export const POWER_PLANT_COST = 1000;
+/**
+ * Cost to place a water tower (2×2). Slightly cheaper than POWER_PLANT_COST=1000
+ * so "place power + water before zoning" is affordable from STARTING_FUNDS=10000.
+ */
+export const WATER_TOWER_COST = 800;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */

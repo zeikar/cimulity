@@ -11,8 +11,8 @@
 import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
-import { buildToolCommands, buildToolPreview, powerPlantFootprint } from '../tools';
-import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST } from '../core/World';
+import { buildToolCommands, buildToolPreview, structureFootprint } from '../tools';
+import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST, WATER_TOWER_COST } from '../core/World';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
 import type { World } from '../core/World';
@@ -41,7 +41,8 @@ function pathForTool(
     case Tool.TERRAIN_LEVEL:
       return rectDragPath(start, end);
     case Tool.POWER_PLANT:
-      // Drag collapses to a single-click at start — the NW anchor.
+    case Tool.WATER_TOWER:
+      // Drag collapses to a single click at the NW anchor.
       return [start];
     default:
       return [];
@@ -63,6 +64,7 @@ function commandCost(cmd: ToolCommand): number {
   if (cmd.kind === 'vertex-edit') return 0;
   if (cmd.kind === 'place-structure') {
     if (cmd.structureType === 'power_plant') return POWER_PLANT_COST;
+    if (cmd.structureType === 'water_tower') return WATER_TOWER_COST;
     return 0;
   }
   if (cmd.kind === 'remove-structure') return BULLDOZE_COST;
@@ -86,10 +88,11 @@ function tileKey(x: number, y: number): string {
  * Same-zone repaint emits no commands → zero total → free, no trySpend call.
  * Insufficient funds → silent no-op, empty changedTiles.
  *
- * Power is recomputed at the end of `applyCommands` whenever any command
- * dirtied it, so the next render frame always reads a fresh snapshot — even
- * when the simulation is paused. Tick-path `recomputePowerIfDirty` remains
- * as defense-in-depth.
+ * Power and water are recomputed at the end of `applyCommands` whenever any
+ * command dirtied them, so the next render frame always reads a fresh snapshot
+ * — even when the simulation is paused. Tick-path recompute remains as
+ * defense-in-depth. The two dirty flags are independent: a tower bulldoze does
+ * not recompute power; a road change dirties both.
  *
  * Exported so invariant-throw branches can be exercised directly in tests
  * without routing through the tool-command builders that normally prevent
@@ -110,6 +113,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   const removedBuildingIds: number[] = [];
   let landValueInvalidated = false;
   let powerInvalidated = false;
+  let waterInvalidated = false;
   const pushedChanged = new Set<string>();
   const pushChanged = (x: number, y: number): void => {
     const key = tileKey(x, y);
@@ -148,20 +152,21 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
         }
       }
     } else if (cmd.kind === 'place-structure') {
-      const footprint = powerPlantFootprint({ x: cmd.x, y: cmd.y });
-      // Invariant: classifyPowerPlant passed, so addStructure must succeed.
+      const footprint = structureFootprint({ x: cmd.x, y: cmd.y }, cmd.structureType);
+      // Invariant: classifier passed, so addStructure must succeed.
       const structure = world.getStructureMap().addStructure({
         type: cmd.structureType,
         footprint,
         anchor: { x: cmd.x, y: cmd.y },
       });
-      // This branch should never fire: addStructure returned null despite classifyPowerPlant passing.
+      // This branch should never fire: addStructure returned null despite classifier passing.
       // This can only happen if two place-structure commands overlap (the tool layer never produces that).
       if (structure === null) {
-        throw new Error('invariant: addStructure returned null after classifyPowerPlant passed');
+        throw new Error('invariant: addStructure returned null after classifier passed');
       }
+      const tileType = cmd.structureType === 'water_tower' ? TileType.WATER_TOWER : TileType.POWER_PLANT;
       for (const { x: cx, y: cy } of footprint) {
-        const rec = map.setTileAndReconcile(cx, cy, createTile(cx, cy, TileType.POWER_PLANT));
+        const rec = map.setTileAndReconcile(cx, cy, createTile(cx, cy, tileType));
         pushChanged(cx, cy);
         // Defensively handle any removed building (classifier should have prevented this).
         if (rec.removedBuilding !== null) {
@@ -171,19 +176,29 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
           }
         }
       }
-      powerInvalidated = true;
+      if (cmd.structureType === 'water_tower') {
+        waterInvalidated = true;
+      } else {
+        powerInvalidated = true;
+      }
     } else if (cmd.kind === 'remove-structure') {
       const s = world.getStructureMap().getStructure(cmd.structureId);
       // Invariant: tool layer dedupes by id; a stale id cannot reach applyCommands through normal flow.
       if (s === null) {
         throw new Error('invariant: remove-structure references a missing structureId');
       }
+      // Use the structure's stored footprint directly (authoritative; avoids any
+      // drift from recomputing it).
       for (const { x: cx, y: cy } of s.footprint) {
         map.setTileAndReconcile(cx, cy, createTile(cx, cy, TileType.DIRT));
         pushChanged(cx, cy);
       }
       world.getStructureMap().removeStructure(s.id);
-      powerInvalidated = true;
+      if (s.type === 'water_tower') {
+        waterInvalidated = true;
+      } else {
+        powerInvalidated = true;
+      }
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
@@ -198,13 +213,14 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
         ) {
           landValueInvalidated = true;
         }
-        // Mark power dirty when a ROAD tile is placed or a ROAD tile is replaced.
+        // Mark power and water dirty when a ROAD tile is placed or a ROAD tile is replaced.
+        // ROAD changes affect both graphs — a new road may extend either network.
         if (
-          !powerInvalidated &&
-          (cmd.tile.type === TileType.ROAD ||
-            (prevTile !== null && prevTile.type === TileType.ROAD))
+          cmd.tile.type === TileType.ROAD ||
+          (prevTile !== null && prevTile.type === TileType.ROAD)
         ) {
           powerInvalidated = true;
+          waterInvalidated = true;
         }
       }
       if (rec.removedBuilding !== null) {
@@ -226,6 +242,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   if (powerInvalidated) {
     world.markPowerDirty();
     world.recomputePowerIfDirty();
+  }
+  // Same for water — tower placement/removal and road changes drain water independently of power.
+  if (waterInvalidated) {
+    world.markWaterDirty();
+    world.recomputeWaterIfDirty();
   }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }
@@ -271,7 +292,7 @@ export function previewDrag(
 /**
  * Pure hover preview for a single-tile click at `tile`.
  *
- * Returns the tool's target footprint (2×2 for POWER_PLANT, 1×1 otherwise)
+ * Returns the tool's target footprint (2×2 for POWER_PLANT and WATER_TOWER, 1×1 otherwise)
  * with rejection derived from the existing buildToolPreview classifier —
  * the whole footprint turns red when the classifier rejects the anchor.
  * Never mutates core; never calls buildToolCommands or applyCommands.
@@ -291,16 +312,17 @@ export function previewClick(
   // the tile list (vs a drag path which passes a multi-tile span).
   // buildToolPreview handles footprint expansion for BULLDOZE (structure cells),
   // so base.pathTiles is already the correct visual footprint for all tools
-  // except POWER_PLANT placement (which buildToolPreview returns as [anchor]
-  // only — the 2×2 visual slab must be derived from powerPlantFootprint).
+  // except POWER_PLANT / WATER_TOWER placement (which buildToolPreview returns
+  // as [anchor] only — the 2×2 visual slab must be derived from structureFootprint).
   const base = buildToolPreview(tool, [tile], world);
 
-  // Footprint: POWER_PLANT uses its 2×2 anchor-derived slab; everything else
+  // Footprint: POWER_PLANT and WATER_TOWER use their 2×2 anchor-derived slab; everything else
   // (including BULLDOZE-over-structure which buildToolPreview already expanded)
   // uses base.pathTiles directly — no duplication of expansion logic.
-  const footprint: TileCoord[] = tool === Tool.POWER_PLANT
-    ? powerPlantFootprint(tile)
-    : base.pathTiles;
+  const footprint: TileCoord[] =
+    tool === Tool.POWER_PLANT ? structureFootprint(tile, 'power_plant') :
+    tool === Tool.WATER_TOWER ? structureFootprint(tile, 'water_tower') :
+    base.pathTiles;
 
   // Whole footprint is red when the classifier signals any rejection.
   const rejected: TileCoord[] = base.rejected.length > 0 ? footprint : [];

@@ -18,6 +18,7 @@ const TOOL_LABELS: Record<Tool, string> = {
   [Tool.ZONE_COMMERCIAL]: 'Commercial',
   [Tool.ZONE_INDUSTRIAL]: 'Industrial',
   [Tool.POWER_PLANT]: 'Power Plant',
+  [Tool.WATER_TOWER]: 'Water Tower',
   [Tool.TERRAIN_UP]: 'Raise',
   [Tool.TERRAIN_DOWN]: 'Lower',
   [Tool.TERRAIN_LEVEL]: 'Level',

@@ -10,6 +10,7 @@ export enum ToolCategory {
   BUILD = 'build',
   ZONE = 'zone',
   POWER = 'power',
+  WATER = 'water',
   DEMOLISH = 'demolish',
 }
 
@@ -27,6 +28,7 @@ export const TOOL_CATEGORY: Record<Tool, ToolCategory> = {
   [Tool.ZONE_COMMERCIAL]: ToolCategory.ZONE,
   [Tool.ZONE_INDUSTRIAL]: ToolCategory.ZONE,
   [Tool.POWER_PLANT]: ToolCategory.POWER,
+  [Tool.WATER_TOWER]: ToolCategory.WATER,
   [Tool.BULLDOZE]: ToolCategory.DEMOLISH,
 };
 
@@ -40,5 +42,6 @@ export const CATEGORY_ORDER = [
   ToolCategory.BUILD,
   ToolCategory.ZONE,
   ToolCategory.POWER,
+  ToolCategory.WATER,
   ToolCategory.DEMOLISH,
 ] as const;

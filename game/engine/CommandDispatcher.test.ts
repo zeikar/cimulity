@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
-import { POWER_PLANT_COST, BULLDOZE_COST } from '../core/World';
+import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 
@@ -297,6 +297,168 @@ describe('CommandDispatcher POWER_PLANT removal (bulldoze)', () => {
   });
 });
 
+describe('CommandDispatcher WATER_TOWER placement', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('places 4 WATER_TOWER tiles, registers structure, and deducts WATER_TOWER_COST', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    const result = executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 2 });
+    expect(result.changedTiles).toContainEqual({ x: 3, y: 2 });
+    expect(result.changedTiles).toContainEqual({ x: 2, y: 3 });
+    expect(result.changedTiles).toContainEqual({ x: 3, y: 3 });
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        expect(world.getMap().getTile(2 + dx, 2 + dy)?.type).toBe(TileType.WATER_TOWER);
+      }
+    }
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+    expect(world.getStructureMap().getStructureAt(3, 3)).not.toBeNull();
+    expect(world.getMoney()).toBe(before - WATER_TOWER_COST);
+  });
+
+  it('post-apply water recompute: a road connected to the tower is isWatered immediately (no tick)', () => {
+    const world = makeWorld8();
+    executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    // Road adjacent to tower at (1,2) — orthogonally adjacent to tower cell (2,2).
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getWaterMap().isWatered(1, 2)).toBe(true);
+  });
+
+  it('insufficient funds → no tile writes, no structure, no cost deducted', () => {
+    const world = makeWorld8();
+    world.trySpend(world.getMoney()); // drain to 0
+    const before = world.getMoney();
+    const result = executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    expect(world.getMoney()).toBe(before);
+  });
+
+  it('drag from (5,5) to (10,10) behaves identically to click at (5,5)', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    const result = executeDrag(Tool.WATER_TOWER, { x: 5, y: 5 }, { x: 10, y: 10 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    expect(world.getStructureMap().getStructureAt(5, 5)).not.toBeNull();
+    expect(world.getMoney()).toBe(before - WATER_TOWER_COST);
+  });
+
+  it('placing a road adjacent to an existing tower makes that road isWatered immediately (no tick)', () => {
+    const world = makeWorld8();
+    executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    // Road adjacent: (4,2) is orthogonally adjacent to tower cell (3,2).
+    executeClick(Tool.ROAD, { x: 4, y: 2 }, world);
+    expect(world.getWaterMap().isWatered(4, 2)).toBe(true);
+  });
+
+  it('INDEPENDENCE GUARD: placing a water tower does NOT change getPowerMap() — road adjacent only to tower is NOT isPowered', () => {
+    const world = makeWorld8();
+    executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    // Road is watered (connected to tower via road network)
+    expect(world.getWaterMap().isWatered(1, 2)).toBe(true);
+    // But NOT powered — no power plant exists
+    expect(world.getPowerMap().isPowered(1, 2)).toBe(false);
+  });
+
+  it('INDEPENDENCE GUARD: placing a power plant does NOT change getWaterMap() — road adjacent only to plant is NOT isWatered', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getPowerMap().isPowered(1, 2)).toBe(true);
+    // NOT watered — no water tower exists
+    expect(world.getWaterMap().isWatered(1, 2)).toBe(false);
+  });
+});
+
+describe('CommandDispatcher WATER_TOWER removal (bulldoze)', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  function placeTower(world: World, ax: number, ay: number): void {
+    executeClick(Tool.WATER_TOWER, { x: ax, y: ay }, world);
+  }
+
+  it('bulldozing NW cell writes 4 DIRT, removes structure, deducts BULLDOZE_COST once', () => {
+    const world = makeWorld8();
+    placeTower(world, 2, 2);
+    const before = world.getMoney();
+    const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        expect(world.getMap().getTile(2 + dx, 2 + dy)?.type).toBe(TileType.DIRT);
+      }
+    }
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    expect(world.getStructureMap().getStructureAt(3, 3)).toBeNull();
+    expect(world.getMoney()).toBe(before - BULLDOZE_COST);
+  });
+
+  it('bulldoze removal triggers post-apply recompute — watered road loses water immediately', () => {
+    const world = makeWorld8();
+    placeTower(world, 2, 2);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getWaterMap().isWatered(1, 2)).toBe(true);
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(world.getWaterMap().isWatered(1, 2)).toBe(false);
+  });
+
+  it('INDEPENDENCE GUARD: bulldozing a tower does NOT recompute power', () => {
+    const world = makeWorld8();
+    // Plant at (4,0): cells (4,0),(5,0),(4,1),(5,1). Road at (3,0): adjacent to plant cell (4,0).
+    executeClick(Tool.POWER_PLANT, { x: 4, y: 0 }, world);
+    // Tower at (0,0): cells (0,0),(1,0),(0,1),(1,1). Road at (3,0) is NOT adjacent to tower.
+    placeTower(world, 0, 0);
+    executeClick(Tool.ROAD, { x: 3, y: 0 }, world);
+    expect(world.getPowerMap().isPowered(3, 0)).toBe(true);
+    // Bulldoze only the tower — power should remain, water at road irrelevant (was never watered).
+    executeClick(Tool.BULLDOZE, { x: 0, y: 0 }, world);
+    // Road is still powered (plant remains, power was NOT invalidated by tower removal)
+    expect(world.getPowerMap().isPowered(3, 0)).toBe(true);
+  });
+});
+
+describe('previewClick WATER_TOWER', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('WATER_TOWER over a valid flat 2×2 → pathTiles has 4 footprint cells, rejected empty', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    expect(preview.pathTiles).toEqual([
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+    ]);
+    expect(preview.rejected).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+
+  it('WATER_TOWER on non-flat ground → pathTiles has 4 cells AND rejected equals all 4', () => {
+    const world = makeWorld8();
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 0); // SEA_LEVEL
+    const preview = previewClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    const expectedFootprint = [
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+    ];
+    expect(preview.pathTiles).toEqual(expectedFootprint);
+    expect(preview.rejected).toEqual(expectedFootprint);
+  });
+});
+
 describe('CommandDispatcher applyCommands invariant throws', () => {
   it('place-structure throws when addStructure returns null (footprint already occupied)', () => {
     // Place a plant via the normal tool path so the cells are occupied in StructureMap.
@@ -327,7 +489,7 @@ describe('previewClick', () => {
 
   it('POWER_PLANT over a valid flat 2×2 → pathTiles has 4 footprint cells, rejected empty', () => {
     const world = makeWorld8();
-    // Default world is flat grass — classifyPowerPlant accepts anchor (2,2).
+    // Default world is flat grass — the structure-placement classifier accepts anchor (2,2).
     const preview = previewClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
     expect(preview.pathTiles).toEqual([
       { x: 2, y: 2 },

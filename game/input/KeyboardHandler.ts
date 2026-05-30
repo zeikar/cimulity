@@ -13,7 +13,9 @@ export interface KeyboardCallbacks {
   onPauseToggle?: () => void;
 }
 
-// Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, p=power plant, r=raise terrain, f=lower terrain, g=level terrain.
+// Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, p=power plant,
+// a=water tower (a for aqua; w stays Commercial to avoid shadowing), r=raise terrain,
+// f=lower terrain, g=level terrain.
 const KEY_TO_TOOL: Record<string, Tool> = {
   t: Tool.ROAD,
   r: Tool.TERRAIN_UP,
@@ -26,6 +28,7 @@ const KEY_TO_TOOL: Record<string, Tool> = {
   w: Tool.ZONE_COMMERCIAL,
   e: Tool.ZONE_INDUSTRIAL,
   p: Tool.POWER_PLANT,
+  a: Tool.WATER_TOWER,
 };
 
 /**

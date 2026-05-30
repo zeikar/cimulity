@@ -10,6 +10,7 @@ export enum Tool {
   ZONE_INDUSTRIAL = 'zone_industrial',
   BULLDOZE = 'bulldoze',
   POWER_PLANT = 'power_plant',
+  WATER_TOWER = 'water_tower',
   TERRAIN_UP = 'terrain_up',
   TERRAIN_DOWN = 'terrain_down',
   TERRAIN_LEVEL = 'terrain_level',

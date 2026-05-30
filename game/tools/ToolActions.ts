@@ -148,9 +148,9 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
       for (const { x, y } of tiles) {
         const currentTile = map.getTile(x, y);
         if (!currentTile) continue;
-        if (currentTile.type === TileType.POWER_PLANT) {
-          // Expand to the full structure footprint so the drag preview covers all
-          // cells the bulldoze will destroy, not just the hovered cell.
+        // Structure tiles (POWER_PLANT, WATER_TOWER): expand to full structure footprint so the
+        // drag preview covers all cells the bulldoze will destroy, not just the hovered cell.
+        if (currentTile.type === TileType.POWER_PLANT || currentTile.type === TileType.WATER_TOWER) {
           const structure = world.getStructureMap().getStructureAt(x, y);
           if (structure !== null) {
             for (const cell of structure.footprint) addPathTile(cell);
@@ -174,7 +174,18 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
     case Tool.POWER_PLANT: {
       // `tiles[0]` IS the NW anchor — `pathForTool(Tool.POWER_PLANT, start, end)` returns
       // `[start]`, so the preview path has exactly one tile.
-      if (tiles.length > 0 && classifyPowerPlant(world, tiles[0].x, tiles[0].y) === 'reject') {
+      if (tiles.length > 0 && classifyStructurePlacement(world, tiles[0].x, tiles[0].y, 'power_plant') === 'reject') {
+        rejected = [tiles[0]];
+      } else {
+        rejected = [];
+      }
+      allOrNothingBlocked = false;
+      return { pathTiles, rejected, allOrNothingBlocked, affectedBuildingIds };
+    }
+    case Tool.WATER_TOWER: {
+      // `tiles[0]` IS the NW anchor — `pathForTool(Tool.WATER_TOWER, start, end)` returns
+      // `[start]`, so the preview path has exactly one tile.
+      if (tiles.length > 0 && classifyStructurePlacement(world, tiles[0].x, tiles[0].y, 'water_tower') === 'reject') {
         rejected = [tiles[0]];
       } else {
         rejected = [];
@@ -222,6 +233,8 @@ export function buildToolCommands(
       return buildTerrainLevelCommands(tiles, world, dragStart);
     case Tool.POWER_PLANT:
       return buildPowerPlantCommands(dragStart, world);
+    case Tool.WATER_TOWER:
+      return buildWaterTowerCommands(dragStart, world);
     default:
       return [];
   }
@@ -243,9 +256,9 @@ function buildRoadCommands(tiles: TileCoord[], world: World): ToolCommand[] {
  * Build bulldoze commands.
  * Clears roads and zone tiles to a dirt scar that the simulation regrows to
  * grass on the next tick. Natural terrain (water, grass, dirt) is left
- * untouched. A bulldoze on any cell of a power plant emits one
- * `remove-structure` per plant in the batch — cost is charged once per plant
- * regardless of how many of its cells the bulldoze path overlaps.
+ * untouched. A bulldoze on any cell of a power plant or water tower emits one
+ * `remove-structure` per structure in the batch — cost is charged once per
+ * structure regardless of how many of its cells the bulldoze path overlaps.
  */
 function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] {
   const map = world.getMap();
@@ -258,9 +271,11 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
 
     if (!currentTile) continue;
 
-    if (currentTile.type === TileType.POWER_PLANT) {
+    // Structure tile: emit one remove-structure per structure (dedup by id).
+    // Applies to all structure tile types (POWER_PLANT and WATER_TOWER are both registered in StructureMap).
+    if (currentTile.type === TileType.POWER_PLANT || currentTile.type === TileType.WATER_TOWER) {
       const s = world.getStructureMap().getStructureAt(x, y);
-      // Defensive: by invariant (Task 5 + Task 7) s is never null when tile is POWER_PLANT.
+      // Defensive: by invariant s is never null when tile is a structure type.
       // If null, skip — the dispatcher's invariant check enforces correctness for production.
       if (s === null) continue;
       if (!seenStructures.has(s.id)) {
@@ -307,25 +322,40 @@ export function powerPlantFootprint(anchor: TileCoord): TileCoord[] {
   return structureFootprint(anchor, 'power_plant');
 }
 
-function classifyPowerPlant(world: World, x: number, y: number): 'emit' | 'reject' {
+/**
+ * Shared placement validator for any 2×2 service structure (power plant, water
+ * tower). Identical rules for every structure type — only the footprint size
+ * (via the type) differs — so power and water share one body to prevent drift.
+ */
+function classifyStructurePlacement(
+  world: World,
+  x: number,
+  y: number,
+  type: StructureType,
+): 'emit' | 'reject' {
   const map = world.getMap();
   // Reject if anchor or SE corner is out of bounds.
   if (!map.getTile(x, y) || !map.getTile(x + 1, y + 1)) return 'reject';
-  // Check all 4 cells of the 2×2 footprint via the shared helper.
-  for (const { x: cx, y: cy } of structureFootprint({ x, y }, 'power_plant')) {
+  // Check all footprint cells via the shared helper.
+  for (const { x: cx, y: cy } of structureFootprint({ x, y }, type)) {
     const tile = map.getTile(cx, cy);
     if (!tile || tile.type !== TileType.GRASS) return 'reject';
     if (map.getBuildings().getBuildingAt(cx, cy) !== null) return 'reject';
     if (world.getStructureMap().getStructureAt(cx, cy) !== null) return 'reject';
   }
-  // Reject if the 2×2 slab is not flat (delegates to Terrain.isFlatArea).
+  // Reject if the slab is not flat (delegates to Terrain.isFlatArea).
   if (!world.canBuildAt(x, y, 2, 2)) return 'reject';
   return 'emit';
 }
 
 function buildPowerPlantCommands(tile: TileCoord, world: World): ToolCommand[] {
-  if (classifyPowerPlant(world, tile.x, tile.y) === 'reject') return [];
+  if (classifyStructurePlacement(world, tile.x, tile.y, 'power_plant') === 'reject') return [];
   return [{ kind: 'place-structure', x: tile.x, y: tile.y, structureType: 'power_plant' }];
+}
+
+function buildWaterTowerCommands(tile: TileCoord, world: World): ToolCommand[] {
+  if (classifyStructurePlacement(world, tile.x, tile.y, 'water_tower') === 'reject') return [];
+  return [{ kind: 'place-structure', x: tile.x, y: tile.y, structureType: 'water_tower' }];
 }
 
 function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: World): ToolCommand[] {
