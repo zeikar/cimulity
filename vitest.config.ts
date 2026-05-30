@@ -58,6 +58,7 @@ export default defineConfig({
         'game/render/terrain/terrainZIndex.ts',
         'game/render/visuals/polygon/cubePalette.ts',
         'game/render/visuals/polygon/powerPlantGeometry.ts',
+        'game/render/visuals/polygon/waterTowerGeometry.ts',
         'game/core/roadNetworkPropagation.ts',
         'game/core/WaterMap.ts',
       ],
