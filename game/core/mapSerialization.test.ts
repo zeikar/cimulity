@@ -576,13 +576,13 @@ describe('v12 structure persistence', () => {
 
   it('rejects a v12 where a water_tower structure footprint cell t[] is not WATER_TOWER', () => {
     const W = 8;
-    // Use the plant base but inject a water_tower structure whose footprint cell is GRASS.
+    // Use the plant base but inject a 1×1 water_tower structure whose footprint cell is GRASS.
     const base = makeV12BaseWithPlant();
-    // Place water_tower structure at (5,5) but leave those tiles as GRASS (mismatch).
+    // Place water_tower structure at (5,5) but leave that tile as GRASS (mismatch).
     base.s.push({
       id: 1,
       type: 'water_tower',
-      foot: [[5, 5], [6, 5], [5, 6], [6, 6]],
+      foot: [[5, 5]],
       anc: [5, 5],
     });
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -591,11 +591,11 @@ describe('v12 structure persistence', () => {
   it('rejects a v12 where a water_tower overlaps a power_plant', () => {
     const W = 8;
     const base = makeV12BaseWithPlant();
-    // Attempt to place a water_tower structure overlapping the plant at (2,2).
+    // Attempt to place a 1×1 water_tower structure overlapping the plant at (2,2).
     base.s.push({
       id: 1,
       type: 'water_tower',
-      foot: [[2, 2], [3, 2], [2, 3], [3, 3]],
+      foot: [[2, 2]],
       anc: [2, 2],
     });
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -604,7 +604,23 @@ describe('v12 structure persistence', () => {
   it('rejects a v12 where a water_tower anchor fails isFlatArea (sloped corner)', () => {
     const W = 8;
     const base = makeV12BaseWithPlant();
-    // Set WATER_TOWER tiles at a non-overlapping site (5,5)–(6,6).
+    // Set WATER_TOWER tile at a non-overlapping site (5,5).
+    base.t[5 * W + 5] = TileType.WATER_TOWER;
+    base.s.push({
+      id: 1,
+      type: 'water_tower',
+      foot: [[5, 5]],
+      anc: [5, 5],
+    });
+    // Break flatness: vertex (6,6) — SE outer corner of the 1×1 slab — to height 3.
+    base.terrain.vertexHeights[6][6] = 3;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v12 with a 2×2 water_tower footprint (wrong size, should be 1×1)', () => {
+    const W = 8;
+    const base = makeV12BaseWithPlant();
+    // 2×2 water_tower footprint is now invalid (1×1 is the correct size).
     base.t[5 * W + 5] = TileType.WATER_TOWER;
     base.t[5 * W + 6] = TileType.WATER_TOWER;
     base.t[6 * W + 5] = TileType.WATER_TOWER;
@@ -613,21 +629,6 @@ describe('v12 structure persistence', () => {
       id: 1,
       type: 'water_tower',
       foot: [[5, 5], [6, 5], [5, 6], [6, 6]],
-      anc: [5, 5],
-    });
-    // Break flatness: vertex (7,7) — SE outer corner of the 2×2 slab — to height 3.
-    base.terrain.vertexHeights[7][7] = 3;
-    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
-  });
-
-  it('rejects a v12 with a 1×1 water_tower footprint', () => {
-    const W = 8;
-    const base = makeV12BaseWithPlant();
-    base.t[5 * W + 5] = TileType.WATER_TOWER;
-    base.s.push({
-      id: 1,
-      type: 'water_tower',
-      foot: [[5, 5]],
       anc: [5, 5],
     });
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -653,20 +654,17 @@ describe('v12 structure persistence', () => {
       }
     }
     const map = src.getMap();
-    // Write WATER_TOWER tiles and register the structure at (4,4).
+    // Write a single WATER_TOWER tile and register the 1×1 structure at (4,4).
     map.setTile(4, 4, createTile(4, 4, TileType.WATER_TOWER));
-    map.setTile(5, 4, createTile(5, 4, TileType.WATER_TOWER));
-    map.setTile(4, 5, createTile(4, 5, TileType.WATER_TOWER));
-    map.setTile(5, 5, createTile(5, 5, TileType.WATER_TOWER));
     src.getStructureMap().addExistingStructure({
       id: 0,
       type: 'water_tower',
-      footprint: [{ x: 4, y: 4 }, { x: 5, y: 4 }, { x: 4, y: 5 }, { x: 5, y: 5 }],
+      footprint: [{ x: 4, y: 4 }],
       anchor: { x: 4, y: 4 },
     });
-    // Add a road and a zone tile.
-    map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
-    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    // Add a road adjacent to the tower (waters it) and a zone tile.
+    map.setTile(4, 3, createTile(4, 3, TileType.ROAD));
+    map.setTile(5, 3, createTile(5, 3, TileType.ZONE_RESIDENTIAL));
 
     const json1 = serializeWorld(src);
     const dst = new World(W, W, { regenerate: false });
@@ -695,16 +693,12 @@ describe('v12 structure persistence', () => {
       footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
       anchor: { x: 0, y: 0 },
     });
-    // Water tower at (4,4).
-    for (let dy = 0; dy <= 1; dy++) {
-      for (let dx = 0; dx <= 1; dx++) {
-        map.setTile(4 + dx, 4 + dy, createTile(4 + dx, 4 + dy, TileType.WATER_TOWER));
-      }
-    }
+    // Water tower at (4,4) — 1×1 single cell.
+    map.setTile(4, 4, createTile(4, 4, TileType.WATER_TOWER));
     src.getStructureMap().addExistingStructure({
       id: 1,
       type: 'water_tower',
-      footprint: [{ x: 4, y: 4 }, { x: 5, y: 4 }, { x: 4, y: 5 }, { x: 5, y: 5 }],
+      footprint: [{ x: 4, y: 4 }],
       anchor: { x: 4, y: 4 },
     });
 
@@ -717,10 +711,9 @@ describe('v12 structure persistence', () => {
   });
 
   it('hydrate: isWatered reflects tower+roads immediately after deserializeWorldInto (no tick/recompute needed)', () => {
-    // Tower at (2,2)-(3,3), roads at (2,4),(1,4),(0,4) — road chain adjacent to tower's south edge.
+    // Tower at (2,3) — 1×1, adjacent to road (2,4). Road chain (0,4),(1,4),(2,4).
     // After load, all three road cells should be watered. No tick or manual recompute.
     const W = 8;
-    // Build a valid save with a water tower and adjacent roads.
     const src = new World(W, W, { regenerate: false });
     for (let vy = 0; vy <= W; vy++) {
       for (let vx = 0; vx <= W; vx++) {
@@ -728,18 +721,15 @@ describe('v12 structure persistence', () => {
       }
     }
     const map = src.getMap();
-    // Water tower at (2,2).
-    map.setTile(2, 2, createTile(2, 2, TileType.WATER_TOWER));
-    map.setTile(3, 2, createTile(3, 2, TileType.WATER_TOWER));
+    // Water tower at (2,3) — single cell adjacent to road (2,4).
     map.setTile(2, 3, createTile(2, 3, TileType.WATER_TOWER));
-    map.setTile(3, 3, createTile(3, 3, TileType.WATER_TOWER));
     src.getStructureMap().addExistingStructure({
       id: 0,
       type: 'water_tower',
-      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
-      anchor: { x: 2, y: 2 },
+      footprint: [{ x: 2, y: 3 }],
+      anchor: { x: 2, y: 3 },
     });
-    // Roads adjacent to tower's south edge.
+    // Road chain (0,4),(1,4),(2,4). Tower at (2,3) adj to road (2,4) → seeds BFS.
     map.setTile(0, 4, createTile(0, 4, TileType.ROAD));
     map.setTile(1, 4, createTile(1, 4, TileType.ROAD));
     map.setTile(2, 4, createTile(2, 4, TileType.ROAD));

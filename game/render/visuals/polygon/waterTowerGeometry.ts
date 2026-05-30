@@ -1,6 +1,7 @@
 /**
- * Pure geometry for the water tower structure — a 2×2 body with a single
- * elevated tank cube on top, anchored at the NW corner cell of the footprint.
+ * Pure geometry for the water tower structure — a compact 1×1 support body with
+ * a single elevated tank cube stacked on top, giving a tall, narrow silhouette
+ * distinct from the broad 2×2 power plant.
  *
  * No Pixi imports. All coordinates are anchor-local screen space
  * (origin at tileToScreen(structureAnchor)).
@@ -10,7 +11,7 @@ import { rectangularUnionTopPolygon } from './cubeGeometry';
 import type { Point } from './cubeGeometry';
 import { tileToScreen } from '@/game/render/IsoTransform';
 
-// BODY_HEIGHT_PX: vertical extent of the 2×2 base block.
+// BODY_HEIGHT_PX: vertical extent of the 1×1 support column.
 // TANK_HEIGHT_PX: vertical extent of the elevated tank cube above the body roof.
 // The tank sits on the body roof (baseHeightPx = BODY_HEIGHT_PX) and rises by
 // TANK_HEIGHT_PX above it, so the tank top ends at BODY_HEIGHT_PX + TANK_HEIGHT_PX
@@ -20,7 +21,7 @@ export const TANK_HEIGHT_PX = 45;
 
 export interface WaterTowerCubeSpec {
   cells: ReadonlyArray<{ x: number; y: number }>;
-  /** NW cell of this spec (body anchor = structureAnchor; tank anchor = NW corner cell). */
+  /** NW cell of this spec — for the 1×1 tower both specs sit on structureAnchor. */
   anchor: { x: number; y: number };
   /** Cube's own vertical extent (top minus bottom). */
   heightPx: number;
@@ -30,13 +31,12 @@ export interface WaterTowerCubeSpec {
 }
 
 /**
- * Returns the fixed 2×2 composition for a water tower:
- *   - one body spec covering the full 2×2 rect at BODY_HEIGHT_PX
- *   - one tank spec anchored at the NW corner cell (structureAnchor) at TANK_HEIGHT_PX
+ * Returns the fixed 1×1 composition for a water tower:
+ *   - one body spec covering the single footprint cell at BODY_HEIGHT_PX
+ *   - one tank spec stacked on the body roof at TANK_HEIGHT_PX
  *
- * The tank is placed at the NW corner (structureAnchor itself), which is a
- * concrete integer-tile cell in the footprint. A 2×2 footprint has no center
- * cell in the integer-tile geometry model, so no non-existent center cell is used.
+ * Both specs occupy the single footprint cell (structureAnchor), so the tower
+ * renders as one tall column split into a body band and a taller tank band.
  */
 export function waterTowerCubeSpecs(
   structureAnchor: { x: number; y: number },
@@ -44,27 +44,19 @@ export function waterTowerCubeSpecs(
   const ax = structureAnchor.x;
   const ay = structureAnchor.y;
 
-  const bodyCells = [
-    { x: ax,     y: ay     },
-    { x: ax + 1, y: ay     },
-    { x: ax,     y: ay + 1 },
-    { x: ax + 1, y: ay + 1 },
-  ];
-
-  // Tank sits on the NW corner cell — the same as structureAnchor.
-  const tankAnchor = { x: ax, y: ay };
+  const cell = [{ x: ax, y: ay }];
 
   return [
     {
-      cells: bodyCells,
+      cells: cell,
       anchor: { x: ax, y: ay },
       heightPx: BODY_HEIGHT_PX,
       baseHeightPx: 0,
       role: 'body',
     },
     {
-      cells: [{ x: ax, y: ay }],
-      anchor: tankAnchor,
+      cells: cell,
+      anchor: { x: ax, y: ay },
       heightPx: TANK_HEIGHT_PX,
       baseHeightPx: BODY_HEIGHT_PX,
       role: 'tank',
@@ -94,8 +86,7 @@ export function waterTowerCubeFaces(
   const dx = specScreen.x - structScreen.x;
   const dy = specScreen.y - structScreen.y;
 
-  // Both body (multi-cell NW-anchored rect) and tank (single-cell, which is
-  // also a valid NW-anchored 1×1 rect) are structurally guaranteed non-null.
+  // Both body and tank are single-cell (1×1) rects, structurally non-null.
   const unlifted = rectangularUnionTopPolygon(spec.cells, spec.anchor)!;
 
   // Translate to structure-anchor-local frame and lift to the cube roof.

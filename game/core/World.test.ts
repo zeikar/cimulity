@@ -33,8 +33,7 @@ function seedWater(world: World, ax: number, ay: number): void {
     type: 'water_tower',
     anchor: { x: ax, y: ay },
     footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+      { x: ax, y: ay },
     ],
   });
   world.markWaterDirty();
@@ -766,8 +765,7 @@ describe('World.reset() — water cleanup', () => {
       type: 'water_tower',
       anchor: { x: 0, y: 0 },
       footprint: [
-        { x: 0, y: 0 }, { x: 1, y: 0 },
-        { x: 0, y: 1 }, { x: 1, y: 1 },
+        { x: 0, y: 0 },
       ],
     });
     map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
@@ -951,7 +949,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
   //   Road A: (5,3),(6,3). Road B (negative): (8,3) isolated by GRASS at (7,3).
   //   Power A: plant (3,3)–(4,4); cell (4,3) adj (5,3)=ROAD A → seeds A network.
   //   Power B: plant (9,2)–(10,3); cell (9,3) adj (8,3)=ROAD B → seeds B.
-  //   Water (negative): tower (5,4)–(6,5); (5,4) adj (5,3) + (6,4) adj (6,3) → BFS seeds A network,
+  //   Water (negative): tower (5,4) (1×1); (5,4) adj (5,3)=ROAD A → BFS seeds A network ((5,3)→(6,3) via road),
   //     stops at GRASS (7,3). B road (8,3) unreachable → B NOT watered.
   //   Water (positive): (7,3) is ROAD (gap filled); same tower waters full (5,3)→(8,3) row.
 
@@ -974,7 +972,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     seedPower(world, 3, 3);
     // Power B: plant (9,2)–(10,3); (9,3) adj (8,3)=ROAD B.
     seedPower(world, 9, 2);
-    // Water A only: tower (5,4)–(6,5); (5,4) adj (5,3) + (6,4) adj (6,3); BFS stops at GRASS (7,3).
+    // Water A only: tower (5,4) (1×1); (5,4) adj (5,3)=ROAD A; A network = (5,3)→(6,3); BFS stops at GRASS (7,3).
     seedWater(world, 5, 4);
 
     // Unconditional precondition pins — test fails loudly if water wiring regresses.
@@ -1083,7 +1081,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // Demand sources: commercial buildings at level 20 → residentialDemand = (20-5)/20+0.25 ≈ 1.0 >> 0.6.
     // Power: plant at (4,3)–(5,4) adj to road (4,2). No tower initially → not watered.
     // Phase 1: run ticks WITHOUT water → density stays 0, age increases (not water-gated).
-    // Phase 2: add tower (7,3)–(8,4) adj road (7,2) → building watered → density bumps to 1.
+    // Phase 2: add tower (7,3) (1×1) adj road (7,2) → building watered → density bumps to 1.
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1131,7 +1129,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(mid.age).toBeGreaterThan(DENSITY_COOLDOWN_INTERVALS);
 
     // Phase 2: add tower → building becomes watered → density MUST advance.
-    seedWater(world, 7, 3); // tower (7,3)–(8,4); (7,3) adj road (7,2) → waters road row
+    seedWater(world, 7, 3); // tower (7,3) (1×1); (7,3) adj road (7,2) → waters road row
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true); // confirm water reached building
     // Reset age so the next growth tick fires the density gate (age >= DENSITY_COOLDOWN_INTERVALS guaranteed).
     mid.age = DENSITY_COOLDOWN_INTERVALS + 10;

@@ -323,7 +323,7 @@ export function powerPlantFootprint(anchor: TileCoord): TileCoord[] {
 }
 
 /**
- * Shared placement validator for any 2×2 service structure (power plant, water
+ * Shared placement validator for any service structure (power plant, water
  * tower). Identical rules for every structure type — only the footprint size
  * (via the type) differs — so power and water share one body to prevent drift.
  */
@@ -334,8 +334,9 @@ function classifyStructurePlacement(
   type: StructureType,
 ): 'emit' | 'reject' {
   const map = world.getMap();
-  // Reject if anchor or SE corner is out of bounds.
-  if (!map.getTile(x, y) || !map.getTile(x + 1, y + 1)) return 'reject';
+  const { w, h } = structureFootprintSize(type);
+  // Reject if anchor or SE corner of the footprint is out of bounds.
+  if (!map.getTile(x, y) || !map.getTile(x + w - 1, y + h - 1)) return 'reject';
   // Check all footprint cells via the shared helper.
   for (const { x: cx, y: cy } of structureFootprint({ x, y }, type)) {
     const tile = map.getTile(cx, cy);
@@ -343,8 +344,8 @@ function classifyStructurePlacement(
     if (map.getBuildings().getBuildingAt(cx, cy) !== null) return 'reject';
     if (world.getStructureMap().getStructureAt(cx, cy) !== null) return 'reject';
   }
-  // Reject if the slab is not flat (delegates to Terrain.isFlatArea).
-  if (!world.canBuildAt(x, y, 2, 2)) return 'reject';
+  // Reject if the footprint area is not flat (delegates to Terrain.isFlatArea).
+  if (!world.canBuildAt(x, y, w, h)) return 'reject';
   return 'emit';
 }
 

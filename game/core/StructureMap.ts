@@ -21,14 +21,15 @@ export interface Structure {
 }
 
 /** Single source of truth for footprint dimensions per structure type.
- *  Cases are kept explicit even though both are 2×2 today — a new structure with a different
- *  size stays mechanical to add and the switch exhaustiveness check catches any omission. */
+ *  Power plants are a broad 2×2 industrial block; water towers are a compact 1×1
+ *  tall tank, so they read as visually distinct structures. The switch
+ *  exhaustiveness check catches any omitted type. */
 export function structureFootprintSize(type: StructureType): { w: number; h: number } {
   switch (type) {
     case 'power_plant':
       return { w: 2, h: 2 };
     case 'water_tower':
-      return { w: 2, h: 2 };
+      return { w: 1, h: 1 };
   }
 }
 

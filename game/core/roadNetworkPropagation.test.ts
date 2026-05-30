@@ -35,16 +35,13 @@ function addPlant(sm: StructureMap, ox: number, oy: number) {
   });
 }
 
-/** Canonical 2×2 NW-anchored water_tower. */
+/** Canonical 1×1 water_tower. */
 function addTower(sm: StructureMap, ox: number, oy: number) {
   return sm.addStructure({
     type: 'water_tower',
     anchor: { x: ox, y: oy },
     footprint: [
-      { x: ox,     y: oy     },
-      { x: ox + 1, y: oy     },
-      { x: ox,     y: oy + 1 },
-      { x: ox + 1, y: oy + 1 },
+      { x: ox, y: oy },
     ],
   });
 }
@@ -223,7 +220,7 @@ describe('propagateThroughRoadNetwork', () => {
     function makeMixedSm(sm: StructureMap) {
       // Plant NW at (0,2): footprint (0,2),(1,2),(0,3),(1,3). Adjacent to road (0,1).
       addPlant(sm, 0, 2);
-      // Tower NW at (4,2): footprint (4,2),(5,2),(4,3),(5,3). Adjacent to road (4,1).
+      // Tower at (4,2): single cell. Adjacent to road (4,1).
       addTower(sm, 4, 2);
     }
 
@@ -295,11 +292,8 @@ describe('propagateThroughRoadNetwork', () => {
       expect(r1[2 * 10 + 1]).toBe(0);
       expect(r1[3 * 10 + 0]).toBe(0);
       expect(r1[3 * 10 + 1]).toBe(0);
-      // tower footprint: (4,2),(5,2),(4,3),(5,3) — all must be 0
+      // tower footprint: (4,2) — must be 0
       expect(r1[2 * 10 + 4]).toBe(0);
-      expect(r1[2 * 10 + 5]).toBe(0);
-      expect(r1[3 * 10 + 4]).toBe(0);
-      expect(r1[3 * 10 + 5]).toBe(0);
 
       // Test with tower selector
       const sm2 = new StructureMap(10, 10);
@@ -309,10 +303,8 @@ describe('propagateThroughRoadNetwork', () => {
       expect(r2[2 * 10 + 1]).toBe(0);
       expect(r2[3 * 10 + 0]).toBe(0);
       expect(r2[3 * 10 + 1]).toBe(0);
+      // tower footprint: (4,2) — must be 0
       expect(r2[2 * 10 + 4]).toBe(0);
-      expect(r2[2 * 10 + 5]).toBe(0);
-      expect(r2[3 * 10 + 4]).toBe(0);
-      expect(r2[3 * 10 + 5]).toBe(0);
     });
   });
 });

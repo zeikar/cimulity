@@ -36,19 +36,10 @@ describe('waterTowerCubeSpecs', () => {
     expect(tanks.length).toBe(1);
   });
 
-  it('body spec covers the full 2×2 rect', () => {
+  it('body spec covers the single anchor cell (1×1)', () => {
     const body = specs.find((s) => s.role === 'body')!;
-    expect(body.cells.length).toBe(4);
-
-    const expected = new Set([
-      `${anchor.x},${anchor.y}`,
-      `${anchor.x + 1},${anchor.y}`,
-      `${anchor.x},${anchor.y + 1}`,
-      `${anchor.x + 1},${anchor.y + 1}`,
-    ]);
-    for (const c of body.cells) {
-      expect(expected.has(`${c.x},${c.y}`)).toBe(true);
-    }
+    expect(body.cells.length).toBe(1);
+    expect(body.cells[0]).toEqual(anchor);
   });
 
   it('body spec anchor equals structureAnchor', () => {

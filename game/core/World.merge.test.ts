@@ -24,8 +24,7 @@ function seedWater(world: World, ax: number, ay: number): void {
     type: 'water_tower',
     anchor: { x: ax, y: ay },
     footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+      { x: ax, y: ay },
     ],
   });
   world.markWaterDirty();

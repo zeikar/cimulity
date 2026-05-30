@@ -20,16 +20,13 @@ function makeMap(
   return map;
 }
 
-/** Place a canonical 2×2 water tower with NW anchor at (ox, oy). */
+/** Place a canonical 1×1 water tower at (ox, oy). */
 function addTower(structures: StructureMap, ox: number, oy: number) {
   return structures.addStructure({
     type: 'water_tower',
     anchor: { x: ox, y: oy },
     footprint: [
-      { x: ox,     y: oy     },
-      { x: ox + 1, y: oy     },
-      { x: ox,     y: oy + 1 },
-      { x: ox + 1, y: oy + 1 },
+      { x: ox, y: oy },
     ],
   });
 }
@@ -65,19 +62,16 @@ describe('WaterMap', () => {
   });
 
   describe('standalone tower with no adjacent road', () => {
-    it('nothing is watered; tower cells are false', () => {
-      // Tower at (1,1)...(2,2) — surrounded by GRASS, no roads.
+    it('nothing is watered; tower cell is false', () => {
+      // Tower at (1,1) — single cell, surrounded by GRASS, no roads.
       const map = makeMap(10, 10, []);
       const structures = new StructureMap(10, 10);
       addTower(structures, 1, 1);
       const water = new WaterMap(10, 10);
       water.recompute(map, structures);
 
-      // Tower footprint cells
+      // Tower footprint cell
       expect(water.isWatered(1, 1)).toBe(false);
-      expect(water.isWatered(2, 1)).toBe(false);
-      expect(water.isWatered(1, 2)).toBe(false);
-      expect(water.isWatered(2, 2)).toBe(false);
 
       // An arbitrary non-tower cell
       expect(water.isWatered(5, 5)).toBe(false);
@@ -86,8 +80,8 @@ describe('WaterMap', () => {
 
   describe('tower adjacent to one road cell', () => {
     let water: WaterMap;
-    // Tower NW anchor at (1,1) occupies (1,1),(2,1),(1,2),(2,2).
-    // Road placed at (1,0) — orthogonally adjacent to (1,1), a tower cell.
+    // Tower at (1,1) — single cell.
+    // Road placed at (1,0) — orthogonally adjacent to tower cell (1,1).
     beforeEach(() => {
       const map = makeMap(10, 10, [{ x: 1, y: 0, type: TileType.ROAD }]);
       const structures = new StructureMap(10, 10);
@@ -100,11 +94,8 @@ describe('WaterMap', () => {
       expect(water.isWatered(1, 0)).toBe(true);
     });
 
-    it('tower footprint cells are NOT watered', () => {
+    it('tower footprint cell is NOT watered', () => {
       expect(water.isWatered(1, 1)).toBe(false);
-      expect(water.isWatered(2, 1)).toBe(false);
-      expect(water.isWatered(1, 2)).toBe(false);
-      expect(water.isWatered(2, 2)).toBe(false);
     });
 
     it('non-structure orthogonal neighbors of the road cell are watered', () => {
@@ -117,7 +108,7 @@ describe('WaterMap', () => {
   describe('5-tile road line with tower touching one end', () => {
     let water: WaterMap;
     // Road: (0,0),(1,0),(2,0),(3,0),(4,0).
-    // Tower NW anchor at (0,1) occupies (0,1),(1,1),(0,2),(1,2).
+    // Tower at (0,1) — single cell.
     // Tower cell (0,1) is orthogonally adjacent to road (0,0) → seeds the BFS.
     beforeEach(() => {
       const map = makeMap(10, 10, [
@@ -144,11 +135,8 @@ describe('WaterMap', () => {
       expect(water.isWatered(5, 0)).toBe(true);
     });
 
-    it('tower footprint cells stay unwatered', () => {
+    it('tower footprint cell stays unwatered', () => {
       expect(water.isWatered(0, 1)).toBe(false);
-      expect(water.isWatered(1, 1)).toBe(false);
-      expect(water.isWatered(0, 2)).toBe(false);
-      expect(water.isWatered(1, 2)).toBe(false);
     });
   });
 

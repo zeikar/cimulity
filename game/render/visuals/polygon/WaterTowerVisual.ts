@@ -1,7 +1,7 @@
 /**
  * Render-only visual for the water tower structure.
  *
- * Draws the 2×2 body cube first (always beneath the tank), then the single
+ * Draws the 1×1 body cube first (always beneath the tank), then the single
  * elevated tank cube above it. All face geometry comes from `waterTowerCubeFaces`
  * — no iso/lift math is duplicated here.
  *
