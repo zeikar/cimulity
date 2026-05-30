@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildToolCommands, buildToolPreview } from './ToolActions';
+import { buildToolCommands, buildToolPreview, structureFootprint } from './ToolActions';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from './Tool';
 import { World } from '../core/World';
@@ -774,5 +774,91 @@ describe('buildToolPreview - BULLDOZE with POWER_PLANT', () => {
     placePlant(world, 2, 2);
     const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 2, y: 2 }], world);
     expect(preview.affectedBuildingIds.size).toBe(0);
+  });
+});
+
+describe('structureFootprint helper', () => {
+  it('returns 4 expected cells for water_tower', () => {
+    const cells = structureFootprint({ x: 2, y: 3 }, 'water_tower');
+    expect(cells).toHaveLength(4);
+    expect(cells).toContainEqual({ x: 2, y: 3 });
+    expect(cells).toContainEqual({ x: 3, y: 3 });
+    expect(cells).toContainEqual({ x: 2, y: 4 });
+    expect(cells).toContainEqual({ x: 3, y: 4 });
+  });
+
+  it('returns 4 expected cells for power_plant (regression guard)', () => {
+    const cells = structureFootprint({ x: 1, y: 1 }, 'power_plant');
+    expect(cells).toHaveLength(4);
+    expect(cells).toContainEqual({ x: 1, y: 1 });
+    expect(cells).toContainEqual({ x: 2, y: 1 });
+    expect(cells).toContainEqual({ x: 1, y: 2 });
+    expect(cells).toContainEqual({ x: 2, y: 2 });
+  });
+});
+
+describe('buildToolCommands - WATER_TOWER cell rejection', () => {
+  beforeEach(() => {
+    // Place a 2×2 WATER_TOWER footprint at (2,2) for rejection tests.
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.WATER_TOWER));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.WATER_TOWER));
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.WATER_TOWER));
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.WATER_TOWER));
+  });
+
+  it('ROAD returns [] when target is WATER_TOWER (transactional)', () => {
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ROAD rejects a mixed path containing a WATER_TOWER tile (transactional: all-or-nothing)', () => {
+    expect(buildToolCommands(Tool.ROAD, [{ x: 0, y: 0 }, { x: 2, y: 2 }], world, { x: 0, y: 0 })).toEqual([]);
+  });
+
+  it('ZONE_RESIDENTIAL returns [] over WATER_TOWER', () => {
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL returns [] over WATER_TOWER', () => {
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_INDUSTRIAL returns [] over WATER_TOWER', () => {
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP produces no vertex writes touching tower cells', () => {
+    // WATER_TOWER cells are structured — terrain tool skips them entirely.
+    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP skips WATER_TOWER cells in a mixed path', () => {
+    // (2,2) is WATER_TOWER (structured-cell skip); (5,5) is plain grass — gets raised.
+    const commands = buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }, { x: 5, y: 5 }], world, { x: 2, y: 2 });
+    expect(commands).toHaveLength(1);
+    if (commands[0].kind !== 'vertex-edit') throw new Error('expected vertex-edit');
+    // Vertices from the WATER_TOWER tile must NOT appear in the writes.
+    const written = commands[0].writes.map(({ vx, vy }) => `${vx},${vy}`);
+    // (2,2),(3,2),(2,3),(3,3) are all corners of the tower cells — none should be written.
+    for (const v of ['2,2','3,2','2,3','3,3']) {
+      expect(written).not.toContain(v);
+    }
+    // Vertices from (5,5) should be present.
+    expect(written).toContain('5,5');
+  });
+});
+
+describe('buildToolCommands - POWER_PLANT regression after structureFootprint repoint', () => {
+  it('still emits place-structure on flat grass', () => {
+    const result = buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toEqual([{ kind: 'place-structure', x: 2, y: 2, structureType: 'power_plant' }]);
+  });
+
+  it('still rejects when 2×2 is out of bounds', () => {
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 7, y: 7 }], world, { x: 7, y: 7 })).toEqual([]);
+  });
+
+  it('still rejects when a cell is not grass', () => {
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ROAD));
+    expect(buildToolCommands(Tool.POWER_PLANT, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
   });
 });

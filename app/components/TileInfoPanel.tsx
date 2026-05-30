@@ -38,6 +38,7 @@ const TILE_TYPE_LABELS: Record<TileType, string> = {
   [TileType.ZONE_COMMERCIAL]: 'Commercial Zone',
   [TileType.ZONE_INDUSTRIAL]: 'Industrial Zone',
   [TileType.POWER_PLANT]: 'Power Plant',
+  [TileType.WATER_TOWER]: 'Water Tower',
 };
 
 const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {

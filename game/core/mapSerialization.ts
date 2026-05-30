@@ -1,9 +1,9 @@
 /**
  * World-envelope (de)serialization.
  *
- * v11 is native; v10 and earlier are rejected; `worldStore` falls back to a fresh
+ * v12 is native; v11 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
- * the current `TileType` enum (no `'water'`); coherence (water ⇒ GRASS && no building footprint) is checked after
+ * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
  * it serializes the in-memory `World` as-is; `devApi.seedScene` is the only legitimate
  * producer of incoherent worlds and the load-side rejection is the safety net.
@@ -18,13 +18,28 @@ import type { Frontage, Rect } from './buildingFootprint';
 import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
 import { isStructureType, structureFootprintSize } from './StructureMap';
-import type { Structure } from './StructureMap';
+import type { Structure, StructureType } from './StructureMap';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v11 saves are accepted.
+ * This is the `v` value written to disk. Only native v12 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 11;
+export const WORLD_SAVE_VERSION = 12;
+
+/**
+ * Maps a StructureType to its corresponding TileType — single source of truth so
+ * validateStructuresArray and any future consumers never hard-code the mapping.
+ */
+function structureTileType(type: StructureType): TileType {
+  switch (type) {
+    case 'power_plant': return TileType.POWER_PLANT;
+    case 'water_tower': return TileType.WATER_TOWER;
+  }
+}
+
+/** All tile types that belong exclusively to a structure footprint; used by orphan-tile sweep.
+ *  Must stay in sync with structureTileType() — every StructureType must have its tile here. */
+const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER]);
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
@@ -34,7 +49,7 @@ const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
  */
 interface StructureSaveEntry {
   id: number;
-  type: string;             // 'power_plant'
+  type: string;             // 'power_plant' | 'water_tower'
   foot: [number, number][]; // exactly 4 cells for a 2x2
   anc: [number, number];
 }
@@ -57,7 +72,7 @@ interface BuildingSaveEntry {
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 11).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 12).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` and `s[]` are both sorted by id ascending for deterministic byte-equality across round-trips.
@@ -275,9 +290,10 @@ function validateStructuresArray(
     const maxY = Math.max(...footprint.map((c) => c.y));
     if (maxX - ax + 1 !== sw || maxY - ay + 1 !== sh) return null;
 
-    // Every footprint cell's tile must be POWER_PLANT.
+    // Every footprint cell's tile must match the structure type (e.g. POWER_PLANT or WATER_TOWER).
+    const expectedTile = structureTileType(e.type);
     for (const c of footprint) {
-      if (data.t[c.y * w + c.x] !== TileType.POWER_PLANT) return null;
+      if (data.t[c.y * w + c.x] !== expectedTile) return null;
     }
 
     // No overlap with buildings or prior structures.
@@ -298,10 +314,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v11 world envelope onto an existing World instance.
+ * Apply a serialized v12 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===11 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===12 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
@@ -370,9 +386,10 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   const stagingStructures = validateStructuresArray(data, w, h, occupiedIndices);
   if (stagingStructures === null) return false;
 
-  // Orphan-plant-tile check: every POWER_PLANT tile in t[] must be covered by a staged structure.
+  // Orphan-structure-tile check: every structure tile type (POWER_PLANT, WATER_TOWER) in t[]
+  // must be covered by a staged structure; an uncovered cell is a coherence violation.
   for (let i = 0; i < size; i++) {
-    if (data.t[i] === TileType.POWER_PLANT && !occupiedIndices.has(i)) return false;
+    if (STRUCTURE_TILE_TYPES.has(data.t[i]) && !occupiedIndices.has(i)) return false;
   }
 
   // terrain: native v8 DTO parsed directly.
@@ -427,6 +444,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
 
   // Per-structure terrain check: use isFlatArea (not per-cell isFlatTile) so that
   // four individually-flat cells that don't share vertex heights are also rejected.
+  // structureFootprintSize is the single source of truth — covers both power_plant and water_tower.
   for (const structure of stagingStructures) {
     const { w: sw, h: sh } = structureFootprintSize(structure.type);
     if (!candidateTerrain.isFlatArea(structure.anchor.x, structure.anchor.y, sw, sh, isWater)) {

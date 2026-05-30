@@ -12,10 +12,12 @@ import { SEA_LEVEL, MAX_ELEVATION, tileVertices, tilesTouchingVertex } from '../
 import type { TileCoord } from '../types/coordinates';
 import type { World } from '../core/World';
 import type { ToolCommand } from './ToolCommand';
+import type { StructureType } from '../core/StructureMap';
+import { structureFootprintSize } from '../core/StructureMap';
 
 /**
- * POWER_PLANT tiles are structured — terrain tools refuse to edit vertices
- * under them, just like under a road/zone. Invariant: POWER_PLANT tile ⟺
+ * POWER_PLANT and WATER_TOWER tiles are structured — terrain tools refuse to edit
+ * vertices under them, just like under a road/zone. Invariant: structure tile ⟺
  * StructureMap occupancy (enforced by save validation + dispatcher); checking
  * tile.type is sufficient.
  */
@@ -23,6 +25,7 @@ function isStructuredCell(world: World, tile: Tile, x: number, y: number): boole
   if (tile.type === TileType.ROAD) return true;
   if (isZoneType(tile.type)) return true;
   if (tile.type === TileType.POWER_PLANT) return true;
+  if (tile.type === TileType.WATER_TOWER) return true;
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
 }
 
@@ -57,6 +60,7 @@ function classifyRoadTile(world: World, x: number, y: number): PlaceClassificati
   if (tile.type === TileType.ROAD) return 'skip';
   if (isZoneType(tile.type)) return 'reject';
   if (tile.type === TileType.POWER_PLANT) return 'reject';
+  if (tile.type === TileType.WATER_TOWER) return 'reject';
   if (!world.canBuildRoadAt(x, y)) return 'reject';
   return 'emit';
 }
@@ -67,6 +71,7 @@ function classifyZoneTile(
   const tile = world.getMap().getTile(x, y);
   if (!tile) return 'reject';
   if (tile.type === TileType.POWER_PLANT) return 'reject';
+  if (tile.type === TileType.WATER_TOWER) return 'reject';
   if (tile.type === zoneType) return 'skip';
   const paintable =
     tile.type === TileType.GRASS ||
@@ -280,32 +285,38 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
 }
 
 /**
- * Power plant occupies a 2×2 slab. Single source of truth for its footprint
- * so applyCommands and previewClick never drift from each other.
+ * Shared NW-anchored footprint builder for any 2×2 (or other sized) structure type.
+ * Reads the canonical footprint dimensions from `structureFootprintSize` so this
+ * function and the serialization layer can never drift apart.
+ */
+export function structureFootprint(anchor: TileCoord, type: StructureType): TileCoord[] {
+  const { w, h } = structureFootprintSize(type);
+  const cells: TileCoord[] = [];
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      cells.push({ x: anchor.x + dx, y: anchor.y + dy });
+    }
+  }
+  return cells;
+}
+
+/**
+ * Thin alias retained for existing imports/tests; prefer structureFootprint for new callers.
  */
 export function powerPlantFootprint(anchor: TileCoord): TileCoord[] {
-  return [
-    { x: anchor.x,     y: anchor.y     },
-    { x: anchor.x + 1, y: anchor.y     },
-    { x: anchor.x,     y: anchor.y + 1 },
-    { x: anchor.x + 1, y: anchor.y + 1 },
-  ];
+  return structureFootprint(anchor, 'power_plant');
 }
 
 function classifyPowerPlant(world: World, x: number, y: number): 'emit' | 'reject' {
   const map = world.getMap();
   // Reject if anchor or SE corner is out of bounds.
   if (!map.getTile(x, y) || !map.getTile(x + 1, y + 1)) return 'reject';
-  // Check all 4 cells of the 2×2 footprint.
-  for (let dy = 0; dy <= 1; dy++) {
-    for (let dx = 0; dx <= 1; dx++) {
-      const cx = x + dx;
-      const cy = y + dy;
-      const tile = map.getTile(cx, cy);
-      if (!tile || tile.type !== TileType.GRASS) return 'reject';
-      if (map.getBuildings().getBuildingAt(cx, cy) !== null) return 'reject';
-      if (world.getStructureMap().getStructureAt(cx, cy) !== null) return 'reject';
-    }
+  // Check all 4 cells of the 2×2 footprint via the shared helper.
+  for (const { x: cx, y: cy } of structureFootprint({ x, y }, 'power_plant')) {
+    const tile = map.getTile(cx, cy);
+    if (!tile || tile.type !== TileType.GRASS) return 'reject';
+    if (map.getBuildings().getBuildingAt(cx, cy) !== null) return 'reject';
+    if (world.getStructureMap().getStructureAt(cx, cy) !== null) return 'reject';
   }
   // Reject if the 2×2 slab is not flat (delegates to Terrain.isFlatArea).
   if (!world.canBuildAt(x, y, 2, 2)) return 'reject';

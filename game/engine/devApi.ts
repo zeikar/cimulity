@@ -40,7 +40,7 @@ export interface SeedBuildingSpec {
 }
 
 export interface SeedSceneSpec {
-  /** Tiles to write via `map.setTile`. Existing tiles at the same coord are overwritten. POWER_PLANT is forbidden — place plants via `executeClick(Tool.POWER_PLANT, ...)`. */
+  /** Tiles to write via `map.setTile`. Existing tiles at the same coord are overwritten. POWER_PLANT and WATER_TOWER are forbidden — place them via their respective placement tools. */
   tiles?: ReadonlyArray<{ x: number; y: number; type: TileType; level?: number }>;
   /** Buildings to hydrate via `buildings.addExistingBuilding`. */
   buildings?: ReadonlyArray<SeedBuildingSpec>;
@@ -118,6 +118,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         for (const t of spec.tiles ?? []) {
           if (t.type === TileType.POWER_PLANT) {
             throw new Error('seedScene cannot seed POWER_PLANT tiles directly — place plants via executeClick(Tool.POWER_PLANT, ...).');
+          }
+          if (t.type === TileType.WATER_TOWER) {
+            throw new Error('seedScene cannot seed WATER_TOWER tiles directly — place water towers via the water tower placement tool.');
           }
         }
         const map = world.getMap();

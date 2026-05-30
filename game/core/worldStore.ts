@@ -21,15 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v11' to match WORLD_SAVE_VERSION = 11.
-// Legacy saves at ':v10 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v12' to match WORLD_SAVE_VERSION = 12.
+// Legacy saves at ':v11 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v11';
+const STORAGE_KEY = 'cimulity:save:v12';
 
-// Bump this string whenever the stash format changes (e.g. a new required API
-// is added). An HMR singleton carrying a mismatched guard is discarded and
-// rebuilt even if hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'power-v1' as const;
+// Bumped to 'water-save-v1' for the v12 save-format change (WATER_TOWER type added).
+// An HMR singleton carrying a mismatched guard is discarded and rebuilt even if
+// hasCurrentWorldApi passes.
+const WORLD_SINGLETON_GUARD = 'water-save-v1' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;

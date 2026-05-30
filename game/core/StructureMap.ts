@@ -1,5 +1,5 @@
 /**
- * Player-placed service structures (currently only power plants). SEPARATE from
+ * Player-placed service structures (power plants, water towers). SEPARATE from
  * `BuildingMap` (zone-grown buildings). The two registries share the cell-occupancy
  * invariant via `tileOwner` arrays that cannot both be `>= 0` for the same cell —
  * coordination is enforced at the dispatcher/serialization layer.
@@ -7,10 +7,10 @@
 
 import { isCanonicalFootprintRect } from './buildingFootprint';
 
-export type StructureType = 'power_plant';
+export type StructureType = 'power_plant' | 'water_tower';
 
 export function isStructureType(s: string): s is StructureType {
-  return s === 'power_plant';
+  return s === 'power_plant' || s === 'water_tower';
 }
 
 export interface Structure {
@@ -20,10 +20,14 @@ export interface Structure {
   readonly anchor: { x: number; y: number };
 }
 
-/** Single source of truth for footprint dimensions per structure type. */
+/** Single source of truth for footprint dimensions per structure type.
+ *  Cases are kept explicit even though both are 2×2 today — a new structure with a different
+ *  size stays mechanical to add and the switch exhaustiveness check catches any omission. */
 export function structureFootprintSize(type: StructureType): { w: number; h: number } {
   switch (type) {
     case 'power_plant':
+      return { w: 2, h: 2 };
+    case 'water_tower':
       return { w: 2, h: 2 };
   }
 }

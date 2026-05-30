@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 11', () => {
-    expect(WORLD_SAVE_VERSION).toBe(11);
+  it('is 12', () => {
+    expect(WORLD_SAVE_VERSION).toBe(12);
   });
 });
 
-describe('v11 serialization', () => {
-  it('WORLD_SAVE_VERSION is 11 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v12 serialization', () => {
+  it('WORLD_SAVE_VERSION is 12 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(11);
-    expect(parsed.v).toBe(11);
+    expect(WORLD_SAVE_VERSION).toBe(12);
+    expect(parsed.v).toBe(12);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -36,15 +36,17 @@ describe('v11 serialization', () => {
     obj.terrain.tileElevations = [[1]];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
-  it('rejects v10 and older saves without mutating the target world', () => {
+  it('rejects v11 and older saves without mutating the target world', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 10;
+    obj.v = 11;
 
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
 
+    obj.v = 10;
+    expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 8;
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 6;
@@ -256,7 +258,7 @@ describe('v11 serialization', () => {
   });
 });
 
-describe('v11 frontage round-trip', () => {
+describe('v12 frontage round-trip', () => {
   it('round-trip preserves frontage: N for a 1×1 building', () => {
     const src = new World(4, 4, { regenerate: false });
     const map = src.getMap();
@@ -313,9 +315,9 @@ describe('v11 frontage round-trip', () => {
     expect(b!.footprint).toContainEqual({ x: 1, y: 2 });
   });
 
-  it('rejects a v: 10 save', () => {
+  it('rejects a v: 11 save', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 10;
+    obj.v = 11;
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 
@@ -356,9 +358,9 @@ describe('v11 frontage round-trip', () => {
   });
 });
 
-// Helper: build a minimal valid v11 save object for an 8x8 world with a 2x2 power plant
+// Helper: build a minimal valid v12 save object for an 8x8 world with a 2x2 power plant
 // at anchor (2,2). The terrain is fully flat at height 2 (above sea level).
-function makeV11BaseWithPlant() {
+function makeV12BaseWithPlant() {
   const W = 8;
   const H = 8;
   // Use a real World + serializeWorld to produce a valid terrain DTO, then override tiles + s[].
@@ -384,7 +386,7 @@ function makeV11BaseWithPlant() {
   return base;
 }
 
-describe('v11 structure persistence', () => {
+describe('v12 structure persistence', () => {
   it('round-trip: world with 1 power plant serializes and deserializes byte-equal', () => {
     const src = new World(8, 8, { regenerate: false });
     // Set all vertex heights to 2 so isFlatArea passes.
@@ -414,28 +416,28 @@ describe('v11 structure persistence', () => {
     expect(json2).toBe(json1);
   });
 
-  it('rejects a v10 envelope', () => {
-    const base = makeV11BaseWithPlant();
-    (base as Record<string, unknown>).v = 10;
+  it('rejects a v11 envelope (legacy)', () => {
+    const base = makeV12BaseWithPlant();
+    (base as Record<string, unknown>).v = 11;
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope where a structure footprint cell t[] entry is not POWER_PLANT', () => {
-    const base = makeV11BaseWithPlant();
+  it('rejects a v12 envelope where a structure footprint cell t[] entry is not POWER_PLANT', () => {
+    const base = makeV12BaseWithPlant();
     // Change one footprint cell to GRASS — tile/structure mismatch.
     base.t[2 * 8 + 2] = TileType.GRASS;
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope with an orphan POWER_PLANT tile not covered by any structure', () => {
-    const base = makeV11BaseWithPlant();
+  it('rejects a v12 envelope with an orphan POWER_PLANT tile not covered by any structure', () => {
+    const base = makeV12BaseWithPlant();
     // Add an orphan POWER_PLANT tile at (5,5) with no corresponding structure entry.
     base.t[5 * 8 + 5] = TileType.POWER_PLANT;
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope where two structures overlap', () => {
-    const base = makeV11BaseWithPlant();
+  it('rejects a v12 envelope where two structures overlap', () => {
+    const base = makeV12BaseWithPlant();
     // Add POWER_PLANT tiles for a second overlapping structure (reuses cells from first).
     base.s.push({
       id: 1,
@@ -446,9 +448,9 @@ describe('v11 structure persistence', () => {
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope where a structure footprint cell has a non-POWER_PLANT tile type (zone tile under structure)', () => {
+  it('rejects a v12 envelope where a structure footprint cell has a non-POWER_PLANT tile type (zone tile under structure)', () => {
     const W = 8;
-    const base = makeV11BaseWithPlant();
+    const base = makeV12BaseWithPlant();
     // Overwrite the plant anchor cell (2,2) with a residential zone tile.
     // validateStructuresArray rejects because every cell in a power_plant footprint
     // must be TileType.POWER_PLANT; finding ZONE_RESIDENTIAL there fails that check.
@@ -467,8 +469,8 @@ describe('v11 structure persistence', () => {
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope where a structure anchor fails isFlatArea (sloped corner)', () => {
-    const base = makeV11BaseWithPlant();
+  it('rejects a v12 envelope where a structure anchor fails isFlatArea (sloped corner)', () => {
+    const base = makeV12BaseWithPlant();
     // isFlatArea checks that all vertices spanning the 2x2 rectangle share one height.
     // The plant's 2x2 spans from vertex (2,2) to vertex (4,4) [inclusive, 3x3 vertex grid].
     // Mutate vertex (4,4) (SE outer corner) to height 3 — this breaks the flat-slab invariant.
@@ -476,8 +478,8 @@ describe('v11 structure persistence', () => {
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope with a 1x1 structure footprint', () => {
-    const base = makeV11BaseWithPlant();
+  it('rejects a v12 envelope with a 1x1 structure footprint', () => {
+    const base = makeV12BaseWithPlant();
     base.s = [{
       id: 0,
       type: 'power_plant',
@@ -491,8 +493,8 @@ describe('v11 structure persistence', () => {
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope with a 1x2 structure footprint', () => {
-    const base = makeV11BaseWithPlant();
+  it('rejects a v12 envelope with a 1x2 structure footprint', () => {
+    const base = makeV12BaseWithPlant();
     base.s = [{
       id: 0,
       type: 'power_plant',
@@ -504,9 +506,9 @@ describe('v11 structure persistence', () => {
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope with a 3x3 structure footprint', () => {
+  it('rejects a v12 envelope with a 3x3 structure footprint', () => {
     const W = 8;
-    const base = makeV11BaseWithPlant();
+    const base = makeV12BaseWithPlant();
     // Replace the 2x2 plant with a 3x3.
     // First clear old POWER_PLANT tiles.
     base.t[2 * W + 2] = TileType.GRASS;
@@ -521,9 +523,9 @@ describe('v11 structure persistence', () => {
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v11 envelope with a 4x4 structure footprint', () => {
+  it('rejects a v12 envelope with a 4x4 structure footprint', () => {
     const W = 8;
-    const base = makeV11BaseWithPlant();
+    const base = makeV12BaseWithPlant();
     base.t[2 * W + 2] = TileType.GRASS;
     base.t[2 * W + 3] = TileType.GRASS;
     base.t[3 * W + 2] = TileType.GRASS;
@@ -539,7 +541,7 @@ describe('v11 structure persistence', () => {
     // Setup: plant at (2,2)-(3,3), roads at (2,4),(1,4),(0,4) — road chain adjacent to plant's south edge.
     // After load, all three road cells should be powered. No tick or manual recompute.
     const W = 8;
-    const base = makeV11BaseWithPlant();
+    const base = makeV12BaseWithPlant();
     // Add roads south of the plant (y=4): (0,4),(1,4),(2,4) — (2,4) is adjacent to plant cell (2,3).
     base.t[4 * W + 0] = TileType.ROAD;
     base.t[4 * W + 1] = TileType.ROAD;
@@ -562,5 +564,155 @@ describe('v11 structure persistence', () => {
     world.reset({ regenerate: true });
     // No structures or roads → nothing powered.
     expect(world.getPowerMap().isPowered(0, 0)).toBe(false);
+  });
+
+  it('rejects a v12 envelope with an orphan WATER_TOWER tile not covered by any structure', () => {
+    const W = 8;
+    const base = makeV12BaseWithPlant();
+    // Add a bare WATER_TOWER tile at (5,5) with no matching structure entry.
+    base.t[5 * W + 5] = TileType.WATER_TOWER;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v12 where a water_tower structure footprint cell t[] is not WATER_TOWER', () => {
+    const W = 8;
+    // Use the plant base but inject a water_tower structure whose footprint cell is GRASS.
+    const base = makeV12BaseWithPlant();
+    // Place water_tower structure at (5,5) but leave those tiles as GRASS (mismatch).
+    base.s.push({
+      id: 1,
+      type: 'water_tower',
+      foot: [[5, 5], [6, 5], [5, 6], [6, 6]],
+      anc: [5, 5],
+    });
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v12 where a water_tower overlaps a power_plant', () => {
+    const W = 8;
+    const base = makeV12BaseWithPlant();
+    // Attempt to place a water_tower structure overlapping the plant at (2,2).
+    base.s.push({
+      id: 1,
+      type: 'water_tower',
+      foot: [[2, 2], [3, 2], [2, 3], [3, 3]],
+      anc: [2, 2],
+    });
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v12 where a water_tower anchor fails isFlatArea (sloped corner)', () => {
+    const W = 8;
+    const base = makeV12BaseWithPlant();
+    // Set WATER_TOWER tiles at a non-overlapping site (5,5)–(6,6).
+    base.t[5 * W + 5] = TileType.WATER_TOWER;
+    base.t[5 * W + 6] = TileType.WATER_TOWER;
+    base.t[6 * W + 5] = TileType.WATER_TOWER;
+    base.t[6 * W + 6] = TileType.WATER_TOWER;
+    base.s.push({
+      id: 1,
+      type: 'water_tower',
+      foot: [[5, 5], [6, 5], [5, 6], [6, 6]],
+      anc: [5, 5],
+    });
+    // Break flatness: vertex (7,7) — SE outer corner of the 2×2 slab — to height 3.
+    base.terrain.vertexHeights[7][7] = 3;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v12 with a 1×1 water_tower footprint', () => {
+    const W = 8;
+    const base = makeV12BaseWithPlant();
+    base.t[5 * W + 5] = TileType.WATER_TOWER;
+    base.s.push({
+      id: 1,
+      type: 'water_tower',
+      foot: [[5, 5]],
+      anc: [5, 5],
+    });
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v12 with a 3×3 water_tower footprint', () => {
+    const W = 8;
+    const base = makeV12BaseWithPlant();
+    for (let y = 5; y <= 7; y++) for (let x = 5; x <= 7; x++) base.t[y * W + x] = TileType.WATER_TOWER;
+    const foot: [number, number][] = [];
+    for (let y = 5; y <= 7; y++) for (let x = 5; x <= 7; x++) foot.push([x, y]);
+    base.s.push({ id: 1, type: 'water_tower', foot, anc: [5, 5] });
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('round-trip: world with 1 water tower + roads + zones byte-equal on re-serialize', () => {
+    const W = 8;
+    const src = new World(W, W, { regenerate: false });
+    // Set all vertex heights to 2 (flat above sea level).
+    for (let vy = 0; vy <= W; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        src.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const map = src.getMap();
+    // Write WATER_TOWER tiles and register the structure at (4,4).
+    map.setTile(4, 4, createTile(4, 4, TileType.WATER_TOWER));
+    map.setTile(5, 4, createTile(5, 4, TileType.WATER_TOWER));
+    map.setTile(4, 5, createTile(4, 5, TileType.WATER_TOWER));
+    map.setTile(5, 5, createTile(5, 5, TileType.WATER_TOWER));
+    src.getStructureMap().addExistingStructure({
+      id: 0,
+      type: 'water_tower',
+      footprint: [{ x: 4, y: 4 }, { x: 5, y: 4 }, { x: 4, y: 5 }, { x: 5, y: 5 }],
+      anchor: { x: 4, y: 4 },
+    });
+    // Add a road and a zone tile.
+    map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+
+    const json1 = serializeWorld(src);
+    const dst = new World(W, W, { regenerate: false });
+    expect(deserializeWorldInto(dst, json1)).toBe(true);
+    expect(serializeWorld(dst)).toBe(json1);
+  });
+
+  it('round-trip: world with BOTH a power plant and a water tower', () => {
+    const W = 8;
+    const src = new World(W, W, { regenerate: false });
+    for (let vy = 0; vy <= W; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        src.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const map = src.getMap();
+    // Power plant at (0,0).
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        map.setTile(dx, dy, createTile(dx, dy, TileType.POWER_PLANT));
+      }
+    }
+    src.getStructureMap().addExistingStructure({
+      id: 0,
+      type: 'power_plant',
+      footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+      anchor: { x: 0, y: 0 },
+    });
+    // Water tower at (4,4).
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        map.setTile(4 + dx, 4 + dy, createTile(4 + dx, 4 + dy, TileType.WATER_TOWER));
+      }
+    }
+    src.getStructureMap().addExistingStructure({
+      id: 1,
+      type: 'water_tower',
+      footprint: [{ x: 4, y: 4 }, { x: 5, y: 4 }, { x: 4, y: 5 }, { x: 5, y: 5 }],
+      anchor: { x: 4, y: 4 },
+    });
+
+    const json1 = serializeWorld(src);
+    const dst = new World(W, W, { regenerate: false });
+    expect(deserializeWorldInto(dst, json1)).toBe(true);
+    expect(serializeWorld(dst)).toBe(json1);
+    // Both structures present in the destination.
+    expect(dst.getStructureMap().getAllStructures()).toHaveLength(2);
   });
 });

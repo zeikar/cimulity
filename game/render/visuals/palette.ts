@@ -18,6 +18,8 @@ export const TILE_COLORS: Record<TileType, number> = {
   road: 0x4a4a4a,
   /** Power-plant footprint cells render with a solid base color; the structure itself is the 2×2 diamond cluster. */
   power_plant: 0x7a7a7a,
+  /** Water-tower footprint cells render with a water-blue-grey base; distinct from road (0x4a4a4a), power (0x7a7a7a), and WATER_COLOR (0x2e6ba3). */
+  water_tower: 0x3f7fb0,
   zone_residential: 0x3cc44b,
   zone_commercial: 0x2f8fd6,
   zone_industrial: 0xe8c531,

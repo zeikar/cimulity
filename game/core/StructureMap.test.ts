@@ -15,6 +15,10 @@ describe('isStructureType', () => {
     expect(isStructureType('power_plant')).toBe(true);
   });
 
+  it('accepts water_tower', () => {
+    expect(isStructureType('water_tower')).toBe(true);
+  });
+
   it('rejects residential', () => {
     expect(isStructureType('residential')).toBe(false);
   });
@@ -31,6 +35,76 @@ describe('isStructureType', () => {
 describe('structureFootprintSize', () => {
   it('returns {w:2,h:2} for power_plant', () => {
     expect(structureFootprintSize('power_plant')).toEqual({ w: 2, h: 2 });
+  });
+
+  it('returns {w:2,h:2} for water_tower', () => {
+    expect(structureFootprintSize('water_tower')).toEqual({ w: 2, h: 2 });
+  });
+});
+
+describe('StructureMap — water_tower', () => {
+  it('addStructure accepts a 2×2 water_tower', () => {
+    const map = new StructureMap(10, 10);
+    const s = map.addStructure({
+      type: 'water_tower',
+      footprint: make2x2Footprint(0, 0),
+      anchor: { x: 0, y: 0 },
+    });
+    expect(s).not.toBeNull();
+    expect(s!.type).toBe('water_tower');
+  });
+
+  it('addStructure rejects 1×1 footprint for water_tower', () => {
+    const map = new StructureMap(10, 10);
+    expect(
+      map.addStructure({
+        type: 'water_tower',
+        footprint: [{ x: 0, y: 0 }],
+        anchor: { x: 0, y: 0 },
+      }),
+    ).toBeNull();
+  });
+
+  it('addStructure rejects 3×3 footprint for water_tower', () => {
+    const map = new StructureMap(10, 10);
+    const fp = [];
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) fp.push({ x, y });
+    expect(
+      map.addStructure({ type: 'water_tower', footprint: fp, anchor: { x: 0, y: 0 } }),
+    ).toBeNull();
+  });
+
+  it('water_tower and power_plant coexist when non-overlapping', () => {
+    const map = new StructureMap(10, 10);
+    const s1 = map.addStructure({
+      type: 'power_plant',
+      footprint: make2x2Footprint(0, 0),
+      anchor: { x: 0, y: 0 },
+    });
+    const s2 = map.addStructure({
+      type: 'water_tower',
+      footprint: make2x2Footprint(4, 4),
+      anchor: { x: 4, y: 4 },
+    });
+    expect(s1).not.toBeNull();
+    expect(s2).not.toBeNull();
+  });
+
+  it('water_tower and power_plant reject on overlap', () => {
+    const map = new StructureMap(10, 10);
+    map.addStructure({
+      type: 'power_plant',
+      footprint: make2x2Footprint(0, 0),
+      anchor: { x: 0, y: 0 },
+    });
+    // water_tower overlaps at (1,1) — which is in the power_plant's (0,0)–(1,1) footprint.
+    expect(
+      map.addStructure({
+        type: 'water_tower',
+        footprint: make2x2Footprint(1, 0),
+        anchor: { x: 1, y: 0 },
+      }),
+    ).toBeNull();
   });
 });
 
