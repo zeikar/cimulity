@@ -1,17 +1,19 @@
 /**
- * Render-only overlay. Reads `world.getPowerMap()` and `world.getMap().getBuildings()`;
- * never mutates core. Recompute is owned by `World.tick` (sim path),
- * `CommandDispatcher.applyCommands` (tool path), and the bulk-rebuild drains in
- * save-hydrate/reset/regenerate paths (Task 7). Empty unpowered zones (no building yet)
- * intentionally get no icon — absence of growth is the player-visible feedback. Power
- * plants are not buildings; they never get an icon. Icon y derived from `getCubeTopScreenY`,
- * same source of truth as `CubeBuildingVisual` — so the icon floats above the actual cube
- * top, not the terrain top.
+ * Render-only shared utility-status overlay. Reads world.getPowerMap() + world.getWaterMap() +
+ * world.getMap().getBuildings(); never mutates core. Draws AT MOST ONE badge per building,
+ * glyph-switched by the missing utility with priority POWER > WATER (bolt = no power; drop =
+ * powered but no water). One badge avoids the two-stacked-icon collision at cubeTopY - 6.
+ * Recompute is owned by World.tick, CommandDispatcher.applyCommands, and the bulk-rebuild
+ * drains (save/reset/regenerate). Empty unserviced zones (no building yet) intentionally get
+ * no icon. Power plants and water towers are structures, not buildings — they never get a badge.
+ * Water gates growth, not spawn, so an unwatered city still grows level-1 buildings that then
+ * carry a drop badge until a tower reaches them.
  */
 
 import { Graphics, Container } from 'pixi.js';
 import type { World } from '@/game/core/World';
 import { isBuildingPowered } from '@/game/core/PowerMap';
+import { isBuildingWatered } from '@/game/core/WaterMap';
 import type { VisibleTileBounds } from '../viewportCulling';
 import { isBuildingVisible } from '../viewportCulling';
 import type { VisualRegistry } from '../visuals/visualRegistry';
@@ -31,6 +33,21 @@ const BOLT_POINTS: ReadonlyArray<{ x: number; y: number }> = [
   { x: -2, y:  1 },
 ];
 
+// Water-drop polygon: point at top, rounded bottom approximated as a 7-point polygon.
+// The shape tapers to a tip at y=-8 and bulges to a rounded bottom at y=+6.
+const DROP_COLOR = 0x4ab8ff;
+const DROP_POINTS: ReadonlyArray<{ x: number; y: number }> = [
+  { x:  0, y: -8 }, // top tip
+  { x:  3, y: -3 }, // upper-right shoulder
+  { x:  5, y:  2 }, // right side
+  { x:  3, y:  6 }, // lower-right
+  { x: -3, y:  6 }, // lower-left
+  { x: -5, y:  2 }, // left side
+  { x: -3, y: -3 }, // upper-left shoulder
+];
+
+type GlyphKind = 'bolt' | 'drop';
+
 function drawBolt(gfx: Graphics): void {
   gfx.clear();
   gfx.beginPath();
@@ -40,6 +57,17 @@ function drawBolt(gfx: Graphics): void {
   }
   gfx.closePath();
   gfx.fill({ color: BOLT_COLOR });
+}
+
+function drawDrop(gfx: Graphics): void {
+  gfx.clear();
+  gfx.beginPath();
+  gfx.moveTo(DROP_POINTS[0].x, DROP_POINTS[0].y);
+  for (let i = 1; i < DROP_POINTS.length; i++) {
+    gfx.lineTo(DROP_POINTS[i].x, DROP_POINTS[i].y);
+  }
+  gfx.closePath();
+  gfx.fill({ color: DROP_COLOR });
 }
 
 function buildingToVisualInput(building: Building, renderHeight: number): BuildingVisualInput {
@@ -56,10 +84,12 @@ function buildingToVisualInput(building: Building, renderHeight: number): Buildi
   };
 }
 
-export class PowerStatusOverlay {
+export class UtilityStatusOverlay {
   private container: Container;
   private registry: VisualRegistry;
   private iconsByBuildingId: Map<number, Graphics> = new Map();
+  // Tracks which glyph is currently drawn per building so we can redraw on kind change.
+  private glyphKindByBuildingId: Map<number, GlyphKind> = new Map();
 
   constructor(container: Container, registry: VisualRegistry) {
     this.container = container;
@@ -68,6 +98,7 @@ export class PowerStatusOverlay {
 
   render(world: World, visibleBounds?: VisibleTileBounds): void {
     const pw = world.getPowerMap();
+    const wm = world.getWaterMap();
     const map = world.getMap();
     const terrain = world.getTerrain();
 
@@ -78,18 +109,37 @@ export class PowerStatusOverlay {
       if (visibleBounds && !isBuildingVisible(building.footprint, visibleBounds.buildings)) {
         continue;
       }
-      if (isBuildingPowered(building, pw)) {
-        continue;
+
+      let kind: GlyphKind | null = null;
+      if (!isBuildingPowered(building, pw)) {
+        // Priority: missing power wins regardless of water status.
+        kind = 'bolt';
+      } else if (!isBuildingWatered(building, wm)) {
+        kind = 'drop';
       }
+
+      if (kind === null) continue;
+
       needsIcon.add(building.id);
 
-      // Mount or update icon.
+      // Mount new icon or redraw if the glyph kind has switched (e.g. power restored).
       let gfx = this.iconsByBuildingId.get(building.id);
       if (!gfx) {
         gfx = new Graphics();
-        drawBolt(gfx);
         this.container.addChild(gfx);
         this.iconsByBuildingId.set(building.id, gfx);
+      }
+
+      const currentKind = this.glyphKindByBuildingId.get(building.id);
+      if (currentKind !== kind) {
+        // Kind changed or newly mounted — (re)draw.
+        if (kind === 'bolt') {
+          drawBolt(gfx);
+        } else {
+          // kind === 'drop'
+          drawDrop(gfx);
+        }
+        this.glyphKindByBuildingId.set(building.id, kind);
       }
 
       // Position the icon above the cube top.
@@ -106,6 +156,7 @@ export class PowerStatusOverlay {
       if (!needsIcon.has(id)) {
         gfx.destroy();
         this.iconsByBuildingId.delete(id);
+        this.glyphKindByBuildingId.delete(id);
       }
     }
   }
@@ -115,6 +166,7 @@ export class PowerStatusOverlay {
       gfx.destroy();
     }
     this.iconsByBuildingId.clear();
+    this.glyphKindByBuildingId.clear();
     // container is owned by PixiApp — not destroyed here.
   }
 }

@@ -7,7 +7,7 @@ import { Application, Container } from 'pixi.js';
 import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer, buildPixiAppRegistry } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
-import { PowerStatusOverlay } from './overlays/PowerStatusOverlay';
+import { UtilityStatusOverlay } from './overlays/UtilityStatusOverlay';
 import { PowerPlantRenderer } from './PowerPlantRenderer';
 import { WaterTowerRenderer } from './WaterTowerRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
@@ -28,7 +28,7 @@ export class PixiApp {
   private camera: Camera | null = null;
   private tileRenderer: TileRenderer | null = null;
   private selectionRenderer: SelectionRenderer | null = null;
-  private powerOverlay: PowerStatusOverlay | null = null;
+  private utilityOverlay: UtilityStatusOverlay | null = null;
   private powerPlantRenderer: PowerPlantRenderer | null = null;
   private waterTowerRenderer: WaterTowerRenderer | null = null;
   private terrainContainer: Container | null = null;
@@ -113,7 +113,7 @@ export class PixiApp {
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer, registry);
     this.powerPlantRenderer = new PowerPlantRenderer(this.buildingContainer);
     this.waterTowerRenderer = new WaterTowerRenderer(this.buildingContainer);
-    this.powerOverlay = new PowerStatusOverlay(this.overlayContainer, registry);
+    this.utilityOverlay = new UtilityStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
     // Render initial frame
@@ -135,8 +135,8 @@ export class PixiApp {
       if (this.waterTowerRenderer && this.world) {
         this.waterTowerRenderer.render(this.world, visibleBounds);
       }
-      if (this.powerOverlay && this.world) {
-        this.powerOverlay.render(this.world, visibleBounds);
+      if (this.utilityOverlay && this.world) {
+        this.utilityOverlay.render(this.world, visibleBounds);
       }
       if (this.selectionRenderer && this.world) {
         const rev = this.world.getTerrainRevision();
@@ -265,7 +265,7 @@ export class PixiApp {
     this.tileRenderer?.destroy();
     this.powerPlantRenderer?.destroy();
     this.waterTowerRenderer?.destroy();
-    this.powerOverlay?.destroy();
+    this.utilityOverlay?.destroy();
     this.selectionRenderer?.destroy();
 
     // Explicitly destroy each layer container before app.destroy().
@@ -291,7 +291,7 @@ export class PixiApp {
     this.tileRenderer = null;
     this.powerPlantRenderer = null;
     this.waterTowerRenderer = null;
-    this.powerOverlay = null;
+    this.utilityOverlay = null;
     this.selectionRenderer = null;
     this.terrainContainer = null;
     this.buildingContainer = null;

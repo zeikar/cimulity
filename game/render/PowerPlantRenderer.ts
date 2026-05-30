@@ -2,7 +2,7 @@
  * Render-only renderer for power-plant structures.
  *
  * Iterates StructureMap each frame (the map is tiny — full re-scan is fine and
- * matches PowerStatusOverlay's approach). Mounts on first sight, updates if
+ * matches UtilityStatusOverlay's approach). Mounts on first sight, updates if
  * already tracked, and prunes wrappers for structures no longer present or
  * visible — mirroring the TileRenderer.buildingById prune pattern.
  *

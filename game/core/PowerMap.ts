@@ -57,7 +57,7 @@ export class PowerMap {
  * Single canonical predicate. A building is powered iff any of its footprint cells
  * is powered. Anchor is NW and not always road-facing (S/E frontage can sit deeper),
  * so the footprint scan is the authoritative check. Reused by `World.tick` growth
- * gates and by `PowerStatusOverlay`.
+ * gates and by `UtilityStatusOverlay`.
  */
 export function isBuildingPowered(
   building: { footprint: ReadonlyArray<{ x: number; y: number }> },
