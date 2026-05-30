@@ -91,8 +91,12 @@ function tileKey(x: number, y: number): string {
  * Power and water are recomputed at the end of `applyCommands` whenever any
  * command dirtied them, so the next render frame always reads a fresh snapshot
  * — even when the simulation is paused. Tick-path recompute remains as
- * defense-in-depth. The two dirty flags are independent: a tower bulldoze does
- * not recompute power; a road change dirties both.
+ * defense-in-depth. Structure edits (place or remove, any type) dirty BOTH
+ * maps because `propagateThroughRoadNetwork` excludes every structure footprint
+ * from the reachable sweep regardless of utility type — placing or removing any
+ * structure changes the ownership-exclusion set, which can affect both derived
+ * maps. Road changes also dirty both. Source selection (which structures seed
+ * which utility) remains independent inside PowerMap/WaterMap.
  *
  * Exported so invariant-throw branches can be exercised directly in tests
  * without routing through the tool-command builders that normally prevent
@@ -176,11 +180,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
           }
         }
       }
-      if (cmd.structureType === 'water_tower') {
-        waterInvalidated = true;
-      } else {
-        powerInvalidated = true;
-      }
+      // Any structure placement invalidates both maps — the shared ownership-exclusion
+      // set in propagateThroughRoadNetwork covers all structure footprints, so even a
+      // water tower changes which cells the power sweep may enter (and vice-versa).
+      powerInvalidated = true;
+      waterInvalidated = true;
     } else if (cmd.kind === 'remove-structure') {
       const s = world.getStructureMap().getStructure(cmd.structureId);
       // Invariant: tool layer dedupes by id; a stale id cannot reach applyCommands through normal flow.
@@ -194,11 +198,10 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
         pushChanged(cx, cy);
       }
       world.getStructureMap().removeStructure(s.id);
-      if (s.type === 'water_tower') {
-        waterInvalidated = true;
-      } else {
-        powerInvalidated = true;
-      }
+      // Any structure removal invalidates both maps — same ownership-exclusion reason
+      // as placement above.
+      powerInvalidated = true;
+      waterInvalidated = true;
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
@@ -243,7 +246,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
     world.markPowerDirty();
     world.recomputePowerIfDirty();
   }
-  // Same for water — tower placement/removal and road changes drain water independently of power.
+  // Same for water — drained whenever waterInvalidated is set (structure edits or road changes).
   if (waterInvalidated) {
     world.markWaterDirty();
     world.recomputeWaterIfDirty();

@@ -8,6 +8,7 @@
 
 import { TileType } from '@/game/core/Tile';
 import type { BuildingType } from '@/game/core/Building';
+import type { StructureType } from '@/game/core/StructureMap';
 import type { TileInfo } from '@/game/engine';
 import type { ScreenCoord } from '@/game/types/coordinates';
 
@@ -39,6 +40,11 @@ const TILE_TYPE_LABELS: Record<TileType, string> = {
   [TileType.ZONE_INDUSTRIAL]: 'Industrial Zone',
   [TileType.POWER_PLANT]: 'Power Plant',
   [TileType.WATER_TOWER]: 'Water Tower',
+};
+
+const STRUCTURE_TYPE_LABELS: Record<StructureType, string> = {
+  power_plant: 'Power Plant',
+  water_tower: 'Water Tower',
 };
 
 const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
@@ -149,7 +155,7 @@ export function TileInfoPanel({
         {info.structure && (
           <>
             <div style={{ marginTop: '6px', opacity: 0.7 }}>Structure</div>
-            <Row label="Kind">Power Plant</Row>
+            <Row label="Kind">{STRUCTURE_TYPE_LABELS[info.structure.type]}</Row>
           </>
         )}
       </div>

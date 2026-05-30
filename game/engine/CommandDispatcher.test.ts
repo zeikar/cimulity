@@ -411,7 +411,7 @@ describe('CommandDispatcher WATER_TOWER removal (bulldoze)', () => {
     expect(world.getWaterMap().isWatered(1, 2)).toBe(false);
   });
 
-  it('INDEPENDENCE GUARD: bulldozing a tower does NOT recompute power', () => {
+  it('SOURCE-SELECTION GUARD: bulldozing a tower does not deprive power from a road that was only connected to a plant', () => {
     const world = makeWorld8();
     // Plant at (4,0): cells (4,0),(5,0),(4,1),(5,1). Road at (3,0): adjacent to plant cell (4,0).
     executeClick(Tool.POWER_PLANT, { x: 4, y: 0 }, world);
@@ -419,9 +419,10 @@ describe('CommandDispatcher WATER_TOWER removal (bulldoze)', () => {
     placeTower(world, 0, 0);
     executeClick(Tool.ROAD, { x: 3, y: 0 }, world);
     expect(world.getPowerMap().isPowered(3, 0)).toBe(true);
-    // Bulldoze only the tower — power should remain, water at road irrelevant (was never watered).
+    // Bulldoze the tower — both maps are recomputed (shared exclusion-set coupling), but
+    // source-selection is independent: the tower was never a power source, so the road
+    // remains powered by the plant after both maps drain.
     executeClick(Tool.BULLDOZE, { x: 0, y: 0 }, world);
-    // Road is still powered (plant remains, power was NOT invalidated by tower removal)
     expect(world.getPowerMap().isPowered(3, 0)).toBe(true);
   });
 });
