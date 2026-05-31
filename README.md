@@ -15,7 +15,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Fixed-timestep simulation with zone growth, population, money, speed/pause controls, autosave, and New City reset
 - Power plants + binary reachability gate zone growth
 - Water towers gate zone level-ups/density (power gates initial spawn)
-- Police stations provide road-network coverage that gates zone level-ups; first of the fire/hospital service clones
+- Police + fire stations provide road-network coverage; level-up now requires both at the anchor (hospital is the remaining service clone)
 
 Next focus: replace placeholder colored geometry with sprites/textures, add more terrain variety, and continue tightening tool feedback.
 
@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 - **Zoom**: Mouse wheel (zooms around cursor)
 - **Select Tile**: Left-click on any tile
 - **Hover**: Move mouse over tiles to see highlight
-- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant, A water tower, C police station
+- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant, A water tower, C police station, D fire station
 - **Terrain**: R raise, F lower, G level/flatten
 - **Time**: Space pause/resume, 1/2/3 speed
 
@@ -63,7 +63,7 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 
 ### MVP-2 (Future)
 
-- [~] **Services** - Police coverage shipped (road-network + distance falloff, gates level-ups); fire + hospital are deferred clones
+- [~] **Services** - Police + fire coverage shipped (road-network + distance falloff, gate level-ups); hospital is the one remaining deferred clone
 - [ ] **Happiness/statistics** - Citizen happiness, budget charts
 - [ ] **Sound effects** - Audio feedback
 
