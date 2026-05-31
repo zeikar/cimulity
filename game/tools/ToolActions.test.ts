@@ -1169,6 +1169,61 @@ describe('buildToolPreview - FIRE_STATION', () => {
   });
 });
 
+describe('buildToolCommands - HOSPITAL placement', () => {
+  it('accepts on flat 2×2 grass with no obstacles — emits one place-structure command', () => {
+    // World is 8×8 flat grass by default (regenerate: false).
+    const result = buildToolCommands(Tool.HOSPITAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toEqual([{ kind: 'place-structure', x: 2, y: 2, structureType: 'hospital' }]);
+  });
+
+  it('rejects when the 2×2 extends out of bounds (anchor at width-1, height-1)', () => {
+    // 8×8 map — anchor at (7,7) means (8,8) OOB.
+    const result = buildToolCommands(Tool.HOSPITAL, [{ x: 7, y: 7 }], world, { x: 7, y: 7 });
+    expect(result).toEqual([]);
+  });
+
+  it('rejects when any of the 4 cells is a road (non-grass)', () => {
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ROAD));
+    expect(buildToolCommands(Tool.HOSPITAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when any of the 4 cells is a zone tile', () => {
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.ZONE_RESIDENTIAL));
+    expect(buildToolCommands(Tool.HOSPITAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when the footprint overlaps an existing structure', () => {
+    // Existing power plant at (2,2)..(3,3) — overlaps a hospital anchored at (3,3).
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        world.getMap().setTile(2 + dx, 2 + dy, createTile(2 + dx, 2 + dy, TileType.POWER_PLANT));
+      }
+    }
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+      anchor: { x: 2, y: 2 },
+    });
+    expect(buildToolCommands(Tool.HOSPITAL, [{ x: 3, y: 3 }], world, { x: 3, y: 3 })).toEqual([]);
+  });
+});
+
+describe('buildToolPreview - HOSPITAL', () => {
+  it('populates rejected=[] for accepted placement', () => {
+    const preview = buildToolPreview(Tool.HOSPITAL, [{ x: 2, y: 2 }], world);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.pathTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+
+  it('populates rejected=[tile] for rejected placement (non-grass cell in footprint)', () => {
+    world.getMap().setTile(3, 3, createTile(3, 3, TileType.ROAD));
+    const preview = buildToolPreview(Tool.HOSPITAL, [{ x: 2, y: 2 }], world);
+    expect(preview.rejected).toEqual([{ x: 2, y: 2 }]);
+    expect(preview.pathTiles).toEqual([{ x: 2, y: 2 }]);
+  });
+});
+
 describe('buildToolCommands - FIRE_STATION cell protections', () => {
   it('ROAD rejects a single FIRE_STATION tile (transactional: returns empty)', () => {
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.FIRE_STATION));

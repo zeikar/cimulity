@@ -93,7 +93,7 @@ describe('KeyboardHandler', () => {
     expect(ee.preventDefault).toHaveBeenCalled();
   });
 
-  it('t / b / s / Escape / r / f / g / p / a / c / d trigger onToolChange with the correct tool each', () => {
+  it('t / b / s / Escape / r / f / g / p / a / c / d / h trigger onToolChange with the correct tool each', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
 
     const pairs: Array<[string, Tool]> = [
@@ -108,6 +108,7 @@ describe('KeyboardHandler', () => {
       ['a', Tool.WATER_TOWER],
       ['c', Tool.POLICE_STATION],
       ['d', Tool.FIRE_STATION],
+      ['h', Tool.HOSPITAL],
     ];
     for (const [key, expected] of pairs) {
       onToolChange.mockClear();

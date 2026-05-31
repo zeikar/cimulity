@@ -99,6 +99,12 @@ export const POLICE_STATION_COST = 800;
  * power + water + police + fire before zoning" stays affordable from STARTING_FUNDS=10000.
  */
 export const FIRE_STATION_COST = 800;
+/**
+ * Cost to place a hospital (2×2). Mirrors FIRE_STATION_COST=800 / POLICE_STATION_COST=800 so
+ * "place power + water + police + fire + hospital before zoning" stays affordable from
+ * STARTING_FUNDS=10000. Tunable independently as balance requires.
+ */
+export const HOSPITAL_COST = 800;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */

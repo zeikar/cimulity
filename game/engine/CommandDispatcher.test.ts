@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
-import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST, FIRE_STATION_COST } from '../core/World';
+import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 
@@ -552,6 +552,83 @@ describe('cross-source coverage isolation', () => {
     executeClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
     executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
     expect(world.getFireCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+
+  it('placing a hospital via HOSPITAL tool does NOT add police coverage on an adjacent road', () => {
+    const world = makeWorld8();
+    executeClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getServiceCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+
+  it('placing a hospital via HOSPITAL tool does NOT add fire coverage on an adjacent road', () => {
+    const world = makeWorld8();
+    executeClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getFireCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+
+  it('placing a police station via POLICE_STATION tool does NOT add hospital coverage on an adjacent road', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+
+  it('placing a fire station via FIRE_STATION tool does NOT add hospital coverage on an adjacent road', () => {
+    const world = makeWorld8();
+    executeClick(Tool.FIRE_STATION, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+});
+
+describe('CommandDispatcher HOSPITAL placement + dirty-marking', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('places a 2×2 HOSPITAL, registers structure, and deducts HOSPITAL_COST', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    const result = executeClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.HOSPITAL);
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.HOSPITAL);
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+    expect(world.getMoney()).toBe(before - HOSPITAL_COST);
+  });
+
+  it('placing a hospital marks hospital dirty: an adjacent road has non-zero hospital coverage immediately (no tick)', () => {
+    const world = makeWorld8();
+    executeClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
+    // Road at (1,2) is orthogonally adjacent to hospital footprint cell (2,2).
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 2)).toBeGreaterThan(0);
+  });
+});
+
+describe('previewClick HOSPITAL', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('HOSPITAL over a valid flat area → pathTiles has the 2×2 footprint, rejected empty', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
+    expect(preview.pathTiles).toHaveLength(4);
+    expect(preview.pathTiles).toContainEqual({ x: 2, y: 2 });
+    expect(preview.pathTiles).toContainEqual({ x: 3, y: 3 });
+    expect(preview.rejected).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+
+  it('HOSPITAL on non-flat ground → whole 2×2 footprint is rejected', () => {
+    const world = makeWorld8();
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 0); // SEA_LEVEL — makes the footprint non-flat
+    const preview = previewClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
+    expect(preview.pathTiles).toHaveLength(4);
+    expect(preview.rejected).toHaveLength(4);
   });
 });
 
