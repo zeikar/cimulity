@@ -391,4 +391,63 @@ describe('inspectTile', () => {
       expect(info.hospitalServiceCovered).toBe(false);
     });
   });
+
+  describe('school coverage', () => {
+    const SIZE = 6;
+
+    it('reports schoolCoverage matching getCoverage/255 and schoolServiceCovered true for a covered tile', () => {
+      const world = makeWorld(SIZE);
+      // Seed raw=128 at (2,2) — well above the threshold.
+      world.getSchoolCoverageMap().getRaw()[2 * SIZE + 2] = 128;
+      const info = inspectTile(world, { x: 2, y: 2 })!;
+      expect(info.schoolCoverage).toBeCloseTo(128 / 255);
+      expect(info.schoolServiceCovered).toBe(true);
+    });
+
+    it('reports schoolServiceCovered false for a tile at raw 63 (one below threshold)', () => {
+      const world = makeWorld(SIZE);
+      // SERVICE_COVERAGE_THRESHOLD_RAW = 64; raw 63 must NOT be covered.
+      world.getSchoolCoverageMap().getRaw()[1 * SIZE + 1] = SERVICE_COVERAGE_THRESHOLD_RAW - 1;
+      const info = inspectTile(world, { x: 1, y: 1 })!;
+      expect(info.schoolServiceCovered).toBe(false);
+      expect(info.schoolCoverage).toBeCloseTo((SERVICE_COVERAGE_THRESHOLD_RAW - 1) / 255);
+    });
+
+    it('reports schoolServiceCovered true for a tile exactly at threshold (raw 64)', () => {
+      const world = makeWorld(SIZE);
+      world.getSchoolCoverageMap().getRaw()[1 * SIZE + 1] = SERVICE_COVERAGE_THRESHOLD_RAW;
+      const info = inspectTile(world, { x: 1, y: 1 })!;
+      expect(info.schoolServiceCovered).toBe(true);
+    });
+
+    it('reports isSchoolSource true, schoolCoverage 0, schoolServiceCovered false for a school tile', () => {
+      const world = makeWorld(SIZE);
+      // school requires a 2×2 footprint (same as hospital).
+      world.getStructureMap().addStructure({
+        type: 'school',
+        footprint: [
+          { x: 1, y: 1 },
+          { x: 2, y: 1 },
+          { x: 1, y: 2 },
+          { x: 2, y: 2 },
+        ],
+        anchor: { x: 1, y: 1 },
+      });
+      // Even if the raw array had a value, the source tile should read 0/false.
+      world.getSchoolCoverageMap().getRaw()[2 * SIZE + 2] = 200;
+      const info = inspectTile(world, { x: 2, y: 2 })!;
+      expect(info.isSchoolSource).toBe(true);
+      expect(info.schoolCoverage).toBe(0);
+      expect(info.schoolServiceCovered).toBe(false);
+    });
+
+    it('reports schoolCoverage 0 and schoolServiceCovered false for an uncovered tile', () => {
+      const world = makeWorld(SIZE);
+      // Raw array defaults to 0 — no seeding needed.
+      const info = inspectTile(world, { x: 3, y: 3 })!;
+      expect(info.isSchoolSource).toBe(false);
+      expect(info.schoolCoverage).toBe(0);
+      expect(info.schoolServiceCovered).toBe(false);
+    });
+  });
 });

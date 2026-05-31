@@ -4,7 +4,7 @@
  * Gathers a one-shot snapshot of everything the UI shows about a tile by
  * reading core maps. Lives in engine because it reads across several core
  * maps (tiles, power, water, service coverage, fire coverage, hospital coverage,
- * land value, buildings, structures) — the same downward read direction the
+ * school coverage, land value, buildings, structures) — the same downward read direction the
  * dispatcher uses.
  *
  * Land value is recomputed lazily (dirtied on edits, drained on the next
@@ -56,6 +56,12 @@ export interface TileInfo {
   readonly hospitalServiceCovered: boolean;
   /** True when this tile's structure is a hospital (the hospital coverage source). */
   readonly isHospitalSource: boolean;
+  /** School-service coverage in [0, 1]. */
+  readonly schoolCoverage: number;
+  /** True when the raw school coverage meets the simulation gate threshold (same gate as growth). */
+  readonly schoolServiceCovered: boolean;
+  /** True when this tile's structure is a school (the school coverage source). */
+  readonly isSchoolSource: boolean;
   /** Land value in [0, 1]. */
   readonly landValue: number;
   /** Grown building occupying this tile, if any. */
@@ -83,6 +89,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const svc = world.getServiceCoverageMap();
   const fire = world.getFireCoverageMap();
   const hospital = world.getHospitalCoverageMap();
+  const school = world.getSchoolCoverageMap();
 
   // Report each utility at the entity level, not the raw cell, to match how the
   // simulation reasons about it:
@@ -129,6 +136,13 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const hospitalCoverage = hospitalRaw / 255;
   const hospitalServiceCovered = isHospitalSource ? false : hospitalRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
+  // School coverage: a school tile is the source — same source-exclusion
+  // pattern as the police/fire/hospital readout above.
+  const isSchoolSource = structure !== null && structure.type === 'school';
+  const schoolRaw = isSchoolSource ? 0 : school.getCoverage(coord.x, coord.y);
+  const schoolCoverage = schoolRaw / 255;
+  const schoolServiceCovered = isSchoolSource ? false : schoolRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
+
   return {
     x: coord.x,
     y: coord.y,
@@ -145,6 +159,9 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     hospitalCoverage,
     hospitalServiceCovered,
     isHospitalSource,
+    schoolCoverage,
+    schoolServiceCovered,
+    isSchoolSource,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
     building: building
       ? {
