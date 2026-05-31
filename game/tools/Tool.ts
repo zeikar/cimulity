@@ -12,6 +12,7 @@ export enum Tool {
   POWER_PLANT = 'power_plant',
   WATER_TOWER = 'water_tower',
   POLICE_STATION = 'police_station',
+  FIRE_STATION = 'fire_station',
   TERRAIN_UP = 'terrain_up',
   TERRAIN_DOWN = 'terrain_down',
   TERRAIN_LEVEL = 'terrain_level',

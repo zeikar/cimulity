@@ -38,6 +38,7 @@ const TOOL_BUTTONS: Record<Tool, ToolButton> = {
   // 'A' (aqua) is used — 'W' is already Commercial; see KeyboardHandler.ts.
   [Tool.WATER_TOWER]: { tool: Tool.WATER_TOWER, label: 'Water Tower', shortcut: 'A' },
   [Tool.POLICE_STATION]: { tool: Tool.POLICE_STATION, label: 'Police', shortcut: 'C' },
+  [Tool.FIRE_STATION]: { tool: Tool.FIRE_STATION, label: 'Fire', shortcut: 'D' },
   [Tool.TERRAIN_UP]: { tool: Tool.TERRAIN_UP, label: 'Raise', shortcut: 'R' },
   [Tool.TERRAIN_DOWN]: { tool: Tool.TERRAIN_DOWN, label: 'Lower', shortcut: 'F' },
   [Tool.TERRAIN_LEVEL]: { tool: Tool.TERRAIN_LEVEL, label: 'Level', shortcut: 'G' },
@@ -51,6 +52,7 @@ const CATEGORY_LABELS: Record<ToolCategory, string> = {
   [ToolCategory.POWER]: 'Power',
   [ToolCategory.WATER]: 'Water',
   [ToolCategory.POLICE]: 'Police',
+  [ToolCategory.FIRE]: 'Fire',
   [ToolCategory.DEMOLISH]: 'Demolish',
 };
 

@@ -93,6 +93,11 @@ export const WATER_TOWER_COST = 800;
  * power + water + police before zoning" stays affordable from STARTING_FUNDS=10000.
  */
 export const POLICE_STATION_COST = 800;
+/**
+ * Cost to place a fire station (2×2). Matches POLICE_STATION_COST=800 so "place
+ * power + water + police + fire before zoning" stays affordable from STARTING_FUNDS=10000.
+ */
+export const FIRE_STATION_COST = 800;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */
