@@ -66,6 +66,19 @@ function seedFire(world: World, ax: number, ay: number): void {
   world.recomputeFire();
 }
 
+function seedHospital(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'hospital',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markHospitalDirty();
+  world.recomputeHospital();
+}
+
 describe('World.tick() — land value gating of growth', () => {
   it('zones near a road reach higher levels than zones far from any road', () => {
     // Near-road zones at x=0,1 with road at x=2; far zones at x=4,5 with no road anywhere near
@@ -321,6 +334,11 @@ describe('World.tick() — Branch B road-access gate', () => {
     map.setTile(3, 1, createTile(3, 1, TileType.ROAD));
     map.setTile(3, 2, createTile(3, 2, TileType.ROAD));
     seedFire(world, 4, 2);
+    // Hospital ALSO gates level-up. Extend the spur two more cells (3,3),(3,4) into open grass,
+    // then place the hospital (4,4)-(5,5); cell (4,4) adj road (3,4) on the network.
+    map.setTile(3, 3, createTile(3, 3, TileType.ROAD));
+    map.setTile(3, 4, createTile(3, 4, TileType.ROAD));
+    seedHospital(world, 4, 4);
     map.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
@@ -337,6 +355,7 @@ describe('World.tick() — Branch B road-access gate', () => {
     seedPower(world, 1, 1); // plant at (1,1)-(2,2); cell (1,1) adj road (1,0) → powers road row y=0
     expect(world.getServiceCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
     expect(map.getBuildings().getBuildingAt(0, 0)!.level).toBeGreaterThanOrEqual(1);
 
@@ -633,8 +652,9 @@ describe('World.tick() — density gating (demand-driven)', () => {
   it("Fixture B': post-tick getDemand() reflects level-up totals vs control world that did not tick", () => {
     // World with a low-level R building near road, no C/I — tick until it levels up.
     // Decision-A: (0,1) is GRASS here, so add isolated road+tower without changing anything else.
-    // Task 5: coverage gates level-up — bump to 6×6 and add a station whose coverage reaches anchor (0,0).
-    const world = new World(6, 6, { regenerate: false });
+    // Task 5: coverage gates level-up. Bump to 8×8 to fit police, fire, AND hospital stations
+    // each on the road network with coverage reaching anchor (0,0).
+    const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -643,11 +663,18 @@ describe('World.tick() — density gating (demand-driven)', () => {
     // South road spur (1,2),(1,3) extends the network so police AND fire each get free adjacency.
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD));
     map.setTile(1, 3, createTile(1, 3, TileType.ROAD));
+    // Left-edge road spur off (1,3) so the hospital gets free adjacency on the network.
+    map.setTile(0, 3, createTile(0, 3, TileType.ROAD)); // adj road (1,3)
+    map.setTile(0, 4, createTile(0, 4, TileType.ROAD));
+    map.setTile(0, 5, createTile(0, 5, TileType.ROAD));
+    map.setTile(0, 6, createTile(0, 6, TileType.ROAD));
     seedWater(world, 0, 2); // tower at (0,2); (0,2) adj road (0,1) → watered; zone (0,0) adj (0,1) → watered
     // Station (2,2)-(3,3); cell (2,2) adj road (1,2) → covers network → anchor (0,0) at offDist 1.
     seedPolice(world, 2, 2);
     // Fire ALSO gates level-up. Station (1,4)-(2,5); cell (1,4) adj road (1,3) → covers network → anchor (0,0).
     seedFire(world, 1, 4);
+    // Hospital ALSO gates level-up. Station (1,6)-(2,7); cell (1,6) adj road (0,6) → covers network → anchor (0,0).
+    seedHospital(world, 1, 6);
     map.getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 0, y: 0 }],
@@ -662,6 +689,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
     seedPower(world, 2, 0); // plant at (2,0)-(3,1); cell (2,0) adj road (1,0) → powers road network
     expect(world.getServiceCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
 
     // Control world: same setup, no ticks.
     const control = new World(4, 4, { regenerate: false });
@@ -727,8 +755,8 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end.
     // Land value at anchor (1,0): road distance 4, roadScore ≈ 0.429,
     // lv ≈ 0.3 > LEVEL_THRESHOLDS[2]=0.25. Sufficient to clear the gate.
-    // Decision-A: bump to World(6,7); add road (0,4) + tower (0,5)-(1,6) to water road (1,4).
-    const world = new World(6, 7, { regenerate: false });
+    // Decision-A: bump to World(8,8); add road (0,4) + tower (0,5)-(1,6) to water road (1,4).
+    const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
 
     // Paint the 1×4 zone strip and the road.
@@ -759,15 +787,17 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
     seedWater(world, 0, 5); // tower at (0,5)–(1,6); (0,5) adj road (0,4) → waters (0,4)→(1,4); zone (1,3) adj (1,4) → watered
     // Task 5: coverage gates level-up/structure-grow at the anchor (1,0). The frontage road at y=4
-    // is too far, so seed a short top road (3,0) + station (4,0)-(5,1); (4,0) adj (3,0). Off-road
-    // coverage reaches anchor (1,0) at offDist 2 via (2,0): 255*0.5=127 >= threshold(64).
-    map.setTile(3, 0, createTile(3, 0, TileType.ROAD));
-    seedPolice(world, 4, 0);
-    // Fire ALSO gates level-up/structure-grow. Station (2,1)-(3,2); cell (3,1) adj road (3,0).
-    // Off-road coverage reaches anchor (1,0) at offDist 2 via (2,0), same as the police path.
-    seedFire(world, 2, 1);
+    // is too far, so seed a top road ROW (x=2..7, y=0) and hang all three stations one row below.
+    // Anchor (1,0) is off-road from road (2,0) at offDist 1 → covered by all three.
+    for (let x = 2; x <= 7; x++) map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    seedPolice(world, 4, 1); // station (4,1)-(5,2); cell (4,1) adj road (4,0)
+    // Fire ALSO gates level-up/structure-grow. Station (6,1)-(7,2); cell (6,1) adj road (6,0).
+    seedFire(world, 6, 1);
+    // Hospital ALSO gates level-up/structure-grow. Station (2,1)-(3,2); cell (2,1) adj road (2,0).
+    seedHospital(world, 2, 1);
     expect(world.getServiceCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
 
     const result = tickOneGrowthInterval(world);
 
@@ -792,8 +822,8 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     //   Grow 2: structure cannot extend (cap reached) → level bumps 1→2;
     //           structureRect stays at cap (further level-ups would need land
     //           value past LEVEL_THRESHOLDS[3]=0.45, unreachable for this lot).
-    // Decision-A: bump to World(6,7), add road(0,4)+tower(0,5)-(1,6).
-    const world = new World(6, 7, { regenerate: false });
+    // Decision-A: bump to World(8,8), add road(0,4)+tower(0,5)-(1,6).
+    const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
 
     for (let y = 0; y < 4; y++) {
@@ -819,15 +849,17 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     world.markLandValueDirty();
     seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
     seedWater(world, 0, 5); // tower at (0,5)–(1,6); (0,5) adj road (0,4) → waters (0,4)→(1,4) → zone (1,3) watered
-    // Task 5: coverage gates level-up at the anchor (1,0). Top road (3,0) + station (4,0)-(5,1);
-    // off-road coverage reaches anchor (1,0) at offDist 2 (see sibling test for the rationale).
-    map.setTile(3, 0, createTile(3, 0, TileType.ROAD));
-    seedPolice(world, 4, 0);
-    // Fire ALSO gates level-up/structure-grow. Station (2,1)-(3,2); cell (3,1) adj road (3,0).
-    // Off-road coverage reaches anchor (1,0) at offDist 2 via (2,0), same as the police path.
-    seedFire(world, 2, 1);
+    // Task 5: coverage gates level-up at the anchor (1,0). Top road ROW (x=2..7, y=0) with all three
+    // stations one row below; anchor (1,0) off-road from road (2,0) at offDist 1 → covered by all three.
+    for (let x = 2; x <= 7; x++) map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    seedPolice(world, 4, 1); // station (4,1)-(5,2); cell (4,1) adj road (4,0)
+    // Fire ALSO gates level-up/structure-grow. Station (6,1)-(7,2); cell (6,1) adj road (6,0).
+    seedFire(world, 6, 1);
+    // Hospital ALSO gates level-up/structure-grow. Station (2,1)-(3,2); cell (2,1) adj road (2,0).
+    seedHospital(world, 2, 1);
     expect(world.getServiceCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
 
     // Grow 1 (age 7 → 8, fires): 1×1 → 1×2 (cap)
     tickOneGrowthInterval(world);
@@ -847,11 +879,11 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // Decision-A: bump to World(6,6) with a road row y=2; add tower for water routing.
     // Task 5: coverage gates level-up — add a station adjacent to the road row so the anchor (1,1) is covered.
     // Zone (1,1) frontage S adj to road (1,2) on the row → powered, watered, and covered.
-    const world = new World(6, 6, { regenerate: false });
+    const world = new World(7, 6, { regenerate: false });
     const map = world.getMap();
 
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
-    for (let x = 0; x < 6; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD)); // road row y=2
+    for (let x = 0; x < 7; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD)); // road row y=2
 
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 gate fires.
     // land value at (1,1): road at distance 1 → roadScore = 1-1/7 ≈ 0.857,
@@ -874,8 +906,11 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     seedPolice(world, 0, 3); // station at (0,3)-(1,4); (0,3) adj road (0,2) → covers road row → anchor (1,1) at offDist 1
     // Fire ALSO gates level-up. Station (3,0)-(4,1); cell (3,1) adj road (3,2) → covers road row → anchor (1,1).
     seedFire(world, 3, 0);
+    // Hospital ALSO gates level-up. Station (5,3)-(6,4); cell (5,3) adj road (5,2) → covers road row → anchor (1,1).
+    seedHospital(world, 5, 3);
     expect(world.getServiceCoverageMap().getCoverage(1, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(1, 1)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 1)).toBeGreaterThan(0);
 
     const result = tickOneGrowthInterval(world);
 
