@@ -140,6 +140,11 @@ export function TileInfoPanel({
             {info.powered ? 'Powered' : 'No Power'}
           </span>
         </Row>
+        <Row label="Water">
+          <span style={{ color: info.watered ? '#4caf50' : '#ff6b6b' }}>
+            {info.watered ? 'Watered' : 'No Water'}
+          </span>
+        </Row>
         <Row label="Land Value">{Math.round(info.landValue * 100)}%</Row>
 
         {info.building && (

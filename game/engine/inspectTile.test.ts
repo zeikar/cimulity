@@ -79,6 +79,76 @@ describe('inspectTile', () => {
     expect(inspectTile(world, { x: 3, y: 2 })!.powered).toBe(true);
   });
 
+  it('reports water state from the water map', () => {
+    const world = makeWorld();
+    const info = inspectTile(world, { x: 1, y: 1 });
+    // A fresh flat world has no water source, so no tile is watered.
+    expect(info!.watered).toBe(false);
+  });
+
+  it('reports a water tower as watered (source) and not powered; a power plant is the mirror', () => {
+    const towerWorld = makeWorld();
+    towerWorld.getStructureMap().addStructure({
+      type: 'water_tower',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+    });
+    towerWorld.recomputeWater();
+    towerWorld.recomputePower();
+    // The tower is a water SOURCE: its cell is never raw-watered...
+    expect(towerWorld.getWaterMap().isWatered(1, 1)).toBe(false);
+    // ...but the panel reports it watered (active supplier), and not powered (not on the grid).
+    const tower = inspectTile(towerWorld, { x: 1, y: 1 })!;
+    expect(tower.watered).toBe(true);
+    expect(tower.powered).toBe(false);
+
+    // A power plant is the inverse: powered (its own source utility) but not watered.
+    const plantWorld = makeWorld();
+    plantWorld.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        { x: 1, y: 2 },
+        { x: 2, y: 2 },
+      ],
+      anchor: { x: 1, y: 1 },
+    });
+    plantWorld.recomputePower();
+    plantWorld.recomputeWater();
+    const plant = inspectTile(plantWorld, { x: 2, y: 2 })!;
+    expect(plant.powered).toBe(true);
+    expect(plant.watered).toBe(false);
+  });
+
+  it('reports a building as watered when any footprint cell is watered', () => {
+    const world = makeWorld();
+    // A 2x1 residential building spanning (2,2)-(3,2).
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [
+        { x: 2, y: 2 },
+        { x: 3, y: 2 },
+      ],
+      anchor: { x: 2, y: 2 },
+      level: 1,
+      density: 0,
+      age: 0,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 2, h: 1 },
+    });
+    // Water only the first footprint cell; the second stays raw-unwatered.
+    const size = 6;
+    world.getWaterMap().getRaw()[2 * size + 2] = 1;
+    expect(world.getWaterMap().isWatered(3, 2)).toBe(false);
+
+    // Clicking the raw-unwatered cell still reports the building watered,
+    // matching isBuildingWatered (the predicate growth uses).
+    expect(inspectTile(world, { x: 3, y: 2 })!.watered).toBe(true);
+  });
+
   it('reports land value in [0, 1]', () => {
     const world = makeWorld();
     const info = inspectTile(world, { x: 1, y: 1 });
