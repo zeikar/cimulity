@@ -332,4 +332,63 @@ describe('inspectTile', () => {
       expect(info.fireServiceCovered).toBe(false);
     });
   });
+
+  describe('hospital coverage', () => {
+    const SIZE = 6;
+
+    it('reports hospitalCoverage matching getCoverage/255 and hospitalServiceCovered true for a covered tile', () => {
+      const world = makeWorld(SIZE);
+      // Seed raw=128 at (2,2) — well above the threshold.
+      world.getHospitalCoverageMap().getRaw()[2 * SIZE + 2] = 128;
+      const info = inspectTile(world, { x: 2, y: 2 })!;
+      expect(info.hospitalCoverage).toBeCloseTo(128 / 255);
+      expect(info.hospitalServiceCovered).toBe(true);
+    });
+
+    it('reports hospitalServiceCovered false for a tile at raw 63 (one below threshold)', () => {
+      const world = makeWorld(SIZE);
+      // SERVICE_COVERAGE_THRESHOLD_RAW = 64; raw 63 must NOT be covered.
+      world.getHospitalCoverageMap().getRaw()[1 * SIZE + 1] = SERVICE_COVERAGE_THRESHOLD_RAW - 1;
+      const info = inspectTile(world, { x: 1, y: 1 })!;
+      expect(info.hospitalServiceCovered).toBe(false);
+      expect(info.hospitalCoverage).toBeCloseTo((SERVICE_COVERAGE_THRESHOLD_RAW - 1) / 255);
+    });
+
+    it('reports hospitalServiceCovered true for a tile exactly at threshold (raw 64)', () => {
+      const world = makeWorld(SIZE);
+      world.getHospitalCoverageMap().getRaw()[1 * SIZE + 1] = SERVICE_COVERAGE_THRESHOLD_RAW;
+      const info = inspectTile(world, { x: 1, y: 1 })!;
+      expect(info.hospitalServiceCovered).toBe(true);
+    });
+
+    it('reports isHospitalSource true, hospitalCoverage 0, hospitalServiceCovered false for a hospital tile', () => {
+      const world = makeWorld(SIZE);
+      // hospital requires a 2×2 footprint (same as fire_station).
+      world.getStructureMap().addStructure({
+        type: 'hospital',
+        footprint: [
+          { x: 1, y: 1 },
+          { x: 2, y: 1 },
+          { x: 1, y: 2 },
+          { x: 2, y: 2 },
+        ],
+        anchor: { x: 1, y: 1 },
+      });
+      // Even if the raw array had a value, the source tile should read 0/false.
+      world.getHospitalCoverageMap().getRaw()[2 * SIZE + 2] = 200;
+      const info = inspectTile(world, { x: 2, y: 2 })!;
+      expect(info.isHospitalSource).toBe(true);
+      expect(info.hospitalCoverage).toBe(0);
+      expect(info.hospitalServiceCovered).toBe(false);
+    });
+
+    it('reports hospitalCoverage 0 and hospitalServiceCovered false for an uncovered tile', () => {
+      const world = makeWorld(SIZE);
+      // Raw array defaults to 0 — no seeding needed.
+      const info = inspectTile(world, { x: 3, y: 3 })!;
+      expect(info.isHospitalSource).toBe(false);
+      expect(info.hospitalCoverage).toBe(0);
+      expect(info.hospitalServiceCovered).toBe(false);
+    });
+  });
 });

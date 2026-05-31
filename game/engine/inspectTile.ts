@@ -3,8 +3,9 @@
  *
  * Gathers a one-shot snapshot of everything the UI shows about a tile by
  * reading core maps. Lives in engine because it reads across several core
- * maps (tiles, power, water, service coverage, fire coverage, land value,
- * buildings, structures) — the same downward read direction the dispatcher uses.
+ * maps (tiles, power, water, service coverage, fire coverage, hospital coverage,
+ * land value, buildings, structures) — the same downward read direction the
+ * dispatcher uses.
  *
  * Land value is recomputed lazily (dirtied on edits, drained on the next
  * tick), so a fresh edit while paused would otherwise read a stale value.
@@ -49,6 +50,12 @@ export interface TileInfo {
   readonly fireServiceCovered: boolean;
   /** True when this tile's structure is a fire station (the fire coverage source). */
   readonly isFireSource: boolean;
+  /** Hospital-service coverage in [0, 1]. */
+  readonly hospitalCoverage: number;
+  /** True when the raw hospital coverage meets the simulation gate threshold (same gate as growth). */
+  readonly hospitalServiceCovered: boolean;
+  /** True when this tile's structure is a hospital (the hospital coverage source). */
+  readonly isHospitalSource: boolean;
   /** Land value in [0, 1]. */
   readonly landValue: number;
   /** Grown building occupying this tile, if any. */
@@ -75,6 +82,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const water = world.getWaterMap();
   const svc = world.getServiceCoverageMap();
   const fire = world.getFireCoverageMap();
+  const hospital = world.getHospitalCoverageMap();
 
   // Report each utility at the entity level, not the raw cell, to match how the
   // simulation reasons about it:
@@ -114,6 +122,13 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const fireCoverage = fireRaw / 255;
   const fireServiceCovered = isFireSource ? false : fireRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
+  // Hospital coverage: a hospital tile is the source — same source-exclusion
+  // pattern as the police/fire readout above.
+  const isHospitalSource = structure !== null && structure.type === 'hospital';
+  const hospitalRaw = isHospitalSource ? 0 : hospital.getCoverage(coord.x, coord.y);
+  const hospitalCoverage = hospitalRaw / 255;
+  const hospitalServiceCovered = isHospitalSource ? false : hospitalRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
+
   return {
     x: coord.x,
     y: coord.y,
@@ -127,6 +142,9 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     fireCoverage,
     fireServiceCovered,
     isFireSource,
+    hospitalCoverage,
+    hospitalServiceCovered,
+    isHospitalSource,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
     building: building
       ? {
