@@ -1113,3 +1113,61 @@ describe('buildToolCommands - BULLDOZE with POLICE_STATION', () => {
     expect(result[0].kind).toBe('remove-structure');
   });
 });
+
+describe('buildToolCommands - FIRE_STATION cell protections', () => {
+  it('ROAD rejects a single FIRE_STATION tile (transactional: returns empty)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.FIRE_STATION));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_RESIDENTIAL rejects a FIRE_STATION tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.FIRE_STATION));
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL rejects a FIRE_STATION tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.FIRE_STATION));
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_INDUSTRIAL rejects a FIRE_STATION tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.FIRE_STATION));
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP skips a FIRE_STATION cell — no vertex writes for that tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.FIRE_STATION));
+    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+});
+
+describe('buildToolCommands - BULLDOZE with FIRE_STATION', () => {
+  function placeFireStation(w: World, ax: number, ay: number): void {
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        w.getMap().setTile(ax + dx, ay + dy, createTile(ax + dx, ay + dy, TileType.FIRE_STATION));
+      }
+    }
+    w.getStructureMap().addStructure({
+      type: 'fire_station',
+      footprint: [{ x: ax, y: ay }, { x: ax + 1, y: ay }, { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 }],
+      anchor: { x: ax, y: ay },
+    });
+  }
+
+  it('single fire station cell → 1 remove-structure command', () => {
+    placeFireStation(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+
+  it('drag over 3 of 4 fire station cells → exactly 1 remove-structure command (dedup)', () => {
+    placeFireStation(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [
+      { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 },
+    ], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+});

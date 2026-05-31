@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v13 is native; v12 and earlier are rejected; `worldStore` falls back to a fresh
+ * v14 is native; v13 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -22,9 +22,9 @@ import type { Structure, StructureType } from './StructureMap';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v13 saves are accepted.
+ * This is the `v` value written to disk. Only native v14 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 13;
+export const WORLD_SAVE_VERSION = 14;
 
 /**
  * Maps a StructureType to its corresponding TileType — single source of truth so
@@ -35,12 +35,13 @@ function structureTileType(type: StructureType): TileType {
     case 'power_plant': return TileType.POWER_PLANT;
     case 'water_tower': return TileType.WATER_TOWER;
     case 'police_station': return TileType.POLICE_STATION;
+    case 'fire_station': return TileType.FIRE_STATION;
   }
 }
 
 /** All tile types that belong exclusively to a structure footprint; used by orphan-tile sweep.
  *  Must stay in sync with structureTileType() — every StructureType must have its tile here. */
-const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER, TileType.POLICE_STATION]);
+const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER, TileType.POLICE_STATION, TileType.FIRE_STATION]);
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
@@ -50,7 +51,7 @@ const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
  */
 interface StructureSaveEntry {
   id: number;
-  type: string;             // 'power_plant' | 'water_tower' | 'police_station' (v13 native)
+  type: string;             // 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' (v14 native)
   foot: [number, number][]; // exactly 4 cells for a 2x2
   anc: [number, number];
 }
@@ -315,10 +316,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v13 world envelope onto an existing World instance.
+ * Apply a serialized v14 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===13 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===14 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {

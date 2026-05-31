@@ -23,6 +23,10 @@ describe('isStructureType', () => {
     expect(isStructureType('police_station')).toBe(true);
   });
 
+  it('accepts fire_station', () => {
+    expect(isStructureType('fire_station')).toBe(true);
+  });
+
   it('rejects residential', () => {
     expect(isStructureType('residential')).toBe(false);
   });
@@ -47,6 +51,10 @@ describe('structureFootprintSize', () => {
 
   it('returns {w:2,h:2} for police_station', () => {
     expect(structureFootprintSize('police_station')).toEqual({ w: 2, h: 2 });
+  });
+
+  it('returns {w:2,h:2} for fire_station', () => {
+    expect(structureFootprintSize('fire_station')).toEqual({ w: 2, h: 2 });
   });
 });
 
@@ -133,6 +141,30 @@ describe('StructureMap — police_station', () => {
     expect(
       map.addStructure({
         type: 'police_station',
+        footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+        anchor: { x: 0, y: 0 },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('StructureMap — fire_station', () => {
+  it('addStructure accepts a valid 2×2 fire_station', () => {
+    const map = new StructureMap(10, 10);
+    const s = map.addStructure({
+      type: 'fire_station',
+      footprint: make2x2Footprint(0, 0),
+      anchor: { x: 0, y: 0 },
+    });
+    expect(s).not.toBeNull();
+    expect(s!.type).toBe('fire_station');
+  });
+
+  it('addStructure rejects 2×1 footprint for fire_station', () => {
+    const map = new StructureMap(10, 10);
+    expect(
+      map.addStructure({
+        type: 'fire_station',
         footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
         anchor: { x: 0, y: 0 },
       }),

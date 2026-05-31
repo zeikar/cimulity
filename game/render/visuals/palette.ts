@@ -22,6 +22,8 @@ export const TILE_COLORS: Record<TileType, number> = {
   water_tower: 0x3f7fb0,
   /** Police-station footprint cells render with a navy base; distinct from road (0x4a4a4a), power (0x7a7a7a), water_tower (0x3f7fb0), and WATER_COLOR (0x2e6ba3). */
   police_station: 0x3a4a6a,
+  /** Fire-engine red. */
+  fire_station: 0xb83232,
   zone_residential: 0x3cc44b,
   zone_commercial: 0x2f8fd6,
   zone_industrial: 0xe8c531,

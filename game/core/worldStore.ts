@@ -21,15 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v13' to match WORLD_SAVE_VERSION = 13.
-// Legacy saves at ':v12 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v14' to match WORLD_SAVE_VERSION = 14.
+// Legacy saves at ':v13 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v13';
+const STORAGE_KEY = 'cimulity:save:v14';
 
-// Bumped to 'service-v1' for the World service-coverage API surface (ServiceCoverageMap methods added to World).
+// Bumped to 'service-v2' for the fire station tile/structure type added in v14.
 // An HMR singleton carrying a mismatched guard is discarded and rebuilt even if
 // hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'service-v1' as const;
+const WORLD_SINGLETON_GUARD = 'service-v2' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
