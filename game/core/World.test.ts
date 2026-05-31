@@ -406,6 +406,8 @@ describe('World.tick() — monthly tax settlement', () => {
     seedFire(world, 8, 3);
     // Hospital coverage ALSO gates level-up — station at (5,0)–(6,1); cell (5,1) adj to road (5,2).
     seedHospital(world, 5, 0);
+    // School coverage ALSO gates level-up — station at (8,0)–(9,1); cell (8,1) adj to road (8,2).
+    seedSchool(world, 8, 0);
 
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
 
@@ -417,6 +419,7 @@ describe('World.tick() — monthly tax settlement', () => {
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 to level up on this growth tick.
     // stagger(first-alloc-id)=0, cooldown=8. age=7 → after age+1=8 >= 8 → level-up fires.
@@ -575,11 +578,11 @@ describe('stagger() — deterministic per-building jitter', () => {
     // All spawn at level=1 simultaneously on the first growth interval; the next
     // level-up (to level=2) is gated by GROWTH_COOLDOWN_INTERVALS + stagger(id),
     // which is what differentiates the per-building first-level-2 ticks.
-    // Widened to 16 so free 2×2 fire AND hospital stations fit adjacent to the extended road row at the right end.
-    const world = new World(16, 4, { regenerate: false });
+    // Widened to 18 so free 2×2 fire, hospital, AND school stations fit adjacent to the extended road row at the right end.
+    const world = new World(18, 4, { regenerate: false });
     const map = world.getMap();
     // Road along the top row
-    for (let x = 0; x < 16; x++) {
+    for (let x = 0; x < 18; x++) {
       map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
     }
     // 5 zones below the road — all road-adjacent
@@ -617,11 +620,16 @@ describe('stagger() — deterministic per-building jitter', () => {
     // Hospital coverage gates level-up too. Station at (14,1)–(15,2); cell (14,1) adj to road (14,0)
     // → covers road y=0 → off-road frontage covers all 5 residential anchors at y=1.
     seedHospital(world, 14, 1);
-    // All 5 residential anchors are fire- and hospital-covered (sample the closest and farthest).
+    // School coverage gates level-up too. Station at (16,1)–(17,2); cell (16,1) adj to road (16,0)
+    // → covers road y=0 → off-road frontage covers all 5 residential anchors at y=1.
+    seedSchool(world, 16, 1);
+    // All 5 residential anchors are fire-, hospital-, and school-covered (sample the closest and farthest).
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(4, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(4, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(4, 1)).toBeGreaterThan(0);
 
     const firstLevelTwoTick = new Map<number, number>();
 
@@ -996,15 +1004,15 @@ describe('World.tick() — service coverage periodic cadence', () => {
 
 describe('World.tick() water gate — level-up/density/merge gated, spawn and aging NOT gated', () => {
   it('(a) powered-but-unwatered building STILL AGES but does NOT level up', () => {
-    // After the police+fire+hospital gate, water must be the SOLE blocker: seed all three
-    // emergency services reaching the anchor while keeping the building unwatered (no tower).
-    // Layout (12×10): top road ROW y=0 (x=0..11). Building (0,1) frontage N adj to road (0,0)
-    // → road access + anchor (0,1) off-road at offDist 1. Four 2×2 structures hang off the
-    // road row at y=1 in DISJOINT x-ranges: hospital (3,1), power (5,1), police (7,1), fire (9,1).
-    const world = new World(12, 10, { regenerate: false });
+    // After the police+fire+hospital+school gate, water must be the SOLE blocker: seed all four
+    // coverage services reaching the anchor while keeping the building unwatered (no tower).
+    // Layout (14×10): top road ROW y=0 (x=0..13). Building (0,1) frontage N adj to road (0,0)
+    // → road access + anchor (0,1) off-road at offDist 1. Five 2×2 structures hang off the
+    // road row at y=1 in DISJOINT x-ranges: hospital (3,1), power (5,1), police (7,1), fire (9,1), school (11,1).
+    const world = new World(14, 10, { regenerate: false });
     const map = world.getMap();
     // Top road row.
-    for (let x = 0; x < 12; x++) map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    for (let x = 0; x < 14; x++) map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
     map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
     // Zone diversity for land value.
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
@@ -1016,6 +1024,9 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // Police (7,1)–(8,2); cell (7,1) adj road (7,0). Fire (9,1)–(10,2); cell (9,1) adj road (9,0).
     seedPolice(world, 7, 1);
     seedFire(world, 9, 1);
+    // School (11,1)–(12,2); cell (11,1) adj road (11,0) → covers the road row → anchor (0,1).
+    // Seeded so school is SATISFIED and water remains the SOLE blocker.
+    seedSchool(world, 11, 1);
 
     // Seed a level-1 building ready to level up: age just below cooldown.
     const cooldown = GROWTH_COOLDOWN_INTERVALS; // stagger(0) = 0 for id 0
@@ -1034,10 +1045,11 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // Confirm building's footprint cell is powered (not just the road), and not watered.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(false);
-    // All three emergency services reach the anchor — water is the SOLE blocker.
+    // All four services reach the anchor — water is the SOLE blocker.
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     // Run enough growth ticks for the building to age significantly.
     const GROWTH_TICKS = 5;
@@ -1072,6 +1084,8 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     seedFire(world, 8, 3);
     // Hospital coverage ALSO gates level-up — station at (5,0)–(6,1); cell (5,1) adj to road (5,2).
     seedHospital(world, 5, 0);
+    // School coverage ALSO gates level-up — station at (8,0)–(9,1); cell (8,1) adj to road (8,2).
+    seedSchool(world, 8, 0);
 
     // Jobs source for residential demand.
     map.getBuildings().addExistingBuilding({
@@ -1106,6 +1120,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     // Run growth ticks — with water and coverage present, building should level up.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
@@ -1355,8 +1370,8 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
   it('(a) powered+watered building with fire+hospital but NO police coverage does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
     // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
-    // Plant (4,3)–(5,4) powers the road row; tower (7,3)–(8,4) waters it. Fire (8,3)–(9,4)
-    // and hospital (5,0)–(6,1) cover the anchor; NO police station → police is the SOLE blocker.
+    // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Fire (8,3)–(9,4),
+    // hospital (5,0)–(6,1), and school (8,0)–(9,1) cover the anchor; NO police station → police is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1367,6 +1382,8 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     seedWater(world, 7, 3);
     seedFire(world, 8, 3);
     seedHospital(world, 5, 0);
+    // School covers the anchor so police stays the SOLE blocker. Station (8,0)–(9,1); cell (8,1) adj road (8,2).
+    seedSchool(world, 8, 0);
 
     // Jobs source for residential demand.
     map.getBuildings().addExistingBuilding({
@@ -1390,11 +1407,12 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     expect(b).not.toBeNull();
     const bid = b!.id;
 
-    // Power + water + fire + hospital satisfied; police coverage is ZERO — the SOLE blocker.
+    // Power + water + fire + hospital + school satisfied; police coverage is ZERO — the SOLE blocker.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBe(0);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
@@ -1422,6 +1440,8 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     seedFire(world, 8, 3);
     // Hospital coverage ALSO gates level-up — station at (5,0)–(6,1); cell (5,1) adj to road (5,2).
     seedHospital(world, 5, 0);
+    // School coverage ALSO gates level-up — station at (8,0)–(9,1); cell (8,1) adj to road (8,2).
+    seedSchool(world, 8, 0);
 
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
@@ -1450,6 +1470,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
@@ -1484,17 +1505,17 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
 });
 
 // ---------------------------------------------------------------------------
-// Fire-coverage gate: level-up requires police AND fire AND hospital coverage at
-// the anchor. Police, hospital, power, water, and land value are satisfied
+// Fire-coverage gate: level-up requires police AND fire AND hospital AND school coverage at
+// the anchor. Police, hospital, school, power, water, and land value are satisfied
 // throughout so fire coverage is the SOLE variable. Spawn is NOT fire-gated.
 // ---------------------------------------------------------------------------
 
-describe('World.tick() fire-coverage gate — level-up needs police AND fire AND hospital at the anchor', () => {
+describe('World.tick() fire-coverage gate — level-up needs police AND fire AND hospital AND school at the anchor', () => {
   it('with police+hospital but NO fire coverage does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
     // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
-    // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4)
-    // and hospital (5,0)–(6,1) cover the anchor. NO fire station → fire is the SOLE blocker.
+    // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4),
+    // hospital (5,0)–(6,1), and school (8,0)–(9,1) cover the anchor. NO fire station → fire is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1505,6 +1526,8 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     seedWater(world, 7, 3);
     seedPolice(world, 1, 3);
     seedHospital(world, 5, 0);
+    // School covers the anchor so fire stays the SOLE blocker. Station (8,0)–(9,1); cell (8,1) adj road (8,2).
+    seedSchool(world, 8, 0);
 
     // Jobs source for residential demand.
     map.getBuildings().addExistingBuilding({
@@ -1528,11 +1551,12 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     expect(b).not.toBeNull();
     const bid = b!.id;
 
-    // Power + water + police + hospital coverage satisfied; fire coverage is ZERO — the SOLE blocker.
+    // Power + water + police + hospital + school coverage satisfied; fire coverage is ZERO — the SOLE blocker.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBe(0);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
@@ -1544,9 +1568,9 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     expect(after.age).toBeGreaterThan(cooldown + 5);
   });
 
-  it('with all three (police+fire+hospital) coverage at the anchor, the building levels up', () => {
-    // Identical layout to the negative case, plus a fire station at (8,3)–(9,4) and a
-    // hospital at (5,0)–(6,1): both reach the road row → off-road frontage covers (0,1).
+  it('with all four (police+fire+hospital+school) coverage at the anchor, the building levels up', () => {
+    // Identical layout to the negative case, plus a fire station at (8,3)–(9,4), a
+    // hospital at (5,0)–(6,1), and a school at (8,0)–(9,1): all reach the road row → off-road frontage covers (0,1).
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1558,6 +1582,8 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     seedPolice(world, 1, 3);
     seedFire(world, 8, 3);
     seedHospital(world, 5, 0);
+    // School ALSO gates level-up — station (8,0)–(9,1); cell (8,1) adj road (8,2).
+    seedSchool(world, 8, 0);
 
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
@@ -1580,12 +1606,13 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     expect(b).not.toBeNull();
     const bid = b!.id;
 
-    // Power + water + ALL THREE (police, fire, hospital) coverage satisfied at the anchor.
+    // Power + water + ALL FOUR (police, fire, hospital, school) coverage satisfied at the anchor.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
@@ -1593,17 +1620,17 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
 });
 
 // ---------------------------------------------------------------------------
-// Hospital-coverage gate: level-up requires police AND fire AND hospital coverage
-// at the anchor. Police, fire, power, water, and land value are satisfied throughout
-// so hospital coverage is the SOLE variable. Spawn is NOT hospital-gated.
+// Hospital-coverage gate: level-up requires police AND fire AND hospital AND school
+// coverage at the anchor. Police, fire, school, power, water, and land value are
+// satisfied throughout so hospital coverage is the SOLE variable. Spawn is NOT hospital-gated.
 // ---------------------------------------------------------------------------
 
-describe('World.tick() hospital-coverage gate — level-up needs police AND fire AND hospital at the anchor', () => {
+describe('World.tick() hospital-coverage gate — level-up needs police AND fire AND hospital AND school at the anchor', () => {
   it('with police+fire but NO hospital coverage does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
     // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
-    // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4)
-    // and fire (8,3)–(9,4) cover the anchor. NO hospital → hospital is the SOLE blocker.
+    // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4),
+    // fire (8,3)–(9,4), and school (8,0)–(9,1) cover the anchor. NO hospital → hospital is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1614,6 +1641,8 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     seedWater(world, 7, 3);
     seedPolice(world, 1, 3);
     seedFire(world, 8, 3);
+    // School covers the anchor so hospital stays the SOLE blocker. Station (8,0)–(9,1); cell (8,1) adj road (8,2).
+    seedSchool(world, 8, 0);
 
     // Jobs source for residential demand.
     map.getBuildings().addExistingBuilding({
@@ -1637,11 +1666,12 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     expect(b).not.toBeNull();
     const bid = b!.id;
 
-    // Power + water + police + fire coverage satisfied; hospital coverage is ZERO — the SOLE blocker.
+    // Power + water + police + fire + school coverage satisfied; hospital coverage is ZERO — the SOLE blocker.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBe(0);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
@@ -1653,9 +1683,9 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     expect(after.age).toBeGreaterThan(cooldown + 5);
   });
 
-  it('with all three (police+fire+hospital) the building levels up', () => {
-    // Identical layout to the negative case, plus a hospital at (5,0)–(6,1):
-    // cell (5,1) adj to road (5,2) → covers the road row → off-road frontage covers (0,1).
+  it('with all four (police+fire+hospital+school) the building levels up', () => {
+    // Identical layout to the negative case, plus a hospital at (5,0)–(6,1) and a
+    // school at (8,0)–(9,1): both reach the road row → off-road frontage covers (0,1).
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1667,6 +1697,8 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     seedPolice(world, 1, 3);
     seedFire(world, 8, 3);
     seedHospital(world, 5, 0);
+    // School ALSO gates level-up — station (8,0)–(9,1); cell (8,1) adj road (8,2).
+    seedSchool(world, 8, 0);
 
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
@@ -1689,12 +1721,126 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     expect(b).not.toBeNull();
     const bid = b!.id;
 
-    // Power + water + ALL THREE (police, fire, hospital) coverage satisfied at the anchor.
+    // Power + water + ALL FOUR (police, fire, hospital, school) coverage satisfied at the anchor.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// School-coverage gate: level-up requires police AND fire AND hospital AND school
+// coverage at the anchor. Police, fire, hospital, power, water, and land value are
+// satisfied throughout so school coverage is the SOLE variable. Spawn is NOT school-gated.
+// ---------------------------------------------------------------------------
+
+describe('World.tick() school-coverage gate — level-up needs police AND fire AND hospital AND school at the anchor', () => {
+  it('with police+fire+hospital but NO school does NOT level up', () => {
+    // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4),
+    // fire (8,3)–(9,4), and hospital (5,0)–(6,1) cover the anchor. NO school → school is the SOLE blocker.
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 4, 3);
+    seedWater(world, 7, 3);
+    seedPolice(world, 1, 3);
+    seedFire(world, 8, 3);
+    seedHospital(world, 5, 0);
+
+    // Jobs source for residential demand.
+    map.getBuildings().addExistingBuilding({
+      id: 999, type: 'commercial',
+      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 9, y: 7, w: 1, h: 1 },
+    });
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 1,
+      density: 0,
+      age: cooldown + 5, // past cooldown — only school coverage can block
+      frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+
+    // Power + water + police + fire + hospital coverage satisfied; school coverage is ZERO — the SOLE blocker.
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBe(0);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+
+    const after = map.getBuildings().getBuilding(bid)!;
+    // Level must NOT have increased (school-coverage gate blocked it).
+    expect(after.level).toBe(1);
+    // Age MUST have increased (aging is NOT coverage-gated).
+    expect(after.age).toBeGreaterThan(cooldown + 5);
+  });
+
+  it('with all four (police+fire+hospital+school) the building levels up', () => {
+    // Identical layout to the negative case, plus a school at (8,0)–(9,1):
+    // cell (8,1) adj to road (8,2) → covers the road row → off-road frontage covers (0,1).
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 4, 3);
+    seedWater(world, 7, 3);
+    seedPolice(world, 1, 3);
+    seedFire(world, 8, 3);
+    seedHospital(world, 5, 0);
+    seedSchool(world, 8, 0);
+
+    map.getBuildings().addExistingBuilding({
+      id: 999, type: 'commercial',
+      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 9, y: 7, w: 1, h: 1 },
+    });
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 1,
+      density: 0,
+      age: cooldown + 5,
+      frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+
+    // Power + water + ALL FOUR (police, fire, hospital, school) coverage satisfied at the anchor.
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);

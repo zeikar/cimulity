@@ -77,6 +77,19 @@ function seedHospital(world: World, ax: number, ay: number): void {
   world.recomputeHospital();
 }
 
+function seedSchool(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'school',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markSchoolDirty();
+  world.recomputeSchool();
+}
+
 describe('World.tick() — heal rule', () => {
   it('converts a DIRT tile to GRASS and returns changed === 1', () => {
     const world = new World(4, 4, { regenerate: false });
@@ -223,8 +236,11 @@ describe('World.tick() — zone growth', () => {
     seedFire(world, 8, 3);
     // Hospital ALSO gates level-up. Station (5,0)-(6,1); (5,1) adj road (5,2) → covers road row → anchor (0,1).
     seedHospital(world, 5, 0);
+    // School ALSO gates level-up. Station (8,0)-(9,1); (8,1) adj road (8,2) → covers road row → anchor (0,1).
+    seedSchool(world, 8, 0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
     // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.
@@ -445,9 +461,9 @@ describe('World.tick() — changedBuildingIds contract', () => {
   it('changedBuildingIds contains right id on level-up and is empty on non-growth/no-change ticks', () => {
     // Decision-A: plant moved from (1,1) to (2,0) so tower (0,2)-(1,3) can be placed without conflict.
     // (0,1) is GRASS → add isolated road + tower there. Zone (0,0) adj to watered road (0,1) → watered.
-    // Task 5: coverage gates level-up. Bump to 8×8 to fit police, fire, AND hospital stations
-    // each on the road network with coverage reaching anchor (0,0).
-    const world = new World(8, 8, { regenerate: false });
+    // Task 5: coverage gates level-up. Bump to 8×10 to fit police, fire, hospital, AND school
+    // stations each on the road network with coverage reaching anchor (0,0).
+    const world = new World(8, 10, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
@@ -456,11 +472,14 @@ describe('World.tick() — changedBuildingIds contract', () => {
     // South road spur (1,2),(1,3) extends the network so police AND fire each get free adjacency.
     map.setTile(1, 2, createTile(1, 2, TileType.ROAD));
     map.setTile(1, 3, createTile(1, 3, TileType.ROAD));
-    // Left-edge road spur off (1,3) so the hospital gets free adjacency on the network.
+    // Left-edge road spur off (1,3) so the hospital AND school get free adjacency on the network.
     map.setTile(0, 3, createTile(0, 3, TileType.ROAD)); // adj road (1,3)
     map.setTile(0, 4, createTile(0, 4, TileType.ROAD));
     map.setTile(0, 5, createTile(0, 5, TileType.ROAD));
     map.setTile(0, 6, createTile(0, 6, TileType.ROAD));
+    // Extend the spur two more cells so the school gets free adjacency below the hospital.
+    map.setTile(0, 7, createTile(0, 7, TileType.ROAD));
+    map.setTile(0, 8, createTile(0, 8, TileType.ROAD));
     seedPower(world, 2, 0); // plant at (2,0)–(3,1); (2,0) adj road (1,0) → powers it
     seedWater(world, 0, 2); // tower at (0,2); (0,2) adj road (0,1) → waters (0,1); zone (0,0) adj → watered
     // Station (2,2)-(3,3); cell (2,2) adj road (1,2) → covers network → anchor (0,0) at offDist 1.
@@ -469,9 +488,12 @@ describe('World.tick() — changedBuildingIds contract', () => {
     seedFire(world, 1, 4);
     // Hospital ALSO gates level-up. Station (1,6)-(2,7); cell (1,6) adj road (0,6) → covers network → anchor (0,0).
     seedHospital(world, 1, 6);
+    // School ALSO gates level-up. Station (1,8)-(2,9); cell (1,8) adj road (0,8) → covers network → anchor (0,0).
+    seedSchool(world, 1, 8);
     expect(world.getServiceCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 0)).toBeGreaterThan(0);
 
     // Seed a building at level 0, age sufficient for level-up.
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 = 8 >= 8 → level-up on next growth tick.
