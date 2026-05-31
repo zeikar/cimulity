@@ -190,7 +190,7 @@ Each tick (`World.tick`, 1 tick = 1 day):
    - No building yet on this tile → create a level-0 building (road adjacency is the only gate)
    - Building already exists → level-up / density growth gated by land-value thresholds + per-building cooldown
 
-   The growth pass reads `landValue` as a frozen snapshot taken at step 2.
+   The growth pass reads `landValue` as a frozen snapshot taken at step 2. Derived utility maps — `PowerMap` (binary road-BFS reachability from power plants), `WaterMap` (same pattern for water towers), and `ServiceCoverageMap` (road-BFS + distance falloff + short off-road pickup, graded 0..255 intensity, MAX across stations via min-distance) — are recomputed on their own `SERVICE_INTERVAL`/dirty cadence inside `World.tick` and are not persisted. Power gates initial zone spawn; water and service coverage (`propagateServiceCoverage`) gate level-ups at the building anchor tile.
 
 ### Procedural terrain generation
 
