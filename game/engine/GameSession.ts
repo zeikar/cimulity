@@ -34,6 +34,10 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
   [Tool.BULLDOZE]: 0xff3b30,
   [Tool.TERRAIN_UP]: 0x6dd06d,
   [Tool.TERRAIN_DOWN]: 0x6db0e0,
+  [Tool.POWER_PLANT]: TILE_COLORS['power_plant'],
+  [Tool.WATER_TOWER]: TILE_COLORS['water_tower'],
+  [Tool.POLICE_STATION]: TILE_COLORS['police_station'],
+  [Tool.FIRE_STATION]: TILE_COLORS['fire_station'],
 };
 
 export interface GameSessionCallbacks {
