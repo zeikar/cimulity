@@ -39,6 +39,7 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
   [Tool.POLICE_STATION]: TILE_COLORS['police_station'],
   [Tool.FIRE_STATION]: TILE_COLORS['fire_station'],
   [Tool.HOSPITAL]: TILE_COLORS['hospital'],
+  [Tool.SCHOOL]: TILE_COLORS['school'],
 };
 
 export interface GameSessionCallbacks {

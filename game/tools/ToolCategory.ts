@@ -14,6 +14,7 @@ export enum ToolCategory {
   POLICE = 'police',
   FIRE = 'fire',
   HOSPITAL = 'hospital',
+  SCHOOL = 'school',
   DEMOLISH = 'demolish',
 }
 
@@ -35,6 +36,7 @@ export const TOOL_CATEGORY: Record<Tool, ToolCategory> = {
   [Tool.POLICE_STATION]: ToolCategory.POLICE,
   [Tool.FIRE_STATION]: ToolCategory.FIRE,
   [Tool.HOSPITAL]: ToolCategory.HOSPITAL,
+  [Tool.SCHOOL]: ToolCategory.SCHOOL,
   [Tool.BULLDOZE]: ToolCategory.DEMOLISH,
 };
 
@@ -52,5 +54,6 @@ export const CATEGORY_ORDER = [
   ToolCategory.POLICE,
   ToolCategory.FIRE,
   ToolCategory.HOSPITAL,
+  ToolCategory.SCHOOL,
   ToolCategory.DEMOLISH,
 ] as const;

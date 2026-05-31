@@ -6,7 +6,7 @@
  *
  * `TileWriteCommand`      — write a tile at a grid coordinate
  * `VertexEditCommand`    — set terrain vertex heights in deterministic order
- * `PlaceStructureCommand` — place a power plant, water tower, police station, fire station, or hospital anchored at (x, y)
+ * `PlaceStructureCommand` — place a power plant, water tower, police station, fire station, hospital, or school anchored at (x, y)
  * `RemoveStructureCommand`— atomically remove a structure by id
  * `ToolCommand`           — discriminated union of the above
  */
@@ -34,7 +34,7 @@ export interface VertexEditCommand {
 }
 
 /**
- * Place a service structure (power plant, water tower, police station, fire station, or hospital)
+ * Place a service structure (power plant, water tower, police station, fire station, hospital, or school)
  * anchored at its NW corner (x, y). Footprint size is derived from the type
  * via the StructureMap registry.
  */
@@ -44,7 +44,7 @@ export interface PlaceStructureCommand {
   readonly x: number;
   /** NW anchor y */
   readonly y: number;
-  readonly structureType: 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' | 'hospital';
+  readonly structureType: 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' | 'hospital' | 'school';
 }
 
 /**

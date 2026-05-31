@@ -106,6 +106,12 @@ export const FIRE_STATION_COST = 800;
  * STARTING_FUNDS=10000. Tunable independently as balance requires.
  */
 export const HOSPITAL_COST = 800;
+/**
+ * Cost to place a school (2×2). Mirrors HOSPITAL_COST=800 / FIRE_STATION_COST=800 so
+ * "place power + water + police + fire + hospital + school before zoning" stays affordable from
+ * STARTING_FUNDS=10000. Tunable independently as balance requires.
+ */
+export const SCHOOL_COST = 800;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */

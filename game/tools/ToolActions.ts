@@ -247,6 +247,17 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
       allOrNothingBlocked = false;
       return { pathTiles, rejected, allOrNothingBlocked, affectedBuildingIds };
     }
+    case Tool.SCHOOL: {
+      // `tiles[0]` IS the NW anchor — `pathForTool(Tool.SCHOOL, start, end)` returns
+      // `[start]`, so the preview path has exactly one tile.
+      if (tiles.length > 0 && classifyStructurePlacement(world, tiles[0].x, tiles[0].y, 'school') === 'reject') {
+        rejected = [tiles[0]];
+      } else {
+        rejected = [];
+      }
+      allOrNothingBlocked = false;
+      return { pathTiles, rejected, allOrNothingBlocked, affectedBuildingIds };
+    }
     default:
       rejected = [];
       allOrNothingBlocked = false;
@@ -295,6 +306,8 @@ export function buildToolCommands(
       return buildFireStationCommands(dragStart, world);
     case Tool.HOSPITAL:
       return buildHospitalCommands(dragStart, world);
+    case Tool.SCHOOL:
+      return buildSchoolCommands(dragStart, world);
     default:
       return [];
   }
@@ -440,6 +453,11 @@ function buildFireStationCommands(tile: TileCoord, world: World): ToolCommand[] 
 function buildHospitalCommands(tile: TileCoord, world: World): ToolCommand[] {
   if (classifyStructurePlacement(world, tile.x, tile.y, 'hospital') === 'reject') return [];
   return [{ kind: 'place-structure', x: tile.x, y: tile.y, structureType: 'hospital' }];
+}
+
+function buildSchoolCommands(tile: TileCoord, world: World): ToolCommand[] {
+  if (classifyStructurePlacement(world, tile.x, tile.y, 'school') === 'reject') return [];
+  return [{ kind: 'place-structure', x: tile.x, y: tile.y, structureType: 'school' }];
 }
 
 function buildZoneCommands(zoneType: ZoneTileType, tiles: TileCoord[], world: World): ToolCommand[] {

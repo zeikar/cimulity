@@ -22,6 +22,7 @@ const TOOL_LABELS: Record<Tool, string> = {
   [Tool.POLICE_STATION]: 'Police Station',
   [Tool.FIRE_STATION]: 'Fire Station',
   [Tool.HOSPITAL]: 'Hospital',
+  [Tool.SCHOOL]: 'School',
   [Tool.TERRAIN_UP]: 'Raise',
   [Tool.TERRAIN_DOWN]: 'Lower',
   [Tool.TERRAIN_LEVEL]: 'Level',

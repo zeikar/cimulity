@@ -15,7 +15,8 @@ export interface KeyboardCallbacks {
 
 // Tool shortcuts: t=road, b=bulldoze, s=select, q/w/e=R/C/I zones, p=power plant,
 // a=water tower (a for aqua; w stays Commercial to avoid shadowing), r=raise terrain,
-// f=lower terrain, g=level terrain, c=police station (cops), d=fire station, h=hospital.
+// f=lower terrain, g=level terrain, c=police station (cops), d=fire station, h=hospital,
+// l=school (schooL).
 const KEY_TO_TOOL: Record<string, Tool> = {
   t: Tool.ROAD,
   r: Tool.TERRAIN_UP,
@@ -32,6 +33,7 @@ const KEY_TO_TOOL: Record<string, Tool> = {
   c: Tool.POLICE_STATION,
   d: Tool.FIRE_STATION,
   h: Tool.HOSPITAL,
+  l: Tool.SCHOOL,
 };
 
 /**
