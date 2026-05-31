@@ -63,6 +63,7 @@ export default defineConfig({
         'game/core/WaterMap.ts',
         'game/core/serviceCoveragePropagation.ts',
         'game/core/ServiceCoverageMap.ts',
+        'game/core/FireCoverageMap.ts',
       ],
       thresholds: {
         lines: 80,

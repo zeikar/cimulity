@@ -41,6 +41,19 @@ function seedWater(world: World, ax: number, ay: number): void {
   world.recomputeWater();
 }
 
+function seedFire(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'fire_station',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markFireDirty();
+  world.recomputeFire();
+}
+
 function seedPolice(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
     type: 'police_station',
@@ -1394,5 +1407,107 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     // Spawn fires despite no coverage (spawn is power-only).
     expect(map.getBuildings().getBuildingAt(0, 1)).not.toBeNull();
     expect(map.getBuildings().getBuildingAt(0, 1)?.level).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FireCoverageMap API on World (lifecycle/cadence only — gate lands in Task 4)
+// ---------------------------------------------------------------------------
+
+describe('World.getFireCoverageMap() — lazy allocation', () => {
+  it('first call returns a non-null FireCoverageMap instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getFireCoverageMap()).not.toBeNull();
+  });
+
+  it('subsequent calls return the same instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const first = world.getFireCoverageMap();
+    const second = world.getFireCoverageMap();
+    expect(second).toBe(first);
+  });
+});
+
+describe('World.markFireDirty() + recomputeFireIfDirty()', () => {
+  it('recomputeFireIfDirty() after markFireDirty() triggers recompute exactly once; second call is a no-op', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeFire');
+
+    world.markFireDirty();
+    world.recomputeFireIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // No further dirty mark — second call is a no-op.
+    world.recomputeFireIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+
+  it('markFireDirty() + tick() recomputes the coverage map so a fire station covers an adjacent road', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    // Fire station 2×2 at (2,2)–(3,3); road at (2,4) adjacent to the station's south edge.
+    world.getStructureMap().addStructure({
+      type: 'fire_station',
+      anchor: { x: 2, y: 2 },
+      footprint: [
+        { x: 2, y: 2 }, { x: 3, y: 2 },
+        { x: 2, y: 3 }, { x: 3, y: 3 },
+      ],
+    });
+    map.setTile(2, 4, createTile(2, 4, TileType.ROAD));
+
+    // Before any recompute the coverage map is empty.
+    expect(world.getFireCoverageMap().getCoverage(2, 4)).toBe(0);
+
+    world.markFireDirty();
+    world.tick();
+
+    // The road adjacent to the station now carries coverage.
+    expect(world.getFireCoverageMap().getCoverage(2, 4)).toBeGreaterThan(0);
+  });
+});
+
+describe('World.reset() — fire coverage cleanup', () => {
+  it('zeroes getFireCoverageMap().getRaw() AND clears the dirty flag after reset', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Place a station and a road so some cells gain coverage.
+    seedFire(world, 0, 0);
+    map.setTile(0, 2, createTile(0, 2, TileType.ROAD));
+    world.recomputeFire();
+    world.markFireDirty();
+
+    world.reset({ regenerate: false });
+
+    const raw = world.getFireCoverageMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
+
+    // Dirty flag is cleared: a recomputeFireIfDirty call should be a no-op.
+    const spy = vi.spyOn(world, 'recomputeFire');
+    world.recomputeFireIfDirty();
+    expect(spy).toHaveBeenCalledTimes(0);
+    spy.mockRestore();
+  });
+});
+
+describe('World.tick() — fire coverage periodic cadence', () => {
+  it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeFire even when fireDirty is false', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeFire');
+
+    // Advance to one tick before the cadence fires.
+    for (let i = 0; i < SERVICE_INTERVAL - 1; i++) world.tick();
+    const callsBefore = spy.mock.calls.length;
+
+    // This tick brings tickCount to SERVICE_INTERVAL — force recompute fires.
+    world.tick();
+    expect(spy.mock.calls.length).toBe(callsBefore + 1);
+
+    spy.mockRestore();
   });
 });

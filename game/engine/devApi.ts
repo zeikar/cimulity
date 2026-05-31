@@ -193,6 +193,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         world.recomputeWaterIfDirty();
         world.markServiceDirty();
         world.recomputeServiceIfDirty();
+        world.markFireDirty();
+        world.recomputeFireIfDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

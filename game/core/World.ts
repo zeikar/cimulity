@@ -14,6 +14,7 @@ import * as terrainGenerator from './terrainGenerator';
 import { PowerMap, isBuildingPowered } from './PowerMap';
 import { WaterMap, isBuildingWatered } from './WaterMap';
 import { ServiceCoverageMap, isAnchorCovered } from './ServiceCoverageMap';
+import { FireCoverageMap } from './FireCoverageMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -152,6 +153,8 @@ export class World {
   private waterDirty: boolean = false;
   private service: ServiceCoverageMap | null = null;
   private serviceDirty: boolean = false;
+  private fire: FireCoverageMap | null = null;
+  private fireDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -395,6 +398,29 @@ export class World {
     this.serviceDirty = false;
   }
 
+  /** Lazy-allocate and return the FireCoverageMap instance. */
+  getFireCoverageMap(): FireCoverageMap {
+    if (this.fire === null) this.fire = new FireCoverageMap(this.map.getWidth(), this.map.getHeight());
+    return this.fire;
+  }
+
+  markFireDirty(): void {
+    this.fireDirty = true;
+  }
+
+  /** Recompute fire coverage only if dirty; clears the flag. */
+  recomputeFireIfDirty(): void {
+    if (!this.fireDirty) return;
+    this.recomputeFire();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputeFire(): void {
+    const fireSvc = this.getFireCoverageMap();
+    fireSvc.recompute(this.map, this.structures);
+    this.fireDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -456,6 +482,8 @@ export class World {
     this.waterDirty = false;
     if (this.service !== null) this.service.clear();
     this.serviceDirty = false;
+    if (this.fire !== null) this.fire.clear();
+    this.fireDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -467,6 +495,7 @@ export class World {
       this.recomputePowerIfDirty();
       this.recomputeWaterIfDirty();
       this.recomputeServiceIfDirty();
+      this.recomputeFireIfDirty();
       return;
     }
 
@@ -485,6 +514,7 @@ export class World {
     this.recomputePowerIfDirty();
     this.recomputeWaterIfDirty();
     this.recomputeServiceIfDirty();
+    this.recomputeFireIfDirty();
   }
 
   /**
@@ -539,6 +569,13 @@ export class World {
       this.recomputeService();
     } else {
       this.recomputeServiceIfDirty();
+    }
+
+    // Fire coverage: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % SERVICE_INTERVAL === 0) {
+      this.recomputeFire();
+    } else {
+      this.recomputeFireIfDirty();
     }
 
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).

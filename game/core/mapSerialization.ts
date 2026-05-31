@@ -498,6 +498,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.markServiceDirty();
   // Drain service coverage dirty here so the first frame/gate after load never reads a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
   world.recomputeServiceIfDirty();
+  world.markFireDirty();
+  // Drain fire coverage dirty here so the first frame/gate after load never reads a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
+  world.recomputeFireIfDirty();
 
   return true;
 }

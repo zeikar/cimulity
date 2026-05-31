@@ -59,7 +59,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service / v13 — ServiceCoverageMap API added to World):
+ * Checked methods (as of service-v2 — FireCoverageMap API added to World alongside fire station):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
@@ -68,6 +68,7 @@ function readSave(): string | null {
  *          getPowerMap, markPowerDirty, recomputePowerIfDirty, recomputePower,
  *          getWaterMap, markWaterDirty, recomputeWaterIfDirty, recomputeWater,
  *          getServiceCoverageMap, markServiceDirty, recomputeServiceIfDirty, recomputeService,
+ *          getFireCoverageMap, markFireDirty, recomputeFireIfDirty, recomputeFire,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -167,6 +168,15 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // FireCoverageMap API (added in service-v2 / v14): derived fire coverage field + dirty-mark + recompute.
+  if (
+    typeof world.getFireCoverageMap !== 'function' ||
+    typeof world.markFireDirty !== 'function' ||
+    typeof world.recomputeFireIfDirty !== 'function' ||
+    typeof world.recomputeFire !== 'function'
+  ) {
+    return false;
+  }
   // StructureMap API (added in Task 2 / v11): all load-bearing methods used by save/dispatch/render.
   if (typeof world.getStructureMap !== 'function') return false;
   const structures = world.getStructureMap();
@@ -204,6 +214,7 @@ export function getWorld(): World {
         world.recomputePowerIfDirty();
         world.recomputeWaterIfDirty();
         world.recomputeServiceIfDirty();
+        world.recomputeFireIfDirty();
       }
     } else {
       // No save — fresh procedural world.

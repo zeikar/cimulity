@@ -132,6 +132,10 @@ function makeFullApiStub() {
     markServiceDirty: () => {},
     recomputeServiceIfDirty: () => {},
     recomputeService: () => {},
+    getFireCoverageMap: () => null,
+    markFireDirty: () => {},
+    recomputeFireIfDirty: () => {},
+    recomputeFire: () => {},
     getStructureMap: () => structureMapStub,
   };
 }
@@ -361,5 +365,28 @@ describe('getWorld — stale v9-keyed save is not read by v10 loader', () => {
     // and is never read by the v10 loader.
     expect(world.getMoney()).toBe(STARTING_FUNDS);
     expect(world.getElapsedDays()).toBe(0);
+  });
+});
+
+describe('getWorld — sentinel: stub missing getFireCoverageMap → fresh World', () => {
+  it('discards a full-API stub that lacks getFireCoverageMap even when the sentinel matches', () => {
+    // Full API stub minus getFireCoverageMap — simulates a pre-fire singleton.
+    const stale = makeFullApiStub();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (stale as any).getFireCoverageMap;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = stale;
+    // Current sentinel so only the API probe causes the discard.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'service-v2';
+
+    const result = getWorld();
+
+    expect(result).not.toBe(stale);
+    expect(result).toBeInstanceOf(World);
+    expect(typeof result.getFireCoverageMap).toBe('function');
+    expect(typeof result.markFireDirty).toBe('function');
+    expect(typeof result.recomputeFireIfDirty).toBe('function');
+    expect(typeof result.recomputeFire).toBe('function');
   });
 });
