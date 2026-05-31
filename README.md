@@ -15,7 +15,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Fixed-timestep simulation with zone growth, population, money, speed/pause controls, autosave, and New City reset
 - Power plants + binary reachability gate zone growth
 - Water towers gate zone level-ups/density (power gates initial spawn)
-- Police, fire, and hospital stations provide road-network coverage; level-up now requires all three at the anchor (emergency-services family complete — no further service clones)
+- Police, fire, hospital, and school stations provide road-network coverage; level-up now requires all four at the anchor
 
 Next focus: replace placeholder colored geometry with sprites/textures, add more terrain variety, and continue tightening tool feedback.
 
@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 - **Zoom**: Mouse wheel (zooms around cursor)
 - **Select Tile**: Left-click on any tile
 - **Hover**: Move mouse over tiles to see highlight
-- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant, A water tower, C police station, D fire station, H hospital
+- **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant, A water tower, C police station, D fire station, H hospital, L school
 - **Terrain**: R raise, F lower, G level/flatten
 - **Time**: Space pause/resume, 1/2/3 speed
 
@@ -63,7 +63,7 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 
 ### MVP-2 (Future)
 
-- [x] **Services** - Police, fire, and hospital coverage all shipped (road-network + distance falloff, gate level-ups at the anchor); emergency-services family complete — no remaining service clones
+- [x] **Services** - Police, fire, hospital, and school coverage all shipped (road-network + distance falloff); the coverage family has four members (police/fire/hospital emergency trio + school education); level-up gates on all four at the anchor
 - [ ] **Happiness/statistics** - Citizen happiness, budget charts
 - [ ] **Sound effects** - Audio feedback
 

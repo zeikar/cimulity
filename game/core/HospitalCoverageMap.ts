@@ -4,13 +4,13 @@
  * persisted (transient, like PowerMap/WaterMap).
  *
  * CLONEABLE FAMILY NOTE:
- *   This class is the THIRD and FINAL of the cloneable service family. Police
- *   shipped first (`ServiceCoverageMap`); fire second (`FireCoverageMap`);
- *   hospital is this file — the family is now complete, with no further service
- *   clones. Hard-codes `'hospital'` as the source type and reuses
- *   `propagateServiceCoverage` plus the shared threshold constant
- *   `SERVICE_COVERAGE_THRESHOLD_RAW` — exactly how WaterMap clones PowerMap for
- *   `'water_tower'`.
+ *   This class is the THIRD of the service-coverage family, which now has FOUR
+ *   members: `ServiceCoverageMap` (police, first), `FireCoverageMap` (fire,
+ *   second), `HospitalCoverageMap` (hospital, third — emergency trio), and
+ *   `SchoolCoverageMap` (school, fourth — education). Hard-codes `'hospital'`
+ *   as the source type and reuses `propagateServiceCoverage` plus the shared
+ *   threshold constant `SERVICE_COVERAGE_THRESHOLD_RAW` — exactly how WaterMap
+ *   clones PowerMap for `'water_tower'`.
  *
  * ANCHOR-vs-FOOTPRINT GATE RATIONALE:
  *   Binary fields (power, water) gate buildings by scanning the full footprint
