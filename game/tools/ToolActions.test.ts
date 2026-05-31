@@ -1226,3 +1226,61 @@ describe('buildToolCommands - BULLDOZE with FIRE_STATION', () => {
     expect(result[0].kind).toBe('remove-structure');
   });
 });
+
+describe('buildToolCommands - HOSPITAL cell protections', () => {
+  it('ROAD rejects a single HOSPITAL tile (transactional: returns empty)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.HOSPITAL));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_RESIDENTIAL rejects a HOSPITAL tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.HOSPITAL));
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL rejects a HOSPITAL tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.HOSPITAL));
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_INDUSTRIAL rejects a HOSPITAL tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.HOSPITAL));
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP skips a HOSPITAL cell — no vertex writes for that tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.HOSPITAL));
+    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+});
+
+describe('buildToolCommands - BULLDOZE with HOSPITAL', () => {
+  function placeHospital(w: World, ax: number, ay: number): void {
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        w.getMap().setTile(ax + dx, ay + dy, createTile(ax + dx, ay + dy, TileType.HOSPITAL));
+      }
+    }
+    w.getStructureMap().addStructure({
+      type: 'hospital',
+      footprint: [{ x: ax, y: ay }, { x: ax + 1, y: ay }, { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 }],
+      anchor: { x: ax, y: ay },
+    });
+  }
+
+  it('single hospital cell → 1 remove-structure command', () => {
+    placeHospital(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+
+  it('drag over 3 of 4 hospital cells → exactly 1 remove-structure command (dedup)', () => {
+    placeHospital(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [
+      { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 },
+    ], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+});

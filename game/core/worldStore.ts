@@ -21,15 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v14' to match WORLD_SAVE_VERSION = 14.
-// Legacy saves at ':v13 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v15' to match WORLD_SAVE_VERSION = 15.
+// Legacy saves at ':v14 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v14';
+const STORAGE_KEY = 'cimulity:save:v15';
 
-// Bumped to 'service-v2' for the fire station tile/structure type added in v14.
+// Bumped to 'service-v3' for the hospital tile/structure type added in v15.
 // An HMR singleton carrying a mismatched guard is discarded and rebuilt even if
 // hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'service-v2' as const;
+const WORLD_SINGLETON_GUARD = 'service-v3' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -59,7 +59,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v2 — FireCoverageMap API added to World alongside fire station):
+ * Checked methods (as of service-v3 — hospital tile/structure type added in v15):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,

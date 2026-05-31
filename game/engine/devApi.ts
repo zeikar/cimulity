@@ -41,7 +41,7 @@ export interface SeedBuildingSpec {
 }
 
 export interface SeedSceneSpec {
-  /** Tiles to write via `map.setTile`. Existing tiles at the same coord are overwritten. POWER_PLANT, WATER_TOWER, POLICE_STATION, and FIRE_STATION are forbidden — place them via their respective placement tools. */
+  /** Tiles to write via `map.setTile`. Existing tiles at the same coord are overwritten. POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION, and HOSPITAL are forbidden — place them via their respective placement tools. */
   tiles?: ReadonlyArray<{ x: number; y: number; type: TileType; level?: number }>;
   /** Buildings to hydrate via `buildings.addExistingBuilding`. */
   buildings?: ReadonlyArray<SeedBuildingSpec>;
@@ -128,6 +128,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
           }
           if (t.type === TileType.FIRE_STATION) {
             throw new Error('seedScene cannot seed FIRE_STATION tiles directly — place fire stations via the fire station placement tool.');
+          }
+          if (t.type === TileType.HOSPITAL) {
+            throw new Error('seedScene cannot seed HOSPITAL tiles directly — place hospitals via the hospital placement tool.');
           }
         }
         const map = world.getMap();

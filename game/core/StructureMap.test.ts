@@ -27,6 +27,10 @@ describe('isStructureType', () => {
     expect(isStructureType('fire_station')).toBe(true);
   });
 
+  it('accepts hospital', () => {
+    expect(isStructureType('hospital')).toBe(true);
+  });
+
   it('rejects residential', () => {
     expect(isStructureType('residential')).toBe(false);
   });
@@ -55,6 +59,10 @@ describe('structureFootprintSize', () => {
 
   it('returns {w:2,h:2} for fire_station', () => {
     expect(structureFootprintSize('fire_station')).toEqual({ w: 2, h: 2 });
+  });
+
+  it('returns {w:2,h:2} for hospital', () => {
+    expect(structureFootprintSize('hospital')).toEqual({ w: 2, h: 2 });
   });
 });
 
@@ -165,6 +173,30 @@ describe('StructureMap — fire_station', () => {
     expect(
       map.addStructure({
         type: 'fire_station',
+        footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+        anchor: { x: 0, y: 0 },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('StructureMap — hospital', () => {
+  it('addStructure accepts a valid 2×2 hospital', () => {
+    const map = new StructureMap(10, 10);
+    const s = map.addStructure({
+      type: 'hospital',
+      footprint: make2x2Footprint(0, 0),
+      anchor: { x: 0, y: 0 },
+    });
+    expect(s).not.toBeNull();
+    expect(s!.type).toBe('hospital');
+  });
+
+  it('addStructure rejects 2×1 footprint for hospital', () => {
+    const map = new StructureMap(10, 10);
+    expect(
+      map.addStructure({
+        type: 'hospital',
         footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
         anchor: { x: 0, y: 0 },
       }),

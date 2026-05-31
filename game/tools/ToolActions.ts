@@ -28,6 +28,7 @@ function isStructuredCell(world: World, tile: Tile, x: number, y: number): boole
   if (tile.type === TileType.WATER_TOWER) return true;
   if (tile.type === TileType.POLICE_STATION) return true;
   if (tile.type === TileType.FIRE_STATION) return true;
+  if (tile.type === TileType.HOSPITAL) return true;
   return world.getMap().getBuildings().getBuildingAt(x, y) !== null;
 }
 
@@ -65,6 +66,7 @@ function classifyRoadTile(world: World, x: number, y: number): PlaceClassificati
   if (tile.type === TileType.WATER_TOWER) return 'reject';
   if (tile.type === TileType.POLICE_STATION) return 'reject';
   if (tile.type === TileType.FIRE_STATION) return 'reject';
+  if (tile.type === TileType.HOSPITAL) return 'reject';
   if (!world.canBuildRoadAt(x, y)) return 'reject';
   return 'emit';
 }
@@ -78,6 +80,7 @@ function classifyZoneTile(
   if (tile.type === TileType.WATER_TOWER) return 'reject';
   if (tile.type === TileType.POLICE_STATION) return 'reject';
   if (tile.type === TileType.FIRE_STATION) return 'reject';
+  if (tile.type === TileType.HOSPITAL) return 'reject';
   if (tile.type === zoneType) return 'skip';
   const paintable =
     tile.type === TileType.GRASS ||
@@ -154,14 +157,15 @@ export function buildToolPreview(tool: Tool, tiles: TileCoord[], world: World): 
       for (const { x, y } of tiles) {
         const currentTile = map.getTile(x, y);
         if (!currentTile) continue;
-        // Structure tiles (POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION): expand to full structure
+        // Structure tiles (POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION, HOSPITAL): expand to full structure
         // footprint so the drag preview covers all cells the bulldoze will destroy, not just
         // the hovered cell.
         if (
           currentTile.type === TileType.POWER_PLANT ||
           currentTile.type === TileType.WATER_TOWER ||
           currentTile.type === TileType.POLICE_STATION ||
-          currentTile.type === TileType.FIRE_STATION
+          currentTile.type === TileType.FIRE_STATION ||
+          currentTile.type === TileType.HOSPITAL
         ) {
           const structure = world.getStructureMap().getStructureAt(x, y);
           if (structure !== null) {
@@ -310,12 +314,13 @@ function buildBulldozeCommands(tiles: TileCoord[], world: World): ToolCommand[] 
     if (!currentTile) continue;
 
     // Structure tile: emit one remove-structure per structure (dedup by id).
-    // Applies to all structure tile types (POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION are all registered in StructureMap).
+    // Applies to all structure tile types (POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION, HOSPITAL are all registered in StructureMap).
     if (
       currentTile.type === TileType.POWER_PLANT ||
       currentTile.type === TileType.WATER_TOWER ||
       currentTile.type === TileType.POLICE_STATION ||
-      currentTile.type === TileType.FIRE_STATION
+      currentTile.type === TileType.FIRE_STATION ||
+      currentTile.type === TileType.HOSPITAL
     ) {
       const s = world.getStructureMap().getStructureAt(x, y);
       // Defensive: by invariant s is never null when tile is a structure type.
