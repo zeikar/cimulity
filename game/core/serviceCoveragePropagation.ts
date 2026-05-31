@@ -154,12 +154,17 @@ export function propagateServiceCoverage(
   //
   // We track the best (maximum) intensity found per cell and continue
   // expanding at all offDist values within range.
+  //
+  // INVARIANT: coverage flows along the connected road network only; the
+  // off-road sweep is for non-road, non-structure frontage cells only.
+  // ALL road tiles (connected or disconnected) are skipped so that isolated
+  // road segments cannot receive or propagate off-road coverage.
 
   // offRoadDist[i] = current best offDist at which cell i was reached from a
   // covered road cell (undefined → not yet expanded into).
   const offRoadQueue: Array<{ idx: number; offDist: number; roadIntensity: number }> = [];
 
-  // Seed: every visited road cell is the source for its non-road, non-structure
+  // Seed: every covered road cell is the source for its non-road, non-structure
   // orthogonal neighbours.
   for (let i = 0; i < dist.length; i++) {
     if (dist[i] === -1) continue; // not a covered road cell (road cells keep their Step 4 intensity)
@@ -175,8 +180,10 @@ export function propagateServiceCoverage(
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nIdx = ny * w + nx;
       if (structureOwned[nIdx] === 1) continue;
-      // Skip if this is itself a covered road cell — road cells keep Step 4 value.
-      if (dist[nIdx] !== -1) continue;
+      // Skip ALL road tiles — covered roads keep Step 4 value; disconnected
+      // roads must stay at 0 and must not act as off-road conduits.
+      const nTile = map.getTile(nx, ny);
+      if (!nTile || isConductor(nTile.type)) continue;
       offRoadQueue.push({ idx: nIdx, offDist: 1, roadIntensity });
     }
   }
@@ -201,8 +208,9 @@ export function propagateServiceCoverage(
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nIdx = ny * w + nx;
       if (structureOwned[nIdx] === 1) continue;
-      // Don't spread into covered road cells.
-      if (dist[nIdx] !== -1) continue;
+      // Skip ALL road tiles — don't spread into or through any road cell.
+      const nTile = map.getTile(nx, ny);
+      if (!nTile || isConductor(nTile.type)) continue;
       offRoadQueue.push({ idx: nIdx, offDist: offDist + 1, roadIntensity });
     }
   }

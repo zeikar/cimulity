@@ -330,6 +330,32 @@ describe('propagateServiceCoverage — off-road sweep', () => {
   });
 });
 
+  it('isolated road tile ~2 off-road hops from a covered road cell stays at 0 (no off-road coverage)', () => {
+    // Station at (0,0) → footprint (0,0),(1,0),(0,1),(1,1).
+    // Connected road at (2,0) — sole seed at d=0, intensity 255.
+    // Non-road gap at (3,0) — offDist 1 from covered road (2,0).
+    // Isolated (disconnected) road at (4,0) — offDist 2 from covered road (2,0).
+    // The off-road sweep must NOT cross into road tiles, so:
+    //   (3,0) gets off-road coverage (non-road, offDist 1 → 255)
+    //   (4,0) is a road tile → must be skipped; stays 0 regardless of off-road distance.
+    const w = 15;
+    const h = 10;
+    const map = makeMap(w, h, [
+      { x: 2, y: 0, type: TileType.ROAD }, // connected road — seeded by station
+      { x: 4, y: 0, type: TileType.ROAD }, // isolated road — no BFS path to station
+    ]);
+    const sm = new StructureMap(w, h);
+    addStation(sm, 0, 0);
+    const result = propagateServiceCoverage(map, sm, isRoad, isStation);
+
+    // Connected road gets Step 4 intensity.
+    expect(result[0 * w + 2]).toBe(255);
+    // Non-road gap at offDist 1 still gets off-road coverage.
+    expect(result[0 * w + 3]).toBe(255);
+    // Isolated road tile must NOT receive off-road coverage.
+    expect(result[0 * w + 4]).toBe(0);
+  });
+
 // ---------------------------------------------------------------------------
 // Structure-owned cells excluded from off-road sweep
 // ---------------------------------------------------------------------------

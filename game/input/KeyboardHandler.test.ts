@@ -93,7 +93,7 @@ describe('KeyboardHandler', () => {
     expect(ee.preventDefault).toHaveBeenCalled();
   });
 
-  it('t / b / s / Escape / r / f / g trigger onToolChange with the correct tool each', () => {
+  it('t / b / s / Escape / r / f / g / p / a / c trigger onToolChange with the correct tool each', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
 
     const pairs: Array<[string, Tool]> = [
@@ -104,6 +104,9 @@ describe('KeyboardHandler', () => {
       ['r', Tool.TERRAIN_UP],
       ['f', Tool.TERRAIN_DOWN],
       ['g', Tool.TERRAIN_LEVEL],
+      ['p', Tool.POWER_PLANT],
+      ['a', Tool.WATER_TOWER],
+      ['c', Tool.POLICE_STATION],
     ];
     for (const [key, expected] of pairs) {
       onToolChange.mockClear();
