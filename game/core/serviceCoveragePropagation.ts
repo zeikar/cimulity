@@ -19,10 +19,11 @@
  *   not at it. Cells at offDist 2 get half; beyond 2 get 0.
  *
  * CLONEABLE SHAPE NOTE:
- *   This helper plus the `ServiceCoverageMap` wrapper pattern are what future
- *   fire/hospital coverage maps reuse. Each will be a sibling file hard-coding
- *   its own source type (e.g. `s.type === 'fire_station'`) — NOT a runtime
- *   source-predicate switch. Fire and hospital are NOT built here.
+ *   `ServiceCoverageMap` (police), `FireCoverageMap` (fire), and
+ *   `HospitalCoverageMap` (hospital) all reuse this helper, each as a sibling
+ *   file hard-coding its own source type — NOT a runtime source-predicate
+ *   switch. The cloneable family is complete; no further coverage maps are
+ *   planned.
  */
 
 import type { GameMap } from './Map';

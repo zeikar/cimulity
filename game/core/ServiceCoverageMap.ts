@@ -4,13 +4,13 @@
  * persisted (transient, like PowerMap/WaterMap).
  *
  * CLONEABLE FAMILY NOTE:
- *   This class is the first of a deferred cloneable service family. Future
- *   fire and hospital coverage maps will each be sibling classes (e.g.
- *   `FireCoverageMap`, `HospitalCoverageMap`) that hard-code their own source
- *   type (`'fire_station'`, `'hospital'`) and reuse `propagateServiceCoverage`
- *   — NOT one generic class with a runtime source-predicate parameter. That
- *   cloning pattern matches how PowerMap and WaterMap each hard-code their
- *   own source type. Fire and hospital are NOT built here.
+ *   This class is the FIRST of the now-COMPLETE service family. Both sibling
+ *   classes have shipped: `FireCoverageMap` (fire, second) and
+ *   `HospitalCoverageMap` (hospital, third/final), each hard-coding its own
+ *   source type (`'fire_station'`, `'hospital'`) and reusing
+ *   `propagateServiceCoverage` — NOT one generic class with a runtime
+ *   source-predicate parameter. The family is complete; no further service
+ *   clones are planned.
  *
  * ANCHOR-vs-FOOTPRINT GATE RATIONALE:
  *   Binary fields (power, water) gate buildings by scanning the full footprint
