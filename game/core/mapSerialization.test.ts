@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 12', () => {
-    expect(WORLD_SAVE_VERSION).toBe(12);
+  it('is 13', () => {
+    expect(WORLD_SAVE_VERSION).toBe(13);
   });
 });
 
-describe('v12 serialization', () => {
-  it('WORLD_SAVE_VERSION is 12 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v13 serialization', () => {
+  it('WORLD_SAVE_VERSION is 13 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(12);
-    expect(parsed.v).toBe(12);
+    expect(WORLD_SAVE_VERSION).toBe(13);
+    expect(parsed.v).toBe(13);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -749,5 +749,106 @@ describe('v12 structure persistence', () => {
     world.reset({ regenerate: true });
     // No structures or roads → nothing watered.
     expect(world.getWaterMap().isWatered(0, 0)).toBe(false);
+  });
+});
+
+// Helper: build a minimal valid v13 save object for an 8x8 world with a 2x2 police
+// station at anchor (2,2). The terrain is fully flat at height 2 (above sea level).
+function makeV13BaseWithPoliceStation() {
+  const W = 8;
+  const H = 8;
+  const srcWorld = new World(W, H, { regenerate: false });
+  for (let vy = 0; vy <= H; vy++) {
+    for (let vx = 0; vx <= W; vx++) {
+      srcWorld.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+    }
+  }
+  const base = JSON.parse(serializeWorld(srcWorld));
+  // Add POLICE_STATION tiles at (2,2),(3,2),(2,3),(3,3).
+  base.t[2 * W + 2] = TileType.POLICE_STATION;
+  base.t[2 * W + 3] = TileType.POLICE_STATION;
+  base.t[3 * W + 2] = TileType.POLICE_STATION;
+  base.t[3 * W + 3] = TileType.POLICE_STATION;
+  base.s = [{
+    id: 0,
+    type: 'police_station',
+    foot: [[2, 2], [3, 2], [2, 3], [3, 3]],
+    anc: [2, 2],
+  }];
+  return base;
+}
+
+describe('v13 police station persistence', () => {
+  it('(a) round-trips a police station: structure present with same footprint/anchor', () => {
+    const W = 8;
+    const src = new World(W, W, { regenerate: false });
+    for (let vy = 0; vy <= W; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        src.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const map = src.getMap();
+    map.setTile(2, 2, createTile(2, 2, TileType.POLICE_STATION));
+    map.setTile(3, 2, createTile(3, 2, TileType.POLICE_STATION));
+    map.setTile(2, 3, createTile(2, 3, TileType.POLICE_STATION));
+    map.setTile(3, 3, createTile(3, 3, TileType.POLICE_STATION));
+    src.getStructureMap().addExistingStructure({
+      id: 0,
+      type: 'police_station',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+      anchor: { x: 2, y: 2 },
+    });
+
+    const json1 = serializeWorld(src);
+    const parsed = JSON.parse(json1);
+    expect(parsed.v).toBe(13);
+
+    const dst = new World(W, W, { regenerate: false });
+    expect(deserializeWorldInto(dst, json1)).toBe(true);
+    // Byte-equal re-serialize proves the structure round-tripped intact.
+    expect(serializeWorld(dst)).toBe(json1);
+
+    const all = dst.getStructureMap().getAllStructures();
+    expect(all).toHaveLength(1);
+    expect(all[0].type).toBe('police_station');
+    expect(all[0].anchor).toEqual({ x: 2, y: 2 });
+    expect(all[0].footprint).toHaveLength(4);
+    expect(all[0].footprint).toContainEqual({ x: 2, y: 2 });
+    expect(all[0].footprint).toContainEqual({ x: 3, y: 3 });
+  });
+
+  it('(b) rejects a POLICE_STATION tile not covered by any structure (orphan-tile)', () => {
+    const W = 8;
+    const base = makeV13BaseWithPoliceStation();
+    // Add an orphan POLICE_STATION tile at (5,5) with no matching structure entry.
+    base.t[5 * W + 5] = TileType.POLICE_STATION;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(c) rejects a police_station whose footprint tile t[] is not POLICE_STATION (tile/structure mismatch)', () => {
+    const W = 8;
+    const base = makeV13BaseWithPoliceStation();
+    // Change one footprint cell to GRASS — tile/structure type mismatch.
+    base.t[2 * W + 2] = TileType.GRASS;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(d) rejects a police_station on a non-flat 2×2 area (isFlatArea coherence)', () => {
+    const base = makeV13BaseWithPoliceStation();
+    // The station's 2×2 spans vertices (2,2)..(4,4). Mutate the SE outer corner
+    // vertex (4,4) to height 3 — breaks the flat-slab invariant isFlatArea checks.
+    base.terrain.vertexHeights[4][4] = 3;
+    expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(e) rejects an otherwise-valid envelope with v: 12 (stale-save guard after the v13 bump)', () => {
+    const base = makeV13BaseWithPoliceStation();
+    (base as Record<string, unknown>).v = 12;
+
+    const target = new World(8, 8, { regenerate: false });
+    // Pre-mark the target so we can verify it is not mutated on rejection.
+    target.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    expect(deserializeWorldInto(target, JSON.stringify(base))).toBe(false);
+    expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
   });
 });

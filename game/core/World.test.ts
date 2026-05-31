@@ -10,6 +10,7 @@ import {
   MONTHS_PER_YEAR,
   POWER_INTERVAL,
   WATER_INTERVAL,
+  SERVICE_INTERVAL,
   DENSITY_COOLDOWN_INTERVALS,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
@@ -797,6 +798,115 @@ describe('World.tick() — water periodic cadence', () => {
     const callsBefore = spy.mock.calls.length;
 
     // This tick brings tickCount to WATER_INTERVAL — force recompute fires.
+    world.tick();
+    expect(spy.mock.calls.length).toBe(callsBefore + 1);
+
+    spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ServiceCoverageMap API on World (lifecycle/cadence only — gate lands in Task 5)
+// ---------------------------------------------------------------------------
+
+describe('World.getServiceCoverageMap() — lazy allocation', () => {
+  it('first call returns a non-null ServiceCoverageMap instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getServiceCoverageMap()).not.toBeNull();
+  });
+
+  it('subsequent calls return the same instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const first = world.getServiceCoverageMap();
+    const second = world.getServiceCoverageMap();
+    expect(second).toBe(first);
+  });
+});
+
+describe('World.markServiceDirty() + recomputeServiceIfDirty()', () => {
+  it('recomputeServiceIfDirty() after markServiceDirty() triggers recompute exactly once; second call is a no-op', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeService');
+
+    world.markServiceDirty();
+    world.recomputeServiceIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // No further dirty mark — second call is a no-op.
+    world.recomputeServiceIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+
+  it('markServiceDirty() + tick() recomputes the coverage map so a police station covers an adjacent road', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    // Police station 2×2 at (2,2)–(3,3); road at (2,4) adjacent to the station's south edge.
+    world.getStructureMap().addStructure({
+      type: 'police_station',
+      anchor: { x: 2, y: 2 },
+      footprint: [
+        { x: 2, y: 2 }, { x: 3, y: 2 },
+        { x: 2, y: 3 }, { x: 3, y: 3 },
+      ],
+    });
+    map.setTile(2, 4, createTile(2, 4, TileType.ROAD));
+
+    // Before any recompute the coverage map is empty.
+    expect(world.getServiceCoverageMap().getCoverage(2, 4)).toBe(0);
+
+    world.markServiceDirty();
+    world.tick();
+
+    // The road adjacent to the station now carries coverage.
+    expect(world.getServiceCoverageMap().getCoverage(2, 4)).toBeGreaterThan(0);
+  });
+});
+
+describe('World.reset() — service coverage cleanup', () => {
+  it('zeroes getServiceCoverageMap().getRaw() AND clears the dirty flag after reset', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Place a station and a road so some cells gain coverage.
+    world.getStructureMap().addStructure({
+      type: 'police_station',
+      anchor: { x: 0, y: 0 },
+      footprint: [
+        { x: 0, y: 0 }, { x: 1, y: 0 },
+        { x: 0, y: 1 }, { x: 1, y: 1 },
+      ],
+    });
+    map.setTile(0, 2, createTile(0, 2, TileType.ROAD));
+    world.recomputeService();
+    world.markServiceDirty();
+
+    world.reset({ regenerate: false });
+
+    const raw = world.getServiceCoverageMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
+
+    // Dirty flag is cleared: a recomputeServiceIfDirty call should be a no-op.
+    const spy = vi.spyOn(world, 'recomputeService');
+    world.recomputeServiceIfDirty();
+    expect(spy).toHaveBeenCalledTimes(0);
+    spy.mockRestore();
+  });
+});
+
+describe('World.tick() — service coverage periodic cadence', () => {
+  it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeService even when serviceDirty is false', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeService');
+
+    // Advance to one tick before the cadence fires.
+    for (let i = 0; i < SERVICE_INTERVAL - 1; i++) world.tick();
+    const callsBefore = spy.mock.calls.length;
+
+    // This tick brings tickCount to SERVICE_INTERVAL — force recompute fires.
     world.tick();
     expect(spy.mock.calls.length).toBe(callsBefore + 1);
 

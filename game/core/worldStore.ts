@@ -21,15 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v12' to match WORLD_SAVE_VERSION = 12.
-// Legacy saves at ':v11 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v13' to match WORLD_SAVE_VERSION = 13.
+// Legacy saves at ':v12 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v12';
+const STORAGE_KEY = 'cimulity:save:v13';
 
-// Bumped to 'water-v1' for the World water API surface (WaterMap methods added to World).
+// Bumped to 'service-v1' for the World service-coverage API surface (ServiceCoverageMap methods added to World).
 // An HMR singleton carrying a mismatched guard is discarded and rebuilt even if
 // hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'water-v1' as const;
+const WORLD_SINGLETON_GUARD = 'service-v1' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -59,7 +59,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of Task 3/water — WaterMap API added to World):
+ * Checked methods (as of service / v13 — ServiceCoverageMap API added to World):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
@@ -67,6 +67,7 @@ function readSave(): string | null {
  *          getDemand, markDemandDirty,
  *          getPowerMap, markPowerDirty, recomputePowerIfDirty, recomputePower,
  *          getWaterMap, markWaterDirty, recomputeWaterIfDirty, recomputeWater,
+ *          getServiceCoverageMap, markServiceDirty, recomputeServiceIfDirty, recomputeService,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -157,6 +158,15 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // ServiceCoverageMap API (added in service / v13): derived coverage field + dirty-mark + recompute.
+  if (
+    typeof world.getServiceCoverageMap !== 'function' ||
+    typeof world.markServiceDirty !== 'function' ||
+    typeof world.recomputeServiceIfDirty !== 'function' ||
+    typeof world.recomputeService !== 'function'
+  ) {
+    return false;
+  }
   // StructureMap API (added in Task 2 / v11): all load-bearing methods used by save/dispatch/render.
   if (typeof world.getStructureMap !== 'function') return false;
   const structures = world.getStructureMap();
@@ -193,6 +203,7 @@ export function getWorld(): World {
         world.reset({ regenerate: true });
         world.recomputePowerIfDirty();
         world.recomputeWaterIfDirty();
+        world.recomputeServiceIfDirty();
       }
     } else {
       // No save — fresh procedural world.

@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v12 is native; v11 and earlier are rejected; `worldStore` falls back to a fresh
+ * v13 is native; v12 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -22,9 +22,9 @@ import type { Structure, StructureType } from './StructureMap';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v12 saves are accepted.
+ * This is the `v` value written to disk. Only native v13 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 12;
+export const WORLD_SAVE_VERSION = 13;
 
 /**
  * Maps a StructureType to its corresponding TileType — single source of truth so
@@ -50,7 +50,7 @@ const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
  */
 interface StructureSaveEntry {
   id: number;
-  type: string;             // 'power_plant' | 'water_tower' | 'police_station'
+  type: string;             // 'power_plant' | 'water_tower' | 'police_station' (v13 native)
   foot: [number, number][]; // exactly 4 cells for a 2x2
   anc: [number, number];
 }
@@ -73,7 +73,7 @@ interface BuildingSaveEntry {
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 12).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 13).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` and `s[]` are both sorted by id ascending for deterministic byte-equality across round-trips.
@@ -315,10 +315,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v12 world envelope onto an existing World instance.
+ * Apply a serialized v13 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===12 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===13 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
@@ -387,8 +387,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   const stagingStructures = validateStructuresArray(data, w, h, occupiedIndices);
   if (stagingStructures === null) return false;
 
-  // Orphan-structure-tile check: every structure tile type (POWER_PLANT, WATER_TOWER) in t[]
-  // must be covered by a staged structure; an uncovered cell is a coherence violation.
+  // Orphan-structure-tile check: every structure tile type (POWER_PLANT, WATER_TOWER,
+  // POLICE_STATION — see STRUCTURE_TILE_TYPES) in t[] must be covered by a staged structure;
+  // an uncovered cell is a coherence violation.
   for (let i = 0; i < size; i++) {
     if (STRUCTURE_TILE_TYPES.has(data.t[i]) && !occupiedIndices.has(i)) return false;
   }
@@ -484,7 +485,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.setMoney(data.m);
   world.setElapsedDays(data.d);
 
-  // Land value and demand are not persisted — mark dirty so the first tick after load recomputes.
+  // Land value, demand, and service coverage are not persisted — mark dirty so the first tick after load recomputes.
   world.markLandValueDirty();
   world.markDemandDirty();
   world.markPowerDirty();
@@ -493,6 +494,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.markWaterDirty();
   // Drain water dirty here so the first render frame after load never sees a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
   world.recomputeWaterIfDirty();
+  world.markServiceDirty();
+  // Drain service coverage dirty here so the first frame/gate after load never reads a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
+  world.recomputeServiceIfDirty();
 
   return true;
 }

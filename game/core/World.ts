@@ -13,6 +13,7 @@ import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain
 import * as terrainGenerator from './terrainGenerator';
 import { PowerMap, isBuildingPowered } from './PowerMap';
 import { WaterMap, isBuildingWatered } from './WaterMap';
+import { ServiceCoverageMap } from './ServiceCoverageMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -48,6 +49,10 @@ export const POWER_INTERVAL = 16;
  * Defense-in-depth periodic force-recompute cadence for water, mirrors POWER_INTERVAL.
  */
 export const WATER_INTERVAL = 16;
+/**
+ * Defense-in-depth periodic force-recompute cadence for service coverage, mirrors POWER_INTERVAL.
+ */
+export const SERVICE_INTERVAL = 16;
 /** Maximum zone growth level a tile may reach. */
 export const ZONE_MAX_LEVEL = 5;
 /**
@@ -82,6 +87,11 @@ export const POWER_PLANT_COST = 1000;
  * so "place power + water before zoning" is affordable from STARTING_FUNDS=10000.
  */
 export const WATER_TOWER_COST = 800;
+/**
+ * Cost to place a police station (2×2). Matches WATER_TOWER_COST=800 so "place
+ * power + water + police before zoning" stays affordable from STARTING_FUNDS=10000.
+ */
+export const POLICE_STATION_COST = 800;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */
@@ -140,6 +150,8 @@ export class World {
   private powerDirty: boolean = false;
   private water: WaterMap | null = null;
   private waterDirty: boolean = false;
+  private service: ServiceCoverageMap | null = null;
+  private serviceDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -360,6 +372,29 @@ export class World {
     this.waterDirty = false;
   }
 
+  /** Lazy-allocate and return the ServiceCoverageMap instance. */
+  getServiceCoverageMap(): ServiceCoverageMap {
+    if (this.service === null) this.service = new ServiceCoverageMap(this.map.getWidth(), this.map.getHeight());
+    return this.service;
+  }
+
+  markServiceDirty(): void {
+    this.serviceDirty = true;
+  }
+
+  /** Recompute service coverage only if dirty; clears the flag. */
+  recomputeServiceIfDirty(): void {
+    if (!this.serviceDirty) return;
+    this.recomputeService();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputeService(): void {
+    const svc = this.getServiceCoverageMap();
+    svc.recompute(this.map, this.structures);
+    this.serviceDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -419,6 +454,8 @@ export class World {
     this.powerDirty = false;
     if (this.water !== null) this.water.clear();
     this.waterDirty = false;
+    if (this.service !== null) this.service.clear();
+    this.serviceDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -429,6 +466,7 @@ export class World {
       this.installTerrain(new Terrain(this.map.getWidth(), this.map.getHeight()));
       this.recomputePowerIfDirty();
       this.recomputeWaterIfDirty();
+      this.recomputeServiceIfDirty();
       return;
     }
 
@@ -446,6 +484,7 @@ export class World {
     this.installTerrain(terrain);
     this.recomputePowerIfDirty();
     this.recomputeWaterIfDirty();
+    this.recomputeServiceIfDirty();
   }
 
   /**
@@ -493,6 +532,13 @@ export class World {
       this.recomputeWater();
     } else {
       this.recomputeWaterIfDirty();
+    }
+
+    // Service coverage: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % SERVICE_INTERVAL === 0) {
+      this.recomputeService();
+    } else {
+      this.recomputeServiceIfDirty();
     }
 
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
