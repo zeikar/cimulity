@@ -61,6 +61,8 @@ export default defineConfig({
         'game/render/visuals/polygon/waterTowerGeometry.ts',
         'game/core/roadNetworkPropagation.ts',
         'game/core/WaterMap.ts',
+        'game/core/serviceCoveragePropagation.ts',
+        'game/core/ServiceCoverageMap.ts',
       ],
       thresholds: {
         lines: 80,
