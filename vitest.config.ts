@@ -64,6 +64,7 @@ export default defineConfig({
         'game/core/serviceCoveragePropagation.ts',
         'game/core/ServiceCoverageMap.ts',
         'game/core/FireCoverageMap.ts',
+        'game/core/HospitalCoverageMap.ts',
       ],
       thresholds: {
         lines: 80,

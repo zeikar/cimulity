@@ -136,6 +136,10 @@ function makeFullApiStub() {
     markFireDirty: () => {},
     recomputeFireIfDirty: () => {},
     recomputeFire: () => {},
+    getHospitalCoverageMap: () => null,
+    markHospitalDirty: () => {},
+    recomputeHospitalIfDirty: () => {},
+    recomputeHospital: () => {},
     getStructureMap: () => structureMapStub,
   };
 }
@@ -388,5 +392,28 @@ describe('getWorld — sentinel: stub missing getFireCoverageMap → fresh World
     expect(typeof result.markFireDirty).toBe('function');
     expect(typeof result.recomputeFireIfDirty).toBe('function');
     expect(typeof result.recomputeFire).toBe('function');
+  });
+});
+
+describe('getWorld — sentinel: stub missing getHospitalCoverageMap → fresh World', () => {
+  it('discards a full-API stub that lacks getHospitalCoverageMap even when the sentinel matches', () => {
+    // Full API stub minus getHospitalCoverageMap — simulates a pre-hospital singleton.
+    const stale = makeFullApiStub();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (stale as any).getHospitalCoverageMap;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = stale;
+    // Current sentinel so only the API probe causes the discard.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'service-v3';
+
+    const result = getWorld();
+
+    expect(result).not.toBe(stale);
+    expect(result).toBeInstanceOf(World);
+    expect(typeof result.getHospitalCoverageMap).toBe('function');
+    expect(typeof result.markHospitalDirty).toBe('function');
+    expect(typeof result.recomputeHospitalIfDirty).toBe('function');
+    expect(typeof result.recomputeHospital).toBe('function');
   });
 });

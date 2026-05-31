@@ -798,6 +798,71 @@ describe('CommandDispatcher fire coverage dirty-fanout (non-placement regression
   });
 });
 
+describe('CommandDispatcher hospital coverage dirty-fanout (non-placement regression)', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  /**
+   * Seed a hospital directly via addStructure (no Tool.HOSPITAL yet — Task 5).
+   * This mirrors what a hydrated save would produce. After seeding we MUST call
+   * markHospitalDirty + recomputeHospital to establish a KNOWN-FRESH baseline,
+   * otherwise the HospitalCoverageMap is still all-zeros and assertions pass vacuously.
+   */
+  function seedHospitalStation(world: World, ax: number, ay: number): void {
+    const map = world.getMap();
+    // Write the four HOSPITAL tiles so the map has the correct tile types.
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        map.setTile(ax + dx, ay + dy, { x: ax + dx, y: ay + dy, type: TileType.HOSPITAL, level: 0 });
+      }
+    }
+    world.getStructureMap().addStructure({
+      type: 'hospital',
+      anchor: { x: ax, y: ay },
+      footprint: [
+        { x: ax,     y: ay     },
+        { x: ax + 1, y: ay     },
+        { x: ax,     y: ay + 1 },
+        { x: ax + 1, y: ay + 1 },
+      ],
+    });
+    // Establish a KNOWN-FRESH hospital map baseline before any assertions.
+    world.markHospitalDirty();
+    world.recomputeHospital();
+  }
+
+  it('bulldozing a hospital drops coverage on a previously-covered road IMMEDIATELY (no tick)', () => {
+    const world = makeWorld8();
+    // Hospital at (2,2)–(3,3). Road at (1,2) adjacent to hospital cell (2,2).
+    seedHospitalStation(world, 2, 2);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+
+    // KNOWN-FRESH baseline: road (1,2) is covered by the hospital.
+    expect(world.getHospitalCoverageMap().getCoverage(1, 2)).toBeGreaterThan(0);
+
+    // Bulldoze the hospital — coverage should drop IMMEDIATELY (no tick needed).
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(world.getHospitalCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+
+  it('a road edit near the hospital updates hospital coverage IMMEDIATELY (no tick)', () => {
+    const world = makeWorld8();
+    // Hospital at (2,2)–(3,3). Road at (1,2) bridges to (0,2).
+    seedHospitalStation(world, 2, 2);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    // (0,2) is reachable from the hospital through (1,2).
+    executeClick(Tool.ROAD, { x: 0, y: 2 }, world);
+
+    // KNOWN-FRESH baseline: (0,2) has coverage through the road chain.
+    expect(world.getHospitalCoverageMap().getCoverage(0, 2)).toBeGreaterThan(0);
+
+    // Bulldoze the connecting road (1,2) — (0,2) loses coverage IMMEDIATELY.
+    executeClick(Tool.BULLDOZE, { x: 1, y: 2 }, world);
+    expect(world.getHospitalCoverageMap().getCoverage(0, 2)).toBe(0);
+  });
+});
+
 describe('CommandDispatcher TERRAIN_LEVEL', () => {
   it('Test 9: TERRAIN_LEVEL drag with dry DIRT tile — level write crosses SEA_LEVEL and reconciles DIRT→GRASS', () => {
     const world = new World(6, 6, { regenerate: false });

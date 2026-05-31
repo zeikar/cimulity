@@ -59,7 +59,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v3 — hospital tile/structure type added in v15):
+ * Checked methods (as of service-v3 / v15 — HospitalCoverageMap API added to World):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
@@ -69,6 +69,7 @@ function readSave(): string | null {
  *          getWaterMap, markWaterDirty, recomputeWaterIfDirty, recomputeWater,
  *          getServiceCoverageMap, markServiceDirty, recomputeServiceIfDirty, recomputeService,
  *          getFireCoverageMap, markFireDirty, recomputeFireIfDirty, recomputeFire,
+ *          getHospitalCoverageMap, markHospitalDirty, recomputeHospitalIfDirty, recomputeHospital,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -177,6 +178,15 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // HospitalCoverageMap API (added in service-v3 / v15): derived hospital coverage field + dirty-mark + recompute.
+  if (
+    typeof world.getHospitalCoverageMap !== 'function' ||
+    typeof world.markHospitalDirty !== 'function' ||
+    typeof world.recomputeHospitalIfDirty !== 'function' ||
+    typeof world.recomputeHospital !== 'function'
+  ) {
+    return false;
+  }
   // StructureMap API (added in Task 2 / v11): all load-bearing methods used by save/dispatch/render.
   if (typeof world.getStructureMap !== 'function') return false;
   const structures = world.getStructureMap();
@@ -215,6 +225,7 @@ export function getWorld(): World {
         world.recomputeWaterIfDirty();
         world.recomputeServiceIfDirty();
         world.recomputeFireIfDirty();
+        world.recomputeHospitalIfDirty();
       }
     } else {
       // No save — fresh procedural world.

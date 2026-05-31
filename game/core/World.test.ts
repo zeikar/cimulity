@@ -54,6 +54,19 @@ function seedFire(world: World, ax: number, ay: number): void {
   world.recomputeFire();
 }
 
+function seedHospital(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'hospital',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markHospitalDirty();
+  world.recomputeHospital();
+}
+
 function seedPolice(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
     type: 'police_station',
@@ -1620,6 +1633,108 @@ describe('World.tick() — fire coverage periodic cadence', () => {
   it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeFire even when fireDirty is false', () => {
     const world = new World(4, 4, { regenerate: false });
     const spy = vi.spyOn(world, 'recomputeFire');
+
+    // Advance to one tick before the cadence fires.
+    for (let i = 0; i < SERVICE_INTERVAL - 1; i++) world.tick();
+    const callsBefore = spy.mock.calls.length;
+
+    // This tick brings tickCount to SERVICE_INTERVAL — force recompute fires.
+    world.tick();
+    expect(spy.mock.calls.length).toBe(callsBefore + 1);
+
+    spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HospitalCoverageMap API on World (lifecycle/cadence only — gate lands in Task 4)
+// ---------------------------------------------------------------------------
+
+describe('World.getHospitalCoverageMap() — lazy allocation', () => {
+  it('first call returns a non-null HospitalCoverageMap instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getHospitalCoverageMap()).not.toBeNull();
+  });
+
+  it('subsequent calls return the same instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const first = world.getHospitalCoverageMap();
+    const second = world.getHospitalCoverageMap();
+    expect(second).toBe(first);
+  });
+});
+
+describe('World.markHospitalDirty() + recomputeHospitalIfDirty()', () => {
+  it('recomputeHospitalIfDirty() after markHospitalDirty() triggers recompute exactly once; second call is a no-op', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeHospital');
+
+    world.markHospitalDirty();
+    world.recomputeHospitalIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // No further dirty mark — second call is a no-op.
+    world.recomputeHospitalIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+
+  it('markHospitalDirty() + tick() recomputes the coverage map so a hospital covers an adjacent road', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    // Hospital 2×2 at (2,2)–(3,3); road at (2,4) adjacent to the hospital's south edge.
+    world.getStructureMap().addStructure({
+      type: 'hospital',
+      anchor: { x: 2, y: 2 },
+      footprint: [
+        { x: 2, y: 2 }, { x: 3, y: 2 },
+        { x: 2, y: 3 }, { x: 3, y: 3 },
+      ],
+    });
+    map.setTile(2, 4, createTile(2, 4, TileType.ROAD));
+
+    // Before any recompute the coverage map is empty.
+    expect(world.getHospitalCoverageMap().getCoverage(2, 4)).toBe(0);
+
+    world.markHospitalDirty();
+    world.tick();
+
+    // The road adjacent to the hospital now carries coverage.
+    expect(world.getHospitalCoverageMap().getCoverage(2, 4)).toBeGreaterThan(0);
+  });
+});
+
+describe('World.reset() — hospital coverage cleanup', () => {
+  it('zeroes getHospitalCoverageMap().getRaw() AND clears the dirty flag after reset', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Place a hospital and a road so some cells gain coverage.
+    seedHospital(world, 0, 0);
+    map.setTile(0, 2, createTile(0, 2, TileType.ROAD));
+    world.recomputeHospital();
+    world.markHospitalDirty();
+
+    world.reset({ regenerate: false });
+
+    const raw = world.getHospitalCoverageMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
+
+    // Dirty flag is cleared: a recomputeHospitalIfDirty call should be a no-op.
+    const spy = vi.spyOn(world, 'recomputeHospital');
+    world.recomputeHospitalIfDirty();
+    expect(spy).toHaveBeenCalledTimes(0);
+    spy.mockRestore();
+  });
+});
+
+describe('World.tick() — hospital coverage periodic cadence', () => {
+  it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeHospital even when hospitalDirty is false', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeHospital');
 
     // Advance to one tick before the cadence fires.
     for (let i = 0; i < SERVICE_INTERVAL - 1; i++) world.tick();

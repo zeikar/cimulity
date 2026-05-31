@@ -15,6 +15,7 @@ import { PowerMap, isBuildingPowered } from './PowerMap';
 import { WaterMap, isBuildingWatered } from './WaterMap';
 import { ServiceCoverageMap, isAnchorCovered } from './ServiceCoverageMap';
 import { FireCoverageMap, isFireAnchorCovered } from './FireCoverageMap';
+import { HospitalCoverageMap } from './HospitalCoverageMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -160,6 +161,8 @@ export class World {
   private serviceDirty: boolean = false;
   private fire: FireCoverageMap | null = null;
   private fireDirty: boolean = false;
+  private hospital: HospitalCoverageMap | null = null;
+  private hospitalDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -426,6 +429,29 @@ export class World {
     this.fireDirty = false;
   }
 
+  /** Lazy-allocate and return the HospitalCoverageMap instance. */
+  getHospitalCoverageMap(): HospitalCoverageMap {
+    if (this.hospital === null) this.hospital = new HospitalCoverageMap(this.map.getWidth(), this.map.getHeight());
+    return this.hospital;
+  }
+
+  markHospitalDirty(): void {
+    this.hospitalDirty = true;
+  }
+
+  /** Recompute hospital coverage only if dirty; clears the flag. */
+  recomputeHospitalIfDirty(): void {
+    if (!this.hospitalDirty) return;
+    this.recomputeHospital();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputeHospital(): void {
+    const hospitalSvc = this.getHospitalCoverageMap();
+    hospitalSvc.recompute(this.map, this.structures);
+    this.hospitalDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -489,6 +515,8 @@ export class World {
     this.serviceDirty = false;
     if (this.fire !== null) this.fire.clear();
     this.fireDirty = false;
+    if (this.hospital !== null) this.hospital.clear();
+    this.hospitalDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -501,6 +529,7 @@ export class World {
       this.recomputeWaterIfDirty();
       this.recomputeServiceIfDirty();
       this.recomputeFireIfDirty();
+      this.recomputeHospitalIfDirty();
       return;
     }
 
@@ -520,6 +549,7 @@ export class World {
     this.recomputeWaterIfDirty();
     this.recomputeServiceIfDirty();
     this.recomputeFireIfDirty();
+    this.recomputeHospitalIfDirty();
   }
 
   /**
@@ -581,6 +611,13 @@ export class World {
       this.recomputeFire();
     } else {
       this.recomputeFireIfDirty();
+    }
+
+    // Hospital coverage: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % SERVICE_INTERVAL === 0) {
+      this.recomputeHospital();
+    } else {
+      this.recomputeHospitalIfDirty();
     }
 
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
