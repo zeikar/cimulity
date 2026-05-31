@@ -12,7 +12,7 @@ import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
 import { buildToolCommands, buildToolPreview, structureFootprint } from '../tools';
-import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST, WATER_TOWER_COST } from '../core/World';
+import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST, WATER_TOWER_COST, POLICE_STATION_COST } from '../core/World';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
 import type { World } from '../core/World';
@@ -42,6 +42,7 @@ function pathForTool(
       return rectDragPath(start, end);
     case Tool.POWER_PLANT:
     case Tool.WATER_TOWER:
+    case Tool.POLICE_STATION:
       // Drag collapses to a single click at the NW anchor.
       return [start];
     default:
@@ -65,6 +66,7 @@ function commandCost(cmd: ToolCommand): number {
   if (cmd.kind === 'place-structure') {
     if (cmd.structureType === 'power_plant') return POWER_PLANT_COST;
     if (cmd.structureType === 'water_tower') return WATER_TOWER_COST;
+    if (cmd.structureType === 'police_station') return POLICE_STATION_COST;
     return 0;
   }
   if (cmd.kind === 'remove-structure') return BULLDOZE_COST;
@@ -98,6 +100,11 @@ function tileKey(x: number, y: number): string {
  * maps. Road changes also dirty both. Source selection (which structures seed
  * which utility) remains independent inside PowerMap/WaterMap.
  *
+ * Service coverage is likewise dirtied + drained post-apply on road edits OR
+ * structure edits (place/remove, any type): coverage propagates along the road
+ * network and structure footprints are excluded from that sweep, so either edit
+ * can change the coverage surface.
+ *
  * Exported so invariant-throw branches can be exercised directly in tests
  * without routing through the tool-command builders that normally prevent
  * those states from occurring.
@@ -118,6 +125,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   let landValueInvalidated = false;
   let powerInvalidated = false;
   let waterInvalidated = false;
+  let serviceInvalidated = false;
   const pushedChanged = new Set<string>();
   const pushChanged = (x: number, y: number): void => {
     const key = tileKey(x, y);
@@ -168,7 +176,10 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       if (structure === null) {
         throw new Error('invariant: addStructure returned null after classifier passed');
       }
-      const tileType = cmd.structureType === 'water_tower' ? TileType.WATER_TOWER : TileType.POWER_PLANT;
+      const tileType =
+        cmd.structureType === 'water_tower' ? TileType.WATER_TOWER :
+        cmd.structureType === 'police_station' ? TileType.POLICE_STATION :
+        TileType.POWER_PLANT;
       for (const { x: cx, y: cy } of footprint) {
         const rec = map.setTileAndReconcile(cx, cy, createTile(cx, cy, tileType));
         pushChanged(cx, cy);
@@ -183,8 +194,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // Any structure placement invalidates both maps — the shared ownership-exclusion
       // set in propagateThroughRoadNetwork covers all structure footprints, so even a
       // water tower changes which cells the power sweep may enter (and vice-versa).
+      // Service coverage is invalidated too: a police station is a coverage source, and
+      // any structure footprint is excluded from the coverage sweep.
       powerInvalidated = true;
       waterInvalidated = true;
+      serviceInvalidated = true;
     } else if (cmd.kind === 'remove-structure') {
       const s = world.getStructureMap().getStructure(cmd.structureId);
       // Invariant: tool layer dedupes by id; a stale id cannot reach applyCommands through normal flow.
@@ -199,9 +213,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       }
       world.getStructureMap().removeStructure(s.id);
       // Any structure removal invalidates both maps — same ownership-exclusion reason
-      // as placement above.
+      // as placement above. Service coverage too (removing a police station drops its
+      // coverage; removing any structure changes the sweep's exclusion set).
       powerInvalidated = true;
       waterInvalidated = true;
+      serviceInvalidated = true;
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
@@ -216,14 +232,16 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
         ) {
           landValueInvalidated = true;
         }
-        // Mark power and water dirty when a ROAD tile is placed or a ROAD tile is replaced.
-        // ROAD changes affect both graphs — a new road may extend either network.
+        // Mark power, water, and service coverage dirty when a ROAD tile is placed or a ROAD
+        // tile is replaced. ROAD changes affect both utility graphs — a new road may extend
+        // either network — and the coverage surface, which propagates along the road network.
         if (
           cmd.tile.type === TileType.ROAD ||
           (prevTile !== null && prevTile.type === TileType.ROAD)
         ) {
           powerInvalidated = true;
           waterInvalidated = true;
+          serviceInvalidated = true;
         }
       }
       if (rec.removedBuilding !== null) {
@@ -250,6 +268,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   if (waterInvalidated) {
     world.markWaterDirty();
     world.recomputeWaterIfDirty();
+  }
+  // Same for service coverage — drained whenever serviceInvalidated is set (structure edits or road changes).
+  if (serviceInvalidated) {
+    world.markServiceDirty();
+    world.recomputeServiceIfDirty();
   }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }
@@ -295,9 +318,10 @@ export function previewDrag(
 /**
  * Pure hover preview for a single-tile click at `tile`.
  *
- * Returns the tool's target footprint (2×2 for POWER_PLANT and WATER_TOWER, 1×1 otherwise)
- * with rejection derived from the existing buildToolPreview classifier —
- * the whole footprint turns red when the classifier rejects the anchor.
+ * Returns the tool's target footprint (the structure's footprint for POWER_PLANT,
+ * WATER_TOWER, and POLICE_STATION; 1×1 otherwise) with rejection derived from the
+ * existing buildToolPreview classifier — the whole footprint turns red when the
+ * classifier rejects the anchor.
  * Never mutates core; never calls buildToolCommands or applyCommands.
  */
 export function previewClick(
@@ -315,16 +339,17 @@ export function previewClick(
   // the tile list (vs a drag path which passes a multi-tile span).
   // buildToolPreview handles footprint expansion for BULLDOZE (structure cells),
   // so base.pathTiles is already the correct visual footprint for all tools
-  // except POWER_PLANT / WATER_TOWER placement (which buildToolPreview returns
-  // as [anchor] only — the 2×2 visual slab must be derived from structureFootprint).
+  // except POWER_PLANT / WATER_TOWER / POLICE_STATION placement (which buildToolPreview
+  // returns as [anchor] only — the visual slab must be derived from structureFootprint).
   const base = buildToolPreview(tool, [tile], world);
 
-  // Footprint: POWER_PLANT and WATER_TOWER use their 2×2 anchor-derived slab; everything else
-  // (including BULLDOZE-over-structure which buildToolPreview already expanded)
+  // Footprint: POWER_PLANT, WATER_TOWER, and POLICE_STATION use their anchor-derived slab;
+  // everything else (including BULLDOZE-over-structure which buildToolPreview already expanded)
   // uses base.pathTiles directly — no duplication of expansion logic.
   const footprint: TileCoord[] =
     tool === Tool.POWER_PLANT ? structureFootprint(tile, 'power_plant') :
     tool === Tool.WATER_TOWER ? structureFootprint(tile, 'water_tower') :
+    tool === Tool.POLICE_STATION ? structureFootprint(tile, 'police_station') :
     base.pathTiles;
 
   // Whole footprint is red when the classifier signals any rejection.

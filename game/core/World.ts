@@ -13,7 +13,7 @@ import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain
 import * as terrainGenerator from './terrainGenerator';
 import { PowerMap, isBuildingPowered } from './PowerMap';
 import { WaterMap, isBuildingWatered } from './WaterMap';
-import { ServiceCoverageMap } from './ServiceCoverageMap';
+import { ServiceCoverageMap, isAnchorCovered } from './ServiceCoverageMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -573,6 +573,7 @@ export class World {
       const lv = this.getLandValue();
       const pw = this.getPowerMap();
       const wm = this.getWaterMap();
+      const svc = this.getServiceCoverageMap();
 
       this.markDemandDirty();
       const demandVec = this.getDemand();
@@ -634,12 +635,14 @@ export class World {
           // Demand at 0 → saturated for this type → no structure-grow, no level-up.
           const threshold = LEVEL_THRESHOLDS[existing.level + 1];
           const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
-          // Water gates the level-up/structure-grow mutation only — the building still ages above.
           // Power gates spawn AND existing-building aging/growth (the isBuildingPowered check above
-          // runs before age++). Water gates only the level-up / structure-grow / density / merge
+          // runs before age++). Water gates the level-up / structure-grow / density / merge
           // MUTATIONS — an unwatered but powered building still ages, it just can't grow
-          // (SimCity 2000/4 'city starts, density limited').
-          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm)) {
+          // (SimCity 2000/4 'city starts, density limited'). Service coverage gates the level-up
+          // mutation ONLY (not spawn, density, or merge).
+          // Graded fields (land value, coverage) gate at the ANCHOR; binary fields (power, water)
+          // scan the FOOTPRINT — any powered/watered cell satisfies the gate. This is the intended split.
+          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc)) {
             const lot = lotBboxOf(existing.footprint);
             if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
               // Branch B' — structure-grow before level-up.

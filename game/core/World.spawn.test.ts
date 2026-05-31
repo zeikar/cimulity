@@ -36,6 +36,21 @@ function seedWater(world: World, ax: number, ay: number): void {
   world.recomputeWater();
 }
 
+// Service coverage gates level-up (Task 5): level-up fixtures need a station whose
+// graded coverage reaches the building anchor.
+function seedPolice(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'police_station',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markServiceDirty();
+  world.recomputeService();
+}
+
 describe('World.tick() — heal rule', () => {
   it('converts a DIRT tile to GRASS and returns changed === 1', () => {
     const world = new World(4, 4, { regenerate: false });
@@ -175,6 +190,9 @@ describe('World.tick() — zone growth', () => {
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL)); // diversity in 3×3 of (0,1) for LV
     seedPower(world, 4, 3); // plant at (4,3)–(5,4); (4,3) adj road (4,2)
     seedWater(world, 7, 3); // tower at (7,3)–(8,4); (7,3) adj road (7,2)
+    // Task 5: coverage gates level-up. Station (1,3)-(2,4); (1,3) adj road (1,2) → covers road row
+    // → off-road frontage covers zone anchor (0,1).
+    seedPolice(world, 1, 3);
 
     // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
     // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.
@@ -395,13 +413,17 @@ describe('World.tick() — changedBuildingIds contract', () => {
   it('changedBuildingIds contains right id on level-up and is empty on non-growth/no-change ticks', () => {
     // Decision-A: plant moved from (1,1) to (2,0) so tower (0,2)-(1,3) can be placed without conflict.
     // (0,1) is GRASS → add isolated road + tower there. Zone (0,0) adj to watered road (0,1) → watered.
-    const world = new World(4, 4, { regenerate: false });
+    // Task 5: coverage gates level-up — bump to 6×6 and add a station whose coverage reaches anchor (0,0).
+    const world = new World(6, 6, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // isolated road for water routing
+    map.setTile(1, 1, createTile(1, 1, TileType.ROAD)); // connects (1,0) down so coverage can be seeded
     seedPower(world, 2, 0); // plant at (2,0)–(3,1); (2,0) adj road (1,0) → powers it
-    seedWater(world, 0, 2); // tower at (0,2)–(1,3); (0,2) adj road (0,1) → waters (0,1); zone (0,0) adj → watered
+    seedWater(world, 0, 2); // tower at (0,2); (0,2) adj road (0,1) → waters (0,1); zone (0,0) adj → watered
+    // Station (1,2)-(2,3); cell (1,2) adj road (1,1) → covers network → anchor (0,0) at offDist 1.
+    seedPolice(world, 1, 2);
 
     // Seed a building at level 0, age sufficient for level-up.
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 = 8 >= 8 → level-up on next growth tick.

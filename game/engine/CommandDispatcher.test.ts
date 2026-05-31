@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
-import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST } from '../core/World';
+import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 
@@ -411,6 +411,78 @@ describe('CommandDispatcher WATER_TOWER removal (bulldoze)', () => {
     // remains powered by the plant after both maps drain.
     executeClick(Tool.BULLDOZE, { x: 0, y: 0 }, world);
     expect(world.getPowerMap().isPowered(3, 0)).toBe(true);
+  });
+});
+
+describe('CommandDispatcher POLICE_STATION placement + service dirty-marking', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('places a 2×2 POLICE_STATION, registers structure, and deducts POLICE_STATION_COST', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    const result = executeClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.POLICE_STATION);
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.POLICE_STATION);
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+    expect(world.getMoney()).toBe(before - POLICE_STATION_COST);
+  });
+
+  it('placing a police station marks service dirty: an adjacent road has non-zero coverage immediately (no tick)', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    // Road at (1,2) is orthogonally adjacent to station footprint cell (2,2).
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getServiceCoverageMap().getCoverage(1, 2)).toBeGreaterThan(0);
+  });
+
+  it('placing AND removing a road marks service dirty: a previously-covered cell loses coverage', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    // Station footprint is (2,2)..(3,3). Road (1,2) is adjacent to station cell (2,2) → seeded.
+    // Road (0,2) is NOT adjacent to any station cell — it is covered ONLY by reaching the
+    // station through (1,2).
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 0, y: 2 }, world);
+    expect(world.getServiceCoverageMap().getCoverage(0, 2)).toBeGreaterThan(0);
+    // Bulldoze the connecting road (1,2): (0,2) is now disconnected from the station.
+    executeClick(Tool.BULLDOZE, { x: 1, y: 2 }, world);
+    expect(world.getServiceCoverageMap().getCoverage(0, 2)).toBe(0);
+  });
+
+  it('bulldozing a police station removes coverage from a previously-covered road immediately', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    expect(world.getServiceCoverageMap().getCoverage(1, 2)).toBeGreaterThan(0);
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(world.getServiceCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+});
+
+describe('previewClick POLICE_STATION', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('POLICE_STATION over a valid flat area → pathTiles has the 2×2 footprint, rejected empty', () => {
+    const world = makeWorld8();
+    const preview = previewClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    expect(preview.pathTiles).toHaveLength(4);
+    expect(preview.pathTiles).toContainEqual({ x: 2, y: 2 });
+    expect(preview.pathTiles).toContainEqual({ x: 3, y: 3 });
+    expect(preview.rejected).toEqual([]);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+
+  it('POLICE_STATION on non-flat ground → whole 2×2 footprint is rejected', () => {
+    const world = makeWorld8();
+    world.getTerrain().unsafeSetVertexHeight(3, 3, 0); // SEA_LEVEL — makes the footprint non-flat
+    const preview = previewClick(Tool.POLICE_STATION, { x: 2, y: 2 }, world);
+    expect(preview.pathTiles).toHaveLength(4);
+    expect(preview.rejected).toHaveLength(4);
   });
 });
 

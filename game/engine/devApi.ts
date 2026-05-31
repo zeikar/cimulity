@@ -13,10 +13,11 @@
  * singleton on globalThis (owned by `worldStore.ts`) is **untouched** — tests
  * still rely on it for HMR-survive semantics. This is an additive dev surface.
  *
- * Dev paths bypass `applyCommands`, so they must manually mark+drain `power`
- * and `water` (and any other derived-field) dirty flags after writing
- * graph-relevant tiles. `recomputePowerIfDirty()` / `recomputeWaterIfDirty()`
- * alone are insufficient — the flags are only set automatically by the dispatcher.
+ * Dev paths bypass `applyCommands`, so they must manually mark+drain every
+ * derived-field dirty flag — `power`, `water`, and `service` coverage — after
+ * writing graph-relevant tiles. `recomputePowerIfDirty()` /
+ * `recomputeWaterIfDirty()` / `recomputeServiceIfDirty()` alone are
+ * insufficient — the flags are only set automatically by the dispatcher.
  */
 
 import { tileToScreen } from '../render/IsoTransform';
@@ -122,6 +123,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
           if (t.type === TileType.WATER_TOWER) {
             throw new Error('seedScene cannot seed WATER_TOWER tiles directly — place water towers via the water tower placement tool.');
           }
+          if (t.type === TileType.POLICE_STATION) {
+            throw new Error('seedScene cannot seed POLICE_STATION tiles directly — place police stations via the police station placement tool.');
+          }
         }
         const map = world.getMap();
         const buildings = map.getBuildings();
@@ -184,6 +188,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         world.recomputePowerIfDirty();
         world.markWaterDirty();
         world.recomputeWaterIfDirty();
+        world.markServiceDirty();
+        world.recomputeServiceIfDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

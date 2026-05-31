@@ -41,6 +41,19 @@ function seedWater(world: World, ax: number, ay: number): void {
   world.recomputeWater();
 }
 
+function seedPolice(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'police_station',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markServiceDirty();
+  world.recomputeService();
+}
+
 describe('World', () => {
   it('builds a map of the requested size', () => {
     const world = new World(8, 6, { regenerate: false });
@@ -345,17 +358,20 @@ describe('World.tick() — monthly tax settlement', () => {
     mapF.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
     mapF.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
     mapF.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
-    // Plant and tower — both adjacent to the road row.
+    // Plant, tower, and police station — all adjacent to the road row.
     seedPower(world, 4, 3); // plant at (4,3)–(5,4); cell (4,3) adj to road (4,2)
     seedWater(world, 7, 3); // tower at (7,3)–(8,4); cell (7,3) adj to road (7,2)
+    // Service coverage now gates level-up too — station at (1,3)–(2,4); cell (1,3) adj to road (1,2).
+    seedPolice(world, 1, 3);
 
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
 
-    // Verify road (0,2) is powered and watered, and zone (0,1) inherits both.
+    // Verify road (0,2) is powered and watered, and zone (0,1) inherits both, and is covered.
     expect(world.getPowerMap().isPowered(0, 2)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 2)).toBe(true);
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 to level up on this growth tick.
     // stagger(first-alloc-id)=0, cooldown=8. age=7 → after age+1=8 >= 8 → level-up fires.
@@ -514,10 +530,10 @@ describe('stagger() — deterministic per-building jitter', () => {
     // All spawn at level=1 simultaneously on the first growth interval; the next
     // level-up (to level=2) is gated by GROWTH_COOLDOWN_INTERVALS + stagger(id),
     // which is what differentiates the per-building first-level-2 ticks.
-    const world = new World(10, 4, { regenerate: false });
+    const world = new World(12, 4, { regenerate: false });
     const map = world.getMap();
     // Road along the top row
-    for (let x = 0; x < 10; x++) {
+    for (let x = 0; x < 12; x++) {
       map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
     }
     // 5 zones below the road — all road-adjacent
@@ -546,6 +562,9 @@ describe('stagger() — deterministic per-building jitter', () => {
     seedPower(world, 8, 1); // plant at (8,1)–(9,2); cell (8,1) adj to road (8,0) → all road y=0 powered
     // Decision-A: water gates level-up. Add tower adj to road y=0 so all 5 buildings can level up.
     seedWater(world, 6, 1); // tower at (6,1)–(7,2); cell (6,1) adj to road (6,0) → waters road y=0
+    // Service coverage gates level-up too. Station at (10,1)–(11,2); cell (10,1) adj to road (10,0)
+    // → covers road y=0 → off-road frontage covers all 5 residential anchors at y=1.
+    seedPolice(world, 10, 1);
 
     const firstLevelTwoTick = new Map<number, number>();
 
@@ -978,6 +997,8 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 4, 3);
     seedWater(world, 7, 3);
+    // Service coverage now gates level-up too — station at (1,3)–(2,4); cell (1,3) adj to road (1,2).
+    seedPolice(world, 1, 3);
 
     // Jobs source for residential demand.
     map.getBuildings().addExistingBuilding({
@@ -1006,11 +1027,12 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(b).not.toBeNull();
     const bid = b!.id;
 
-    // Confirm powered and watered.
+    // Confirm powered, watered, and covered.
     expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
     expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
-    // Run growth ticks — with water present, building should level up.
+    // Run growth ticks — with water and coverage present, building should level up.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
   });
@@ -1245,5 +1267,132 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     mid.age = DENSITY_COOLDOWN_INTERVALS + 10;
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
     expect(map.getBuildings().getBuilding(bid)?.density).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service-coverage gate (police): coverage gates LEVEL-UP ONLY at the anchor.
+// Power, water, and land value are satisfied throughout so coverage is the SOLE
+// variable. Spawn is NOT coverage-gated (power-only).
+// ---------------------------------------------------------------------------
+
+describe('World.tick() service-coverage gate — level-up gated at the anchor; spawn NOT gated', () => {
+  it('(a) powered+watered building with land value but NO coverage does NOT level up', () => {
+    // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Plant (4,3)–(5,4) powers the road row; tower (7,3)–(8,4) waters it. NO police station.
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 4, 3);
+    seedWater(world, 7, 3);
+
+    // Jobs source for residential demand.
+    map.getBuildings().addExistingBuilding({
+      id: 999, type: 'commercial',
+      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 9, y: 7, w: 1, h: 1 },
+    });
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 1,
+      density: 0,
+      age: cooldown + 5, // past cooldown — only coverage can block
+      frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+
+    // Power + water satisfied; coverage is ZERO (no station) — the SOLE blocker.
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBe(0);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+
+    const after = map.getBuildings().getBuilding(bid)!;
+    // Level must NOT have increased (coverage gate blocked it).
+    expect(after.level).toBe(1);
+    // Age MUST have increased (aging is NOT coverage-gated).
+    expect(after.age).toBeGreaterThan(cooldown + 5);
+  });
+
+  it('(b) once a police station covers the anchor, the same building levels up', () => {
+    // Identical layout to (a), plus a station at (1,3)–(2,4): cell (1,3) adj to road (1,2)
+    // → covers road row → off-road frontage covers the building anchor (0,1).
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 4, 3);
+    seedWater(world, 7, 3);
+    seedPolice(world, 1, 3);
+
+    map.getBuildings().addExistingBuilding({
+      id: 999, type: 'commercial',
+      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 9, y: 7, w: 1, h: 1 },
+    });
+
+    const cooldown = GROWTH_COOLDOWN_INTERVALS;
+    const b = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 1,
+      density: 0,
+      age: cooldown + 5,
+      frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    expect(b).not.toBeNull();
+    const bid = b!.id;
+
+    // Power + water + coverage all satisfied at the anchor.
+    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
+  });
+
+  it('(c) spawn is NOT coverage-gated: a powered road-adjacent zone tile STILL spawns with no station', () => {
+    const world = new World(10, 10, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
+    seedPower(world, 2, 0);
+    // Jobs source for residential demand.
+    map.getBuildings().addExistingBuilding({
+      id: 999, type: 'commercial',
+      footprint: [{ x: 9, y: 9 }], anchor: { x: 9, y: 9 },
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      structureRect: { x: 9, y: 9, w: 1, h: 1 },
+    });
+
+    // No station anywhere — coverage is zero at the seed tile.
+    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBe(0);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+
+    // Spawn fires despite no coverage (spawn is power-only).
+    expect(map.getBuildings().getBuildingAt(0, 1)).not.toBeNull();
+    expect(map.getBuildings().getBuildingAt(0, 1)?.level).toBe(1);
   });
 });

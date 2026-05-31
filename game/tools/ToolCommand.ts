@@ -6,7 +6,7 @@
  *
  * `TileWriteCommand`      — write a tile at a grid coordinate
  * `VertexEditCommand`    — set terrain vertex heights in deterministic order
- * `PlaceStructureCommand` — place a 2×2 power plant or water tower anchored at (x, y)
+ * `PlaceStructureCommand` — place a power plant, water tower, or police station anchored at (x, y)
  * `RemoveStructureCommand`— atomically remove a structure by id
  * `ToolCommand`           — discriminated union of the above
  */
@@ -33,13 +33,18 @@ export interface VertexEditCommand {
   }>;
 }
 
+/**
+ * Place a service structure (power plant, water tower, or police station)
+ * anchored at its NW corner (x, y). Footprint size is derived from the type
+ * via the StructureMap registry.
+ */
 export interface PlaceStructureCommand {
   readonly kind: 'place-structure';
   /** NW anchor x */
   readonly x: number;
   /** NW anchor y */
   readonly y: number;
-  readonly structureType: 'power_plant' | 'water_tower';
+  readonly structureType: 'power_plant' | 'water_tower' | 'police_station';
 }
 
 /**
