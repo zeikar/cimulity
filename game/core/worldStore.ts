@@ -70,6 +70,7 @@ function readSave(): string | null {
  *          getServiceCoverageMap, markServiceDirty, recomputeServiceIfDirty, recomputeService,
  *          getFireCoverageMap, markFireDirty, recomputeFireIfDirty, recomputeFire,
  *          getHospitalCoverageMap, markHospitalDirty, recomputeHospitalIfDirty, recomputeHospital,
+ *          getSchoolCoverageMap, markSchoolDirty, recomputeSchoolIfDirty, recomputeSchool,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -187,6 +188,15 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // SchoolCoverageMap API (added in service-v4 / v16): derived school coverage field + dirty-mark + recompute.
+  if (
+    typeof world.getSchoolCoverageMap !== 'function' ||
+    typeof world.markSchoolDirty !== 'function' ||
+    typeof world.recomputeSchoolIfDirty !== 'function' ||
+    typeof world.recomputeSchool !== 'function'
+  ) {
+    return false;
+  }
   // StructureMap API (added in Task 2 / v11): all load-bearing methods used by save/dispatch/render.
   if (typeof world.getStructureMap !== 'function') return false;
   const structures = world.getStructureMap();
@@ -226,6 +236,7 @@ export function getWorld(): World {
         world.recomputeServiceIfDirty();
         world.recomputeFireIfDirty();
         world.recomputeHospitalIfDirty();
+        world.recomputeSchoolIfDirty();
       }
     } else {
       // No save — fresh procedural world.

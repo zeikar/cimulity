@@ -14,10 +14,11 @@
  * still rely on it for HMR-survive semantics. This is an additive dev surface.
  *
  * Dev paths bypass `applyCommands`, so they must manually mark+drain every
- * derived-field dirty flag — `power`, `water`, and `service` coverage — after
- * writing graph-relevant tiles. `recomputePowerIfDirty()` /
- * `recomputeWaterIfDirty()` / `recomputeServiceIfDirty()` alone are
- * insufficient — the flags are only set automatically by the dispatcher.
+ * derived-field dirty flag — `power`, `water`, `service` coverage, and `school`
+ * coverage — after writing graph-relevant tiles. `recomputePowerIfDirty()` /
+ * `recomputeWaterIfDirty()` / `recomputeServiceIfDirty()` /
+ * `recomputeSchoolIfDirty()` alone are insufficient — the flags are only set
+ * automatically by the dispatcher.
  */
 
 import { tileToScreen } from '../render/IsoTransform';
@@ -132,6 +133,9 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
           if (t.type === TileType.HOSPITAL) {
             throw new Error('seedScene cannot seed HOSPITAL tiles directly — place hospitals via the hospital placement tool.');
           }
+          if (t.type === TileType.SCHOOL) {
+            throw new Error('seedScene cannot seed SCHOOL tiles directly — place schools via the school placement tool.');
+          }
         }
         const map = world.getMap();
         const buildings = map.getBuildings();
@@ -200,6 +204,8 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         world.recomputeFireIfDirty();
         world.markHospitalDirty();
         world.recomputeHospitalIfDirty();
+        world.markSchoolDirty();
+        world.recomputeSchoolIfDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

@@ -506,6 +506,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.markHospitalDirty();
   // Drain hospital coverage dirty here so the first frame/gate after load never reads a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
   world.recomputeHospitalIfDirty();
+  world.markSchoolDirty();
+  // Drain school coverage dirty here so the first frame/gate after load never reads a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
+  world.recomputeSchoolIfDirty();
 
   return true;
 }

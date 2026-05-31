@@ -940,6 +940,71 @@ describe('CommandDispatcher hospital coverage dirty-fanout (non-placement regres
   });
 });
 
+describe('CommandDispatcher school coverage dirty-fanout (non-placement regression)', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  /**
+   * Seed a school directly via addStructure (no Tool.SCHOOL yet — Task 5).
+   * This mirrors what a hydrated save would produce. After seeding we MUST call
+   * markSchoolDirty + recomputeSchool to establish a KNOWN-FRESH baseline,
+   * otherwise the SchoolCoverageMap is still all-zeros and assertions pass vacuously.
+   */
+  function seedSchool(world: World, ax: number, ay: number): void {
+    const map = world.getMap();
+    // Write the four SCHOOL tiles so the map has the correct tile types.
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        map.setTile(ax + dx, ay + dy, { x: ax + dx, y: ay + dy, type: TileType.SCHOOL, level: 0 });
+      }
+    }
+    world.getStructureMap().addStructure({
+      type: 'school',
+      anchor: { x: ax, y: ay },
+      footprint: [
+        { x: ax,     y: ay     },
+        { x: ax + 1, y: ay     },
+        { x: ax,     y: ay + 1 },
+        { x: ax + 1, y: ay + 1 },
+      ],
+    });
+    // Establish a KNOWN-FRESH school map baseline before any assertions.
+    world.markSchoolDirty();
+    world.recomputeSchool();
+  }
+
+  it('bulldozing a school drops coverage on a previously-covered road IMMEDIATELY (no tick)', () => {
+    const world = makeWorld8();
+    // School at (2,2)–(3,3). Road at (1,2) adjacent to school cell (2,2).
+    seedSchool(world, 2, 2);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+
+    // KNOWN-FRESH baseline: road (1,2) is covered by the school.
+    expect(world.getSchoolCoverageMap().getCoverage(1, 2)).toBeGreaterThan(0);
+
+    // Bulldoze the school — coverage should drop IMMEDIATELY (no tick needed).
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(world.getSchoolCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+
+  it('a road edit near the school updates school coverage IMMEDIATELY (no tick)', () => {
+    const world = makeWorld8();
+    // School at (2,2)–(3,3). Road at (1,2) bridges to (0,2).
+    seedSchool(world, 2, 2);
+    executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
+    // (0,2) is reachable from the school through (1,2).
+    executeClick(Tool.ROAD, { x: 0, y: 2 }, world);
+
+    // KNOWN-FRESH baseline: (0,2) has coverage through the road chain.
+    expect(world.getSchoolCoverageMap().getCoverage(0, 2)).toBeGreaterThan(0);
+
+    // Bulldoze the connecting road (1,2) — (0,2) loses coverage IMMEDIATELY.
+    executeClick(Tool.BULLDOZE, { x: 1, y: 2 }, world);
+    expect(world.getSchoolCoverageMap().getCoverage(0, 2)).toBe(0);
+  });
+});
+
 describe('CommandDispatcher TERRAIN_LEVEL', () => {
   it('Test 9: TERRAIN_LEVEL drag with dry DIRT tile — level write crosses SEA_LEVEL and reconciles DIRT→GRASS', () => {
     const world = new World(6, 6, { regenerate: false });

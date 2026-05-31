@@ -117,6 +117,10 @@ function tileKey(x: number, y: number): string {
  * same as service/fire: a hospital is a coverage source and any structure
  * footprint is excluded from the coverage sweep.
  *
+ * School coverage is dirtied + drained post-apply on road OR structure edits,
+ * same as service/fire/hospital: a school is a coverage source and any structure
+ * footprint is excluded from the coverage sweep.
+ *
  * Exported so invariant-throw branches can be exercised directly in tests
  * without routing through the tool-command builders that normally prevent
  * those states from occurring.
@@ -140,6 +144,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   let serviceInvalidated = false;
   let fireInvalidated = false;
   let hospitalInvalidated = false;
+  let schoolInvalidated = false;
   const pushedChanged = new Set<string>();
   const pushChanged = (x: number, y: number): void => {
     const key = tileKey(x, y);
@@ -216,11 +221,14 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // any structure footprint is excluded from the fire sweep.
       // Hospital coverage is invalidated too: a hospital is a coverage source, and
       // any structure footprint is excluded from the hospital sweep.
+      // School coverage is invalidated too: a school is a coverage source, and
+      // any structure footprint is excluded from the school sweep.
       powerInvalidated = true;
       waterInvalidated = true;
       serviceInvalidated = true;
       fireInvalidated = true;
       hospitalInvalidated = true;
+      schoolInvalidated = true;
     } else if (cmd.kind === 'remove-structure') {
       const s = world.getStructureMap().getStructure(cmd.structureId);
       // Invariant: tool layer dedupes by id; a stale id cannot reach applyCommands through normal flow.
@@ -241,11 +249,14 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // structure changes the sweep's exclusion set).
       // Hospital coverage too (removing a hospital drops its coverage; removing any
       // structure changes the sweep's exclusion set).
+      // School coverage too (removing a school drops its coverage; removing any
+      // structure changes the sweep's exclusion set).
       powerInvalidated = true;
       waterInvalidated = true;
       serviceInvalidated = true;
       fireInvalidated = true;
       hospitalInvalidated = true;
+      schoolInvalidated = true;
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
@@ -272,6 +283,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
           serviceInvalidated = true;
           fireInvalidated = true;
           hospitalInvalidated = true;
+          schoolInvalidated = true;
         }
       }
       if (rec.removedBuilding !== null) {
@@ -313,6 +325,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   if (hospitalInvalidated) {
     world.markHospitalDirty();
     world.recomputeHospitalIfDirty();
+  }
+  // Same for school coverage — drained whenever schoolInvalidated is set (structure edits or road changes).
+  if (schoolInvalidated) {
+    world.markSchoolDirty();
+    world.recomputeSchoolIfDirty();
   }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }

@@ -67,6 +67,19 @@ function seedHospital(world: World, ax: number, ay: number): void {
   world.recomputeHospital();
 }
 
+function seedSchool(world: World, ax: number, ay: number): void {
+  world.getStructureMap().addStructure({
+    type: 'school',
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  world.markSchoolDirty();
+  world.recomputeSchool();
+}
+
 function seedPolice(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
     type: 'police_station',
@@ -1879,6 +1892,84 @@ describe('World.tick() — hospital coverage periodic cadence', () => {
   it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeHospital even when hospitalDirty is false', () => {
     const world = new World(4, 4, { regenerate: false });
     const spy = vi.spyOn(world, 'recomputeHospital');
+
+    // Advance to one tick before the cadence fires.
+    for (let i = 0; i < SERVICE_INTERVAL - 1; i++) world.tick();
+    const callsBefore = spy.mock.calls.length;
+
+    // This tick brings tickCount to SERVICE_INTERVAL — force recompute fires.
+    world.tick();
+    expect(spy.mock.calls.length).toBe(callsBefore + 1);
+
+    spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SchoolCoverageMap API on World (lifecycle/cadence only — gate lands in Task 4)
+// ---------------------------------------------------------------------------
+
+describe('World.getSchoolCoverageMap() — lazy allocation', () => {
+  it('first call returns a non-null SchoolCoverageMap instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getSchoolCoverageMap()).not.toBeNull();
+  });
+
+  it('subsequent calls return the same instance', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const first = world.getSchoolCoverageMap();
+    const second = world.getSchoolCoverageMap();
+    expect(second).toBe(first);
+  });
+});
+
+describe('World.markSchoolDirty() + recomputeSchoolIfDirty()', () => {
+  it('recomputeSchoolIfDirty() after markSchoolDirty() triggers recompute exactly once; second call is a no-op', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeSchool');
+
+    world.markSchoolDirty();
+    world.recomputeSchoolIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // No further dirty mark — second call is a no-op.
+    world.recomputeSchoolIfDirty();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+});
+
+describe('World.reset() — school coverage cleanup', () => {
+  it('zeroes getSchoolCoverageMap().getRaw() AND clears the dirty flag after reset', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Place a school and a road so some cells gain coverage.
+    seedSchool(world, 0, 0);
+    map.setTile(0, 2, createTile(0, 2, TileType.ROAD));
+    world.recomputeSchool();
+    world.markSchoolDirty();
+
+    world.reset({ regenerate: false });
+
+    const raw = world.getSchoolCoverageMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
+
+    // Dirty flag is cleared: a recomputeSchoolIfDirty call should be a no-op.
+    const spy = vi.spyOn(world, 'recomputeSchool');
+    world.recomputeSchoolIfDirty();
+    expect(spy).toHaveBeenCalledTimes(0);
+    spy.mockRestore();
+  });
+});
+
+describe('World.tick() — school coverage periodic cadence', () => {
+  it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeSchool even when schoolDirty is false', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const spy = vi.spyOn(world, 'recomputeSchool');
 
     // Advance to one tick before the cadence fires.
     for (let i = 0; i < SERVICE_INTERVAL - 1; i++) world.tick();

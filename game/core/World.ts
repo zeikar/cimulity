@@ -16,6 +16,7 @@ import { WaterMap, isBuildingWatered } from './WaterMap';
 import { ServiceCoverageMap, isAnchorCovered } from './ServiceCoverageMap';
 import { FireCoverageMap, isFireAnchorCovered } from './FireCoverageMap';
 import { HospitalCoverageMap, isHospitalAnchorCovered } from './HospitalCoverageMap';
+import { SchoolCoverageMap } from './SchoolCoverageMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -169,6 +170,8 @@ export class World {
   private fireDirty: boolean = false;
   private hospital: HospitalCoverageMap | null = null;
   private hospitalDirty: boolean = false;
+  private school: SchoolCoverageMap | null = null;
+  private schoolDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -458,6 +461,29 @@ export class World {
     this.hospitalDirty = false;
   }
 
+  /** Lazy-allocate and return the SchoolCoverageMap instance. */
+  getSchoolCoverageMap(): SchoolCoverageMap {
+    if (this.school === null) this.school = new SchoolCoverageMap(this.map.getWidth(), this.map.getHeight());
+    return this.school;
+  }
+
+  markSchoolDirty(): void {
+    this.schoolDirty = true;
+  }
+
+  /** Recompute school coverage only if dirty; clears the flag. */
+  recomputeSchoolIfDirty(): void {
+    if (!this.schoolDirty) return;
+    this.recomputeSchool();
+  }
+
+  /** Unconditional force-recompute; also clears the dirty flag. */
+  recomputeSchool(): void {
+    const schoolSvc = this.getSchoolCoverageMap();
+    schoolSvc.recompute(this.map, this.structures);
+    this.schoolDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -523,6 +549,8 @@ export class World {
     this.fireDirty = false;
     if (this.hospital !== null) this.hospital.clear();
     this.hospitalDirty = false;
+    if (this.school !== null) this.school.clear();
+    this.schoolDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -536,6 +564,7 @@ export class World {
       this.recomputeServiceIfDirty();
       this.recomputeFireIfDirty();
       this.recomputeHospitalIfDirty();
+      this.recomputeSchoolIfDirty();
       return;
     }
 
@@ -556,6 +585,7 @@ export class World {
     this.recomputeServiceIfDirty();
     this.recomputeFireIfDirty();
     this.recomputeHospitalIfDirty();
+    this.recomputeSchoolIfDirty();
   }
 
   /**
@@ -624,6 +654,13 @@ export class World {
       this.recomputeHospital();
     } else {
       this.recomputeHospitalIfDirty();
+    }
+
+    // School coverage: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % SERVICE_INTERVAL === 0) {
+      this.recomputeSchool();
+    } else {
+      this.recomputeSchoolIfDirty();
     }
 
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
