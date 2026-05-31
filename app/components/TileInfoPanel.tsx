@@ -147,6 +147,11 @@ export function TileInfoPanel({
             {info.watered ? 'Watered' : 'No Water'}
           </span>
         </Row>
+        <Row label="Police">
+          <span style={{ color: info.isServiceSource || info.serviceCovered ? '#4caf50' : '#ff6b6b' }}>
+            {info.isServiceSource ? 'Police Station' : `${Math.round(info.coverage * 100)}%`}
+          </span>
+        </Row>
         <Row label="Land Value">{Math.round(info.landValue * 100)}%</Row>
 
         {info.building && (

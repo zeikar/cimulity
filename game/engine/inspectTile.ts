@@ -3,13 +3,14 @@
  *
  * Gathers a one-shot snapshot of everything the UI shows about a tile by
  * reading core maps. Lives in engine because it reads across several core
- * maps (tiles, power, water, land value, buildings, structures) — the same
- * downward read direction the dispatcher uses.
+ * maps (tiles, power, water, coverage, land value, buildings, structures) — the
+ * same downward read direction the dispatcher uses.
  *
  * Land value is recomputed lazily (dirtied on edits, drained on the next
  * tick), so a fresh edit while paused would otherwise read a stale value.
  * We drain the dirty cache before snapshotting so the panel always reflects
- * the current map — power and water are already drained eagerly by the dispatcher.
+ * the current map — power, water, and service coverage are already drained
+ * eagerly by the dispatcher.
  */
 
 import type { World } from '../core/World';
@@ -19,6 +20,7 @@ import type { BuildingType } from '../core/Building';
 import type { StructureType } from '../core/StructureMap';
 import { isBuildingPowered } from '../core/PowerMap';
 import { isBuildingWatered } from '../core/WaterMap';
+import { SERVICE_COVERAGE_THRESHOLD_RAW } from '../core/ServiceCoverageMap';
 
 export interface TileBuildingInfo {
   readonly type: BuildingType;
@@ -35,6 +37,12 @@ export interface TileInfo {
   readonly level: number;
   readonly powered: boolean;
   readonly watered: boolean;
+  /** Police-service coverage in [0, 1]. */
+  readonly coverage: number;
+  /** True when the raw coverage meets the simulation gate threshold (same gate as growth). */
+  readonly serviceCovered: boolean;
+  /** True when this tile's structure is a police station (the coverage source). */
+  readonly isServiceSource: boolean;
   /** Land value in [0, 1]. */
   readonly landValue: number;
   /** Grown building occupying this tile, if any. */
@@ -59,6 +67,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const structure = world.getStructureMap().getStructureAt(coord.x, coord.y);
   const power = world.getPowerMap();
   const water = world.getWaterMap();
+  const svc = world.getServiceCoverageMap();
 
   // Report each utility at the entity level, not the raw cell, to match how the
   // simulation reasons about it:
@@ -82,6 +91,15 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
       ? isBuildingWatered(building, water)
       : water.isWatered(coord.x, coord.y);
 
+  // Police coverage: a police_station tile is the source — its footprint cells
+  // are excluded from the coverage sweep, so we report coverage 0/false for it
+  // (matching the power_plant/water_tower source exclusion pattern). All other
+  // tiles read the raw cell value and apply the same raw threshold as the gate.
+  const isServiceSource = structure !== null && structure.type === 'police_station';
+  const coverageRaw = isServiceSource ? 0 : svc.getCoverage(coord.x, coord.y);
+  const coverage = coverageRaw / 255;
+  const serviceCovered = isServiceSource ? false : coverageRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
+
   return {
     x: coord.x,
     y: coord.y,
@@ -89,6 +107,9 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     level: tile.level,
     powered,
     watered,
+    coverage,
+    serviceCovered,
+    isServiceSource,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
     building: building
       ? {
