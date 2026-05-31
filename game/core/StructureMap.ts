@@ -1,5 +1,5 @@
 /**
- * Player-placed service structures (power plants, water towers, police stations, fire stations, hospitals). SEPARATE from
+ * Player-placed service structures (power plants, water towers, police stations, fire stations, hospitals, schools). SEPARATE from
  * `BuildingMap` (zone-grown buildings). The two registries share the cell-occupancy
  * invariant via `tileOwner` arrays that cannot both be `>= 0` for the same cell —
  * coordination is enforced at the dispatcher/serialization layer.
@@ -7,10 +7,10 @@
 
 import { isCanonicalFootprintRect } from './buildingFootprint';
 
-export type StructureType = 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' | 'hospital';
+export type StructureType = 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' | 'hospital' | 'school';
 
 export function isStructureType(s: string): s is StructureType {
-  return s === 'power_plant' || s === 'water_tower' || s === 'police_station' || s === 'fire_station' || s === 'hospital';
+  return s === 'power_plant' || s === 'water_tower' || s === 'police_station' || s === 'fire_station' || s === 'hospital' || s === 'school';
 }
 
 export interface Structure {
@@ -23,8 +23,8 @@ export interface Structure {
 /** Single source of truth for footprint dimensions per structure type.
  *  Power plants are a broad 2×2 industrial block; water towers are a compact 1×1
  *  tall tank; police stations are a 2×2 service block; fire stations are a 2×2
- *  service block; hospitals are a 2×2 service block. The switch exhaustiveness
- *  check catches any omitted type. */
+ *  service block; hospitals are a 2×2 service block; schools are a 2×2 service block.
+ *  The switch exhaustiveness check catches any omitted type. */
 export function structureFootprintSize(type: StructureType): { w: number; h: number } {
   switch (type) {
     case 'power_plant':
@@ -36,6 +36,8 @@ export function structureFootprintSize(type: StructureType): { w: number; h: num
     case 'fire_station':
       return { w: 2, h: 2 };
     case 'hospital':
+      return { w: 2, h: 2 };
+    case 'school':
       return { w: 2, h: 2 };
   }
 }

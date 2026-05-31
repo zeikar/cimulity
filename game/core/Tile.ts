@@ -17,6 +17,7 @@ export enum TileType {
   POLICE_STATION = 'police_station',
   FIRE_STATION = 'fire_station',
   HOSPITAL = 'hospital',
+  SCHOOL = 'school',
 }
 
 /**

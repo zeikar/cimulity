@@ -1339,3 +1339,71 @@ describe('buildToolCommands - BULLDOZE with HOSPITAL', () => {
     expect(result[0].kind).toBe('remove-structure');
   });
 });
+
+describe('buildToolCommands - SCHOOL cell protections', () => {
+  function placeSchool(w: World, ax: number, ay: number): void {
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        w.getMap().setTile(ax + dx, ay + dy, createTile(ax + dx, ay + dy, TileType.SCHOOL));
+      }
+    }
+    w.getStructureMap().addStructure({
+      type: 'school',
+      footprint: [{ x: ax, y: ay }, { x: ax + 1, y: ay }, { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 }],
+      anchor: { x: ax, y: ay },
+    });
+  }
+
+  it('ROAD rejects a single SCHOOL tile (transactional: returns empty)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.SCHOOL));
+    expect(buildToolCommands(Tool.ROAD, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_RESIDENTIAL rejects a SCHOOL tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.SCHOOL));
+    expect(buildToolCommands(Tool.ZONE_RESIDENTIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_COMMERCIAL rejects a SCHOOL tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.SCHOOL));
+    expect(buildToolCommands(Tool.ZONE_COMMERCIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('ZONE_INDUSTRIAL rejects a SCHOOL tile', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.SCHOOL));
+    expect(buildToolCommands(Tool.ZONE_INDUSTRIAL, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('TERRAIN_UP skips a SCHOOL cell — no vertex writes for that tile (isStructuredCell)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.SCHOOL));
+    expect(buildToolCommands(Tool.TERRAIN_UP, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('single school cell → 1 remove-structure command (BULLDOZE)', () => {
+    placeSchool(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+
+  it('drag over 3 of 4 school cells → exactly 1 remove-structure command (dedup)', () => {
+    placeSchool(world, 2, 2);
+    const result = buildToolCommands(Tool.BULLDOZE, [
+      { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 },
+    ], world, { x: 2, y: 2 });
+    expect(result).toHaveLength(1);
+    expect(result[0].kind).toBe('remove-structure');
+  });
+
+  it('BULLDOZE preview expands school footprint to full 2×2 (pathTiles covers all 4 cells)', () => {
+    placeSchool(world, 2, 2);
+    // Drag touches only anchor cell (2,2); preview should expand to full footprint.
+    const preview = buildToolPreview(Tool.BULLDOZE, [{ x: 2, y: 2 }], world);
+    expect(preview.pathTiles).toContainEqual({ x: 2, y: 2 });
+    expect(preview.pathTiles).toContainEqual({ x: 3, y: 2 });
+    expect(preview.pathTiles).toContainEqual({ x: 2, y: 3 });
+    expect(preview.pathTiles).toContainEqual({ x: 3, y: 3 });
+    expect(preview.rejected).toEqual([]);
+    expect(preview.affectedBuildingIds.size).toBe(0);
+  });
+});

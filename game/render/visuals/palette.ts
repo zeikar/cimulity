@@ -26,6 +26,8 @@ export const TILE_COLORS: Record<TileType, number> = {
   fire_station: 0xb83232,
   /** Hospital footprint cells render with a medical teal-green; distinct from police 0x3a4a6a, fire 0xb83232, water_tower 0x3f7fb0, and WATER_COLOR 0x2e6ba3. */
   hospital: 0x2fae9b,
+  /** School violet; distinct from existing service colors. */
+  school: 0x8a5cd0,
   zone_residential: 0x3cc44b,
   zone_commercial: 0x2f8fd6,
   zone_industrial: 0xe8c531,

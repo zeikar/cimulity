@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 15', () => {
-    expect(WORLD_SAVE_VERSION).toBe(15);
+  it('is 16', () => {
+    expect(WORLD_SAVE_VERSION).toBe(16);
   });
 });
 
-describe('v15 serialization', () => {
-  it('WORLD_SAVE_VERSION is 15 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v16 serialization', () => {
+  it('WORLD_SAVE_VERSION is 16 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(15);
-    expect(parsed.v).toBe(15);
+    expect(WORLD_SAVE_VERSION).toBe(16);
+    expect(parsed.v).toBe(16);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -36,15 +36,17 @@ describe('v15 serialization', () => {
     obj.terrain.tileElevations = [[1]];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
-  it('rejects v14 and older saves without mutating the target world', () => {
+  it('rejects v15 and older saves without mutating the target world', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 14;
+    obj.v = 15;
 
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
 
+    obj.v = 14;
+    expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 13;
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 11;
@@ -319,9 +321,9 @@ describe('v12 frontage round-trip', () => {
     expect(b!.footprint).toContainEqual({ x: 1, y: 2 });
   });
 
-  it('rejects a v: 14 save', () => {
+  it('rejects a v: 15 save', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 14;
+    obj.v = 15;
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 
@@ -756,9 +758,9 @@ describe('v12 structure persistence', () => {
   });
 });
 
-// Helper: build a minimal valid v15 save object for an 8x8 world with a 2x2 police
+// Helper: build a minimal valid v16 save object for an 8x8 world with a 2x2 police
 // station at anchor (2,2). The terrain is fully flat at height 2 (above sea level).
-function makeV15BaseWithPoliceStation() {
+function makeV16BaseWithPoliceStation() {
   const W = 8;
   const H = 8;
   const srcWorld = new World(W, H, { regenerate: false });
@@ -782,7 +784,7 @@ function makeV15BaseWithPoliceStation() {
   return base;
 }
 
-describe('v15 police station persistence', () => {
+describe('v16 police station persistence', () => {
   it('(a) round-trips a police station: structure present with same footprint/anchor', () => {
     const W = 8;
     const src = new World(W, W, { regenerate: false });
@@ -805,7 +807,7 @@ describe('v15 police station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(15);
+    expect(parsed.v).toBe(16);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -823,7 +825,7 @@ describe('v15 police station persistence', () => {
 
   it('(b) rejects a POLICE_STATION tile not covered by any structure (orphan-tile)', () => {
     const W = 8;
-    const base = makeV15BaseWithPoliceStation();
+    const base = makeV16BaseWithPoliceStation();
     // Add an orphan POLICE_STATION tile at (5,5) with no matching structure entry.
     base.t[5 * W + 5] = TileType.POLICE_STATION;
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -831,23 +833,23 @@ describe('v15 police station persistence', () => {
 
   it('(c) rejects a police_station whose footprint tile t[] is not POLICE_STATION (tile/structure mismatch)', () => {
     const W = 8;
-    const base = makeV15BaseWithPoliceStation();
+    const base = makeV16BaseWithPoliceStation();
     // Change one footprint cell to GRASS — tile/structure type mismatch.
     base.t[2 * W + 2] = TileType.GRASS;
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
   it('(d) rejects a police_station on a non-flat 2×2 area (isFlatArea coherence)', () => {
-    const base = makeV15BaseWithPoliceStation();
+    const base = makeV16BaseWithPoliceStation();
     // The station's 2×2 spans vertices (2,2)..(4,4). Mutate the SE outer corner
     // vertex (4,4) to height 3 — breaks the flat-slab invariant isFlatArea checks.
     base.terrain.vertexHeights[4][4] = 3;
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('(e) rejects an otherwise-valid envelope with v: 14 (stale-save guard after the v15 bump)', () => {
-    const base = makeV15BaseWithPoliceStation();
-    (base as Record<string, unknown>).v = 14;
+  it('(e) rejects an otherwise-valid envelope with v: 15 (stale-save guard after the v16 bump)', () => {
+    const base = makeV16BaseWithPoliceStation();
+    (base as Record<string, unknown>).v = 15;
 
     const target = new World(8, 8, { regenerate: false });
     // Pre-mark the target so we can verify it is not mutated on rejection.
@@ -857,9 +859,9 @@ describe('v15 police station persistence', () => {
   });
 });
 
-// Helper: build a minimal valid v15 save object for an 8x8 world with a 2x2 fire
+// Helper: build a minimal valid v16 save object for an 8x8 world with a 2x2 fire
 // station at anchor (2,2). The terrain is fully flat at height 2 (above sea level).
-function makeV15BaseWithFireStation() {
+function makeV16BaseWithFireStation() {
   const W = 8;
   const H = 8;
   const srcWorld = new World(W, H, { regenerate: false });
@@ -883,7 +885,7 @@ function makeV15BaseWithFireStation() {
   return base;
 }
 
-describe('v15 fire station persistence', () => {
+describe('v16 fire station persistence', () => {
   it('(a) round-trips a fire station: structure present with same footprint/anchor', () => {
     const W = 8;
     const src = new World(W, W, { regenerate: false });
@@ -906,7 +908,7 @@ describe('v15 fire station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(15);
+    expect(parsed.v).toBe(16);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -924,7 +926,7 @@ describe('v15 fire station persistence', () => {
 
   it('(b) rejects a FIRE_STATION tile not covered by any structure (orphan-tile)', () => {
     const W = 8;
-    const base = makeV15BaseWithFireStation();
+    const base = makeV16BaseWithFireStation();
     // Add an orphan FIRE_STATION tile at (5,5) with no matching structure entry.
     base.t[5 * W + 5] = TileType.FIRE_STATION;
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -932,23 +934,23 @@ describe('v15 fire station persistence', () => {
 
   it('(c) rejects a fire_station whose footprint tile t[] is not FIRE_STATION (tile/structure mismatch)', () => {
     const W = 8;
-    const base = makeV15BaseWithFireStation();
+    const base = makeV16BaseWithFireStation();
     // Change one footprint cell to GRASS — tile/structure type mismatch.
     base.t[2 * W + 2] = TileType.GRASS;
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
   it('(d) rejects a fire_station on a non-flat 2×2 area (isFlatArea coherence)', () => {
-    const base = makeV15BaseWithFireStation();
+    const base = makeV16BaseWithFireStation();
     // The station's 2×2 spans vertices (2,2)..(4,4). Mutate the SE outer corner
     // vertex (4,4) to height 3 — breaks the flat-slab invariant isFlatArea checks.
     base.terrain.vertexHeights[4][4] = 3;
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('(e) rejects an otherwise-valid envelope with v: 14 (stale-save guard after the v15 bump)', () => {
-    const base = makeV15BaseWithFireStation();
-    (base as Record<string, unknown>).v = 14;
+  it('(e) rejects an otherwise-valid envelope with v: 15 (stale-save guard after the v16 bump)', () => {
+    const base = makeV16BaseWithFireStation();
+    (base as Record<string, unknown>).v = 15;
 
     const target = new World(8, 8, { regenerate: false });
     // Pre-mark the target so we can verify it is not mutated on rejection.
@@ -958,9 +960,9 @@ describe('v15 fire station persistence', () => {
   });
 });
 
-// Helper: build a minimal valid v15 save object for an 8x8 world with a 2x2 hospital
+// Helper: build a minimal valid v16 save object for an 8x8 world with a 2x2 hospital
 // at anchor (2,2). The terrain is fully flat at height 2 (above sea level).
-function makeV15BaseWithHospitalStation() {
+function makeV16BaseWithHospitalStation() {
   const W = 8;
   const H = 8;
   const srcWorld = new World(W, H, { regenerate: false });
@@ -984,7 +986,7 @@ function makeV15BaseWithHospitalStation() {
   return base;
 }
 
-describe('v15 hospital station persistence', () => {
+describe('v16 hospital station persistence', () => {
   it('(a) round-trips a hospital: structure present with same footprint/anchor', () => {
     const W = 8;
     const src = new World(W, W, { regenerate: false });
@@ -1007,7 +1009,7 @@ describe('v15 hospital station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(15);
+    expect(parsed.v).toBe(16);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1025,7 +1027,7 @@ describe('v15 hospital station persistence', () => {
 
   it('(b) rejects a HOSPITAL tile not covered by any structure (orphan-tile)', () => {
     const W = 8;
-    const base = makeV15BaseWithHospitalStation();
+    const base = makeV16BaseWithHospitalStation();
     // Add an orphan HOSPITAL tile at (5,5) with no matching structure entry.
     base.t[5 * W + 5] = TileType.HOSPITAL;
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
@@ -1033,23 +1035,124 @@ describe('v15 hospital station persistence', () => {
 
   it('(c) rejects a hospital whose footprint tile t[] is not HOSPITAL (tile/structure mismatch)', () => {
     const W = 8;
-    const base = makeV15BaseWithHospitalStation();
+    const base = makeV16BaseWithHospitalStation();
     // Change one footprint cell to GRASS — tile/structure type mismatch.
     base.t[2 * W + 2] = TileType.GRASS;
     expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
   it('(d) rejects a hospital on a non-flat 2×2 area (isFlatArea coherence)', () => {
-    const base = makeV15BaseWithHospitalStation();
+    const base = makeV16BaseWithHospitalStation();
     // The hospital's 2×2 spans vertices (2,2)..(4,4). Mutate the SE outer corner
     // vertex (4,4) to height 3 — breaks the flat-slab invariant isFlatArea checks.
     base.terrain.vertexHeights[4][4] = 3;
     expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('(e) rejects an otherwise-valid envelope with v: 14 (stale-save guard after the v15 bump)', () => {
-    const base = makeV15BaseWithHospitalStation();
-    (base as Record<string, unknown>).v = 14;
+  it('(e) rejects an otherwise-valid envelope with v: 15 (stale-save guard after the v16 bump)', () => {
+    const base = makeV16BaseWithHospitalStation();
+    (base as Record<string, unknown>).v = 15;
+
+    const target = new World(8, 8, { regenerate: false });
+    // Pre-mark the target so we can verify it is not mutated on rejection.
+    target.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+    expect(deserializeWorldInto(target, JSON.stringify(base))).toBe(false);
+    expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
+  });
+});
+
+// Helper: build a minimal valid v16 save object for an 8x8 world with a 2x2 school
+// at anchor (2,2). The terrain is fully flat at height 2 (above sea level).
+function makeV16BaseWithSchool() {
+  const W = 8;
+  const H = 8;
+  const srcWorld = new World(W, H, { regenerate: false });
+  for (let vy = 0; vy <= H; vy++) {
+    for (let vx = 0; vx <= W; vx++) {
+      srcWorld.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+    }
+  }
+  const base = JSON.parse(serializeWorld(srcWorld));
+  // Add SCHOOL tiles at (2,2),(3,2),(2,3),(3,3).
+  base.t[2 * W + 2] = TileType.SCHOOL;
+  base.t[2 * W + 3] = TileType.SCHOOL;
+  base.t[3 * W + 2] = TileType.SCHOOL;
+  base.t[3 * W + 3] = TileType.SCHOOL;
+  base.s = [{
+    id: 0,
+    type: 'school',
+    foot: [[2, 2], [3, 2], [2, 3], [3, 3]],
+    anc: [2, 2],
+  }];
+  return base;
+}
+
+describe('v16 school station persistence', () => {
+  it('(a) round-trips a school: structure present with same footprint/anchor', () => {
+    const W = 8;
+    const src = new World(W, W, { regenerate: false });
+    for (let vy = 0; vy <= W; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        src.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const map = src.getMap();
+    map.setTile(2, 2, createTile(2, 2, TileType.SCHOOL));
+    map.setTile(3, 2, createTile(3, 2, TileType.SCHOOL));
+    map.setTile(2, 3, createTile(2, 3, TileType.SCHOOL));
+    map.setTile(3, 3, createTile(3, 3, TileType.SCHOOL));
+    src.getStructureMap().addExistingStructure({
+      id: 0,
+      type: 'school',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+      anchor: { x: 2, y: 2 },
+    });
+
+    const json1 = serializeWorld(src);
+    const parsed = JSON.parse(json1);
+    expect(parsed.v).toBe(16);
+
+    const dst = new World(W, W, { regenerate: false });
+    expect(deserializeWorldInto(dst, json1)).toBe(true);
+    // Byte-equal re-serialize proves the structure round-tripped intact.
+    expect(serializeWorld(dst)).toBe(json1);
+
+    const all = dst.getStructureMap().getAllStructures();
+    expect(all).toHaveLength(1);
+    expect(all[0].type).toBe('school');
+    expect(all[0].anchor).toEqual({ x: 2, y: 2 });
+    expect(all[0].footprint).toHaveLength(4);
+    expect(all[0].footprint).toContainEqual({ x: 2, y: 2 });
+    expect(all[0].footprint).toContainEqual({ x: 3, y: 3 });
+  });
+
+  it('(b) rejects a SCHOOL tile not covered by any structure (orphan-tile)', () => {
+    const W = 8;
+    const base = makeV16BaseWithSchool();
+    // Add an orphan SCHOOL tile at (5,5) with no matching structure entry.
+    base.t[5 * W + 5] = TileType.SCHOOL;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(c) rejects a school whose footprint tile t[] is not SCHOOL (tile/structure mismatch)', () => {
+    const W = 8;
+    const base = makeV16BaseWithSchool();
+    // Change one footprint cell to GRASS — tile/structure type mismatch.
+    base.t[2 * W + 2] = TileType.GRASS;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(d) rejects a school on a non-flat 2×2 area (isFlatArea coherence)', () => {
+    const base = makeV16BaseWithSchool();
+    // The school's 2×2 spans vertices (2,2)..(4,4). Mutate the SE outer corner
+    // vertex (4,4) to height 3 — breaks the flat-slab invariant isFlatArea checks.
+    base.terrain.vertexHeights[4][4] = 3;
+    expect(deserializeWorldInto(new World(8, 8, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(e) rejects an otherwise-valid envelope with v: 15 (stale-save guard after the v16 bump)', () => {
+    const base = makeV16BaseWithSchool();
+    (base as Record<string, unknown>).v = 15;
 
     const target = new World(8, 8, { regenerate: false });
     // Pre-mark the target so we can verify it is not mutated on rejection.

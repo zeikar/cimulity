@@ -43,6 +43,7 @@ const TILE_TYPE_LABELS: Record<TileType, string> = {
   [TileType.POLICE_STATION]: 'Police Station',
   [TileType.FIRE_STATION]: 'Fire Station',
   [TileType.HOSPITAL]: 'Hospital',
+  [TileType.SCHOOL]: 'School',
 };
 
 const STRUCTURE_TYPE_LABELS: Record<StructureType, string> = {
@@ -51,6 +52,7 @@ const STRUCTURE_TYPE_LABELS: Record<StructureType, string> = {
   police_station: 'Police Station',
   fire_station: 'Fire Station',
   hospital: 'Hospital',
+  school: 'School',
 };
 
 const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {
