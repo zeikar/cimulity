@@ -14,7 +14,7 @@ import * as terrainGenerator from './terrainGenerator';
 import { PowerMap, isBuildingPowered } from './PowerMap';
 import { WaterMap, isBuildingWatered } from './WaterMap';
 import { ServiceCoverageMap, isAnchorCovered } from './ServiceCoverageMap';
-import { FireCoverageMap } from './FireCoverageMap';
+import { FireCoverageMap, isFireAnchorCovered } from './FireCoverageMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -611,6 +611,7 @@ export class World {
       const pw = this.getPowerMap();
       const wm = this.getWaterMap();
       const svc = this.getServiceCoverageMap();
+      const fireSvc = this.getFireCoverageMap();
 
       this.markDemandDirty();
       const demandVec = this.getDemand();
@@ -675,11 +676,12 @@ export class World {
           // Power gates spawn AND existing-building aging/growth (the isBuildingPowered check above
           // runs before age++). Water gates the level-up / structure-grow / density / merge
           // MUTATIONS — an unwatered but powered building still ages, it just can't grow
-          // (SimCity 2000/4 'city starts, density limited'). Service coverage gates the level-up
-          // mutation ONLY (not spawn, density, or merge).
+          // (SimCity 2000/4 'city starts, density limited'). BOTH police AND fire coverage gate
+          // this gated branch's mutations ONLY (the level-up bump AND the nested Branch B'
+          // structure-grow); not spawn, density, or merge.
           // Graded fields (land value, coverage) gate at the ANCHOR; binary fields (power, water)
           // scan the FOOTPRINT — any powered/watered cell satisfies the gate. This is the intended split.
-          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc)) {
+          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc)) {
             const lot = lotBboxOf(existing.footprint);
             if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
               // Branch B' — structure-grow before level-up.
