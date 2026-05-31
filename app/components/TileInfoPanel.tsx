@@ -40,11 +40,13 @@ const TILE_TYPE_LABELS: Record<TileType, string> = {
   [TileType.ZONE_INDUSTRIAL]: 'Industrial Zone',
   [TileType.POWER_PLANT]: 'Power Plant',
   [TileType.WATER_TOWER]: 'Water Tower',
+  [TileType.POLICE_STATION]: 'Police Station',
 };
 
 const STRUCTURE_TYPE_LABELS: Record<StructureType, string> = {
   power_plant: 'Power Plant',
   water_tower: 'Water Tower',
+  police_station: 'Police Station',
 };
 
 const BUILDING_TYPE_LABELS: Record<BuildingType, string> = {

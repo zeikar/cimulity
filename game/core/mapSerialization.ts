@@ -34,12 +34,13 @@ function structureTileType(type: StructureType): TileType {
   switch (type) {
     case 'power_plant': return TileType.POWER_PLANT;
     case 'water_tower': return TileType.WATER_TOWER;
+    case 'police_station': return TileType.POLICE_STATION;
   }
 }
 
 /** All tile types that belong exclusively to a structure footprint; used by orphan-tile sweep.
  *  Must stay in sync with structureTileType() — every StructureType must have its tile here. */
-const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER]);
+const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER, TileType.POLICE_STATION]);
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
@@ -49,7 +50,7 @@ const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
  */
 interface StructureSaveEntry {
   id: number;
-  type: string;             // 'power_plant' | 'water_tower'
+  type: string;             // 'power_plant' | 'water_tower' | 'police_station'
   foot: [number, number][]; // exactly 4 cells for a 2x2
   anc: [number, number];
 }

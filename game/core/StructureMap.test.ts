@@ -19,6 +19,10 @@ describe('isStructureType', () => {
     expect(isStructureType('water_tower')).toBe(true);
   });
 
+  it('accepts police_station', () => {
+    expect(isStructureType('police_station')).toBe(true);
+  });
+
   it('rejects residential', () => {
     expect(isStructureType('residential')).toBe(false);
   });
@@ -39,6 +43,10 @@ describe('structureFootprintSize', () => {
 
   it('returns {w:1,h:1} for water_tower', () => {
     expect(structureFootprintSize('water_tower')).toEqual({ w: 1, h: 1 });
+  });
+
+  it('returns {w:2,h:2} for police_station', () => {
+    expect(structureFootprintSize('police_station')).toEqual({ w: 2, h: 2 });
   });
 });
 
@@ -103,6 +111,30 @@ describe('StructureMap — water_tower', () => {
         type: 'water_tower',
         footprint: [{ x: 1, y: 0 }],
         anchor: { x: 1, y: 0 },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('StructureMap — police_station', () => {
+  it('addStructure accepts a valid 2×2 police_station', () => {
+    const map = new StructureMap(10, 10);
+    const s = map.addStructure({
+      type: 'police_station',
+      footprint: make2x2Footprint(0, 0),
+      anchor: { x: 0, y: 0 },
+    });
+    expect(s).not.toBeNull();
+    expect(s!.type).toBe('police_station');
+  });
+
+  it('addStructure rejects 2×1 footprint for police_station', () => {
+    const map = new StructureMap(10, 10);
+    expect(
+      map.addStructure({
+        type: 'police_station',
+        footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }],
+        anchor: { x: 0, y: 0 },
       }),
     ).toBeNull();
   });

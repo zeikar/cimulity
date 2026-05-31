@@ -14,6 +14,7 @@ export enum TileType {
   ZONE_INDUSTRIAL = 'zone_industrial',
   POWER_PLANT = 'power_plant',
   WATER_TOWER = 'water_tower',
+  POLICE_STATION = 'police_station',
 }
 
 /**

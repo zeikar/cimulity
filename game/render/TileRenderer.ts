@@ -46,6 +46,7 @@ export function buildPixiAppRegistry(): VisualRegistry {
     TileType.ZONE_INDUSTRIAL,
     TileType.POWER_PLANT,
     TileType.WATER_TOWER,
+    TileType.POLICE_STATION,
   ];
   for (const type of allTypes) {
     registry.registerTerrain(type, DiamondTileVisual);

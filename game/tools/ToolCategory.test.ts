@@ -43,10 +43,14 @@ describe('ToolCategory', () => {
     it('maps WATER_TOWER to WATER', () => {
       expect(TOOL_CATEGORY[Tool.WATER_TOWER]).toBe(ToolCategory.WATER);
     });
+
+    it('maps POLICE_STATION to POLICE', () => {
+      expect(TOOL_CATEGORY[Tool.POLICE_STATION]).toBe(ToolCategory.POLICE);
+    });
   });
 
   describe('CATEGORY_ORDER', () => {
-    it('defines exact category order [CURSOR, TERRAIN, BUILD, ZONE, POWER, WATER, DEMOLISH]', () => {
+    it('defines exact category order [CURSOR, TERRAIN, BUILD, ZONE, POWER, WATER, POLICE, DEMOLISH]', () => {
       expect(CATEGORY_ORDER).toEqual([
         ToolCategory.CURSOR,
         ToolCategory.TERRAIN,
@@ -54,12 +58,13 @@ describe('ToolCategory', () => {
         ToolCategory.ZONE,
         ToolCategory.POWER,
         ToolCategory.WATER,
+        ToolCategory.POLICE,
         ToolCategory.DEMOLISH,
       ]);
     });
 
-    it('has exactly 7 categories in order', () => {
-      expect(CATEGORY_ORDER).toHaveLength(7);
+    it('has exactly 8 categories in order', () => {
+      expect(CATEGORY_ORDER).toHaveLength(8);
     });
   });
 });
