@@ -3,8 +3,8 @@
  *
  * Gathers a one-shot snapshot of everything the UI shows about a tile by
  * reading core maps. Lives in engine because it reads across several core
- * maps (tiles, power, water, coverage, land value, buildings, structures) — the
- * same downward read direction the dispatcher uses.
+ * maps (tiles, power, water, service coverage, fire coverage, land value,
+ * buildings, structures) — the same downward read direction the dispatcher uses.
  *
  * Land value is recomputed lazily (dirtied on edits, drained on the next
  * tick), so a fresh edit while paused would otherwise read a stale value.
@@ -43,6 +43,12 @@ export interface TileInfo {
   readonly serviceCovered: boolean;
   /** True when this tile's structure is a police station (the coverage source). */
   readonly isServiceSource: boolean;
+  /** Fire-service coverage in [0, 1]. */
+  readonly fireCoverage: number;
+  /** True when the raw fire coverage meets the simulation gate threshold (same gate as growth). */
+  readonly fireServiceCovered: boolean;
+  /** True when this tile's structure is a fire station (the fire coverage source). */
+  readonly isFireSource: boolean;
   /** Land value in [0, 1]. */
   readonly landValue: number;
   /** Grown building occupying this tile, if any. */
@@ -68,6 +74,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const power = world.getPowerMap();
   const water = world.getWaterMap();
   const svc = world.getServiceCoverageMap();
+  const fire = world.getFireCoverageMap();
 
   // Report each utility at the entity level, not the raw cell, to match how the
   // simulation reasons about it:
@@ -100,6 +107,13 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   const coverage = coverageRaw / 255;
   const serviceCovered = isServiceSource ? false : coverageRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
+  // Fire coverage: a fire_station tile is the source — same source-exclusion
+  // pattern as the police readout above.
+  const isFireSource = structure !== null && structure.type === 'fire_station';
+  const fireRaw = isFireSource ? 0 : fire.getCoverage(coord.x, coord.y);
+  const fireCoverage = fireRaw / 255;
+  const fireServiceCovered = isFireSource ? false : fireRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
+
   return {
     x: coord.x,
     y: coord.y,
@@ -110,6 +124,9 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     coverage,
     serviceCovered,
     isServiceSource,
+    fireCoverage,
+    fireServiceCovered,
+    isFireSource,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
     building: building
       ? {

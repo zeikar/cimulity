@@ -273,4 +273,63 @@ describe('inspectTile', () => {
       expect(info.serviceCovered).toBe(false);
     });
   });
+
+  describe('fire coverage', () => {
+    const SIZE = 6;
+
+    it('reports fireCoverage matching getCoverage/255 and fireServiceCovered true for a covered tile', () => {
+      const world = makeWorld(SIZE);
+      // Seed raw=128 at (2,2) — well above the threshold.
+      world.getFireCoverageMap().getRaw()[2 * SIZE + 2] = 128;
+      const info = inspectTile(world, { x: 2, y: 2 })!;
+      expect(info.fireCoverage).toBeCloseTo(128 / 255);
+      expect(info.fireServiceCovered).toBe(true);
+    });
+
+    it('reports fireServiceCovered false for a tile at raw 63 (one below threshold)', () => {
+      const world = makeWorld(SIZE);
+      // SERVICE_COVERAGE_THRESHOLD_RAW = 64; raw 63 must NOT be covered.
+      world.getFireCoverageMap().getRaw()[1 * SIZE + 1] = SERVICE_COVERAGE_THRESHOLD_RAW - 1;
+      const info = inspectTile(world, { x: 1, y: 1 })!;
+      expect(info.fireServiceCovered).toBe(false);
+      expect(info.fireCoverage).toBeCloseTo((SERVICE_COVERAGE_THRESHOLD_RAW - 1) / 255);
+    });
+
+    it('reports fireServiceCovered true for a tile exactly at threshold (raw 64)', () => {
+      const world = makeWorld(SIZE);
+      world.getFireCoverageMap().getRaw()[1 * SIZE + 1] = SERVICE_COVERAGE_THRESHOLD_RAW;
+      const info = inspectTile(world, { x: 1, y: 1 })!;
+      expect(info.fireServiceCovered).toBe(true);
+    });
+
+    it('reports isFireSource true, fireCoverage 0, fireServiceCovered false for a fire_station tile', () => {
+      const world = makeWorld(SIZE);
+      // fire_station requires a 2×2 footprint (same as power_plant).
+      world.getStructureMap().addStructure({
+        type: 'fire_station',
+        footprint: [
+          { x: 1, y: 1 },
+          { x: 2, y: 1 },
+          { x: 1, y: 2 },
+          { x: 2, y: 2 },
+        ],
+        anchor: { x: 1, y: 1 },
+      });
+      // Even if the raw array had a value, the source tile should read 0/false.
+      world.getFireCoverageMap().getRaw()[2 * SIZE + 2] = 200;
+      const info = inspectTile(world, { x: 2, y: 2 })!;
+      expect(info.isFireSource).toBe(true);
+      expect(info.fireCoverage).toBe(0);
+      expect(info.fireServiceCovered).toBe(false);
+    });
+
+    it('reports fireCoverage 0 and fireServiceCovered false for an uncovered tile', () => {
+      const world = makeWorld(SIZE);
+      // Raw array defaults to 0 — no seeding needed.
+      const info = inspectTile(world, { x: 3, y: 3 })!;
+      expect(info.isFireSource).toBe(false);
+      expect(info.fireCoverage).toBe(0);
+      expect(info.fireServiceCovered).toBe(false);
+    });
+  });
 });
