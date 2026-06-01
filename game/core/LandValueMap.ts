@@ -2,17 +2,23 @@
  * Derived influence field: land value per tile.
  * NOT persisted — recomputed from the map on demand.
  *
- * Two-stage influence:
- *   Stage 1: road proximity  (Chebyshev distance within radius 6, normalised).
+ * Three-stage influence:
+ *   Stage 1: road proximity    (Chebyshev distance within radius 6, normalised).
  *   Stage 2: zone-mix diversity (distinct zone types in 3×3, divided by 3).
- *   Final:   clamp(0.7 * road + 0.3 * diversity, 0, 1).
+ *   Stage 3: park proximity    (Chebyshev distance to nearest park within radius 4,
+ *                               additive boost up to PARK_BOOST_MAX = 0.25).
+ *   Final:   clamp(0.7 * road + 0.3 * diversity + 0.25 * park, 0, 1).
+ *   The park term is additive and ≥0, so land value is monotonic non-decreasing
+ *   vs a park-free map.
  */
 
 import type { GameMap } from './Map';
-import type { BuildingMap } from './Building';
+import type { StructureMap } from './StructureMap';
 import { TileType, isZoneType } from './Tile';
 
 const ROAD_RADIUS = 6;
+const PARK_RADIUS = 4;     // tunable
+const PARK_BOOST_MAX = 0.25; // tunable
 
 export class LandValueMap {
   private readonly width: number;
@@ -29,7 +35,7 @@ export class LandValueMap {
    * Recompute the entire influence field from the current map state.
    * Pure: no side-effects beyond writing to this.values.
    */
-  recompute(map: GameMap, _buildings: BuildingMap): void {
+  recompute(map: GameMap, structures: StructureMap): void {
     const w = this.width;
     const h = this.height;
 
@@ -69,6 +75,19 @@ export class LandValueMap {
       }
     }
 
+    // Stage 3: park-proximity — gather all park footprint cells once.
+    // For each tile, Chebyshev distance to nearest park cell within PARK_RADIUS
+    // determines the boost: dist=0 → 1.0, dist=PARK_RADIUS → ~0.2, beyond → 0.
+    // parkScore = minDist === Infinity ? 0 : max(0, 1 - minDist / (PARK_RADIUS + 1)).
+    const parkCells: { x: number; y: number }[] = [];
+    for (const s of structures.iterStructures()) {
+      if (s.type === 'park') {
+        for (const cell of s.footprint) {
+          parkCells.push({ x: cell.x, y: cell.y });
+        }
+      }
+    }
+
     // Stage 2: zone-mix diversity score per tile.
     // Count distinct zone types within 3×3 neighbourhood, divide by 3.
     for (let ty = 0; ty < h; ty++) {
@@ -86,7 +105,28 @@ export class LandValueMap {
 
         const diversityScore = Math.min(1, seen.size / 3);
         const roadScore = roadScores[ty * w + tx];
-        const combined = Math.min(1, Math.max(0, 0.7 * roadScore + 0.3 * diversityScore));
+
+        // Stage 3: nearest-park Chebyshev boost (bounding-box scan per tile).
+        let parkScore = 0;
+        if (parkCells.length > 0) {
+          let minDist = Infinity;
+
+          const r0 = Math.max(0, ty - PARK_RADIUS);
+          const r1 = Math.min(h - 1, ty + PARK_RADIUS);
+          const c0 = Math.max(0, tx - PARK_RADIUS);
+          const c1 = Math.min(w - 1, tx + PARK_RADIUS);
+
+          for (const pc of parkCells) {
+            if (pc.y >= r0 && pc.y <= r1 && pc.x >= c0 && pc.x <= c1) {
+              const chebyshev = Math.max(Math.abs(pc.x - tx), Math.abs(pc.y - ty));
+              if (chebyshev < minDist) minDist = chebyshev;
+            }
+          }
+
+          parkScore = minDist === Infinity ? 0 : Math.max(0, 1 - minDist / (PARK_RADIUS + 1));
+        }
+
+        const combined = Math.min(1, Math.max(0, 0.7 * roadScore + 0.3 * diversityScore + PARK_BOOST_MAX * parkScore));
         this.values[ty * w + tx] = combined;
       }
     }

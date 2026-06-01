@@ -341,7 +341,7 @@ export class World {
   /** Unconditional force-recompute; also clears the dirty flag. */
   recomputeLandValue(): void {
     const lv = this.getLandValue();
-    lv.recompute(this.map, this.map.getBuildings());
+    lv.recompute(this.map, this.structures);
     this.landValueDirty = false;
   }
 
