@@ -524,3 +524,52 @@ describe('StructureMap', () => {
     });
   });
 });
+
+describe('isStructureType — park', () => {
+  it('accepts park', () => {
+    expect(isStructureType('park')).toBe(true);
+  });
+});
+
+describe('structureFootprintSize — park', () => {
+  it('returns {w:1,h:1} for park', () => {
+    expect(structureFootprintSize('park')).toEqual({ w: 1, h: 1 });
+  });
+});
+
+describe('StructureMap — park', () => {
+  it('addStructure accepts a 1×1 park', () => {
+    const map = new StructureMap(10, 10);
+    const s = map.addStructure({
+      type: 'park',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+    });
+    expect(s).not.toBeNull();
+    expect(s!.type).toBe('park');
+  });
+
+  it('getStructureAt returns the park at its anchor', () => {
+    const map = new StructureMap(10, 10);
+    map.addStructure({
+      type: 'park',
+      footprint: [{ x: 3, y: 5 }],
+      anchor: { x: 3, y: 5 },
+    });
+    const s = map.getStructureAt(3, 5);
+    expect(s).not.toBeNull();
+    expect(s!.type).toBe('park');
+    expect(s!.anchor).toEqual({ x: 3, y: 5 });
+  });
+
+  it('addStructure rejects a 2×2 footprint for park', () => {
+    const map = new StructureMap(10, 10);
+    expect(
+      map.addStructure({
+        type: 'park',
+        footprint: make2x2Footprint(0, 0),
+        anchor: { x: 0, y: 0 },
+      }),
+    ).toBeNull();
+  });
+});

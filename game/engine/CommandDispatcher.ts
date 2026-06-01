@@ -12,7 +12,7 @@ import { Tool } from '../tools/Tool';
 import { snapRoadDragPath } from '../tools/RoadTool';
 import { rectDragPath } from '../tools/BulldozeTool';
 import { buildToolCommands, buildToolPreview, structureFootprint } from '../tools';
-import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST, WATER_TOWER_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST, SCHOOL_COST } from '../core/World';
+import { ROAD_COST, ZONE_COST, BULLDOZE_COST, POWER_PLANT_COST, WATER_TOWER_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST, SCHOOL_COST, PARK_COST } from '../core/World';
 import { TileType, createTile, isZoneType } from '../core/Tile';
 import { SEA_LEVEL, tilesTouchingVertex } from '../core/Terrain';
 import type { World } from '../core/World';
@@ -73,6 +73,7 @@ function commandCost(cmd: ToolCommand): number {
     if (cmd.structureType === 'fire_station') return FIRE_STATION_COST;
     if (cmd.structureType === 'hospital') return HOSPITAL_COST;
     if (cmd.structureType === 'school') return SCHOOL_COST;
+    if (cmd.structureType === 'park') return PARK_COST;
     return 0;
   }
   if (cmd.kind === 'remove-structure') return BULLDOZE_COST;
@@ -203,6 +204,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
         cmd.structureType === 'fire_station' ? TileType.FIRE_STATION :
         cmd.structureType === 'hospital' ? TileType.HOSPITAL :
         cmd.structureType === 'school' ? TileType.SCHOOL :
+        cmd.structureType === 'park' ? TileType.PARK :
         TileType.POWER_PLANT;
       for (const { x: cx, y: cy } of footprint) {
         const rec = map.setTileAndReconcile(cx, cy, createTile(cx, cy, tileType));

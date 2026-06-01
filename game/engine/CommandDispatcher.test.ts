@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
-import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST, SCHOOL_COST } from '../core/World';
+import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST, SCHOOL_COST, PARK_COST } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 
@@ -1142,5 +1142,28 @@ describe('cross-source coverage isolation (school)', () => {
     executeClick(Tool.HOSPITAL, { x: 2, y: 2 }, world);
     executeClick(Tool.ROAD, { x: 1, y: 2 }, world);
     expect(world.getSchoolCoverageMap().getCoverage(1, 2)).toBe(0);
+  });
+});
+
+describe('CommandDispatcher — park placement (TileType + cost regression guard)', () => {
+  it('place-structure park writes TileType.PARK (not POWER_PLANT) and deducts exactly PARK_COST', () => {
+    // Flat world: all vertices at height 2 (above sea level, fully flat).
+    const world = new World(8, 8, { regenerate: false });
+    for (let vy = 0; vy <= 8; vy++) {
+      for (let vx = 0; vx <= 8; vx++) {
+        world.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const before = world.getMoney();
+    const result = applyCommands(
+      [{ kind: 'place-structure', x: 3, y: 3, structureType: 'park' }],
+      world,
+    );
+    // The 1×1 footprint cell must be PARK, never POWER_PLANT.
+    expect(world.getMap().getTile(3, 3)?.type).toBe(TileType.PARK);
+    // Exactly one changed tile.
+    expect(result.changedTiles).toContainEqual({ x: 3, y: 3 });
+    // Cost is exactly PARK_COST.
+    expect(world.getMoney()).toBe(before - PARK_COST);
   });
 });

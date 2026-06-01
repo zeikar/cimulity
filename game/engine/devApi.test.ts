@@ -5,6 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { installDevApi, uninstallDevApi, type DevApiHooks } from './devApi';
+import { World } from '../core/World';
+import { TileType } from '../core/Tile';
 
 // Minimal stubs for World and PixiApp — installDevApi only references them
 // through the `dev.seedScene` and `dev.setCameraTile` closures which we never
@@ -45,6 +47,26 @@ beforeEach(() => {
 afterEach(() => {
   uninstallDevApi();
   vi.stubEnv('NODE_ENV', originalNodeEnv);
+});
+
+describe('seedScene — forbidden structure tiles', () => {
+  it('throws when given a TileType.PARK tile', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const pixiApp = {
+      getTileRenderer: () => null,
+      getCamera: () => null,
+    } as unknown as Parameters<typeof installDevApi>[1];
+    const hooks: DevApiHooks = {
+      regenerateTerrain: () => {},
+      resetWorld: () => {},
+      saveNow: () => {},
+      resetFlat: () => {},
+    };
+    installDevApi(world, pixiApp, hooks);
+    expect(() =>
+      globalThis.__cimulity!.dev.seedScene({ tiles: [{ x: 0, y: 0, type: TileType.PARK }] })
+    ).toThrow();
+  });
 });
 
 describe('installDevApi hook-dispatch', () => {

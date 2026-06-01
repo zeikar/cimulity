@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v16 is native; v15 and earlier are rejected; `worldStore` falls back to a fresh
+ * v17 is native; v16 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -22,9 +22,9 @@ import type { Structure, StructureType } from './StructureMap';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v16 saves are accepted.
+ * This is the `v` value written to disk. Only native v17 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 16;
+export const WORLD_SAVE_VERSION = 17;
 
 /**
  * Maps a StructureType to its corresponding TileType — single source of truth so
@@ -38,12 +38,13 @@ function structureTileType(type: StructureType): TileType {
     case 'fire_station': return TileType.FIRE_STATION;
     case 'hospital': return TileType.HOSPITAL;
     case 'school': return TileType.SCHOOL;
+    case 'park': return TileType.PARK;
   }
 }
 
 /** All tile types that belong exclusively to a structure footprint; used by orphan-tile sweep.
  *  Must stay in sync with structureTileType() — every StructureType must have its tile here. */
-const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER, TileType.POLICE_STATION, TileType.FIRE_STATION, TileType.HOSPITAL, TileType.SCHOOL]);
+const STRUCTURE_TILE_TYPES = new Set([TileType.POWER_PLANT, TileType.WATER_TOWER, TileType.POLICE_STATION, TileType.FIRE_STATION, TileType.HOSPITAL, TileType.SCHOOL, TileType.PARK]);
 
 const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
 
@@ -53,8 +54,8 @@ const VALID_TILE_TYPES = new Set<string>(Object.values(TileType));
  */
 interface StructureSaveEntry {
   id: number;
-  type: string;             // 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' | 'hospital' | 'school' (v16 native)
-  foot: [number, number][]; // exactly 4 cells for a 2x2 (or 1 cell for water_tower)
+  type: string;             // 'power_plant' | 'water_tower' | 'police_station' | 'fire_station' | 'hospital' | 'school' | 'park' (v17 native)
+  foot: [number, number][]; // exactly 4 cells for a 2x2 (or 1 cell for 1x1 structures such as water_tower/park)
   anc: [number, number];
 }
 
@@ -76,7 +77,7 @@ interface BuildingSaveEntry {
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 16).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 17).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` and `s[]` are both sorted by id ascending for deterministic byte-equality across round-trips.
@@ -318,10 +319,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v16 world envelope onto an existing World instance.
+ * Apply a serialized v17 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===16 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===17 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
@@ -391,7 +392,7 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   if (stagingStructures === null) return false;
 
   // Orphan-structure-tile check: every structure tile type (POWER_PLANT, WATER_TOWER,
-  // POLICE_STATION — see STRUCTURE_TILE_TYPES) in t[] must be covered by a staged structure;
+  // POLICE_STATION, FIRE_STATION, HOSPITAL, SCHOOL, PARK — see STRUCTURE_TILE_TYPES) in t[] must be covered by a staged structure;
   // an uncovered cell is a coherence violation.
   for (let i = 0; i < size; i++) {
     if (STRUCTURE_TILE_TYPES.has(data.t[i]) && !occupiedIndices.has(i)) return false;

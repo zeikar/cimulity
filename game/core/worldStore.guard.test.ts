@@ -40,8 +40,8 @@ function makeFakeStorage(): FakeStorage {
   };
 }
 
-// The storage key mirrors the constant in worldStore.ts (v16 cut).
-const STORAGE_KEY = 'cimulity:save:v16';
+// The storage key mirrors the constant in worldStore.ts (v17 cut).
+const STORAGE_KEY = 'cimulity:save:v17';
 
 // ---- singleton reset helper ----
 
@@ -159,7 +159,7 @@ describe('getWorld — sentinel: Test A — API probe fails → fresh World', ()
     };
     // Set the current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 
@@ -179,7 +179,7 @@ describe('getWorld — sentinel: stub missing getServiceCoverageMap → fresh Wo
     (globalThis as any).__cimulityWorld = stale;
     // Current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 
@@ -215,7 +215,7 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = real;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 
@@ -224,13 +224,13 @@ describe('getWorld — sentinel: Test C — both checks pass → cached instance
 });
 
 describe('getWorld — sentinel: Test D — no pre-seed → fresh World + guard set', () => {
-  it('builds a fresh World and writes service-v4 to globalThis.__cimulityWorldGuard', () => {
+  it('builds a fresh World and writes service-v5 to globalThis.__cimulityWorldGuard', () => {
     // Singleton and guard are already cleared by beforeEach (resetSingleton).
     const result = getWorld();
 
     expect(result).toBeInstanceOf(World);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((globalThis as any).__cimulityWorldGuard).toBe('service-v4');
+    expect((globalThis as any).__cimulityWorldGuard).toBe('service-v5');
   });
 });
 
@@ -331,7 +331,7 @@ describe('getWorld — stale singleton missing getDemand is discarded', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__cimulityWorld = stale;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 
@@ -355,7 +355,7 @@ describe('WORLD_SINGLETON_GUARD invalidates stale HMR singletons', () => {
     // Calling getWorld() should detect the guard mismatch and build a fresh world:
     const fresh = getWorld();
     expect(fresh).not.toBe(stale);
-    expect(globals.__cimulityWorldGuard).toBe('service-v4');
+    expect(globals.__cimulityWorldGuard).toBe('service-v5');
   });
 });
 
@@ -386,7 +386,7 @@ describe('getWorld — sentinel: stub missing getFireCoverageMap → fresh World
     (globalThis as any).__cimulityWorld = stale;
     // Current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 
@@ -409,7 +409,7 @@ describe('getWorld — sentinel: stub missing getHospitalCoverageMap → fresh W
     (globalThis as any).__cimulityWorld = stale;
     // Current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 
@@ -432,7 +432,7 @@ describe('getWorld — sentinel: stub missing getSchoolCoverageMap → fresh Wor
     (globalThis as any).__cimulityWorld = stale;
     // Current sentinel so only the API probe causes the discard.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__cimulityWorldGuard = 'service-v4';
+    (globalThis as any).__cimulityWorldGuard = 'service-v5';
 
     const result = getWorld();
 

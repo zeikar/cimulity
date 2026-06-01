@@ -112,6 +112,8 @@ export const HOSPITAL_COST = 800;
  * STARTING_FUNDS=10000. Tunable independently as balance requires.
  */
 export const SCHOOL_COST = 800;
+/** Cost to place a 1×1 park — cheaper than the 800 service blocks; a small amenity; tunable. */
+export const PARK_COST = 100;
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */

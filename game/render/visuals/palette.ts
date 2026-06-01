@@ -28,6 +28,8 @@ export const TILE_COLORS: Record<TileType, number> = {
   hospital: 0x2fae9b,
   /** School violet; distinct from existing service colors. */
   school: 0x8a5cd0,
+  /** Park forest-green; a dark pine green, distinct from grass 0x4a9e3d / residential 0x3cc44b / hospital 0x2fae9b. */
+  park: 0x1f6b3a,
   zone_residential: 0x3cc44b,
   zone_commercial: 0x2f8fd6,
   zone_industrial: 0xe8c531,

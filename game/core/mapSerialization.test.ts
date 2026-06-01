@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 16', () => {
-    expect(WORLD_SAVE_VERSION).toBe(16);
+  it('is 17', () => {
+    expect(WORLD_SAVE_VERSION).toBe(17);
   });
 });
 
-describe('v16 serialization', () => {
-  it('WORLD_SAVE_VERSION is 16 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v17 serialization', () => {
+  it('WORLD_SAVE_VERSION is 17 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(16);
-    expect(parsed.v).toBe(16);
+    expect(WORLD_SAVE_VERSION).toBe(17);
+    expect(parsed.v).toBe(17);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -36,9 +36,9 @@ describe('v16 serialization', () => {
     obj.terrain.tileElevations = [[1]];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
-  it('rejects v15 and older saves without mutating the target world', () => {
+  it('rejects v16 and older saves without mutating the target world', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 15;
+    obj.v = 16;
 
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
@@ -321,9 +321,9 @@ describe('v12 frontage round-trip', () => {
     expect(b!.footprint).toContainEqual({ x: 1, y: 2 });
   });
 
-  it('rejects a v: 15 save', () => {
+  it('rejects a v: 16 save', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 15;
+    obj.v = 16;
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 
@@ -807,7 +807,7 @@ describe('v16 police station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(16);
+    expect(parsed.v).toBe(17);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -908,7 +908,7 @@ describe('v16 fire station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(16);
+    expect(parsed.v).toBe(17);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1009,7 +1009,7 @@ describe('v16 hospital station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(16);
+    expect(parsed.v).toBe(17);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1110,7 +1110,7 @@ describe('v16 school station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(16);
+    expect(parsed.v).toBe(17);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1159,5 +1159,88 @@ describe('v16 school station persistence', () => {
     target.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     expect(deserializeWorldInto(target, JSON.stringify(base))).toBe(false);
     expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
+  });
+});
+
+// Helper: build a minimal valid v17 save object for an 8x8 world with a 1x1 park
+// at anchor (5,5). The terrain is fully flat at height 2 (above sea level).
+function makeV17BaseWithPark() {
+  const W = 8;
+  const H = 8;
+  const srcWorld = new World(W, H, { regenerate: false });
+  for (let vy = 0; vy <= H; vy++) {
+    for (let vx = 0; vx <= W; vx++) {
+      srcWorld.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+    }
+  }
+  const base = JSON.parse(serializeWorld(srcWorld));
+  // Add PARK tile at (5,5).
+  base.t[5 * W + 5] = TileType.PARK;
+  base.s = [{
+    id: 0,
+    type: 'park',
+    foot: [[5, 5]],
+    anc: [5, 5],
+  }];
+  return base;
+}
+
+describe('v17 park persistence', () => {
+  it('(a) round-trips a 1×1 park byte-equal on re-serialize', () => {
+    const W = 8;
+    const src = new World(W, W, { regenerate: false });
+    for (let vy = 0; vy <= W; vy++) {
+      for (let vx = 0; vx <= W; vx++) {
+        src.getTerrain().unsafeSetVertexHeight(vx, vy, 2);
+      }
+    }
+    const map = src.getMap();
+    map.setTile(5, 5, createTile(5, 5, TileType.PARK));
+    src.getStructureMap().addExistingStructure({
+      id: 0,
+      type: 'park',
+      footprint: [{ x: 5, y: 5 }],
+      anchor: { x: 5, y: 5 },
+    });
+
+    const json1 = serializeWorld(src);
+    const parsed = JSON.parse(json1);
+    expect(parsed.v).toBe(17);
+
+    const dst = new World(W, W, { regenerate: false });
+    expect(deserializeWorldInto(dst, json1)).toBe(true);
+    // Byte-equal re-serialize proves the structure round-tripped intact.
+    expect(serializeWorld(dst)).toBe(json1);
+
+    const all = dst.getStructureMap().getAllStructures();
+    expect(all).toHaveLength(1);
+    expect(all[0].type).toBe('park');
+    expect(all[0].anchor).toEqual({ x: 5, y: 5 });
+    expect(all[0].footprint).toHaveLength(1);
+    expect(all[0].footprint).toContainEqual({ x: 5, y: 5 });
+  });
+
+  it('(b) rejects an orphan PARK tile not covered by any structure', () => {
+    const W = 8;
+    const base = makeV17BaseWithPark();
+    // Add a second bare PARK tile at (6,6) with no matching structure entry.
+    base.t[6 * W + 6] = TileType.PARK;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(c) rejects a park whose footprint tile t[] is not PARK (tile/structure mismatch)', () => {
+    const W = 8;
+    // Park structure at (5,5) but leave that tile as GRASS (mismatch).
+    const base = makeV17BaseWithPark();
+    base.t[5 * W + 5] = TileType.GRASS;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('(d) rejects a park anchor that fails isFlatArea (sloped corner)', () => {
+    const W = 8;
+    const base = makeV17BaseWithPark();
+    // Break flatness: vertex (6,6) — SE outer corner of the 1×1 slab — to height 3.
+    base.terrain.vertexHeights[6][6] = 3;
+    expect(deserializeWorldInto(new World(W, W, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 });
