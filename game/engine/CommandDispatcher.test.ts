@@ -1005,6 +1005,79 @@ describe('CommandDispatcher school coverage dirty-fanout (non-placement regressi
   });
 });
 
+describe('CommandDispatcher PARK land-value dirty-fanout (non-placement regression)', () => {
+  function makeWorld10(): World {
+    return new World(10, 10, { regenerate: false });
+  }
+
+  /**
+   * Seed a park directly via addStructure (Tool.PARK does not exist until Task 4).
+   * Park is 1×1. After seeding we MUST call markLandValueDirty + recomputeLandValue
+   * to establish a KNOWN-FRESH baseline so assertions are not vacuously true.
+   */
+  function seedPark(world: World, ax: number, ay: number): void {
+    const map = world.getMap();
+    map.setTile(ax, ay, { x: ax, y: ay, type: TileType.PARK, level: 0 });
+    world.getStructureMap().addStructure({
+      type: 'park',
+      anchor: { x: ax, y: ay },
+      footprint: [{ x: ax, y: ay }],
+    });
+    // Establish a KNOWN-FRESH land-value baseline before any assertions.
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+  }
+
+  it('test (a): bulldozing a park drops nearby land value (dispatcher marks dirty; test drains)', () => {
+    const world = makeWorld10();
+    // Road at (1,3) gives road-proximity score for nearby tiles.
+    executeClick(Tool.ROAD, { x: 1, y: 3 }, world);
+    // Zone tile at (3,3) is the measurement target.
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 3, y: 3 }, world);
+    // Park at (3,5): Chebyshev dist from (3,3) = 2, within PARK_RADIUS=4 → boosts land value.
+    seedPark(world, 3, 5);
+
+    // KNOWN-FRESH baseline: (3,3) should have a non-zero land value boosted by the park.
+    const boostedValue = world.getLandValue().getValue(3, 3);
+    expect(boostedValue).toBeGreaterThan(0);
+
+    // Bulldoze the park — dispatcher marks land value dirty (lazy; does NOT recompute).
+    executeClick(Tool.BULLDOZE, { x: 3, y: 5 }, world);
+
+    // Drain explicitly: test is responsible for draining the lazy dirty flag.
+    world.recomputeLandValueIfDirty();
+
+    // Land value at (3,3) must drop now that the park boost is gone.
+    const droppedValue = world.getLandValue().getValue(3, 3);
+    expect(droppedValue).toBeLessThan(boostedValue);
+  });
+
+  it('test (b): placing a park raises nearby land value (dispatcher marks dirty; test drains)', () => {
+    const world = makeWorld10();
+    // Road at (1,3) for road-proximity score.
+    executeClick(Tool.ROAD, { x: 1, y: 3 }, world);
+    // Zone tile at (3,3) is the measurement target.
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 3, y: 3 }, world);
+
+    // Park-free baseline: recompute to get the value without any park.
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+    const baselineValue = world.getLandValue().getValue(3, 3);
+    expect(baselineValue).toBeGreaterThan(0);
+
+    // Place a park at (3,5) via applyCommands (Tool.PARK does not exist until Task 4).
+    // The dispatcher's place-structure arm sets landValueInvalidated when structureType==='park'.
+    applyCommands([{ kind: 'place-structure', x: 3, y: 5, structureType: 'park' }], world);
+
+    // Drain explicitly: test is responsible for draining the lazy dirty flag.
+    world.recomputeLandValueIfDirty();
+
+    // Land value at (3,3) must rise now that the park boost applies.
+    const boostedValue = world.getLandValue().getValue(3, 3);
+    expect(boostedValue).toBeGreaterThan(baselineValue);
+  });
+});
+
 describe('CommandDispatcher TERRAIN_LEVEL', () => {
   it('Test 9: TERRAIN_LEVEL drag with dry DIRT tile — level write crosses SEA_LEVEL and reconciles DIRT→GRASS', () => {
     const world = new World(6, 6, { regenerate: false });

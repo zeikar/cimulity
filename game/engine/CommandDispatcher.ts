@@ -228,6 +228,8 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // any structure footprint is excluded from the hospital sweep.
       // School coverage is invalidated too: a school is a coverage source, and
       // any structure footprint is excluded from the school sweep.
+      // Parks are the only structure type that affects land value (proximity boost).
+      if (cmd.structureType === 'park') landValueInvalidated = true;
       powerInvalidated = true;
       waterInvalidated = true;
       serviceInvalidated = true;
@@ -256,6 +258,8 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // structure changes the sweep's exclusion set).
       // School coverage too (removing a school drops its coverage; removing any
       // structure changes the sweep's exclusion set).
+      // Parks are the only structure type that affects land value (proximity boost).
+      if (s.type === 'park') landValueInvalidated = true;
       powerInvalidated = true;
       waterInvalidated = true;
       serviceInvalidated = true;
