@@ -15,6 +15,7 @@ export enum Tool {
   FIRE_STATION = 'fire_station',
   HOSPITAL = 'hospital',
   SCHOOL = 'school',
+  PARK = 'park',
   TERRAIN_UP = 'terrain_up',
   TERRAIN_DOWN = 'terrain_down',
   TERRAIN_LEVEL = 'terrain_level',

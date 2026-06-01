@@ -59,10 +59,14 @@ describe('ToolCategory', () => {
     it('maps SCHOOL to SCHOOL', () => {
       expect(TOOL_CATEGORY[Tool.SCHOOL]).toBe(ToolCategory.SCHOOL);
     });
+
+    it('maps PARK to PARK', () => {
+      expect(TOOL_CATEGORY[Tool.PARK]).toBe(ToolCategory.PARK);
+    });
   });
 
   describe('CATEGORY_ORDER', () => {
-    it('defines exact category order [CURSOR, TERRAIN, BUILD, ZONE, POWER, WATER, POLICE, FIRE, HOSPITAL, SCHOOL, DEMOLISH]', () => {
+    it('defines exact category order [CURSOR, TERRAIN, BUILD, ZONE, POWER, WATER, POLICE, FIRE, HOSPITAL, SCHOOL, PARK, DEMOLISH]', () => {
       expect(CATEGORY_ORDER).toEqual([
         ToolCategory.CURSOR,
         ToolCategory.TERRAIN,
@@ -74,18 +78,25 @@ describe('ToolCategory', () => {
         ToolCategory.FIRE,
         ToolCategory.HOSPITAL,
         ToolCategory.SCHOOL,
+        ToolCategory.PARK,
         ToolCategory.DEMOLISH,
       ]);
     });
 
-    it('has exactly 11 categories in order', () => {
-      expect(CATEGORY_ORDER).toHaveLength(11);
+    it('has exactly 12 categories in order', () => {
+      expect(CATEGORY_ORDER).toHaveLength(12);
     });
 
     it('SCHOOL appears after HOSPITAL in CATEGORY_ORDER', () => {
       const hospitalIdx = CATEGORY_ORDER.indexOf(ToolCategory.HOSPITAL);
       const schoolIdx = CATEGORY_ORDER.indexOf(ToolCategory.SCHOOL);
       expect(schoolIdx).toBeGreaterThan(hospitalIdx);
+    });
+
+    it('PARK appears after SCHOOL in CATEGORY_ORDER', () => {
+      const schoolIdx = CATEGORY_ORDER.indexOf(ToolCategory.SCHOOL);
+      const parkIdx = CATEGORY_ORDER.indexOf(ToolCategory.PARK);
+      expect(parkIdx).toBeGreaterThan(schoolIdx);
     });
   });
 });

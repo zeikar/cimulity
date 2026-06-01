@@ -46,6 +46,7 @@ function pathForTool(
     case Tool.FIRE_STATION:
     case Tool.HOSPITAL:
     case Tool.SCHOOL:
+    case Tool.PARK:
       // Drag collapses to a single click at the NW anchor.
       return [start];
     default:
@@ -385,7 +386,7 @@ export function previewDrag(
  * Pure hover preview for a single-tile click at `tile`.
  *
  * Returns the tool's target footprint (the structure's footprint for POWER_PLANT,
- * WATER_TOWER, POLICE_STATION, FIRE_STATION, HOSPITAL, and SCHOOL; 1×1 otherwise) with rejection
+ * WATER_TOWER, POLICE_STATION, FIRE_STATION, HOSPITAL, SCHOOL, and PARK; 1×1 otherwise) with rejection
  * derived from the existing buildToolPreview classifier — the whole footprint turns red when the
  * classifier rejects the anchor.
  * Never mutates core; never calls buildToolCommands or applyCommands.
@@ -405,12 +406,12 @@ export function previewClick(
   // the tile list (vs a drag path which passes a multi-tile span).
   // buildToolPreview handles footprint expansion for BULLDOZE (structure cells),
   // so base.pathTiles is already the correct visual footprint for all tools
-  // except POWER_PLANT / WATER_TOWER / POLICE_STATION / FIRE_STATION / HOSPITAL / SCHOOL placement
+  // except POWER_PLANT / WATER_TOWER / POLICE_STATION / FIRE_STATION / HOSPITAL / SCHOOL / PARK placement
   // (which buildToolPreview returns as [anchor] only — the visual slab must be derived from
   // structureFootprint).
   const base = buildToolPreview(tool, [tile], world);
 
-  // Footprint: POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION, HOSPITAL, and SCHOOL use
+  // Footprint: POWER_PLANT, WATER_TOWER, POLICE_STATION, FIRE_STATION, HOSPITAL, SCHOOL, and PARK use
   // their anchor-derived slab; everything else (including BULLDOZE-over-structure which
   // buildToolPreview already expanded) uses base.pathTiles directly — no duplication
   // of expansion logic.
@@ -421,6 +422,7 @@ export function previewClick(
     tool === Tool.FIRE_STATION ? structureFootprint(tile, 'fire_station') :
     tool === Tool.HOSPITAL ? structureFootprint(tile, 'hospital') :
     tool === Tool.SCHOOL ? structureFootprint(tile, 'school') :
+    tool === Tool.PARK ? structureFootprint(tile, 'park') :
     base.pathTiles;
 
   // Whole footprint is red when the classifier signals any rejection.

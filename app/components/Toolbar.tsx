@@ -41,6 +41,7 @@ const TOOL_BUTTONS: Record<Tool, ToolButton> = {
   [Tool.FIRE_STATION]: { tool: Tool.FIRE_STATION, label: 'Fire', shortcut: 'D' },
   [Tool.HOSPITAL]: { tool: Tool.HOSPITAL, label: 'Hospital', shortcut: 'H' },
   [Tool.SCHOOL]: { tool: Tool.SCHOOL, label: 'School', shortcut: 'L' },
+  [Tool.PARK]: { tool: Tool.PARK, label: 'Park', shortcut: 'K' },
   [Tool.TERRAIN_UP]: { tool: Tool.TERRAIN_UP, label: 'Raise', shortcut: 'R' },
   [Tool.TERRAIN_DOWN]: { tool: Tool.TERRAIN_DOWN, label: 'Lower', shortcut: 'F' },
   [Tool.TERRAIN_LEVEL]: { tool: Tool.TERRAIN_LEVEL, label: 'Level', shortcut: 'G' },
@@ -57,6 +58,7 @@ const CATEGORY_LABELS: Record<ToolCategory, string> = {
   [ToolCategory.FIRE]: 'Fire',
   [ToolCategory.HOSPITAL]: 'Hospital',
   [ToolCategory.SCHOOL]: 'School',
+  [ToolCategory.PARK]: 'Park',
   [ToolCategory.DEMOLISH]: 'Demolish',
 };
 

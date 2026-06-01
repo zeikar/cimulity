@@ -1461,3 +1461,46 @@ describe('buildToolPreview - SCHOOL', () => {
     expect(preview.pathTiles).toEqual([{ x: 2, y: 2 }]);
   });
 });
+
+describe('buildToolCommands - PARK placement', () => {
+  it('accepts on flat 1×1 grass with no obstacles — emits one place-structure command', () => {
+    const result = buildToolCommands(Tool.PARK, [{ x: 2, y: 2 }], world, { x: 2, y: 2 });
+    expect(result).toEqual([{ kind: 'place-structure', x: 2, y: 2, structureType: 'park' }]);
+  });
+
+  it('rejects when the cell is non-grass (road)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    expect(buildToolCommands(Tool.PARK, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when the cell is non-grass (zone)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    expect(buildToolCommands(Tool.PARK, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+
+  it('rejects when the footprint overlaps an existing structure', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.POLICE_STATION));
+    world.getStructureMap().addStructure({
+      type: 'police_station',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+    });
+    expect(buildToolCommands(Tool.PARK, [{ x: 2, y: 2 }], world, { x: 2, y: 2 })).toEqual([]);
+  });
+});
+
+describe('buildToolPreview - PARK', () => {
+  it('populates rejected=[] for accepted placement', () => {
+    const preview = buildToolPreview(Tool.PARK, [{ x: 2, y: 2 }], world);
+    expect(preview.rejected).toEqual([]);
+    expect(preview.pathTiles).toEqual([{ x: 2, y: 2 }]);
+    expect(preview.allOrNothingBlocked).toBe(false);
+  });
+
+  it('populates rejected=[tile] for rejected placement (non-grass cell)', () => {
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const preview = buildToolPreview(Tool.PARK, [{ x: 2, y: 2 }], world);
+    expect(preview.rejected).toEqual([{ x: 2, y: 2 }]);
+    expect(preview.pathTiles).toEqual([{ x: 2, y: 2 }]);
+  });
+});

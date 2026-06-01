@@ -93,7 +93,7 @@ describe('KeyboardHandler', () => {
     expect(ee.preventDefault).toHaveBeenCalled();
   });
 
-  it('t / b / s / Escape / r / f / g / p / a / c / d / h / l trigger onToolChange with the correct tool each', () => {
+  it('t / b / s / Escape / r / f / g / p / a / c / d / h / l / k trigger onToolChange with the correct tool each', () => {
     new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
 
     const pairs: Array<[string, Tool]> = [
@@ -110,6 +110,7 @@ describe('KeyboardHandler', () => {
       ['d', Tool.FIRE_STATION],
       ['h', Tool.HOSPITAL],
       ['l', Tool.SCHOOL],
+      ['k', Tool.PARK],
     ];
     for (const [key, expected] of pairs) {
       onToolChange.mockClear();
@@ -124,6 +125,13 @@ describe('KeyboardHandler', () => {
     const eL = fire('L');
     expect(onToolChange).toHaveBeenCalledWith(Tool.SCHOOL);
     expect(eL.preventDefault).toHaveBeenCalled();
+  });
+
+  it('uppercase K (caps lock) triggers Tool.PARK', () => {
+    new KeyboardHandler({ onToolChange, onSpeedChange, onPauseToggle });
+    const eK = fire('K');
+    expect(onToolChange).toHaveBeenCalledWith(Tool.PARK);
+    expect(eK.preventDefault).toHaveBeenCalled();
   });
 
   it('keys typed into an HTMLInputElement target are ignored', () => {

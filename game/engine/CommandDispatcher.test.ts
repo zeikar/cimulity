@@ -1218,6 +1218,41 @@ describe('cross-source coverage isolation (school)', () => {
   });
 });
 
+describe('CommandDispatcher PARK placement + dirty-marking', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('places a 1×1 PARK, registers structure, and deducts PARK_COST', () => {
+    const world = makeWorld8();
+    const before = world.getMoney();
+    const result = executeClick(Tool.PARK, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(1);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.PARK);
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+    expect(world.getMoney()).toBe(before - PARK_COST);
+  });
+
+  it('placing a park near a zone raises land value after recomputeLandValueIfDirty (lazy model)', () => {
+    const world = makeWorld8();
+    // Place a zone tile adjacent to the park anchor.
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 1, y: 2 }, world);
+    executeClick(Tool.PARK, { x: 2, y: 2 }, world);
+    // Park placement marks land value dirty; drain via explicit recompute.
+    world.recomputeLandValueIfDirty();
+    // Land value near the park should be greater than the default of 0.
+    expect(world.getLandValue().getValue(1, 2)).toBeGreaterThan(0);
+  });
+
+  it('rejects placement on non-grass (road)', () => {
+    const world = makeWorld8();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+    const result = executeClick(Tool.PARK, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(0);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.ROAD);
+  });
+});
+
 describe('CommandDispatcher — park placement (TileType + cost regression guard)', () => {
   it('place-structure park writes TileType.PARK (not POWER_PLANT) and deducts exactly PARK_COST', () => {
     // Flat world: all vertices at height 2 (above sea level, fully flat).
