@@ -183,16 +183,27 @@ Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.
 Each tick (`World.tick`, 1 tick = 1 day):
 
 1. Advances `tickCount` and `day` first (post-increment — so the first growth tick fires when `tickCount === ZONE_GROWTH_INTERVAL`, not at 0)
-2. Recomputes land value if dirty, or unconditionally on `LAND_VALUE_INTERVAL` cadence (defense-in-depth)
-3. Heals all `DIRT` tiles back to `GRASS`
-4. On a month-boundary day (`day % DAYS_PER_MONTH === 0`), settles a month of tax at the pre-growth population
-5. On growth ticks (`tickCount % ZONE_GROWTH_INTERVAL === 0`), walks zone tiles in two branches — **both require an orthogonal road neighbor**:
+2. Recomputes utility and coverage maps if dirty or on their own cadence: `PowerMap` (binary road-BFS reachability from power plants), `WaterMap` (same pattern for water towers), `ServiceCoverageMap` (police), `FireCoverageMap` (fire), `HospitalCoverageMap` (hospital), and `SchoolCoverageMap` (school) — all four coverage maps use `propagateServiceCoverage` + the same constants, each hard-coding its own source type, graded 0..255 intensity, MAX across stations via min-distance. These are not persisted.
+3. Recomputes land value if dirty, or unconditionally on `LAND_VALUE_INTERVAL` cadence (defense-in-depth). **Land value depends on coverage being fresh** (it reads the four coverage maps computed in step 2); a coverage change marks land value dirty, so the two are always in sync.
+4. Heals all `DIRT` tiles back to `GRASS`
+5. On a month-boundary day (`day % DAYS_PER_MONTH === 0`), settles a month of tax at the pre-growth population
+6. On growth ticks (`tickCount % ZONE_GROWTH_INTERVAL === 0`), walks zone tiles in two branches — **both require an orthogonal road neighbor**:
    - No building yet on this tile → create a level-0 building (road adjacency is the only gate)
    - Building already exists → level-up / density growth gated by land-value thresholds + per-building cooldown
 
-   The growth pass reads `landValue` as a frozen snapshot taken at step 2. Derived utility maps — `PowerMap` (binary road-BFS reachability from power plants), `WaterMap` (same pattern for water towers), `ServiceCoverageMap` (police), `FireCoverageMap` (fire), `HospitalCoverageMap` (hospital), and `SchoolCoverageMap` (school), all four using `propagateServiceCoverage` + the same constants, each hard-coding its own source type, graded 0..255 intensity, MAX across stations via min-distance — are recomputed on their own `SERVICE_INTERVAL`/dirty cadence inside `World.tick` and are not persisted. Power gates initial zone spawn; water gates level-ups at the building footprint (binary); level-up additionally requires police, fire, hospital, AND school coverage at the building anchor tile (graded fields gate at the anchor, not the footprint).
+   The growth pass reads `landValue` as a frozen snapshot taken at step 3. Power gates initial zone spawn; water gates level-ups at the building footprint (binary); level-up additionally requires police, fire, hospital, AND school coverage at the building anchor tile (graded fields gate at the anchor, not the footprint) — those same four coverages also raise land value via the combined service term.
 
-   `LandValueMap` is a three-stage derived scalar field (0..1 per tile), recomputed on dirty/interval cadence: **Stage 1** road proximity — Chebyshev distance to nearest road within radius 6 (no BFS, pure distance); **Stage 2** zone-mix diversity — distinct zone types in the 3×3 neighbourhood, divided by 3; **Stage 3** park proximity — Chebyshev distance to nearest park cell within radius 4, additive max boost `PARK_BOOST_MAX = 0.25`, nearest-park strongest-wins (no road connectivity, mirrors Stage 1 approach). Final combined: `clamp(0.7 * road + 0.3 * diversity + 0.25 * park, 0, 1)`. Parks are a land-value amenity, NOT a coverage service — the four-member coverage family (police / fire / hospital / school) is separate. Gate summary: power → initial spawn at footprint; water → level-up at footprint (binary); four coverage services → level-up at anchor; land value (including park boost) → level-up at anchor via `LEVEL_THRESHOLDS`. **Future direction (deferred):** rebalancing the road-proximity weight (currently 0.7) and folding the four coverage services into the land-value formula is a known follow-up, not done in the park change.
+   `LandValueMap` is a derived scalar field (0..1 per tile), recomputed on dirty/interval cadence. Four inputs feed a sum-to-1.0 base, PLUS an additive park boost, all clamped:
+   - **Road proximity** (weight 0.40) — Chebyshev distance to nearest road within radius 6 (no BFS, pure distance).
+   - **Zone-mix diversity** (weight 0.10) — distinct zone types in the 3×3 neighbourhood, divided by 3.
+   - **Service coverage** (weight 0.50) — the average of the four services' normalised coverage (police, fire, hospital, school).
+   - **Park proximity** (additive +0.25 max) — Chebyshev distance to nearest park cell within radius 4, nearest-park strongest-wins; park is a separate land-value amenity, NOT a coverage service.
+
+   Final: `clamp(0.40 * road + 0.10 * diversity + 0.50 * service + 0.25 * park, 0, 1)`.
+
+   **Dual role of services:** the four coverage services hard-gate level-up at the building anchor in `World` (all four must cover the anchor — unchanged), AND contribute to land value via the combined service term. A coverage-map change marks land value dirty (dirty cascade).
+
+   Gate summary: power → initial spawn at footprint; water → level-up at footprint (binary); four coverage services → level-up at anchor (AND-gate); land value (road + diversity + service + park) → level-up at anchor via `LEVEL_THRESHOLDS`.
 
 ### Procedural terrain generation
 

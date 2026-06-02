@@ -16,7 +16,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Power plants + binary reachability gate zone growth
 - Water towers gate zone level-ups/density (power gates initial spawn)
 - Police, fire, hospital, and school stations provide road-network coverage; level-up now requires all four at the anchor
-- Parks raise nearby land value (Chebyshev radius 4, additive +0.25 max); land value now gates level-up at the anchor (park is a separate land-value amenity, not a fifth coverage service)
+- Land value gates level-up at the anchor: road proximity (weight 0.40), zone-mix diversity (0.10), service coverage (0.50 — avg of the four), plus additive park proximity (+0.25 max); park is a separate amenity, not a fifth coverage service
 
 Next focus: replace placeholder colored geometry with sprites/textures, add more terrain variety, and continue tightening tool feedback.
 
@@ -65,10 +65,10 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 ### MVP-2 (Future)
 
 - [x] **Services** - Police, fire, hospital, and school coverage all shipped (road-network + distance falloff); the coverage family has four members (police/fire/hospital emergency trio + school education); level-up gates on all four at the anchor
-- [x] **Parks** - Park tile shipped (forest-green, keyboard K, cost 100); raises nearby land value via a third LandValueMap stage (Chebyshev radius 4, additive +0.25 max, nearest-park strongest-wins); park is a land-value amenity — it is NOT a fifth coverage service
+- [x] **Parks** - Park tile shipped (forest-green, keyboard K, cost 100); raises nearby land value (Chebyshev radius 4, additive +0.25 max, nearest-park strongest-wins); park is a land-value amenity — it is NOT a fifth coverage service (the four-input formula is road 0.40 + diversity 0.10 + service 0.50, plus the additive park +0.25)
 - [ ] **Happiness/statistics** - Citizen happiness, budget charts
 - [ ] **Sound effects** - Audio feedback
-- [ ] **Future direction (deferred)** - Rebalance road-proximity weight (currently 0.7) and fold the four coverage services into the land-value formula; not done in the park change
+- [x] **Land-value model** - Road weight rebalanced 0.7→0.40, diversity 0.3→0.10; the four coverage services now contribute a combined service term (weight 0.50, average of the four normalised coverages) atop the additive park bonus (+0.25). Services play a dual role: hard-gate level-up at the anchor AND feed land value.
 
 ## Contributing
 
