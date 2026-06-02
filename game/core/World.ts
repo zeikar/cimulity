@@ -73,6 +73,14 @@ export const DENSITY_COOLDOWN_INTERVALS = 24;
 export const POPULATION_PER_LEVEL = 10;
 /** Initial city treasury balance. */
 export const STARTING_FUNDS = 10000;
+/** Land-value contribution weight for city happiness (W_LAND + W_JOBS + W_BUDGET = 1.0). */
+export const HAPPINESS_W_LAND = 0.5;
+/** Jobs-balance contribution weight for city happiness. */
+export const HAPPINESS_W_JOBS = 0.3;
+/** Budget-health contribution weight for city happiness. */
+export const HAPPINESS_W_BUDGET = 0.2;
+/** Initial/empty-city happiness value returned when no residential or jobs buildings exist. */
+export const EMPTY_CITY_HAPPINESS = 0.5;
 /** Tax revenue per population point per day. */
 export const TAX_PER_POP = 1;
 /** Cost to place one ROAD tile. */
@@ -153,6 +161,11 @@ export interface WorldDate {
   day: number;
 }
 
+/** Clamp x to [0, 1]. Mirrors the Demand.ts idiom. */
+function clamp01(x: number): number {
+  return Math.max(0, Math.min(1, x));
+}
+
 export class World {
   private map: GameMap;
   private terrain!: Terrain;
@@ -165,6 +178,9 @@ export class World {
   private landValue: LandValueMap | null = null;
   /** True when the influence map inputs have changed since last recompute. */
   private landValueDirty: boolean = false;
+  /** Derived display-only KPI; dirty/lazy like land value. NOT persisted. Read only by the HUD/tests — never feeds growth/demand/level-up. */
+  private happiness: number = EMPTY_CITY_HAPPINESS;
+  private happinessDirty: boolean = false;
   private demand: Demand | null = null;
   private demandDirty: boolean = true;
   private structures!: StructureMap;
@@ -306,12 +322,14 @@ export class World {
   trySpend(amount: number): boolean {
     if (!this.isValidMoneyAmount(amount) || this.money < amount) return false;
     this.money -= amount;
+    this.markHappinessDirty();
     return true;
   }
 
   earn(amount: number): void {
     if (!this.isValidMoneyAmount(amount)) return;
     this.money += amount;
+    this.markHappinessDirty();
   }
 
   /**
@@ -321,6 +339,7 @@ export class World {
   setMoney(amount: number): boolean {
     if (!this.isValidMoneyAmount(amount)) return false;
     this.money = amount;
+    this.markHappinessDirty();
     return true;
   }
 
@@ -359,7 +378,17 @@ export class World {
 
   /** Mark land value as needing recomputation on the next recomputeLandValueIfDirty() call. */
   markLandValueDirty(): void {
+    this.dirtyLandValueAndHappiness();
+  }
+
+  /** ONE place the land-value→happiness cascade lives. Set both dirty flags together so no mutation can dirty land value without also dirtying happiness. */
+  private dirtyLandValueAndHappiness(): void {
     this.landValueDirty = true;
+    this.happinessDirty = true;
+  }
+
+  private markHappinessDirty(): void {
+    this.happinessDirty = true;
   }
 
   getStructureMap(): StructureMap {
@@ -421,8 +450,8 @@ export class World {
   markServiceDirty(): void {
     this.serviceDirty = true;
     // B1 — dirty cascade: land value reads the four coverage maps, so any coverage
-    // change must also dirty land value. This is the ONLY place the cascade lives.
-    this.landValueDirty = true;
+    // change must also dirty land value and happiness. Route through the shared helper.
+    this.dirtyLandValueAndHappiness();
   }
 
   /** Recompute service coverage only if dirty; clears the flag. */
@@ -446,7 +475,7 @@ export class World {
 
   markFireDirty(): void {
     this.fireDirty = true;
-    this.landValueDirty = true; // B1 cascade — see markServiceDirty.
+    this.dirtyLandValueAndHappiness(); // B1 cascade — see markServiceDirty.
   }
 
   /** Recompute fire coverage only if dirty; clears the flag. */
@@ -470,7 +499,7 @@ export class World {
 
   markHospitalDirty(): void {
     this.hospitalDirty = true;
-    this.landValueDirty = true; // B1 cascade — see markServiceDirty.
+    this.dirtyLandValueAndHappiness(); // B1 cascade — see markServiceDirty.
   }
 
   /** Recompute hospital coverage only if dirty; clears the flag. */
@@ -494,7 +523,7 @@ export class World {
 
   markSchoolDirty(): void {
     this.schoolDirty = true;
-    this.landValueDirty = true; // B1 cascade — see markServiceDirty.
+    this.dirtyLandValueAndHappiness(); // B1 cascade — see markServiceDirty.
   }
 
   /** Recompute school coverage only if dirty; clears the flag. */
@@ -532,6 +561,58 @@ export class World {
       if (tile.type === TileType.DIRT) count++;
     }
     return count;
+  }
+
+  /**
+   * City-wide happiness scalar in [0, 1]. Display-only KPI — never feeds growth/demand/level-up.
+   * Lazy: recomputes only when inputs (land value, money, buildings) have changed since last read.
+   */
+  getHappiness(): number {
+    this.recomputeHappinessIfDirty();
+    return this.happiness;
+  }
+
+  private recomputeHappinessIfDirty(): void {
+    if (!this.happinessDirty) return;
+    this.recomputeHappiness();
+  }
+
+  private recomputeHappiness(): void {
+    // Drain land value FIRST so anchor reads are fresh — mirrors recomputeLandValue draining coverage.
+    this.recomputeLandValueIfDirty();
+
+    let levelSumR = 0;
+    let levelSumC = 0;
+    let levelSumI = 0;
+    let residentialCount = 0;
+    let residentialLandValueSum = 0;
+
+    for (const b of this.map.getBuildings().iterBuildings()) {
+      if (b.type === 'residential') {
+        levelSumR += b.level;
+        residentialCount++;
+        residentialLandValueSum += this.getLandValue().getValue(b.anchor.x, b.anchor.y);
+      } else if (b.type === 'commercial') {
+        levelSumC += b.level;
+      } else {
+        levelSumI += b.level;
+      }
+    }
+
+    const jobsLevels = levelSumC + levelSumI;
+
+    if (residentialCount === 0 && jobsLevels === 0) {
+      this.happiness = EMPTY_CITY_HAPPINESS;
+      this.happinessDirty = false;
+      return;
+    }
+
+    const landScore = residentialCount > 0 ? clamp01(residentialLandValueSum / residentialCount) : 0;
+    const jobsBalance = clamp01(1 - Math.abs(jobsLevels - levelSumR) / Math.max(jobsLevels + levelSumR, 1));
+    const budgetHealth = clamp01(this.money / STARTING_FUNDS);
+
+    this.happiness = clamp01(HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * jobsBalance + HAPPINESS_W_BUDGET * budgetHealth);
+    this.happinessDirty = false;
   }
 
   /** Sum of (building.level × POPULATION_PER_LEVEL) across all buildings. Population now lives on buildings, not tiles. */
@@ -594,6 +675,8 @@ export class World {
       // B1' — land value depends on coverage, which is now cleared/zero. Recompute
       // last so the already-allocated LandValueMap drops any stale pre-reset values.
       this.recomputeLandValue();
+      // Mark happiness dirty so the next read re-derives from the fresh reset state.
+      this.markHappinessDirty();
       return;
     }
 
@@ -618,6 +701,8 @@ export class World {
     // B1' — land value depends on coverage, which is now cleared/zero. Recompute
     // last so the already-allocated LandValueMap drops any stale pre-reset values.
     this.recomputeLandValue();
+    // Mark happiness dirty so the next read re-derives from the fresh reset state.
+    this.markHappinessDirty();
   }
 
   /**
@@ -881,6 +966,11 @@ export class World {
 
       if (changedBuildingIds.length > 0) this.markDemandDirty();
     }
+
+    // Mark happiness dirty at the END of the tick — after tax settlement (money changed) and
+    // after growth/merge (building levels changed). Happiness is a display OUTPUT read lazily
+    // after the tick; land value is a growth INPUT recomputed fresh before the growth pass above.
+    this.markHappinessDirty();
 
     return { changedTiles, changed: changedTiles.length, changedBuildingIds };
   }

@@ -12,6 +12,10 @@ import {
   WATER_INTERVAL,
   SERVICE_INTERVAL,
   DENSITY_COOLDOWN_INTERVALS,
+  EMPTY_CITY_HAPPINESS,
+  HAPPINESS_W_LAND,
+  HAPPINESS_W_JOBS,
+  HAPPINESS_W_BUDGET,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { TileType, createTile } from './Tile';
@@ -2159,5 +2163,331 @@ describe('World.tick() — school coverage periodic cadence', () => {
     expect(spy.mock.calls.length).toBe(callsBefore + 1);
 
     spy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// World.getHappiness() — display-only city KPI
+// ---------------------------------------------------------------------------
+
+describe('World.getHappiness() — range and empty-city default', () => {
+  it('result is always in [0, 1] range after tick()', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.tick();
+    const h = world.getHappiness();
+    expect(h).toBeGreaterThanOrEqual(0);
+    expect(h).toBeLessThanOrEqual(1);
+  });
+
+  it('empty city (no buildings, no jobs) returns EMPTY_CITY_HAPPINESS', () => {
+    const world = new World(4, 4, { regenerate: false });
+    // Dirty via setMoney so the lazy path runs recomputeHappiness (not the stale cache).
+    world.setMoney(STARTING_FUNDS);
+    expect(world.getHappiness()).toBe(EMPTY_CITY_HAPPINESS);
+  });
+});
+
+describe('World.getHappiness() — budget sensitivity', () => {
+  it('higher money produces higher or equal happiness (budgetHealth term)', () => {
+    // Two worlds identical except treasury; both have only a commercial building (jobs only,
+    // residentialCount=0, jobsLevels>0) so the empty-city path is NOT taken.
+    // Dirty path: setMoney triggers markHappinessDirty.
+    const worldRich = new World(4, 4, { regenerate: false });
+    const worldPoor = new World(4, 4, { regenerate: false });
+
+    for (const w of [worldRich, worldPoor]) {
+      w.getMap().getBuildings().addExistingBuilding({
+        id: 1, type: 'commercial',
+        footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+        level: 1, density: 0, age: 0, frontage: 'S',
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      });
+    }
+
+    worldRich.setMoney(STARTING_FUNDS);
+    worldPoor.setMoney(Math.floor(STARTING_FUNDS * 0.1));
+
+    expect(worldRich.getHappiness()).toBeGreaterThan(worldPoor.getHappiness());
+  });
+
+  it('setMoney(0) produces the lowest budgetHealth (0) in budget term', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'commercial',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    world.setMoney(0);
+    const hZero = world.getHappiness();
+
+    world.setMoney(STARTING_FUNDS);
+    const hFull = world.getHappiness();
+
+    expect(hFull).toBeGreaterThan(hZero);
+  });
+});
+
+describe('World.getHappiness() — jobs-balance sensitivity', () => {
+  it('balanced residential/jobs levels produce higher happiness than all-residential with same money', () => {
+    // Balanced: 2 residential level-1 + 2 commercial level-1 → jobsBalance near 1.
+    // Unbalanced: 4 residential level-1 + 0 commercial → jobsBalance = clamp01(1 - 4/4) = 0.
+    // Both worlds have the same money (STARTING_FUNDS), no roads (landScore=0 for residentialCount>0 path).
+    const worldBalanced = new World(4, 4, { regenerate: false });
+    const worldUnbalanced = new World(4, 4, { regenerate: false });
+
+    // Balanced: 2R + 2C, level 1 each.
+    worldBalanced.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    worldBalanced.getMap().getBuildings().addExistingBuilding({
+      id: 2, type: 'residential',
+      footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 1, y: 0, w: 1, h: 1 },
+    });
+    worldBalanced.getMap().getBuildings().addExistingBuilding({
+      id: 3, type: 'commercial',
+      footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 2, y: 0, w: 1, h: 1 },
+    });
+    worldBalanced.getMap().getBuildings().addExistingBuilding({
+      id: 4, type: 'commercial',
+      footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 3, y: 0, w: 1, h: 1 },
+    });
+
+    // Unbalanced: 4R + 0 jobs.
+    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
+      id: 2, type: 'residential',
+      footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 1, y: 0, w: 1, h: 1 },
+    });
+    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
+      id: 3, type: 'residential',
+      footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 2, y: 0, w: 1, h: 1 },
+    });
+    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
+      id: 4, type: 'residential',
+      footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 3, y: 0, w: 1, h: 1 },
+    });
+
+    // Dirty both via setMoney to trigger recompute through the proper path.
+    worldBalanced.setMoney(STARTING_FUNDS);
+    worldUnbalanced.setMoney(STARTING_FUNDS);
+
+    expect(worldBalanced.getHappiness()).toBeGreaterThan(worldUnbalanced.getHappiness());
+  });
+});
+
+describe('World.getHappiness() — land-value sensitivity', () => {
+  it('residential building WITH a road nearby has higher happiness than without', () => {
+    // Two 10×8 worlds. Both: single residential at (0,1), same money (STARTING_FUNDS).
+    // "With road": road row at y=2, power plant so land value is non-zero at (0,1).
+    // "Without road": no road → land value at anchor stays 0 → landScore=0.
+    // Both dirty via setMoney.
+    const worldWithRoad = new World(10, 8, { regenerate: false });
+    const worldNoRoad = new World(10, 8, { regenerate: false });
+
+    for (const w of [worldWithRoad, worldNoRoad]) {
+      w.getMap().setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+      w.getMap().getBuildings().addExistingBuilding({
+        id: 1, type: 'residential',
+        footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+        level: 1, density: 0, age: 0, frontage: 'S',
+        structureRect: { x: 0, y: 1, w: 1, h: 1 },
+      });
+    }
+
+    // Road + power for worldWithRoad.
+    for (let x = 0; x < 10; x++) worldWithRoad.getMap().setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    seedPower(worldWithRoad, 4, 3);
+
+    // Dirty both via markLandValueDirty + setMoney so the cascade fires.
+    worldWithRoad.markLandValueDirty();
+    worldWithRoad.setMoney(STARTING_FUNDS);
+    worldNoRoad.setMoney(STARTING_FUNDS);
+
+    expect(worldWithRoad.getHappiness()).toBeGreaterThan(worldNoRoad.getHappiness());
+  });
+});
+
+describe('World.getHappiness() — B1 station-coverage cascade (all four methods)', () => {
+  // Each test proves that a specific markX*Dirty path routes through dirtyLandValueAndHappiness()
+  // so placing that service type lifts happiness above the pre-station baseline.
+  // Layout: single residential at anchor (0,1) adjacent to road row y=2, power at (4,3).
+  // We read getHappiness() before placing the station (pre-value), then place the station,
+  // call the markX*Dirty route + recompute, and confirm getHappiness() increases.
+  // setMoney(STARTING_FUNDS) is called before each read to ensure the dirty path runs.
+
+  function makeBaseWorld(): World {
+    const w = new World(10, 8, { regenerate: false });
+    for (let x = 0; x < 10; x++) w.getMap().setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    w.getMap().setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    w.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    seedPower(w, 4, 3);
+    return w;
+  }
+
+  it('police (markServiceDirty) cascade: placing a police station lifts happiness', () => {
+    const w = makeBaseWorld();
+    w.setMoney(STARTING_FUNDS);
+    const before = w.getHappiness();
+
+    seedPolice(w, 0, 3); // markServiceDirty is called inside seedPolice
+    // setMoney re-dirties happiness so the next read re-enters recomputeHappiness.
+    w.setMoney(STARTING_FUNDS);
+    const after = w.getHappiness();
+
+    expect(after).toBeGreaterThanOrEqual(before);
+    // Station at (0,3) is directly adjacent to road (0,2) → max coverage → should strictly increase.
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('fire (markFireDirty) cascade: placing a fire station lifts happiness', () => {
+    const w = makeBaseWorld();
+    w.setMoney(STARTING_FUNDS);
+    const before = w.getHappiness();
+
+    seedFire(w, 0, 3); // markFireDirty called inside seedFire
+    w.setMoney(STARTING_FUNDS);
+    const after = w.getHappiness();
+
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('hospital (markHospitalDirty) cascade: placing a hospital lifts happiness', () => {
+    const w = makeBaseWorld();
+    w.setMoney(STARTING_FUNDS);
+    const before = w.getHappiness();
+
+    seedHospital(w, 0, 3); // markHospitalDirty called inside seedHospital
+    w.setMoney(STARTING_FUNDS);
+    const after = w.getHappiness();
+
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('school (markSchoolDirty) cascade: placing a school lifts happiness', () => {
+    const w = makeBaseWorld();
+    w.setMoney(STARTING_FUNDS);
+    const before = w.getHappiness();
+
+    seedSchool(w, 0, 3); // markSchoolDirty called inside seedSchool
+    w.setMoney(STARTING_FUNDS);
+    const after = w.getHappiness();
+
+    expect(after).toBeGreaterThan(before);
+  });
+});
+
+describe('World.getHappiness() — reset freshness', () => {
+  it('after growing a city and then reset(), getHappiness() returns EMPTY_CITY_HAPPINESS (no buildings)', () => {
+    // Grow a building then reset; reset clears buildings so empty-city path fires.
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+      level: 3, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    seedPower(world, 4, 3);
+    world.setMoney(STARTING_FUNDS);
+    // Confirm non-empty-city happiness before reset.
+    expect(world.getHappiness()).not.toBe(EMPTY_CITY_HAPPINESS);
+
+    world.reset({ regenerate: false });
+
+    // After reset, no buildings exist → empty-city path.
+    expect(world.getHappiness()).toBe(EMPTY_CITY_HAPPINESS);
+  });
+});
+
+describe('World.getHappiness() — dirty/lazy correctness', () => {
+  it('trySpend() changes happiness on the next read (no tick needed)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    // Add a commercial building so we are out of empty-city state; budget term will vary.
+    world.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'commercial',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    // setMoney so initial read is fresh and non-empty.
+    world.setMoney(STARTING_FUNDS);
+    const hFull = world.getHappiness();
+
+    world.trySpend(STARTING_FUNDS - 100); // spend most of the money
+    const hLow = world.getHappiness();
+
+    expect(hLow).toBeLessThan(hFull);
+  });
+
+  it('earn() changes happiness on the next read (no tick needed)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'commercial',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    world.setMoney(100); // start low
+    const hLow = world.getHappiness();
+
+    world.earn(STARTING_FUNDS); // earn a lot
+    const hHigh = world.getHappiness();
+
+    expect(hHigh).toBeGreaterThan(hLow);
+  });
+
+  it('two consecutive reads with no mutation return the same value', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.setMoney(STARTING_FUNDS); // dirty
+    const h1 = world.getHappiness();
+    const h2 = world.getHappiness(); // no mutation between reads
+    expect(h1).toBe(h2);
+  });
+
+  it('formula sanity: pure-budget world matches HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1 + HAPPINESS_W_LAND * 0', () => {
+    // World with only commercial buildings (no residential, has jobs) → NOT empty-city.
+    // residentialCount=0, jobsLevels>0 → landScore=0, jobsBalance=clamp01(1 - jobsLevels/jobsLevels)=0.
+    // budgetHealth=1 (STARTING_FUNDS/STARTING_FUNDS=1).
+    // happiness = HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1 = HAPPINESS_W_BUDGET.
+    const world = new World(4, 4, { regenerate: false });
+    world.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'commercial',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    world.setMoney(STARTING_FUNDS);
+    const h = world.getHappiness();
+    // jobsBalance = 1 - |jobsLevels - 0| / max(jobsLevels+0,1) = 1 - 1 = 0
+    // happiness = W_LAND*0 + W_JOBS*0 + W_BUDGET*1 = HAPPINESS_W_BUDGET
+    expect(h).toBeCloseTo(HAPPINESS_W_BUDGET, 5);
   });
 });
