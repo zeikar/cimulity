@@ -26,12 +26,12 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v17';
 
-// Bumped to 'service-v6' for the land-value model overhaul: the four markX*Dirty methods
-// now also set landValueDirty, and recomputeLandValue drains coverage + uses a new
-// four-input formula. These are behavioral changes to World/LandValueMap method bodies —
-// not API additions — so hasCurrentWorldApi cannot detect them; the guard bump is required
-// to force Fast Refresh to discard any stale HMR singleton running the old formula.
-const WORLD_SINGLETON_GUARD = 'service-v6' as const;
+// Bumped to 'service-v7' for the city-happiness KPI: World gains the dirty/lazy public
+// getHappiness() (read by the HUD every tick) plus a land-value→happiness cascade in the
+// coverage/land-value dirty methods and happiness dirtying in money mutators / tick / reset.
+// getHappiness is covered by the probe below; the guard bump forces Fast Refresh to discard
+// any stale HMR singleton predating it.
+const WORLD_SINGLETON_GUARD = 'service-v7' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -61,10 +61,10 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v6 / v17 — land-value model overhaul, behavioral change):
+ * Checked methods (as of service-v7 / v17 — city-happiness KPI):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
- *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
+ *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,
  *          isWater, canBuildAt, canBuildRoadAt, regenerateTerrain,
  *          getDemand, markDemandDirty,
  *          getPowerMap, markPowerDirty, recomputePowerIfDirty, recomputePower,
@@ -126,6 +126,8 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
+  // Happiness KPI (added service-v7): derives from land value but is its own public read surface.
+  if (typeof world.getHappiness !== 'function') return false;
   // Terrain integration (added in Task 4): elevation r/w, install, revision, water/build predicates.
   if (
     typeof world.getTerrain !== 'function' ||

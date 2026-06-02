@@ -19,6 +19,7 @@ import {
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { TileType, createTile } from './Tile';
+import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 function seedPower(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
@@ -2472,11 +2473,13 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     expect(h1).toBe(h2);
   });
 
-  it('formula sanity: pure-budget world matches HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1 + HAPPINESS_W_LAND * 0', () => {
+  it('formula sanity: pure-budget world matches HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*0 + HAPPINESS_W_BUDGET*1', () => {
     // World with only commercial buildings (no residential, has jobs) → NOT empty-city.
-    // residentialCount=0, jobsLevels>0 → landScore=0, jobsBalance=clamp01(1 - jobsLevels/jobsLevels)=0.
-    // budgetHealth=1 (STARTING_FUNDS/STARTING_FUNDS=1).
-    // happiness = HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1 = HAPPINESS_W_BUDGET.
+    // residentialCount=0, jobsLevels=1, levelSumR=0:
+    //   landScore    = 0  (no residential buildings)
+    //   jobsBalance  = clamp01(1 - |1-0| / max(1+0,1)) = 0
+    //   budgetHealth = clamp01(STARTING_FUNDS / STARTING_FUNDS) = 1
+    // expected = HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*0 + HAPPINESS_W_BUDGET*1
     const world = new World(4, 4, { regenerate: false });
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
@@ -2486,8 +2489,40 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     });
     world.setMoney(STARTING_FUNDS);
     const h = world.getHappiness();
-    // jobsBalance = 1 - |jobsLevels - 0| / max(jobsLevels+0,1) = 1 - 1 = 0
-    // happiness = W_LAND*0 + W_JOBS*0 + W_BUDGET*1 = HAPPINESS_W_BUDGET
-    expect(h).toBeCloseTo(HAPPINESS_W_BUDGET, 5);
+    const expected = HAPPINESS_W_LAND * 0 + HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1;
+    expect(h).toBeCloseTo(expected, 5);
+  });
+});
+
+describe('World.getHappiness() — hydration freshness', () => {
+  it('deserializing a grown city re-derives happiness on first read (no tick) via markLandValueDirty cascade', () => {
+    // Build a source world with a residential building and a road nearby so land value
+    // and happiness are non-trivially above EMPTY_CITY_HAPPINESS.
+    const src = new World(10, 8, { regenerate: false });
+    const map = src.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 3, createTile(x, 3, TileType.ROAD));
+    map.setTile(0, 2, createTile(0, 2, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 2 }], anchor: { x: 0, y: 2 },
+      level: 3, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 2, w: 1, h: 1 },
+    });
+    src.setMoney(STARTING_FUNDS);
+    // Confirm source happiness is not the empty-city default.
+    const srcHappiness = src.getHappiness();
+    expect(srcHappiness).not.toBe(EMPTY_CITY_HAPPINESS);
+
+    // Round-trip through serialize/deserialize.
+    const dst = new World(10, 8, { regenerate: false });
+    expect(deserializeWorldInto(dst, serializeWorld(src))).toBe(true);
+
+    // First read of getHappiness() on the loaded world — NO tick called.
+    // deserializeWorldInto calls markLandValueDirty(), which cascades to happinessDirty,
+    // so getHappiness() re-derives on this first read.
+    const dstHappiness = dst.getHappiness();
+    expect(dstHappiness).not.toBe(EMPTY_CITY_HAPPINESS);
+    expect(dstHappiness).toBeGreaterThanOrEqual(0);
+    expect(dstHappiness).toBeLessThanOrEqual(1);
   });
 });
