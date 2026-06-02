@@ -41,6 +41,7 @@ export interface GameHUDProps {
   cameraY: number;
   cameraZoom: number;
   demand: DemandVector;
+  happiness: number;
   currentTool?: Tool;
   speedMultiplier: 1 | 2 | 3;
   paused: boolean;
@@ -62,6 +63,7 @@ export function GameHUD({
   dirt,
   population,
   demand,
+  happiness,
   money,
   date,
   cameraX,
@@ -106,6 +108,9 @@ export function GameHUD({
       </div>
       <div>
         <strong>I:</strong> <BarBlocks value={demand.industrial} color="#ffeb3b" /> {demand.industrial.toFixed(2)}
+      </div>
+      <div>
+        <strong>Happiness:</strong> <BarBlocks value={happiness} color="#ff9800" /> {happiness.toFixed(2)}
       </div>
 
       {isDev && (

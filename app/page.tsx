@@ -11,7 +11,7 @@ import { GameHUD } from './components/GameHUD';
 import { TileInfoPanel } from './components/TileInfoPanel';
 import { Toolbar } from './components/Toolbar';
 import { Tool } from '@/game/tools';
-import { STARTING_FUNDS } from '@/game/core/World';
+import { STARTING_FUNDS, EMPTY_CITY_HAPPINESS } from '@/game/core/World';
 import type { WorldDate } from '@/game/core/World';
 import type { DemandVector } from '@/game/core/Demand';
 import type { TileCoord, ScreenCoord } from '@/game/types/coordinates';
@@ -24,7 +24,7 @@ export default function Home() {
   const [inspect, setInspect] = useState<{ info: TileInfo; anchor: ScreenCoord } | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
-  const [sim, setSim] = useState({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS, date: { year: 1, month: 1, day: 1 }, demand: { residential: 0.25, commercial: 0.25, industrial: 0.25 } });
+  const [sim, setSim] = useState({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS, date: { year: 1, month: 1, day: 1 }, demand: { residential: 0.25, commercial: 0.25, industrial: 0.25 }, happiness: EMPTY_CITY_HAPPINESS });
   const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
   const [resetNonce, setResetNonce] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3>(1);
@@ -47,8 +47,8 @@ export default function Home() {
     setCamera({ x, y, zoom });
   }, []);
 
-  const handleSimUpdate = useCallback((tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector) => {
-    setSim({ tick, dirt, population, money, date, demand });
+  const handleSimUpdate = useCallback((tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) => {
+    setSim({ tick, dirt, population, money, date, demand, happiness });
   }, []);
 
   // A SELECT click sends a snapshot + anchor; a non-SELECT click sends null,
@@ -156,6 +156,7 @@ export default function Home() {
         money={sim.money}
         date={sim.date}
         demand={sim.demand}
+        happiness={sim.happiness}
         currentTool={currentTool}
         speedMultiplier={speedMultiplier}
         paused={paused}

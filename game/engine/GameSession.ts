@@ -19,7 +19,7 @@ import type { TileInfo } from './inspectTile';
 import { GameLoop, DEFAULT_SPEED_MULTIPLIER } from '../core/GameLoop';
 import type { World, WorldDate } from '../core/World';
 import type { DemandVector } from '../core/Demand';
-import { STARTING_FUNDS } from '../core/World';
+import { STARTING_FUNDS, EMPTY_CITY_HAPPINESS } from '../core/World';
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
 import type { ToolResult, ToolPreview } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
@@ -56,7 +56,7 @@ export interface GameSessionCallbacks {
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
-  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector) => void;
+  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) => void;
   /**
    * React-state mirror callbacks. Fire after the session has accepted/applied
    * the authoritative pause/speed value — either via the GameLoop on a
@@ -139,7 +139,7 @@ export class GameSession {
     this.scheduleSave();
     // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
     const money = this.world!.getMoney();
-    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation(), money, this.world!.getDate(), this.world!.getDemand());
+    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation(), money, this.world!.getDate(), this.world!.getDemand(), this.world!.getHappiness());
     // Keep tracker in sync; tool mutation already scheduled a save via scheduleSave above.
     this.lastSyncedMoney = money;
     this.lastSyncedElapsedDays = this.world!.getElapsedDays();
@@ -189,7 +189,7 @@ export class GameSession {
     this.callbacks.onSpeedChange?.(DEFAULT_SPEED_MULTIPLIER);
     // Read post-reset money (reset already set STARTING_FUNDS; avoids ordering coupling).
     const m = this.world ? this.world.getMoney() : STARTING_FUNDS;
-    this.callbacks.onTickUpdate?.(0, 0, 0, m, this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 }, this.world ? this.world.getDemand() : { residential: 0.25, commercial: 0.25, industrial: 0.25 });
+    this.callbacks.onTickUpdate?.(0, 0, 0, m, this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 }, this.world ? this.world.getDemand() : { residential: 0.25, commercial: 0.25, industrial: 0.25 }, this.world ? this.world.getHappiness() : EMPTY_CITY_HAPPINESS);
     this.lastSyncedMoney = m;
     this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
     // Step 6: clear selected/hover.
@@ -397,14 +397,14 @@ export class GameSession {
       if (agg.changedTiles.length === 0 && (economyDirty || calendarDirty)) {
         this.scheduleSave();
       }
-      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money, world.getDate(), world.getDemand());
+      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money, world.getDate(), world.getDemand(), world.getHappiness());
       this.lastSyncedMoney = money;
       this.lastSyncedElapsedDays = elapsedDays;
     });
     // Sync HUD to the world's current state before the first tick, so a
     // hydrated/reused world with persisted DIRT shows the real count instead
     // of staying at 0 until the first tick heals it away.
-    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney(), world.getDate(), world.getDemand());
+    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney(), world.getDate(), world.getDemand(), world.getHappiness());
     this.lastSyncedMoney = world.getMoney();
     this.lastSyncedElapsedDays = world.getElapsedDays();
     // Closes the race window between `sessionRef.current = session` and `await session.start()`.

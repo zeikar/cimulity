@@ -24,7 +24,7 @@ export interface GameCanvasProps {
   onTileInspect?: (info: TileInfo | null, screen: ScreenCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
-  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector) => void;
+  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) => void;
   currentTool?: Tool;
   onToolChange?: (tool: Tool) => void;
   /** Bump to trigger a "New City" reset on the live session. */
@@ -83,8 +83,8 @@ export function GameCanvas({
     onFpsUpdate: (fps: number) => callbacksRef.current.onFpsUpdate(fps),
     onCameraUpdate: (x: number, y: number, zoom: number) =>
       callbacksRef.current.onCameraUpdate(x, y, zoom),
-    onTickUpdate: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector) =>
-      callbacksRef.current.onTickUpdate?.(tick, dirt, population, money, date, demand),
+    onTickUpdate: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) =>
+      callbacksRef.current.onTickUpdate?.(tick, dirt, population, money, date, demand, happiness),
     onToolChange: (tool: Tool) => callbacksRef.current.onToolChange?.(tool),
     onSpeedChange: (multiplier: 1 | 2 | 3) => callbacksRef.current.onSpeedChange?.(multiplier),
     onPauseChange: (paused: boolean) => callbacksRef.current.onPauseChange?.(paused),
