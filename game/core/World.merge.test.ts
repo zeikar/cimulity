@@ -81,8 +81,11 @@ describe("World.tick() — merge (Branch B'')", () => {
         // age must satisfy canMerge for any building id (max stagger = 6).
         // After Branch B's age+= 1 the age becomes 15, which exceeds
         // GROWTH_COOLDOWN_INTERVALS + 6 = 14 (worst-case stagger).
-        // Land value at the anchor (row 0, road at row 4) ≈ 0.43 < LEVEL_THRESHOLDS[3]=0.45
-        // so Branch B (level-up) does NOT fire despite the high age.
+        // No coverage stations are placed here, so the four service AND-gates block
+        // Branch B (level-up) regardless of land value — leaving the buildings at
+        // MERGE_LEVEL_THRESHOLD to merge. (Land value is also low: with serviceScore=0,
+        // anchor row 0 / road row 4 is road-dist 4 → 0.40 * (1-4/7) ≈ 0.17.)
+        // The merge pass (Branch B'') is NOT coverage-gated, so the merge still fires.
         age: GROWTH_COOLDOWN_INTERVALS + 6,
         frontage: 'S',
         // Full 1×4 structureRect pinned to south (y+h = 0+4 = lot.y+lot.h)

@@ -229,7 +229,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // any structure footprint is excluded from the hospital sweep.
       // School coverage is invalidated too: a school is a coverage source, and
       // any structure footprint is excluded from the school sweep.
-      // Parks are the only structure type that affects land value (proximity boost).
+      // Land value: parks contribute a proximity boost (fast-path below), AND any
+      // structure/road edit now affects land value via the service-coverage term —
+      // but we do NOT set landValueInvalidated for non-park structures because the
+      // markServiceDirty()/markFireDirty()/markHospitalDirty()/markSchoolDirty() calls
+      // below cascade into landValueDirty (World.ts).
       if (cmd.structureType === 'park') landValueInvalidated = true;
       powerInvalidated = true;
       waterInvalidated = true;
@@ -259,7 +263,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       // structure changes the sweep's exclusion set).
       // School coverage too (removing a school drops its coverage; removing any
       // structure changes the sweep's exclusion set).
-      // Parks are the only structure type that affects land value (proximity boost).
+      // Land value: parks contribute a proximity boost (fast-path below), AND any
+      // structure/road edit now affects land value via the service-coverage term —
+      // but we do NOT set landValueInvalidated for non-park structures because the
+      // markServiceDirty()/markFireDirty()/markHospitalDirty()/markSchoolDirty() calls
+      // below cascade into landValueDirty (World.ts).
       if (s.type === 'park') landValueInvalidated = true;
       powerInvalidated = true;
       waterInvalidated = true;

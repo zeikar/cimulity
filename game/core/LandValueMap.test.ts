@@ -3,6 +3,10 @@ import { LandValueMap } from './LandValueMap';
 import { GameMap } from './Map';
 import { World } from './World';
 import { StructureMap } from './StructureMap';
+import { ServiceCoverageMap } from './ServiceCoverageMap';
+import { FireCoverageMap } from './FireCoverageMap';
+import { HospitalCoverageMap } from './HospitalCoverageMap';
+import { SchoolCoverageMap } from './SchoolCoverageMap';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
@@ -19,6 +23,28 @@ function makeMap(w: number, h: number, overrides: Array<{ x: number; y: number; 
 }
 
 // ---------------------------------------------------------------------------
+// Coverage-bundle helpers: real instances with raw arrays filled deterministically.
+// zeroCoverage → serviceScore 0; fullCoverage → serviceScore 1.0.
+// ---------------------------------------------------------------------------
+function zeroCoverage(w: number, h: number) {
+  return {
+    police: new ServiceCoverageMap(w, h),
+    fire: new FireCoverageMap(w, h),
+    hospital: new HospitalCoverageMap(w, h),
+    school: new SchoolCoverageMap(w, h),
+  };
+}
+
+function fullCoverage(w: number, h: number) {
+  const c = zeroCoverage(w, h);
+  c.police.getRaw().fill(255);
+  c.fire.getRaw().fill(255);
+  c.hospital.getRaw().fill(255);
+  c.school.getRaw().fill(255);
+  return c;
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests for LandValueMap
 // ---------------------------------------------------------------------------
 
@@ -30,7 +56,7 @@ describe('LandValueMap', () => {
     beforeEach(() => {
       map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
       lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
     });
 
     it('all values are in [0, 1]', () => {
@@ -50,7 +76,7 @@ describe('LandValueMap', () => {
 
     it('recompute is deterministic (same result twice)', () => {
       const firstPass = Float32Array.from(lv.getRaw());
-      lv.recompute(map, new StructureMap(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
       const secondPass = lv.getRaw();
       for (let i = 0; i < firstPass.length; i++) {
         expect(firstPass[i]).toBe(secondPass[i]);
@@ -67,7 +93,7 @@ describe('LandValueMap', () => {
         { x: 2, y: 0, type: TileType.ZONE_INDUSTRIAL },
       ]);
       const mixedLv = new LandValueMap(3, 3);
-      mixedLv.recompute(mixedMap, new StructureMap(3, 3));
+      mixedLv.recompute(mixedMap, new StructureMap(3, 3), zeroCoverage(3, 3));
 
       // Uniform: only residential across entire map
       const uniformMap = makeMap(3, 3, [
@@ -76,7 +102,7 @@ describe('LandValueMap', () => {
         { x: 2, y: 0, type: TileType.ZONE_RESIDENTIAL },
       ]);
       const uniformLv = new LandValueMap(3, 3);
-      uniformLv.recompute(uniformMap, new StructureMap(3, 3));
+      uniformLv.recompute(uniformMap, new StructureMap(3, 3), zeroCoverage(3, 3));
 
       // The centre tile (1,1) of the mixed map should see all 3 zone types
       // in its 3×3 neighbourhood; uniformMap centre only sees 1 type.
@@ -88,7 +114,7 @@ describe('LandValueMap', () => {
     it('every value is 0', () => {
       const map = new GameMap(4, 4);
       const lv = new LandValueMap(4, 4);
-      lv.recompute(map, new StructureMap(4, 4));
+      lv.recompute(map, new StructureMap(4, 4), zeroCoverage(4, 4));
       const raw = lv.getRaw();
       for (let i = 0; i < raw.length; i++) {
         expect(raw[i]).toBe(0);
@@ -96,16 +122,17 @@ describe('LandValueMap', () => {
     });
   });
 
-  describe('park-free map yields the pre-change road+diversity result', () => {
-    it('empty StructureMap produces same values as the old road+diversity formula', () => {
-      // A map with a road and zone — with an empty StructureMap parkScore=0 everywhere,
-      // so the result must equal the original two-stage formula.
+  describe('park-free map yields the road+diversity result (service=0)', () => {
+    it('empty StructureMap + zero coverage produces the 0.40*road + 0.10*diversity result', () => {
+      // A map with a road and zone — with an empty StructureMap parkScore=0 everywhere
+      // and zeroCoverage serviceScore=0 everywhere, so the result is the 0.40*road +
+      // 0.10*diversity base. The assertion is relational so it stays green.
       const map = makeMap(5, 5, [
         { x: 2, y: 2, type: TileType.ROAD },
         { x: 0, y: 0, type: TileType.ZONE_RESIDENTIAL },
       ]);
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
       // Adjacent tile (2,1) should be > 0 (road proximity), corner (4,4) lower.
       expect(lv.getValue(2, 1)).toBeGreaterThan(lv.getValue(4, 4));
     });
@@ -118,7 +145,7 @@ describe('LandValueMap', () => {
       const lv = new LandValueMap(10, 10);
 
       // Baseline: no park
-      lv.recompute(map, new StructureMap(10, 10));
+      lv.recompute(map, new StructureMap(10, 10), zeroCoverage(10, 10));
       const baseline = lv.getValue(5, 5);
 
       // Place a park at (5,5)
@@ -127,7 +154,7 @@ describe('LandValueMap', () => {
         anchor: { x: 5, y: 5 },
         footprint: [{ x: 5, y: 5 }],
       });
-      lv.recompute(map, world.getStructureMap());
+      lv.recompute(map, world.getStructureMap(), zeroCoverage(10, 10));
       const withPark = lv.getValue(5, 5);
 
       expect(withPark).toBeGreaterThan(baseline);
@@ -144,11 +171,11 @@ describe('LandValueMap', () => {
         anchor: { x: 10, y: 10 },
         footprint: [{ x: 10, y: 10 }],
       });
-      lv.recompute(map, world.getStructureMap());
+      lv.recompute(map, world.getStructureMap(), zeroCoverage(20, 20));
 
       // Baseline with no park for comparison at dist-5
       const lvBaseline = new LandValueMap(20, 20);
-      lvBaseline.recompute(map, new StructureMap(20, 20));
+      lvBaseline.recompute(map, new StructureMap(20, 20), zeroCoverage(20, 20));
 
       // Chebyshev dist=1: tile (11,10)
       const dist1 = lv.getValue(11, 10);
@@ -179,7 +206,7 @@ describe('LandValueMap', () => {
         anchor: { x: 15, y: 5 },
         footprint: [{ x: 15, y: 5 }],
       });
-      lv.recompute(map, world.getStructureMap());
+      lv.recompute(map, world.getStructureMap(), zeroCoverage(20, 20));
 
       // Tile (6,5) is dist=1 from Park A and dist=9 from Park B → nearest is A.
       // If summed it would exceed PARK_BOOST_MAX; if strongest-wins it equals
@@ -191,7 +218,7 @@ describe('LandValueMap', () => {
         anchor: { x: 5, y: 5 },
         footprint: [{ x: 5, y: 5 }],
       });
-      lvSingle.recompute(map, singleStructures);
+      lvSingle.recompute(map, singleStructures, zeroCoverage(20, 20));
 
       // Boost must equal single-park result (nearest-wins, not summed).
       expect(lv.getValue(6, 5)).toBe(lvSingle.getValue(6, 5));
@@ -199,10 +226,10 @@ describe('LandValueMap', () => {
       expect(lv.getValue(6, 5)).toBeLessThanOrEqual(1.0);
     });
 
-    it('(d) clamp at 1.0: a tile already at max stays at 1.0 with a park', () => {
-      // Build a map where road+diversity = 1.0 is achievable: road at the tile itself
-      // (roadScore=1.0) AND three zone types in 3×3 (diversityScore=1.0).
-      // 0.7*1.0 + 0.3*1.0 = 1.0 already → adding park boost must stay clamped at 1.0.
+    it('(d) clamp at 1.0: full coverage already maxes the base, adding a park stays at 1.0', () => {
+      // With fullCoverage serviceScore=1.0 everywhere, the base is
+      // 0.40*road + 0.10*diversity + 0.50*1.0. At a road tile with 3 zone types nearby
+      // the base = 0.40 + 0.10 + 0.50 = 1.00 already → adding any park boost must clamp at 1.0.
       const map = makeMap(5, 5, [
         { x: 2, y: 2, type: TileType.ROAD },
         { x: 1, y: 1, type: TileType.ZONE_RESIDENTIAL },
@@ -216,11 +243,54 @@ describe('LandValueMap', () => {
         footprint: [{ x: 2, y: 0 }],
       });
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, structures);
+      lv.recompute(map, structures, fullCoverage(5, 5));
 
-      // Tile (2,2) is the road itself: roadScore=1.0, diversity from 3 zone types nearby=1.0
-      // → combined would be >1.0 without clamp; must stay at 1.0.
+      // Tile (2,2): roadScore=1.0, diversity=1.0, service=1.0 → base 1.0; park boost
+      // would push >1.0 without clamp; must stay at 1.0.
       expect(lv.getValue(2, 2)).toBe(1.0);
+    });
+  });
+
+  describe('service-coverage term (unit)', () => {
+    it('(1) full coverage adds exactly +0.50 over the service-free baseline', () => {
+      // No road, no zone → road=0, diversity=0, park=0. With fullCoverage serviceScore=1.0
+      // → land value = 0.50 * 1.0 = 0.50 exactly (base+0.50 < 1.0).
+      const map = new GameMap(5, 5);
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(map, new StructureMap(5, 5), fullCoverage(5, 5));
+      expect(lv.getValue(0, 0)).toBeCloseTo(0.5, 5);
+    });
+
+    it('(2) partial coverage averages: police+fire full, hospital+school zero → 0.25', () => {
+      // serviceScore = (1 + 1 + 0 + 0) / 4 = 0.5 → on a road/zone-free tile
+      // land value = 0.50 * 0.5 = 0.25.
+      const map = new GameMap(5, 5);
+      const coverage = zeroCoverage(5, 5);
+      coverage.police.getRaw().fill(255);
+      coverage.fire.getRaw().fill(255);
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(map, new StructureMap(5, 5), coverage);
+      expect(lv.getValue(0, 0)).toBeCloseTo(0.25, 5);
+    });
+
+    it('(3) per-tile coverage: a covered tile exceeds an uncovered tile', () => {
+      const w = 5;
+      const map = new GameMap(w, 5);
+      const coverage = zeroCoverage(w, 5);
+      // Cover only tile (1,1): raw index = ty*w + tx.
+      coverage.police.getRaw()[1 * w + 1] = 255;
+      const lv = new LandValueMap(w, 5);
+      lv.recompute(map, new StructureMap(w, 5), coverage);
+      expect(lv.getValue(1, 1)).toBeGreaterThan(lv.getValue(3, 3));
+    });
+
+    it('(4) service-free → service term 0: value equals the pure road+diversity result', () => {
+      // Road at (2,2); tile (2,1) is road-dist 1 → roadScore = 1 - 1/7 = 6/7.
+      // diversity 0, service 0, park 0 → land value = 0.40 * 6/7 = 0.342857…
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
+      expect(lv.getValue(2, 1)).toBeCloseTo(0.3429, 4);
     });
   });
 

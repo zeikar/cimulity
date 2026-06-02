@@ -1078,6 +1078,33 @@ describe('CommandDispatcher PARK land-value dirty-fanout (non-placement regressi
   });
 });
 
+describe('CommandDispatcher service-coverage land-value dirty-fanout', () => {
+  it('placing a hospital near a zone raises land value via the B1 coverage→land-value cascade', () => {
+    const world = new World(10, 10, { regenerate: false });
+    // Road column at x=2, rows y=2..6.
+    for (let y = 2; y <= 6; y++) executeClick(Tool.ROAD, { x: 2, y }, world);
+    // Measurement zone tile at (3,4): off-road dist 1 east of road (2,4).
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 3, y: 4 }, world);
+
+    // KNOWN-FRESH baseline: no coverage yet → serviceScore=0 at (3,4).
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+    const baseline = world.getLandValue().getValue(3, 4);
+
+    // Place a hospital at (0,3): 2×2 footprint (0,3)(1,3)(0,4)(1,4). Cells (1,3)/(1,4) are
+    // adjacent to road (2,3)/(2,4) → coverage seeds the road and propagates to (3,4).
+    // Footprint does NOT overlap the road column (x=2) or the zone tile (3,4).
+    applyCommands([{ kind: 'place-structure', x: 0, y: 3, structureType: 'hospital' }], world);
+
+    // Drain the lazy dirty flag. markHospitalDirty cascaded into landValueDirty (B1).
+    world.recomputeLandValueIfDirty();
+
+    // Hospital-only coverage → serviceScore = (0+0+1+0)/4 = 0.25 → +0.50*0.25 = +0.125.
+    // Assert a STRICT increase (not an exact delta).
+    expect(world.getLandValue().getValue(3, 4)).toBeGreaterThan(baseline);
+  });
+});
+
 describe('CommandDispatcher TERRAIN_LEVEL', () => {
   it('Test 9: TERRAIN_LEVEL drag with dry DIRT tile — level write crosses SEA_LEVEL and reconciles DIRT→GRASS', () => {
     const world = new World(6, 6, { regenerate: false });

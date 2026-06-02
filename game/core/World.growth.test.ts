@@ -40,54 +40,47 @@ function seedWater(world: World, ax: number, ay: number): void {
 // Service coverage gates level-up (Task 5). A 2×2 police station seeds graded
 // coverage along the road network; level-up fixtures that previously relied only
 // on power+water now need a station whose coverage reaches the building anchor.
+/** 2×2 footprint at (ax,ay); asserts every cell is GRASS before placing so a stray
+ * station-on-zone reseed coord is caught (StructureMap only excludes structure-vs-structure). */
+function station2x2(ax: number, ay: number): { x: number; y: number }[] {
+  return [
+    { x: ax, y: ay }, { x: ax + 1, y: ay },
+    { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+  ];
+}
+
 function seedPolice(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'police_station',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'police_station', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markServiceDirty();
   world.recomputeService();
 }
 
 function seedFire(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'fire_station',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'fire_station', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markFireDirty();
   world.recomputeFire();
 }
 
 function seedHospital(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'hospital',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'hospital', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markHospitalDirty();
   world.recomputeHospital();
 }
 
 function seedSchool(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'school',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'school', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markSchoolDirty();
   world.recomputeSchool();
 }
@@ -775,8 +768,8 @@ describe("World.tick() — structure-grow (Branch B')", () => {
   it('structure-grow happens before level-up on a multi-cell lot', () => {
     // 1×4 R-zone lot: cells (1,0)..(1,3), frontage='S', road at (1,4).
     // structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end.
-    // Land value at anchor (1,0): road distance 4, roadScore ≈ 0.429,
-    // lv ≈ 0.3 > LEVEL_THRESHOLDS[2]=0.25. Sufficient to clear the gate.
+    // Land value at anchor (1,0): road proximity (weight 0.40) plus the four services'
+    // coverage (weight 0.50, all covering (1,0) here) clears LEVEL_THRESHOLDS[2]=0.25 comfortably.
     // Decision-A: bump to World(10,8); add road (0,4) + tower (0,5)-(1,6) to water road (1,4).
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
@@ -845,8 +838,10 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // Sequence of growth events:
     //   Grow 1: 1×1 → 1×2  (structure hits cap; lot still has 2 yard cells)
     //   Grow 2: structure cannot extend (cap reached) → level bumps 1→2;
-    //           structureRect stays at cap (further level-ups would need land
-    //           value past LEVEL_THRESHOLDS[3]=0.45, unreachable for this lot).
+    //           structureRect stays at cap. The level stops at 2 because the test runs
+    //           only GROWTH_COOLDOWN_INTERVALS more intervals after Grow 1 — the age
+    //           cooldown (not land value) caps the level here. (Land value at the anchor
+    //           now clears 0.45 thanks to the service term, but no further interval runs.)
     // Decision-A: bump to World(10,8), add road(0,4)+tower(0,5)-(1,6).
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
@@ -914,8 +909,8 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     for (let x = 0; x < 7; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD)); // road row y=2
 
     // id=0, stagger(0)=0, cooldown=8. age=7 → after +1 gate fires.
-    // land value at (1,1): road at distance 1 → roadScore = 1-1/7 ≈ 0.857,
-    // lv ≈ 0.6 >> LEVEL_THRESHOLDS[2]=0.25.
+    // land value at (1,1): road at distance 1 (roadScore ≈ 0.857) plus the four services'
+    // coverage (weight 0.50, all covering (1,1)) → lv well above LEVEL_THRESHOLDS[2]=0.25.
     map.getBuildings().addExistingBuilding({
       id: 0,
       type: 'residential',

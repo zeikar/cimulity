@@ -41,54 +41,47 @@ function seedWater(world: World, ax: number, ay: number): void {
   world.recomputeWater();
 }
 
+/** 2×2 footprint at (ax,ay); asserts every cell is GRASS before placing so a stray
+ * station-on-zone reseed coord is caught (StructureMap only excludes structure-vs-structure). */
+function station2x2(ax: number, ay: number): { x: number; y: number }[] {
+  return [
+    { x: ax, y: ay }, { x: ax + 1, y: ay },
+    { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+  ];
+}
+
 function seedFire(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'fire_station',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'fire_station', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markFireDirty();
   world.recomputeFire();
 }
 
 function seedHospital(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'hospital',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'hospital', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markHospitalDirty();
   world.recomputeHospital();
 }
 
 function seedSchool(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'school',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'school', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markSchoolDirty();
   world.recomputeSchool();
 }
 
 function seedPolice(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'police_station',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'police_station', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markServiceDirty();
   world.recomputeService();
 }
@@ -385,10 +378,13 @@ describe('World.tick() — monthly tax settlement', () => {
     // Layout (10x8 map):
     //   Road row at y=2: all 10 cells connected.
     //   Zone (0,1)=RESIDENTIAL, frontage='S' adj to road (0,2).
-    //   Diversity in 3×3 around (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → all 3 types → LV ≈ 0.9.
+    //   Diversity in 3×3 around (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → all 3 types.
     //   Plant at (4,3)–(5,4): (4,3) adj to road (4,2) → powers road row.
     //   Tower at (7,3)–(8,4): (7,3) adj to road (7,2) → waters road row.
     //   Road (0,2) is powered+watered; zone (0,1) adj to (0,2) → powered+watered ✓.
+    //   Service coverage now ALSO contributes to land value (weight 0.50), so the four
+    //   stations are reseeded close to road (0,2) to push LV(0,1) ≥ 0.85 (level-5 gate):
+    //   service-avg ≈ 0.896 → LV(0,1) ≈ 0.89.
     const world = new World(10, 8, { regenerate: false });
     const mapF = world.getMap();
     // Road row.
@@ -397,17 +393,17 @@ describe('World.tick() — monthly tax settlement', () => {
     mapF.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
     mapF.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
     mapF.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
-    // Plant, tower, and police station — all adjacent to the road row.
+    // Plant, tower, and the four coverage stations — all near the road row, footprints disjoint.
     seedPower(world, 4, 3); // plant at (4,3)–(5,4); cell (4,3) adj to road (4,2)
     seedWater(world, 7, 3); // tower at (7,3)–(8,4); cell (7,3) adj to road (7,2)
-    // Service coverage now gates level-up too — station at (1,3)–(2,4); cell (1,3) adj to road (1,2).
-    seedPolice(world, 1, 3);
-    // Fire coverage ALSO gates level-up — station at (8,3)–(9,4); cell (8,3) adj to road (8,2).
-    seedFire(world, 8, 3);
-    // Hospital coverage ALSO gates level-up — station at (5,0)–(6,1); cell (5,1) adj to road (5,2).
-    seedHospital(world, 5, 0);
-    // School coverage ALSO gates level-up — station at (8,0)–(9,1); cell (8,1) adj to road (8,2).
-    seedSchool(world, 8, 0);
+    // Police (0,3)–(1,4): (0,3) adj road (0,2) d=0 → anchor (0,1) coverage 1.0.
+    seedPolice(world, 0, 3);
+    // Hospital (2,3)–(3,4): (2,3) adj road (2,2) → road(0,2) 2 hops → ≈0.917.
+    seedHospital(world, 2, 3);
+    // Fire (3,0)–(4,1): (3,1)/(4,1) adj road (3,2)/(4,2) → road(0,2) 3 hops → ≈0.875.
+    seedFire(world, 3, 0);
+    // School (5,0)–(6,1): (5,1)/(6,1) adj road (5,2)/(6,2) → road(0,2) 5 hops → ≈0.792.
+    seedSchool(world, 5, 0);
 
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
 
@@ -420,6 +416,9 @@ describe('World.tick() — monthly tax settlement', () => {
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    // Authoritative land-value guard: the level-5 gate is LEVEL_THRESHOLDS[5] = 0.85.
+    world.recomputeLandValue();
+    expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(0.85);
 
     // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 to level up on this growth tick.
     // stagger(first-alloc-id)=0, cooldown=8. age=7 → after age+1=8 >= 8 → level-up fires.
@@ -981,6 +980,31 @@ describe('World.reset() — service coverage cleanup', () => {
   });
 });
 
+describe('World.reset() — land value recompute (B1\' cascade)', () => {
+  it('drops the stale pre-reset land value: anchor reflects service coverage before reset, drops after', () => {
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    // Road row + a zone anchor at (0,1) fully covered by the four stations.
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    seedPolice(world, 0, 3);
+    seedHospital(world, 2, 3);
+    seedFire(world, 3, 0);
+    seedSchool(world, 5, 0);
+    world.recomputeLandValue();
+    const beforeReset = world.getLandValue().getValue(0, 1);
+    // Service term (weight 0.50) lifts the anchor well above a road-only baseline (≈0.34).
+    expect(beforeReset).toBeGreaterThan(0.5);
+
+    world.reset({ regenerate: false });
+
+    // After reset, structures are gone → coverage is zero → the land value must reflect
+    // the fresh (empty) world, NOT the stale high pre-reset value.
+    const afterReset = world.getLandValue().getValue(0, 1);
+    expect(afterReset).toBeLessThan(beforeReset);
+  });
+});
+
 describe('World.tick() — service coverage periodic cadence', () => {
   it('at tickCount === SERVICE_INTERVAL, tick() triggers recomputeService even when serviceDirty is false', () => {
     const world = new World(4, 4, { regenerate: false });
@@ -1065,7 +1089,8 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
 
   it('(b) once watered, the same building levels up given demand/land-value/cooldown satisfied', () => {
     // Layout (10x8): road row at y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
-    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window. With the four services
+    // also feeding land value (weight 0.50), LV(0,1) is comfortably above the level-2 gate (0.25).
     // Plant at (4,3)–(5,4) adj to road (4,2) → powers road row.
     // Tower at (7,3)–(8,4) adj to road (7,2) → waters road row.
     // Building at (0,1) is powered and watered. With age past cooldown and demand positive,
@@ -1369,7 +1394,9 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
 describe('World.tick() service-coverage gate — level-up gated at the anchor; spawn NOT gated', () => {
   it('(a) powered+watered building with fire+hospital but NO police coverage does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
-    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window. Land value (road +
+    // diversity + the present services' coverage) stays well above the level-2 gate (0.25);
+    // the missing service is the SOLE level-up blocker here, not land value.
     // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Fire (8,3)–(9,4),
     // hospital (5,0)–(6,1), and school (8,0)–(9,1) cover the anchor; NO police station → police is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });
@@ -1513,7 +1540,9 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
 describe('World.tick() fire-coverage gate — level-up needs police AND fire AND hospital AND school at the anchor', () => {
   it('with police+hospital but NO fire coverage does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
-    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window. Land value (road +
+    // diversity + the present services' coverage) stays well above the level-2 gate (0.25);
+    // the missing service is the SOLE level-up blocker here, not land value.
     // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4),
     // hospital (5,0)–(6,1), and school (8,0)–(9,1) cover the anchor. NO fire station → fire is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });
@@ -1628,7 +1657,9 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
 describe('World.tick() hospital-coverage gate — level-up needs police AND fire AND hospital AND school at the anchor', () => {
   it('with police+fire but NO hospital coverage does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
-    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window. Land value (road +
+    // diversity + the present services' coverage) stays well above the level-2 gate (0.25);
+    // the missing service is the SOLE level-up blocker here, not land value.
     // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4),
     // fire (8,3)–(9,4), and school (8,0)–(9,1) cover the anchor. NO hospital → hospital is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });
@@ -1743,7 +1774,9 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
 describe('World.tick() school-coverage gate — level-up needs police AND fire AND hospital AND school at the anchor', () => {
   it('with police+fire+hospital but NO school does NOT level up', () => {
     // Layout (10×8): road row y=2. Zone (0,1)=RESIDENTIAL frontage S adj to road (0,2).
-    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window → LV ≈ 0.9.
+    // Diversity: (1,1)=COMMERCIAL, (0,0)=INDUSTRIAL in 3×3 window. Land value (road +
+    // diversity + the present services' coverage) stays well above the level-2 gate (0.25);
+    // the missing service is the SOLE level-up blocker here, not land value.
     // Plant (4,3)–(5,4) powers the road row; tower (7,3) waters it. Police (1,3)–(2,4),
     // fire (8,3)–(9,4), and hospital (5,0)–(6,1) cover the anchor. NO school → school is the SOLE blocker.
     const world = new World(10, 8, { regenerate: false });

@@ -340,8 +340,20 @@ export class World {
 
   /** Unconditional force-recompute; also clears the dirty flag. */
   recomputeLandValue(): void {
+    // B2 — freshness drain: land value now reads the four coverage maps, so drain
+    // each coverage's dirty flag FIRST. This guarantees land value always reads
+    // FRESH coverage regardless of caller.
+    this.recomputeServiceIfDirty();
+    this.recomputeFireIfDirty();
+    this.recomputeHospitalIfDirty();
+    this.recomputeSchoolIfDirty();
     const lv = this.getLandValue();
-    lv.recompute(this.map, this.structures);
+    lv.recompute(this.map, this.structures, {
+      police: this.getServiceCoverageMap(),
+      fire: this.getFireCoverageMap(),
+      hospital: this.getHospitalCoverageMap(),
+      school: this.getSchoolCoverageMap(),
+    });
     this.landValueDirty = false;
   }
 
@@ -408,6 +420,9 @@ export class World {
 
   markServiceDirty(): void {
     this.serviceDirty = true;
+    // B1 — dirty cascade: land value reads the four coverage maps, so any coverage
+    // change must also dirty land value. This is the ONLY place the cascade lives.
+    this.landValueDirty = true;
   }
 
   /** Recompute service coverage only if dirty; clears the flag. */
@@ -431,6 +446,7 @@ export class World {
 
   markFireDirty(): void {
     this.fireDirty = true;
+    this.landValueDirty = true; // B1 cascade — see markServiceDirty.
   }
 
   /** Recompute fire coverage only if dirty; clears the flag. */
@@ -454,6 +470,7 @@ export class World {
 
   markHospitalDirty(): void {
     this.hospitalDirty = true;
+    this.landValueDirty = true; // B1 cascade — see markServiceDirty.
   }
 
   /** Recompute hospital coverage only if dirty; clears the flag. */
@@ -477,6 +494,7 @@ export class World {
 
   markSchoolDirty(): void {
     this.schoolDirty = true;
+    this.landValueDirty = true; // B1 cascade — see markServiceDirty.
   }
 
   /** Recompute school coverage only if dirty; clears the flag. */
@@ -573,6 +591,9 @@ export class World {
       this.recomputeFireIfDirty();
       this.recomputeHospitalIfDirty();
       this.recomputeSchoolIfDirty();
+      // B1' — land value depends on coverage, which is now cleared/zero. Recompute
+      // last so the already-allocated LandValueMap drops any stale pre-reset values.
+      this.recomputeLandValue();
       return;
     }
 
@@ -594,6 +615,9 @@ export class World {
     this.recomputeFireIfDirty();
     this.recomputeHospitalIfDirty();
     this.recomputeSchoolIfDirty();
+    // B1' — land value depends on coverage, which is now cleared/zero. Recompute
+    // last so the already-allocated LandValueMap drops any stale pre-reset values.
+    this.recomputeLandValue();
   }
 
   /**

@@ -38,54 +38,47 @@ function seedWater(world: World, ax: number, ay: number): void {
 
 // Service coverage gates level-up (Task 5): level-up fixtures need a station whose
 // graded coverage reaches the building anchor.
+/** 2×2 footprint at (ax,ay); asserts every cell is GRASS before placing so a stray
+ * station-on-zone reseed coord is caught (StructureMap only excludes structure-vs-structure). */
+function station2x2(ax: number, ay: number): { x: number; y: number }[] {
+  return [
+    { x: ax, y: ay }, { x: ax + 1, y: ay },
+    { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+  ];
+}
+
 function seedPolice(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'police_station',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'police_station', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markServiceDirty();
   world.recomputeService();
 }
 
 function seedFire(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'fire_station',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'fire_station', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markFireDirty();
   world.recomputeFire();
 }
 
 function seedHospital(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'hospital',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'hospital', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markHospitalDirty();
   world.recomputeHospital();
 }
 
 function seedSchool(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
-    type: 'school',
-    anchor: { x: ax, y: ay },
-    footprint: [
-      { x: ax, y: ay }, { x: ax + 1, y: ay },
-      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ],
-  });
+  const footprint = station2x2(ax, ay);
+  for (const c of footprint) expect(world.getMap().getTile(c.x, c.y)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'school', anchor: { x: ax, y: ay }, footprint });
+  expect(added).not.toBeNull();
   world.markSchoolDirty();
   world.recomputeSchool();
 }
@@ -217,9 +210,12 @@ describe('World.tick() — zone growth', () => {
   it('zone building level caps at ZONE_MAX_LEVEL and stops contributing to changed at cap', () => {
     // Decision-A: water gates level-up. New layout on 10×8 (same as coincident-growth fixture):
     // Road row at y=2. Zone (0,1)=RESIDENTIAL (adj road (0,2), frontage S).
-    // Diversity in 3×3 of (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → LV ≈ 0.9 >= 0.85.
+    // Diversity in 3×3 of (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL.
     // Plant at (4,3)-(5,4) powers road (4,2). Tower at (7,3)-(8,4) waters road (7,2).
     // Whole road row powered+watered → zone (0,1) both powered+watered.
+    // Service coverage now ALSO feeds land value (weight 0.50); the four stations are
+    // reseeded close to road (0,2) so LV(0,1) ≈ 0.89 >= 0.85 (the level-5 gate). All four
+    // footprints are GRASS (the (2,1) industrial zone does not overlap any of them).
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -229,18 +225,20 @@ describe('World.tick() — zone growth', () => {
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL)); // diversity in 3×3 of (0,1) for LV
     seedPower(world, 4, 3); // plant at (4,3)–(5,4); (4,3) adj road (4,2)
     seedWater(world, 7, 3); // tower at (7,3)–(8,4); (7,3) adj road (7,2)
-    // Task 5: coverage gates level-up. Station (1,3)-(2,4); (1,3) adj road (1,2) → covers road row
-    // → off-road frontage covers zone anchor (0,1).
-    seedPolice(world, 1, 3);
-    // Fire ALSO gates level-up. Station (8,3)-(9,4); (8,3) adj road (8,2) → covers road row → anchor (0,1).
-    seedFire(world, 8, 3);
-    // Hospital ALSO gates level-up. Station (5,0)-(6,1); (5,1) adj road (5,2) → covers road row → anchor (0,1).
-    seedHospital(world, 5, 0);
-    // School ALSO gates level-up. Station (8,0)-(9,1); (8,1) adj road (8,2) → covers road row → anchor (0,1).
-    seedSchool(world, 8, 0);
+    // Police (0,3)–(1,4): (0,3) adj road (0,2) d=0 → anchor (0,1) coverage 1.0.
+    seedPolice(world, 0, 3);
+    // Hospital (2,3)–(3,4): (2,3) adj road (2,2) → road(0,2) 2 hops → ≈0.917.
+    seedHospital(world, 2, 3);
+    // Fire (3,0)–(4,1): (3,1)/(4,1) adj road (3,2)/(4,2) → road(0,2) 3 hops → ≈0.875.
+    seedFire(world, 3, 0);
+    // School (5,0)–(6,1): (5,1)/(6,1) adj road (5,2)/(6,2) → road(0,2) 5 hops → ≈0.792.
+    seedSchool(world, 5, 0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+    // Authoritative land-value guard: the level-5 gate is LEVEL_THRESHOLDS[5] = 0.85.
+    world.recomputeLandValue();
+    expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(0.85);
 
     // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
     // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.

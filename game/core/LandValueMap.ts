@@ -2,23 +2,35 @@
  * Derived influence field: land value per tile.
  * NOT persisted — recomputed from the map on demand.
  *
- * Three-stage influence:
- *   Stage 1: road proximity    (Chebyshev distance within radius 6, normalised).
- *   Stage 2: zone-mix diversity (distinct zone types in 3×3, divided by 3).
- *   Stage 3: park proximity    (Chebyshev distance to nearest park within radius 4,
- *                               additive boost up to PARK_BOOST_MAX = 0.25).
- *   Final:   clamp(0.7 * road + 0.3 * diversity + 0.25 * park, 0, 1).
- *   The park term is additive and ≥0, so land value is monotonic non-decreasing
- *   vs a park-free map.
+ * FOUR inputs feed a sum-to-1.0 base, PLUS a park additive boost, all clamped to [0,1]:
+ *   - road proximity    (weight 0.40, Chebyshev distance within radius 6, normalised).
+ *   - zone-mix diversity (weight 0.10, distinct zone types in 3×3, divided by 3).
+ *   - service coverage   (weight 0.50, the AVERAGE of the four services' normalized
+ *                         coverage — police, fire, hospital, school).
+ *   - park proximity     (additive +PARK_BOOST_MAX = 0.25, Chebyshev distance to nearest
+ *                         park within radius 4, nearest-park strongest-wins).
+ *   Final: clamp(0.40 * road + 0.10 * diversity + 0.50 * service + 0.25 * park, 0, 1).
+ *   The park term is additive and ≥0.
+ *
+ * DUAL ROLE OF SERVICES: the four coverage services hard-gate level-up at the building
+ * anchor in World (all four must be covered), AND contribute to land value here via the
+ * combined serviceScore term.
  */
 
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
+import type { ServiceCoverageMap } from './ServiceCoverageMap';
+import type { FireCoverageMap } from './FireCoverageMap';
+import type { HospitalCoverageMap } from './HospitalCoverageMap';
+import type { SchoolCoverageMap } from './SchoolCoverageMap';
 import { TileType, isZoneType } from './Tile';
 
 const ROAD_RADIUS = 6;
 const PARK_RADIUS = 4;     // tunable
 const PARK_BOOST_MAX = 0.25; // tunable
+const ROAD_WEIGHT = 0.40;      // tunable
+const DIVERSITY_WEIGHT = 0.10; // tunable
+const SERVICE_WEIGHT = 0.50;   // tunable
 
 export class LandValueMap {
   private readonly width: number;
@@ -35,7 +47,16 @@ export class LandValueMap {
    * Recompute the entire influence field from the current map state.
    * Pure: no side-effects beyond writing to this.values.
    */
-  recompute(map: GameMap, structures: StructureMap): void {
+  recompute(
+    map: GameMap,
+    structures: StructureMap,
+    coverage: {
+      police: ServiceCoverageMap;
+      fire: FireCoverageMap;
+      hospital: HospitalCoverageMap;
+      school: SchoolCoverageMap;
+    },
+  ): void {
     const w = this.width;
     const h = this.height;
 
@@ -126,7 +147,14 @@ export class LandValueMap {
           parkScore = minDist === Infinity ? 0 : Math.max(0, 1 - minDist / (PARK_RADIUS + 1));
         }
 
-        const combined = Math.min(1, Math.max(0, 0.7 * roadScore + 0.3 * diversityScore + PARK_BOOST_MAX * parkScore));
+        const serviceScore =
+          (coverage.police.getCoverageNormalized(tx, ty) +
+            coverage.fire.getCoverageNormalized(tx, ty) +
+            coverage.hospital.getCoverageNormalized(tx, ty) +
+            coverage.school.getCoverageNormalized(tx, ty)) /
+          4;
+
+        const combined = Math.min(1, Math.max(0, ROAD_WEIGHT * roadScore + DIVERSITY_WEIGHT * diversityScore + SERVICE_WEIGHT * serviceScore + PARK_BOOST_MAX * parkScore));
         this.values[ty * w + tx] = combined;
       }
     }
