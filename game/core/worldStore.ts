@@ -26,10 +26,12 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v17';
 
-// Bumped to 'service-v5' for the park tile/structure type added in v17.
-// An HMR singleton carrying a mismatched guard is discarded and rebuilt even if
-// hasCurrentWorldApi passes.
-const WORLD_SINGLETON_GUARD = 'service-v5' as const;
+// Bumped to 'service-v6' for the land-value model overhaul: the four markX*Dirty methods
+// now also set landValueDirty, and recomputeLandValue drains coverage + uses a new
+// four-input formula. These are behavioral changes to World/LandValueMap method bodies —
+// not API additions — so hasCurrentWorldApi cannot detect them; the guard bump is required
+// to force Fast Refresh to discard any stale HMR singleton running the old formula.
+const WORLD_SINGLETON_GUARD = 'service-v6' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -59,7 +61,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v5 / v17 — park tile/structure type added):
+ * Checked methods (as of service-v6 / v17 — land-value model overhaul, behavioral change):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getTerrain, installTerrain, getTerrainRevision,
