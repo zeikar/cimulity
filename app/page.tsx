@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
+import { useStatsHistory } from './hooks/useStatsHistory';
 import { GameCanvas } from './components/GameCanvas';
 import { GameHUD } from './components/GameHUD';
 import { TileInfoPanel } from './components/TileInfoPanel';
@@ -97,6 +98,10 @@ export default function Home() {
     }
   }, []);
 
+  // Accumulate display-only sample history for the StatsPanel charts.
+  // All four scalars are already present in sim from handleSimUpdate.
+  const statsSamples = useStatsHistory(sim.tick, sim.population, sim.money, sim.happiness);
+
   const handleNewCity = useCallback(() => {
     if (!window.confirm('Start a new city? This erases your current city.')) {
       return;
@@ -160,6 +165,7 @@ export default function Home() {
         currentTool={currentTool}
         speedMultiplier={speedMultiplier}
         paused={paused}
+        statsSamples={statsSamples}
       />
       <TileInfoPanel
         info={inspect?.info ?? null}
