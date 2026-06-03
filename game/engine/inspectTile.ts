@@ -15,6 +15,7 @@
  */
 
 import type { World } from '../core/World';
+import type { GameMap } from '../core/Map';
 import type { TileCoord } from '../types/coordinates';
 import type { TileType } from '../core/Tile';
 import type { BuildingType } from '../core/Building';
@@ -75,10 +76,10 @@ export interface TileInfo {
  * a water tower sits off the power grid (never powered); every other service
  * structure is a consumer reported by grid connectivity.
  */
-function structurePowered(structure: Structure, power: PowerMap): boolean {
+function structurePowered(structure: Structure, power: PowerMap, map: GameMap): boolean {
   if (structure.type === 'power_plant') return true;
   if (structure.type === 'water_tower') return false;
-  return isStructurePowered(structure, power);
+  return isStructurePowered(structure, power, map);
 }
 
 /**
@@ -86,10 +87,10 @@ function structurePowered(structure: Structure, power: PowerMap): boolean {
  * tower is the source; a power plant sits off the water grid; every other
  * service structure is reported by grid connectivity.
  */
-function structureWatered(structure: Structure, water: WaterMap): boolean {
+function structureWatered(structure: Structure, water: WaterMap, map: GameMap): boolean {
   if (structure.type === 'water_tower') return true;
   if (structure.type === 'power_plant') return false;
-  return isStructureWatered(structure, water);
+  return isStructureWatered(structure, water, map);
 }
 
 /**
@@ -104,7 +105,8 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   // is reflected immediately instead of showing the pre-edit value.
   world.recomputeLandValueIfDirty();
 
-  const building = world.getMap().getBuildings().getBuildingAt(coord.x, coord.y);
+  const map = world.getMap();
+  const building = map.getBuildings().getBuildingAt(coord.x, coord.y);
   const structure = world.getStructureMap().getStructureAt(coord.x, coord.y);
   const power = world.getPowerMap();
   const water = world.getWaterMap();
@@ -117,21 +119,23 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   // simulation reasons about it:
   //  - A structure is a SOURCE for exactly one utility (a power plant for power, a
   //    water tower for water): show its source utility active and the OTHER inactive
-  //    (it does not sit on that network). Every OTHER service structure (police, fire,
-  //    hospital, school, park) is a grid CONSUMER — its footprint cells are never on
-  //    either network, so report grid CONNECTIVITY (adjacent to a powered/watered
-  //    cell) so a station wired next to a powered road reads "Powered", not "No Power".
+  //    (it does not sit on that network). Every OTHER structure (police, fire, hospital,
+  //    school, park) reports grid CONNECTIVITY: powered/watered iff orthogonally adjacent
+  //    to a powered/watered ROAD — requiring a road (not just any powered cell) avoids the
+  //    1-tile grass-halo false positive — so a station wired next to a powered road reads
+  //    "Powered", not "No Power". (Services don't strictly consume power in the sim today;
+  //    this readout is informational. Parks report connectivity the same way.)
   //  - A building counts as served if ANY footprint cell is (isBuildingPowered /
   //    isBuildingWatered) — the predicate growth uses; per-cell would falsely show
   //    interior tiles as unserved even though the building is served.
   //  - A bare tile reports its own cell.
   const powered = structure
-    ? structurePowered(structure, power)
+    ? structurePowered(structure, power, map)
     : building
       ? isBuildingPowered(building, power)
       : power.isPowered(coord.x, coord.y);
   const watered = structure
-    ? structureWatered(structure, water)
+    ? structureWatered(structure, water, map)
     : building
       ? isBuildingWatered(building, water)
       : water.isWatered(coord.x, coord.y);

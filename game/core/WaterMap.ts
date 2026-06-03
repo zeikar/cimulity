@@ -79,16 +79,23 @@ const ORTHOGONAL_OFFSETS = [
  * `isStructurePowered`. A structure's footprint cells are never marked watered
  * (the propagation excludes all structure-owned cells), so a structure is
  * connected to the water grid iff any cell orthogonally adjacent to its
- * footprint is watered. Used by the inspect-tile panel to report service
- * structures as watered when wired into the grid.
+ * footprint is a watered ROAD cell. A road is required (not just any watered
+ * cell): the propagation also waters the 1-tile halo around watered roads, so
+ * an "any watered neighbour" check would falsely report a structure two tiles
+ * from the road as watered. Used by the inspect-tile panel for service
+ * structures.
  */
 export function isStructureWatered(
   structure: { footprint: ReadonlyArray<{ x: number; y: number }> },
   water: WaterMap,
+  map: GameMap,
 ): boolean {
   for (const c of structure.footprint) {
     for (const o of ORTHOGONAL_OFFSETS) {
-      if (water.isWatered(c.x + o.dx, c.y + o.dy)) return true;
+      const nx = c.x + o.dx;
+      const ny = c.y + o.dy;
+      const tile = map.getTile(nx, ny);
+      if (tile !== null && tile.type === TileType.ROAD && water.isWatered(nx, ny)) return true;
     }
   }
   return false;

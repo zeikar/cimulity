@@ -81,20 +81,25 @@ const ORTHOGONAL_OFFSETS = [
  * a structure's own footprint cells are never marked powered (the propagation
  * excludes all structure-owned cells), so scanning the footprint like
  * `isBuildingPowered` would always be false. A structure is connected to the
- * power grid iff any cell orthogonally adjacent to its footprint is powered —
- * i.e. it sits next to a powered road (or a powered cell). Used by the
- * inspect-tile panel to report service structures (police/fire/hospital/school)
- * as powered when wired into the grid, matching how the player reasons.
- * Adjacent cells inside the footprint read `false` (excluded), so they never
- * produce a false positive.
+ * power grid iff any cell orthogonally adjacent to its footprint is a powered
+ * ROAD cell — i.e. it sits directly next to a road carrying power. We require a
+ * road specifically (not just any powered cell): the propagation also powers
+ * the 1-tile grass halo around powered roads, so an "any powered neighbour"
+ * check would falsely report a structure two tiles from the road (touching the
+ * halo, not the road) as powered. Used by the inspect-tile panel for service
+ * structures (police/fire/hospital/school).
  */
 export function isStructurePowered(
   structure: { footprint: ReadonlyArray<{ x: number; y: number }> },
   power: PowerMap,
+  map: GameMap,
 ): boolean {
   for (const c of structure.footprint) {
     for (const o of ORTHOGONAL_OFFSETS) {
-      if (power.isPowered(c.x + o.dx, c.y + o.dy)) return true;
+      const nx = c.x + o.dx;
+      const ny = c.y + o.dy;
+      const tile = map.getTile(nx, ny);
+      if (tile !== null && tile.type === TileType.ROAD && power.isPowered(nx, ny)) return true;
     }
   }
   return false;

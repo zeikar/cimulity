@@ -187,7 +187,7 @@ describe('WaterMap', () => {
       water.recompute(map, structures);
 
       expect(water.isWatered(3, 0)).toBe(true); // sanity: road is on the grid
-      expect(isStructureWatered({ footprint: policeFootprint(4, 0) }, water)).toBe(true);
+      expect(isStructureWatered({ footprint: policeFootprint(4, 0) }, water, map)).toBe(true);
     });
 
     it('returns false when adjacent only to an UNwatered road (no tower connected)', () => {
@@ -196,7 +196,24 @@ describe('WaterMap', () => {
       const water = new WaterMap(10, 10);
       water.recompute(map, structures);
 
-      expect(isStructureWatered({ footprint: policeFootprint(5, 1) }, water)).toBe(false);
+      expect(isStructureWatered({ footprint: policeFootprint(5, 1) }, water, map)).toBe(false);
+    });
+
+    it('returns false when adjacent ONLY to watered grass halo, not a watered road (two tiles from the road)', () => {
+      // Watered road (5,5),(6,5) seeded by a tower at (5,6). The 1-tile grass halo above it
+      // — (5,4),(6,4) — becomes watered grass. A police at (5,2)..(6,3) touches that halo but
+      // is NOT adjacent to any road, so it must read NOT watered.
+      const map = makeMap(10, 10, [
+        { x: 5, y: 5, type: TileType.ROAD },
+        { x: 6, y: 5, type: TileType.ROAD },
+      ]);
+      const structures = new StructureMap(10, 10);
+      addTower(structures, 5, 6);
+      const water = new WaterMap(10, 10);
+      water.recompute(map, structures);
+
+      expect(water.isWatered(5, 4)).toBe(true); // sanity: grass halo IS watered
+      expect(isStructureWatered({ footprint: policeFootprint(5, 2) }, water, map)).toBe(false);
     });
 
     it('returns false when far from any watered cell', () => {
@@ -206,7 +223,7 @@ describe('WaterMap', () => {
       const water = new WaterMap(10, 10);
       water.recompute(map, structures);
 
-      expect(isStructureWatered({ footprint: policeFootprint(7, 7) }, water)).toBe(false);
+      expect(isStructureWatered({ footprint: policeFootprint(7, 7) }, water, map)).toBe(false);
     });
   });
 

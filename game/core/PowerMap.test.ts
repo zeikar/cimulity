@@ -189,7 +189,7 @@ describe('PowerMap', () => {
       power.recompute(map, structures);
 
       expect(power.isPowered(3, 0)).toBe(true); // sanity: road is on the grid
-      expect(isStructurePowered({ footprint: policeFootprint(4, 0) }, power)).toBe(true);
+      expect(isStructurePowered({ footprint: policeFootprint(4, 0) }, power, map)).toBe(true);
     });
 
     it('returns false when adjacent only to an UNpowered road (no plant connected)', () => {
@@ -200,7 +200,25 @@ describe('PowerMap', () => {
       const power = new PowerMap(10, 10);
       power.recompute(map, structures);
 
-      expect(isStructurePowered({ footprint: policeFootprint(5, 1) }, power)).toBe(false);
+      expect(isStructurePowered({ footprint: policeFootprint(5, 1) }, power, map)).toBe(false);
+    });
+
+    it('returns false when adjacent ONLY to powered grass halo, not a powered road (two tiles from the road)', () => {
+      // Powered road (5,5),(6,5) seeded by a plant at (5,6). The propagation also powers
+      // the 1-tile grass halo above it: (5,4) and (6,4) become powered grass. A police at
+      // (5,2)..(6,3) touches that halo (cells (5,3)/(6,3) ↔ (5,4)/(6,4)) but is NOT adjacent
+      // to any road, so it must read NOT powered.
+      const map = makeMap(10, 10, [
+        { x: 5, y: 5, type: TileType.ROAD },
+        { x: 6, y: 5, type: TileType.ROAD },
+      ]);
+      const structures = new StructureMap(10, 10);
+      addPlant(structures, 5, 6);
+      const power = new PowerMap(10, 10);
+      power.recompute(map, structures);
+
+      expect(power.isPowered(5, 4)).toBe(true); // sanity: grass halo IS powered
+      expect(isStructurePowered({ footprint: policeFootprint(5, 2) }, power, map)).toBe(false);
     });
 
     it('returns false when far from any powered cell', () => {
@@ -212,7 +230,7 @@ describe('PowerMap', () => {
       const power = new PowerMap(10, 10);
       power.recompute(map, structures);
 
-      expect(isStructurePowered({ footprint: policeFootprint(7, 7) }, power)).toBe(false);
+      expect(isStructurePowered({ footprint: policeFootprint(7, 7) }, power, map)).toBe(false);
     });
   });
 
