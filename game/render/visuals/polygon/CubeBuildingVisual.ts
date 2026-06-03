@@ -25,8 +25,9 @@ import {
 } from './cubeGeometry';
 import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
 import {
-  getWindowTexture,
+  getWallTexture,
   wallFaceFillMatrix,
+  wallVariant,
   getRoofTexture,
   roofFaceFillMatrix,
 } from './faceTexture';
@@ -80,9 +81,17 @@ function structureInputOf(input: BuildingVisualInput): BuildingVisualInput {
 // Cache key
 // ---------------------------------------------------------------------------
 
-function cacheKey(input: BuildingVisualInput): string {
+// Geometry-only key: cube silhouette / shadow depend on type+level+density+shape
+// but NOT on the wall facade, so shadows share one context across variants.
+function geometryKey(input: BuildingVisualInput): string {
   const shape = normalizeFootprint(input.footprint, input.anchor);
   return `${input.type}:${input.level}:${input.density}:${shape}`;
+}
+
+// Faces key: geometry plus the facade variant, so same-shape buildings with
+// different wall textures cache as distinct face contexts.
+function facesKey(input: BuildingVisualInput): string {
+  return `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
@@ -161,9 +170,10 @@ function drawCubeFaces(
   ox: number,
   oy: number,
 ): void {
-  const wallTex = getWindowTexture();
-  drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy), leftColor(input), 0.5, ox, oy);
-  drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy), rightColor(input), 0.5, ox, oy);
+  const variant = wallVariant(input.buildingId);
+  const wallTex = getWallTexture(input.type, variant);
+  drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
+  drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
 
   // Roof: textured top diamond when the rooftop tile is loaded; flat colour otherwise.
   const roofTex = getRoofTexture();
@@ -267,7 +277,7 @@ export class CubeBuildingVisual implements BuildingVisual {
 
   private getOrBuildShadowContext(input: BuildingVisualInput): GraphicsContext | null {
     if (input.level === 0) return null;
-    const key = cacheKey(input);
+    const key = geometryKey(input);
     let ctx = this.shadowCache.get(key);
     if (!ctx) {
       ctx = buildShadowContext(input) ?? undefined;
@@ -278,7 +288,7 @@ export class CubeBuildingVisual implements BuildingVisual {
 
   private getOrBuildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
     if (input.level === 0) return null;
-    const key = cacheKey(input);
+    const key = facesKey(input);
     let ctx = this.facesCache.get(key);
     if (!ctx) {
       ctx = buildFacesContext(input) ?? undefined;

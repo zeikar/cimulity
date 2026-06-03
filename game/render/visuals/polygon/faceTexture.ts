@@ -9,23 +9,35 @@
  * wrap is auto-enabled for texture fills (so the textures should tile
  * seamlessly). Textures are grayscale and tinted per face at fill time, which
  * preserves the existing per-type colour + face shading.
+ *
+ * Each building type has several interchangeable wall variants; a building picks
+ * one deterministically from its anchor (see `wallVariant`) so a city mixes
+ * facades without any single building flickering between them.
  */
 
 import { Assets, Matrix, Texture } from 'pixi.js';
+import type { BuildingType } from '@/game/core/Building';
 import type { Point } from './cubeGeometry';
 
 // next.config sets basePath '/cimulity' in production; mirror it here via the
 // inlined env var so runtime asset URLs resolve under GitHub Pages (Next does
 // not rewrite raw string URLs the way it does for <Image>/<Link>).
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
-const WALL_URL = `${BASE_PATH}/textures/wall.png`;
+
+/** Wall variants per building type (files `${type}-0..N-1.png`). */
+export const WALL_VARIANTS = 3;
+const BUILDING_TYPES: readonly BuildingType[] = ['residential', 'commercial', 'industrial'];
+
 const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
+const wallUrl = (type: BuildingType, variant: number) =>
+  `${BASE_PATH}/textures/${type}-${variant}.png`;
 
 /** On-screen size (local px) of one full wall tile before it repeats. Smaller
  *  => more, smaller windows per wall. */
 const WALL_TILE_PX = 50;
 
-let wallTexture: Texture | null = null;
+/** type -> [variant0, variant1, ...] textures (null until loaded / on failure). */
+const wallTextures = new Map<BuildingType, Array<Texture | null>>();
 let roofTexture: Texture | null = null;
 
 function loadTexture(url: string): Promise<Texture | null> {
@@ -44,22 +56,44 @@ function loadTexture(url: string): Promise<Texture | null> {
 }
 
 /**
- * Preload the wall + roof textures. Call from PixiApp.init BEFORE the first
- * render so cube GraphicsContexts (cached by shape) bake the loaded textures +
- * correct-size matrices rather than a flat fallback. The payload is small
- * (grayscale, ~115 KB total), so blocking the first frame keeps the
- * cached-context path simple with no perceptible startup stall. Faces fall back
- * to a flat tint if a load fails.
+ * Preload every wall variant + the roof texture. Call from PixiApp.init BEFORE
+ * the first render so cube GraphicsContexts (cached by shape) bake the loaded
+ * textures + correct-size matrices rather than a flat fallback. The payload is
+ * small (grayscale tiles), so blocking the first frame keeps the cached-context
+ * path simple with no perceptible startup stall. Faces fall back to a flat tint
+ * if a load fails.
  */
 export async function preloadFaceTextures(): Promise<void> {
-  const [wall, roof] = await Promise.all([loadTexture(WALL_URL), loadTexture(ROOF_URL)]);
-  wallTexture = wall;
-  roofTexture = roof;
+  const jobs: Promise<void>[] = [];
+  for (const type of BUILDING_TYPES) {
+    const variants: Array<Texture | null> = new Array(WALL_VARIANTS).fill(null);
+    wallTextures.set(type, variants);
+    for (let v = 0; v < WALL_VARIANTS; v++) {
+      jobs.push(loadTexture(wallUrl(type, v)).then((t) => { variants[v] = t; }));
+    }
+  }
+  jobs.push(loadTexture(ROOF_URL).then((t) => { roofTexture = t; }));
+  await Promise.all(jobs);
 }
 
-/** Wall texture, or `Texture.EMPTY` (renders as a flat tint) until/unless it loads. */
-export function getWindowTexture(): Texture {
-  return wallTexture ?? Texture.EMPTY;
+/**
+ * Stable wall-variant index for a building, derived from its (immutable)
+ * `buildingId` so the same building always renders the same facade — across
+ * reload/HMR AND across growth (which moves the structure rect but not the id) —
+ * while the city as a whole mixes variants. Integer-hash finalizer to spread
+ * sequential ids across variants; `Math.imul` keeps it in 32-bit space.
+ */
+export function wallVariant(buildingId: number): number {
+  let h = buildingId | 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h % WALL_VARIANTS;
+}
+
+/** Wall texture for a type+variant, or `Texture.EMPTY` (flat tint) until loaded. */
+export function getWallTexture(type: BuildingType, variant: number): Texture {
+  return wallTextures.get(type)?.[variant] ?? Texture.EMPTY;
 }
 
 /** Roof texture, or null until loaded (caller draws a flat-colour roof then). */
@@ -68,21 +102,25 @@ export function getRoofTexture(): Texture | null {
 }
 
 /**
- * Affine fill matrix mapping the wall texture onto a wall parallelogram.
+ * Affine fill matrix mapping a wall texture onto a wall parallelogram.
  *
  * `face` is ordered [topStart, topEnd, bottomEnd, bottomStart] (see
  * cubeFacePolygons left/right). The texture's x-axis follows the top edge
  * (topStart -> topEnd, the iso skew), the y-axis follows the wall drop
  * (topStart -> bottomStart). `ox/oy` is the same anchor-local draw offset
- * drawPoly applies, so the matrix lines up with the drawn path.
+ * drawPoly applies, so the matrix lines up with the drawn path. `tex` is the
+ * resolved wall texture — its real source size is the matrix divisor (Pixi
+ * divides by that internally to get UVs).
  *
- * The matrix maps texture-px -> local-px, so its divisor uses the texture's real
- * source size (Pixi divides by that internally to get UVs). Fractional repeats
- * are allowed: < 1 shows only part of the (multi-window) tile per wall, > 1
- * wraps; floored at a small epsilon to avoid div-by-zero on degenerate faces.
+ * Fractional repeats are allowed: < 1 shows only part of the (multi-window) tile
+ * per wall, > 1 wraps; floored at a small epsilon to avoid div-by-zero.
  */
-export function wallFaceFillMatrix(face: ReadonlyArray<Point>, ox: number, oy: number): Matrix {
-  const tex = getWindowTexture();
+export function wallFaceFillMatrix(
+  face: ReadonlyArray<Point>,
+  ox: number,
+  oy: number,
+  tex: Texture,
+): Matrix {
   const texW = tex.source.width || 1;
   const texH = tex.source.height || 1;
 
