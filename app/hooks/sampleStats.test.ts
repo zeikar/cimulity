@@ -48,15 +48,6 @@ describe('sampleStats', () => {
     expect(history[history.length - 1].tick).toBe(8);
   });
 
-  it('stale/lower tick replaces latest without changing length', () => {
-    const prev = [s(1), s(5), s(10)];
-    const stale = s(3, 99, 999, 0.9); // tick 3 < last tick 10
-    const result = sampleStats(prev, stale);
-
-    expect(result.length).toBe(3);
-    expect(result[result.length - 1]).toEqual(stale);
-  });
-
   it('prev is never mutated', () => {
     const prev = [s(1, 10, 100, 0.1), s(2, 20, 200, 0.2)];
     const originalPrev = prev.map((x) => ({ ...x }));
@@ -67,10 +58,6 @@ describe('sampleStats', () => {
 
     // Replace path (same tick)
     sampleStats(prev, s(2, 99, 99, 0.99));
-    expect(prev).toEqual(originalPrev);
-
-    // Stale path
-    sampleStats(prev, s(0));
     expect(prev).toEqual(originalPrev);
   });
 

@@ -20,19 +20,22 @@ export function useStatsHistory(
 ): StatsSample[] {
   const [history, setHistory] = useState<StatsSample[]>([]);
 
-  // Intentional setState in effect: this hook's sole job is to accumulate
-  // display-only history from tick-forwarder scalars. The effect deps are the
-  // four scalar inputs (not history), so no infinite loop is possible.
+  // Functional updater avoids a stale closure on `history` and makes
+  // same-tick replacement (paused tool-spend) work correctly — sampleStats
+  // decides append-vs-replace based on prev's last tick, not a ref we manage.
+  //
+  // WHY backward-tick detects reset: ticks are monotonically increasing within
+  // a world. The only way tick goes backward is a New City / destructive reset
+  // that creates a fresh world at tick 0. tick===0 alone is not reliable — a
+  // fresh world at tick 0 can receive tool-spend updates that should sample
+  // normally, not clear the series.
   useEffect(() => {
-    if (tick === 0) {
-      // tick 0 = fresh city or "New City" reset; clear stale chart data.
-      setHistory([]); // eslint-disable-line react-hooks/set-state-in-effect
-    } else {
-      // Functional updater avoids a stale closure on `history` and makes
-      // same-tick replacement (paused tool-spend) work correctly — sampleStats
-      // decides append-vs-replace based on prev's last tick, not a ref we manage.
-      setHistory((prev) => sampleStats(prev, { tick, population, money, happiness }));
-    }
+    setHistory((prev) => { // eslint-disable-line react-hooks/set-state-in-effect
+      const sample = { tick, population, money, happiness };
+      // Reset: tick went backward (New City / destructive reset → fresh world at tick 0).
+      if (prev.length > 0 && tick < prev[prev.length - 1].tick) return [sample];
+      return sampleStats(prev, sample);
+    });
   }, [tick, population, money, happiness]);
 
   return history;

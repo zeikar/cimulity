@@ -6,9 +6,10 @@
 // keeps the displayed values fresh without creating duplicate x-points in the
 // chart.
 //
-// WHY reset/tick===0 is NOT handled here: clearing the history on world reset
-// is the hook's responsibility (Task 2). This function is purely about
-// appending or replacing within an existing history window.
+// MONOTONIC TICK ASSUMPTION: callers must guarantee next.tick >= last.tick
+// before calling this function. Backward-tick resets (New City / destructive
+// reset) are detected and handled by the hook before reaching here; sampleStats
+// never receives a lower tick.
 
 export const STATS_HISTORY_CAPACITY = 240;
 
@@ -26,7 +27,6 @@ export type StatsSample = {
  * - empty prev           → [next]
  * - next.tick > last     → append next, slice to last `capacity` items
  * - next.tick === last   → replace last in place (same-tick freshen)
- * - next.tick < last     → replace last in place (defensive; ticks are monotonic)
  */
 export function sampleStats(
   prev: readonly StatsSample[],
@@ -45,6 +45,6 @@ export function sampleStats(
     return appended.length > capacity ? appended.slice(-capacity) : appended;
   }
 
-  // Same tick (paused tool-spend) or stale tick (defensive): replace latest.
+  // Same tick (paused tool-spend): replace latest.
   return [...prev.slice(0, prev.length - 1), next];
 }
