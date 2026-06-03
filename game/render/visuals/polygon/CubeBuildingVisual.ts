@@ -24,6 +24,13 @@ import {
   isNwAnchoredFullRectFootprint,
 } from './cubeGeometry';
 import { cubeShadowPolygon, SHADOW_COLOR, SHADOW_ALPHA } from './cubeDropShadow';
+import {
+  getWindowTexture,
+  wallFaceFillMatrix,
+  getRoofTexture,
+  roofFaceFillMatrix,
+} from './faceTexture';
+import type { Texture, Matrix } from 'pixi.js';
 import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 import type { Terrain } from '@/game/core/Terrain';
@@ -104,6 +111,29 @@ function drawPoly(
   ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
 }
 
+// SPIKE: textured face fill. Same path as drawPoly, but fills with a texture
+// skewed onto the parallelogram face (matrix) and tinted by the face's shaded
+// colour. textureSpace 'global' so the matrix maps texture-px -> local-px.
+function drawTexturedPoly(
+  ctx: GraphicsContext,
+  points: ReadonlyArray<Point>,
+  texture: Texture,
+  matrix: Matrix,
+  tintColor: number,
+  strokeAlpha: number,
+  ox: number,
+  oy: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(points[0].x + ox, points[0].y + oy);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x + ox, points[i].y + oy);
+  }
+  ctx.closePath();
+  ctx.fill({ texture, matrix, color: tintColor, textureSpace: 'global' });
+  ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
+}
+
 // Shadows must not have outlines — drawPoly always strokes, so we need a separate path.
 function drawShadow(ctx: GraphicsContext, polygon: ReadonlyArray<Point>, ox: number, oy: number): void {
   ctx.beginPath();
@@ -131,9 +161,17 @@ function drawCubeFaces(
   ox: number,
   oy: number,
 ): void {
-  drawPoly(ctx, faces.left, leftColor(input), 0.5, ox, oy);
-  drawPoly(ctx, faces.right, rightColor(input), 0.5, ox, oy);
-  drawPoly(ctx, faces.top, topColor(input), 0.55, ox, oy);
+  const wallTex = getWindowTexture();
+  drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy), leftColor(input), 0.5, ox, oy);
+  drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy), rightColor(input), 0.5, ox, oy);
+
+  // Roof: textured top diamond when the rooftop tile is loaded; flat colour otherwise.
+  const roofTex = getRoofTexture();
+  if (roofTex) {
+    drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, ox, oy), topColor(input), 0.55, ox, oy);
+  } else {
+    drawPoly(ctx, faces.top, topColor(input), 0.55, ox, oy);
+  }
 }
 
 function buildShadowContext(input: BuildingVisualInput): GraphicsContext | null {

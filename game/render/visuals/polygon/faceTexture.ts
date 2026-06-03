@@ -1,0 +1,137 @@
+/**
+ * Building-face textures + per-face affine fill matrices for the cube buildings.
+ *
+ * Cube faces are flat parallelograms in anchor-local screen space, so a plain
+ * front-on (wall) / top-down (roof) texture can be skewed onto each face by an
+ * affine matrix — the art itself needs no iso baked in. With Pixi's
+ * `textureSpace: 'global'` fill, the matrix maps texture-px -> local-px; Pixi
+ * inverts it and divides by the texture's source size to get UVs, and repeat
+ * wrap is auto-enabled for texture fills (so the textures should tile
+ * seamlessly). Textures are grayscale and tinted per face at fill time, which
+ * preserves the existing per-type colour + face shading.
+ */
+
+import { Assets, Matrix, Texture } from 'pixi.js';
+import type { Point } from './cubeGeometry';
+
+// next.config sets basePath '/cimulity' in production; mirror it here via the
+// inlined env var so runtime asset URLs resolve under GitHub Pages (Next does
+// not rewrite raw string URLs the way it does for <Image>/<Link>).
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+const WALL_URL = `${BASE_PATH}/textures/wall.png`;
+const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
+
+/** On-screen size (local px) of one full wall tile before it repeats. Smaller
+ *  => more, smaller windows per wall. */
+const WALL_TILE_PX = 50;
+
+let wallTexture: Texture | null = null;
+let roofTexture: Texture | null = null;
+
+function loadTexture(url: string): Promise<Texture | null> {
+  // No asset loader without a browser (headless vitest mounts visuals directly).
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  return Assets.load<Texture>(url)
+    .then((t) => {
+      t.source.scaleMode = 'linear';
+      t.source.wrapMode = 'repeat';
+      return t;
+    })
+    .catch((err) => {
+      console.warn(`[faceTexture] failed to load ${url}`, err);
+      return null;
+    });
+}
+
+/**
+ * Preload the wall + roof textures. Call from PixiApp.init BEFORE the first
+ * render so cube GraphicsContexts (cached by shape) bake the loaded textures +
+ * correct-size matrices rather than a flat fallback. The payload is small
+ * (grayscale, ~115 KB total), so blocking the first frame keeps the
+ * cached-context path simple with no perceptible startup stall. Faces fall back
+ * to a flat tint if a load fails.
+ */
+export async function preloadFaceTextures(): Promise<void> {
+  const [wall, roof] = await Promise.all([loadTexture(WALL_URL), loadTexture(ROOF_URL)]);
+  wallTexture = wall;
+  roofTexture = roof;
+}
+
+/** Wall texture, or `Texture.EMPTY` (renders as a flat tint) until/unless it loads. */
+export function getWindowTexture(): Texture {
+  return wallTexture ?? Texture.EMPTY;
+}
+
+/** Roof texture, or null until loaded (caller draws a flat-colour roof then). */
+export function getRoofTexture(): Texture | null {
+  return roofTexture;
+}
+
+/**
+ * Affine fill matrix mapping the wall texture onto a wall parallelogram.
+ *
+ * `face` is ordered [topStart, topEnd, bottomEnd, bottomStart] (see
+ * cubeFacePolygons left/right). The texture's x-axis follows the top edge
+ * (topStart -> topEnd, the iso skew), the y-axis follows the wall drop
+ * (topStart -> bottomStart). `ox/oy` is the same anchor-local draw offset
+ * drawPoly applies, so the matrix lines up with the drawn path.
+ *
+ * The matrix maps texture-px -> local-px, so its divisor uses the texture's real
+ * source size (Pixi divides by that internally to get UVs). Fractional repeats
+ * are allowed: < 1 shows only part of the (multi-window) tile per wall, > 1
+ * wraps; floored at a small epsilon to avoid div-by-zero on degenerate faces.
+ */
+export function wallFaceFillMatrix(face: ReadonlyArray<Point>, ox: number, oy: number): Matrix {
+  const tex = getWindowTexture();
+  const texW = tex.source.width || 1;
+  const texH = tex.source.height || 1;
+
+  const o = face[0];
+  const ax = face[1].x - o.x;
+  const ay = face[1].y - o.y;
+  const bx = face[3].x - o.x;
+  const by = face[3].y - o.y;
+
+  const repeatX = Math.max(0.01, Math.hypot(ax, ay) / WALL_TILE_PX);
+  const repeatY = Math.max(0.01, Math.hypot(bx, by) / WALL_TILE_PX);
+
+  // x-column (edge dir) = a/(repeatX*texW), y-column (wall drop) = b/(repeatY*texH).
+  return new Matrix(
+    ax / (repeatX * texW),
+    ay / (repeatX * texW),
+    bx / (repeatY * texH),
+    by / (repeatY * texH),
+    o.x + ox,
+    o.y + oy,
+  );
+}
+
+/**
+ * Affine fill matrix mapping the rooftop texture onto the top diamond face.
+ *
+ * `face` is the top polygon [N, E, S, W] (see cubeFacePolygons). The texture's
+ * x-axis follows N->E and its y-axis follows N->W, so the roof grid aligns with
+ * the iso tile grid. The whole texture maps once onto the diamond (one coherent
+ * rooftop per building footprint), so it scales with footprint rather than
+ * tiling into repeated mini-roofs.
+ */
+export function roofFaceFillMatrix(face: ReadonlyArray<Point>, ox: number, oy: number): Matrix {
+  const tex = roofTexture;
+  const texW = tex?.source.width || 1;
+  const texH = tex?.source.height || 1;
+
+  const o = face[0]; // N
+  const ax = face[1].x - o.x; // N -> E
+  const ay = face[1].y - o.y;
+  const bx = face[3].x - o.x; // N -> W
+  const by = face[3].y - o.y;
+
+  return new Matrix(
+    ax / texW,
+    ay / texW,
+    bx / texH,
+    by / texH,
+    o.x + ox,
+    o.y + oy,
+  );
+}

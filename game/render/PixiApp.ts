@@ -14,6 +14,7 @@ import { ServiceStructureRenderer } from './ServiceStructureRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
+import { preloadFaceTextures } from './visuals/polygon/faceTexture';
 import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 
@@ -118,6 +119,11 @@ export class PixiApp {
     this.serviceStructureRenderer = new ServiceStructureRenderer(this.buildingContainer);
     this.utilityOverlay = new UtilityStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
+
+    // Preload building wall textures before the first render so cube
+    // GraphicsContexts (cached by shape) bake the loaded texture, not the
+    // procedural fallback.
+    await preloadFaceTextures();
 
     // Render initial frame
     this.centerCameraOnMap();
