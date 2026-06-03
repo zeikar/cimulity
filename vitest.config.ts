@@ -7,7 +7,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['game/**/*.test.ts'],
+    // app/**/*.test.ts discovers the pure UI sampling reducer; render glue stays excluded.
+    include: ['game/**/*.test.ts', 'app/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
@@ -66,6 +67,7 @@ export default defineConfig({
         'game/core/FireCoverageMap.ts',
         'game/core/HospitalCoverageMap.ts',
         'game/core/SchoolCoverageMap.ts',
+        'app/hooks/sampleStats.ts',
       ],
       thresholds: {
         lines: 80,
