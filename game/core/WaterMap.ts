@@ -66,3 +66,30 @@ export function isBuildingWatered(
   }
   return false;
 }
+
+const ORTHOGONAL_OFFSETS = [
+  { dx: 0, dy: -1 },
+  { dx: 0, dy: 1 },
+  { dx: -1, dy: 0 },
+  { dx: 1, dy: 0 },
+] as const;
+
+/**
+ * Grid-connectivity predicate for player-placed STRUCTURES — water mirror of
+ * `isStructurePowered`. A structure's footprint cells are never marked watered
+ * (the propagation excludes all structure-owned cells), so a structure is
+ * connected to the water grid iff any cell orthogonally adjacent to its
+ * footprint is watered. Used by the inspect-tile panel to report service
+ * structures as watered when wired into the grid.
+ */
+export function isStructureWatered(
+  structure: { footprint: ReadonlyArray<{ x: number; y: number }> },
+  water: WaterMap,
+): boolean {
+  for (const c of structure.footprint) {
+    for (const o of ORTHOGONAL_OFFSETS) {
+      if (water.isWatered(c.x + o.dx, c.y + o.dy)) return true;
+    }
+  }
+  return false;
+}

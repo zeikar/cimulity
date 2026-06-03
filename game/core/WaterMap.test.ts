@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WaterMap, isBuildingWatered } from './WaterMap';
+import { WaterMap, isBuildingWatered, isStructureWatered } from './WaterMap';
 import { GameMap } from './Map';
 import { StructureMap } from './StructureMap';
 import { TileType, createTile } from './Tile';
@@ -162,6 +162,51 @@ describe('WaterMap', () => {
         ],
       };
       expect(isBuildingWatered(building, water)).toBe(false);
+    });
+  });
+
+  describe('isStructureWatered helper (grid connectivity for service structures)', () => {
+    // A 2×2 service structure (e.g. police_station) at NW anchor (ox, oy).
+    const policeFootprint = (ox: number, oy: number) => [
+      { x: ox,     y: oy     },
+      { x: ox + 1, y: oy     },
+      { x: ox,     y: oy + 1 },
+      { x: ox + 1, y: oy + 1 },
+    ];
+
+    it('returns true when the structure is orthogonally adjacent to a WATERED road', () => {
+      // Watered road (2,0),(3,0) seeded by a tower at (2,1). Police at (4,0)..(5,1):
+      // its cell (4,0) is adjacent to watered road (3,0).
+      const map = makeMap(10, 10, [
+        { x: 2, y: 0, type: TileType.ROAD },
+        { x: 3, y: 0, type: TileType.ROAD },
+      ]);
+      const structures = new StructureMap(10, 10);
+      addTower(structures, 2, 1);
+      const water = new WaterMap(10, 10);
+      water.recompute(map, structures);
+
+      expect(water.isWatered(3, 0)).toBe(true); // sanity: road is on the grid
+      expect(isStructureWatered({ footprint: policeFootprint(4, 0) }, water)).toBe(true);
+    });
+
+    it('returns false when adjacent only to an UNwatered road (no tower connected)', () => {
+      const map = makeMap(10, 10, [{ x: 5, y: 0, type: TileType.ROAD }]);
+      const structures = new StructureMap(10, 10);
+      const water = new WaterMap(10, 10);
+      water.recompute(map, structures);
+
+      expect(isStructureWatered({ footprint: policeFootprint(5, 1) }, water)).toBe(false);
+    });
+
+    it('returns false when far from any watered cell', () => {
+      const map = makeMap(10, 10, [{ x: 0, y: 0, type: TileType.ROAD }]);
+      const structures = new StructureMap(10, 10);
+      addTower(structures, 0, 1);
+      const water = new WaterMap(10, 10);
+      water.recompute(map, structures);
+
+      expect(isStructureWatered({ footprint: policeFootprint(7, 7) }, water)).toBe(false);
     });
   });
 

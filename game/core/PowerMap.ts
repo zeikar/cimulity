@@ -68,3 +68,34 @@ export function isBuildingPowered(
   }
   return false;
 }
+
+const ORTHOGONAL_OFFSETS = [
+  { dx: 0, dy: -1 },
+  { dx: 0, dy: 1 },
+  { dx: -1, dy: 0 },
+  { dx: 1, dy: 0 },
+] as const;
+
+/**
+ * Grid-connectivity predicate for player-placed STRUCTURES. Unlike a building,
+ * a structure's own footprint cells are never marked powered (the propagation
+ * excludes all structure-owned cells), so scanning the footprint like
+ * `isBuildingPowered` would always be false. A structure is connected to the
+ * power grid iff any cell orthogonally adjacent to its footprint is powered —
+ * i.e. it sits next to a powered road (or a powered cell). Used by the
+ * inspect-tile panel to report service structures (police/fire/hospital/school)
+ * as powered when wired into the grid, matching how the player reasons.
+ * Adjacent cells inside the footprint read `false` (excluded), so they never
+ * produce a false positive.
+ */
+export function isStructurePowered(
+  structure: { footprint: ReadonlyArray<{ x: number; y: number }> },
+  power: PowerMap,
+): boolean {
+  for (const c of structure.footprint) {
+    for (const o of ORTHOGONAL_OFFSETS) {
+      if (power.isPowered(c.x + o.dx, c.y + o.dy)) return true;
+    }
+  }
+  return false;
+}

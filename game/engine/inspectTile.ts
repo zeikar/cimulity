@@ -18,9 +18,9 @@ import type { World } from '../core/World';
 import type { TileCoord } from '../types/coordinates';
 import type { TileType } from '../core/Tile';
 import type { BuildingType } from '../core/Building';
-import type { StructureType } from '../core/StructureMap';
-import { isBuildingPowered } from '../core/PowerMap';
-import { isBuildingWatered } from '../core/WaterMap';
+import type { Structure, StructureType } from '../core/StructureMap';
+import { isBuildingPowered, isStructurePowered, type PowerMap } from '../core/PowerMap';
+import { isBuildingWatered, isStructureWatered, type WaterMap } from '../core/WaterMap';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from '../core/ServiceCoverageMap';
 
 export interface TileBuildingInfo {
@@ -71,6 +71,28 @@ export interface TileInfo {
 }
 
 /**
+ * Power readout for a structure. A power plant is the source (always powered);
+ * a water tower sits off the power grid (never powered); every other service
+ * structure is a consumer reported by grid connectivity.
+ */
+function structurePowered(structure: Structure, power: PowerMap): boolean {
+  if (structure.type === 'power_plant') return true;
+  if (structure.type === 'water_tower') return false;
+  return isStructurePowered(structure, power);
+}
+
+/**
+ * Water readout for a structure — mirror of {@link structurePowered}. A water
+ * tower is the source; a power plant sits off the water grid; every other
+ * service structure is reported by grid connectivity.
+ */
+function structureWatered(structure: Structure, water: WaterMap): boolean {
+  if (structure.type === 'water_tower') return true;
+  if (structure.type === 'power_plant') return false;
+  return isStructureWatered(structure, water);
+}
+
+/**
  * Snapshot the inspectable state of a single tile. Returns null for
  * out-of-bounds coordinates (no tile exists there).
  */
@@ -94,21 +116,22 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
   // Report each utility at the entity level, not the raw cell, to match how the
   // simulation reasons about it:
   //  - A structure is a SOURCE for exactly one utility (a power plant for power, a
-  //    water tower for water). Its footprint cells are never marked served on EITHER
-  //    network, but reporting "No Power" on the plant / "No Water" on the tower is
-  //    nonsensical — show the source utility active, and the OTHER inactive (the
-  //    structure does not sit on that network).
+  //    water tower for water): show its source utility active and the OTHER inactive
+  //    (it does not sit on that network). Every OTHER service structure (police, fire,
+  //    hospital, school, park) is a grid CONSUMER — its footprint cells are never on
+  //    either network, so report grid CONNECTIVITY (adjacent to a powered/watered
+  //    cell) so a station wired next to a powered road reads "Powered", not "No Power".
   //  - A building counts as served if ANY footprint cell is (isBuildingPowered /
   //    isBuildingWatered) — the predicate growth uses; per-cell would falsely show
   //    interior tiles as unserved even though the building is served.
   //  - A bare tile reports its own cell.
   const powered = structure
-    ? structure.type === 'power_plant'
+    ? structurePowered(structure, power)
     : building
       ? isBuildingPowered(building, power)
       : power.isPowered(coord.x, coord.y);
   const watered = structure
-    ? structure.type === 'water_tower'
+    ? structureWatered(structure, water)
     : building
       ? isBuildingWatered(building, water)
       : water.isWatered(coord.x, coord.y);

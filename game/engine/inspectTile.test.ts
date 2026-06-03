@@ -150,6 +150,52 @@ describe('inspectTile', () => {
     expect(inspectTile(world, { x: 3, y: 2 })!.watered).toBe(true);
   });
 
+  it('reports a service structure (police) as powered AND watered when wired next to a powered/watered road', () => {
+    const world = makeWorld(8);
+    // Road line (2,0)-(4,0). Plant at (2,1) powers it; tower at (4,1) waters it.
+    for (const x of [2, 3, 4]) world.getMap().setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      footprint: [{ x: 2, y: 1 }, { x: 3, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 2 }],
+      anchor: { x: 2, y: 1 },
+    });
+    world.getStructureMap().addStructure({
+      type: 'water_tower',
+      footprint: [{ x: 4, y: 1 }],
+      anchor: { x: 4, y: 1 },
+    });
+    // Police 2×2 at (5,0)..(6,1): cell (5,0) is adjacent to powered+watered road (4,0).
+    world.getStructureMap().addStructure({
+      type: 'police_station',
+      footprint: [{ x: 5, y: 0 }, { x: 6, y: 0 }, { x: 5, y: 1 }, { x: 6, y: 1 }],
+      anchor: { x: 5, y: 0 },
+    });
+    world.recomputePower();
+    world.recomputeWater();
+
+    const info = inspectTile(world, { x: 5, y: 0 })!;
+    expect(info.structure).toEqual({ type: 'police_station' });
+    expect(info.powered).toBe(true);
+    expect(info.watered).toBe(true);
+  });
+
+  it('reports a service structure as NOT powered/watered when the adjacent road has no plant/tower', () => {
+    const world = makeWorld(8);
+    // A plain road with no power plant / water tower → ungridded.
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    world.getStructureMap().addStructure({
+      type: 'fire_station',
+      footprint: [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }],
+      anchor: { x: 1, y: 1 },
+    });
+    world.recomputePower();
+    world.recomputeWater();
+
+    const info = inspectTile(world, { x: 1, y: 1 })!;
+    expect(info.powered).toBe(false);
+    expect(info.watered).toBe(false);
+  });
+
   it('reports land value in [0, 1]', () => {
     const world = makeWorld();
     const info = inspectTile(world, { x: 1, y: 1 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PowerMap, isBuildingPowered } from './PowerMap';
+import { PowerMap, isBuildingPowered, isStructurePowered } from './PowerMap';
 import { GameMap } from './Map';
 import { StructureMap } from './StructureMap';
 import { TileType, createTile } from './Tile';
@@ -164,6 +164,55 @@ describe('PowerMap', () => {
         ],
       };
       expect(isBuildingPowered(building, power)).toBe(false);
+    });
+  });
+
+  describe('isStructurePowered helper (grid connectivity for service structures)', () => {
+    // A 2×2 service structure (e.g. police_station) at NW anchor (ox, oy).
+    const policeFootprint = (ox: number, oy: number) => [
+      { x: ox,     y: oy     },
+      { x: ox + 1, y: oy     },
+      { x: ox,     y: oy + 1 },
+      { x: ox + 1, y: oy + 1 },
+    ];
+
+    it('returns true when the structure is orthogonally adjacent to a POWERED road', () => {
+      // Powered road (2,0),(3,0) seeded by a plant at (2,1). Police at (4,0)..(5,1):
+      // its cell (4,0) is adjacent to powered road (3,0).
+      const map = makeMap(10, 10, [
+        { x: 2, y: 0, type: TileType.ROAD },
+        { x: 3, y: 0, type: TileType.ROAD },
+      ]);
+      const structures = new StructureMap(10, 10);
+      addPlant(structures, 2, 1);
+      const power = new PowerMap(10, 10);
+      power.recompute(map, structures);
+
+      expect(power.isPowered(3, 0)).toBe(true); // sanity: road is on the grid
+      expect(isStructurePowered({ footprint: policeFootprint(4, 0) }, power)).toBe(true);
+    });
+
+    it('returns false when adjacent only to an UNpowered road (no plant connected)', () => {
+      // Road at (5,0) with NO plant → unpowered. Police at (5,1)..(6,2) touches it but
+      // gets no power — matches "built next to a road but the grid has no power yet".
+      const map = makeMap(10, 10, [{ x: 5, y: 0, type: TileType.ROAD }]);
+      const structures = new StructureMap(10, 10);
+      const power = new PowerMap(10, 10);
+      power.recompute(map, structures);
+
+      expect(isStructurePowered({ footprint: policeFootprint(5, 1) }, power)).toBe(false);
+    });
+
+    it('returns false when far from any powered cell', () => {
+      const map = makeMap(10, 10, [
+        { x: 0, y: 0, type: TileType.ROAD },
+      ]);
+      const structures = new StructureMap(10, 10);
+      addPlant(structures, 0, 1);
+      const power = new PowerMap(10, 10);
+      power.recompute(map, structures);
+
+      expect(isStructurePowered({ footprint: policeFootprint(7, 7) }, power)).toBe(false);
     });
   });
 
