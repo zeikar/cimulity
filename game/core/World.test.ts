@@ -2492,6 +2492,34 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     const expected = HAPPINESS_W_LAND * 0 + HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1;
     expect(h).toBeCloseTo(expected, 5);
   });
+
+  it('recomputeLandValue() invalidates the happiness cache so the next getHappiness() reflects the new land value', () => {
+    // Reproduces the stale-cache gap: call getHappiness() to populate the cache,
+    // then place a road (raises land value), call public recomputeLandValue(), and
+    // assert the next getHappiness() is NOT the same as the old cached value.
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+    // Seed a residential building with no road → land value low → happiness low.
+    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    world.setMoney(STARTING_FUNDS);
+    // Prime the cache — happiness is computed and stored.
+    const hBefore = world.getHappiness();
+
+    // Place a road adjacent to the residential anchor to raise land value.
+    map.setTile(0, 1, createTile(0, 1, TileType.ROAD));
+    // Force a land-value recompute via the public path (not markLandValueDirty).
+    world.recomputeLandValue();
+
+    // After recomputeLandValue(), the next read must re-derive happiness — NOT return hBefore.
+    const hAfter = world.getHappiness();
+    expect(hAfter).toBeGreaterThan(hBefore);
+  });
 });
 
 describe('World.getHappiness() — hydration freshness', () => {

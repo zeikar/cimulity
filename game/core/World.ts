@@ -374,6 +374,8 @@ export class World {
       school: this.getSchoolCoverageMap(),
     });
     this.landValueDirty = false;
+    // Happiness reads land value; refreshing land value invalidates the derived happiness cache.
+    this.happinessDirty = true;
   }
 
   /** Mark land value as needing recomputation on the next recomputeLandValueIfDirty() call. */
