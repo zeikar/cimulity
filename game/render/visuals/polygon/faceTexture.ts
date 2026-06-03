@@ -14,10 +14,10 @@
  * one deterministically from its anchor (see `wallVariant`) so a city mixes
  * facades without any single building flickering between them.
  *
- * This module also preloads the terrain grass texture (a single COLOUR tile;
- * `getGrassTexture`), so `PixiApp.init` keeps one `preloadFaceTextures()` call
- * and reuses the same `loadTexture` plumbing. The grass tile is consumed by
- * `DiamondTileVisual` (terrain), not by the cube faces.
+ * This module also preloads the terrain grass + water textures (single COLOUR
+ * tiles; `getGrassTexture` / `getWaterTexture`), so `PixiApp.init` keeps one
+ * `preloadFaceTextures()` call and reuses the same `loadTexture` plumbing. Those
+ * tiles are consumed by `DiamondTileVisual` (terrain), not by the cube faces.
  */
 
 import { Assets, Matrix, Texture } from 'pixi.js';
@@ -35,6 +35,7 @@ const BUILDING_TYPES: readonly BuildingType[] = ['residential', 'commercial', 'i
 
 const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
 const GRASS_URL = `${BASE_PATH}/textures/grass.png`;
+const WATER_URL = `${BASE_PATH}/textures/water.png`;
 const wallUrl = (type: BuildingType, variant: number) =>
   `${BASE_PATH}/textures/${type}-${variant}.png`;
 
@@ -46,6 +47,7 @@ const WALL_TILE_PX = 50;
 const wallTextures = new Map<BuildingType, Array<Texture | null>>();
 let roofTexture: Texture | null = null;
 let grassTexture: Texture | null = null;
+let waterTexture: Texture | null = null;
 
 function loadTexture(url: string): Promise<Texture | null> {
   // No asset loader without a browser (headless vitest mounts visuals directly).
@@ -63,12 +65,12 @@ function loadTexture(url: string): Promise<Texture | null> {
 }
 
 /**
- * Preload every wall variant + the roof texture + the terrain grass texture.
- * Call from PixiApp.init BEFORE the first render so cube GraphicsContexts (cached
- * by shape) bake the loaded textures + correct-size matrices rather than a flat
- * fallback. The payload is small, so blocking the first frame keeps the
- * cached-context path simple with no perceptible startup stall. Faces (and grass
- * tiles) fall back to a flat fill if a load fails.
+ * Preload every wall variant + the roof texture + the terrain grass and water
+ * textures. Call from PixiApp.init BEFORE the first render so cube
+ * GraphicsContexts (cached by shape) bake the loaded textures + correct-size
+ * matrices rather than a flat fallback. The payload is small, so blocking the
+ * first frame keeps the cached-context path simple with no perceptible startup
+ * stall. Faces and terrain tiles fall back to a flat fill if a load fails.
  */
 export async function preloadFaceTextures(): Promise<void> {
   const jobs: Promise<void>[] = [];
@@ -81,6 +83,7 @@ export async function preloadFaceTextures(): Promise<void> {
   }
   jobs.push(loadTexture(ROOF_URL).then((t) => { roofTexture = t; }));
   jobs.push(loadTexture(GRASS_URL).then((t) => { grassTexture = t; }));
+  jobs.push(loadTexture(WATER_URL).then((t) => { waterTexture = t; }));
   await Promise.all(jobs);
 }
 
@@ -112,6 +115,11 @@ export function getRoofTexture(): Texture | null {
 /** Grass terrain texture (COLOUR), or null until loaded (caller draws flat grass then). */
 export function getGrassTexture(): Texture | null {
   return grassTexture;
+}
+
+/** Water terrain texture (COLOUR), or null until loaded (caller draws flat water then). */
+export function getWaterTexture(): Texture | null {
+  return waterTexture;
 }
 
 /**

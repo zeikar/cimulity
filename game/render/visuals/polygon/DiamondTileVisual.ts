@@ -13,17 +13,18 @@ import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
-import { getGrassTexture } from './faceTexture';
+import { getGrassTexture, getWaterTexture } from './faceTexture';
 
-// Grass texture pixels per grid cell. The 384px grass tile then repeats roughly
-// every 1.5 cells (UV is fed in texture-px; Pixi divides by source size for UVs).
-const GRASS_TEXTURE_PX_PER_CELL = 256;
+// Terrain texture pixels per grid cell (shared by grass + water). A 384px tile
+// then repeats roughly every 1.5 cells (UV is fed in texture-px; Pixi divides by
+// source size for UVs).
+const TERRAIN_TEXTURE_PX_PER_CELL = 256;
 
 // UV of a corner from its shared integer grid-vertex coord. Neighbouring tiles
 // feed identical coords for a shared corner, so the texture is seamless across
 // tile boundaries.
-function grassCornerUv(vx: number, vy: number): Uv {
-  return { u: vx * GRASS_TEXTURE_PX_PER_CELL, v: vy * GRASS_TEXTURE_PX_PER_CELL };
+function terrainCornerUv(vx: number, vy: number): Uv {
+  return { u: vx * TERRAIN_TEXTURE_PX_PER_CELL, v: vy * TERRAIN_TEXTURE_PX_PER_CELL };
 }
 
 // Extra darken applied to rough (ambiguous-slope) tiles on top of Lambert
@@ -81,11 +82,12 @@ function fillTexturedTri(
   });
 }
 
-// One shaded surface triangle. Grass land triangles (texture loaded, non-water)
-// draw the grass texture dimmed by the Lambert factor; everything else — water
-// triangles, non-grass tiles, and the headless / load-failure fallback
-// (grassTex === null) — keeps the existing flat Lambert-shaded colour fill,
-// byte-identical to before.
+// One shaded surface triangle. Land grass triangles draw the grass texture and
+// water triangles draw the water texture (both dimmed by the Lambert factor);
+// everything else — non-grass land tiles and the headless / load-failure
+// fallback (texture === null) — keeps the existing flat Lambert-shaded colour
+// fill, byte-identical to before. UVs come from the shared tile-vertex grid, so
+// both textures are seamless across tile boundaries.
 function shadeTri(
   gfx: Graphics,
   a: ScreenCoord,
@@ -98,14 +100,21 @@ function shadeTri(
   isWater: boolean,
   flatColor: number,
   grassTex: Texture | null,
+  waterTex: Texture | null,
   roughFactor: number,
 ): void {
-  if (grassTex && !isWater) {
+  if (isWater) {
+    if (waterTex) {
+      fillTexturedTri(gfx, a, b, c, uvA, uvB, uvC, waterTex, darken(0xffffff, brightness));
+    } else {
+      fillTri(gfx, a, b, c, darken(WATER_COLOR, brightness), 1.0);
+    }
+  } else if (grassTex) {
     // flatColor already bakes the rough darken; the textured tint starts from
     // white, so apply roughFactor here to keep the rough cue on textured grass.
     fillTexturedTri(gfx, a, b, c, uvA, uvB, uvC, grassTex, darken(0xffffff, brightness * roughFactor));
   } else {
-    fillTri(gfx, a, b, c, darken(isWater ? WATER_COLOR : flatColor, brightness), 1.0);
+    fillTri(gfx, a, b, c, darken(flatColor, brightness), 1.0);
   }
 }
 
@@ -154,16 +163,18 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const bottom = projectTileCornerScreen(tile, 'bottom', c.bottomH);
   const left   = projectTileCornerScreen(tile, 'left',   c.leftH);
 
-  // Grass terrain texture (null until loaded / headless / load-failure).
-  // `grassFill` is non-null only for grass tiles with the texture available; the
-  // corner UVs come from the shared integer grid-vertex coords (top=(x,y),
-  // right=(x+1,y), bottom=(x+1,y+1), left=(x,y+1)) so the texture is seamless
-  // across tile boundaries.
+  // Terrain textures (null until loaded / headless / load-failure). `grassFill`
+  // is non-null only for grass tiles; `waterFill` applies to any submerged
+  // triangle (coastal grass tiles drop corners to sea level) so it is not
+  // type-gated — the per-triangle `isWater` flag gates it. Corner UVs come from
+  // the shared integer grid-vertex coords (top=(x,y), right=(x+1,y),
+  // bottom=(x+1,y+1), left=(x,y+1)) so both textures are seamless across tiles.
   const grassFill: Texture | null = input.type === 'grass' ? getGrassTexture() : null;
-  const uvTop    = grassCornerUv(input.x,     input.y);
-  const uvRight  = grassCornerUv(input.x + 1, input.y);
-  const uvBottom = grassCornerUv(input.x + 1, input.y + 1);
-  const uvLeft   = grassCornerUv(input.x,     input.y + 1);
+  const waterFill: Texture | null = getWaterTexture();
+  const uvTop    = terrainCornerUv(input.x,     input.y);
+  const uvRight  = terrainCornerUv(input.x + 1, input.y);
+  const uvBottom = terrainCornerUv(input.x + 1, input.y + 1);
+  const uvLeft   = terrainCornerUv(input.x,     input.y + 1);
 
   // Filled deformed top
   gfx.beginPath();
@@ -181,8 +192,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // seam-safety bleed; for brightness === 1.0 the overdraw is bit-identical).
   const plan = planDiamondShading(c);
   if (plan.diagonal === 'tb') {
-    shadeTri(gfx, bottom, left,  top, uvBottom, uvLeft,  uvTop, plan.brightnessWest, tbWestWater, fillColor, grassFill, roughFactor);
-    shadeTri(gfx, bottom, right, top, uvBottom, uvRight, uvTop, plan.brightnessEast, tbEastWater, fillColor, grassFill, roughFactor);
+    shadeTri(gfx, bottom, left,  top, uvBottom, uvLeft,  uvTop, plan.brightnessWest, tbWestWater, fillColor, grassFill, waterFill, roughFactor);
+    shadeTri(gfx, bottom, right, top, uvBottom, uvRight, uvTop, plan.brightnessEast, tbEastWater, fillColor, grassFill, waterFill, roughFactor);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(top.x, top.y);
@@ -190,8 +201,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
     }
   } else {
-    shadeTri(gfx, left, top,    right, uvLeft, uvTop,    uvRight, plan.brightnessNorth, lrNorthWater, fillColor, grassFill, roughFactor);
-    shadeTri(gfx, left, bottom, right, uvLeft, uvBottom, uvRight, plan.brightnessSouth, lrSouthWater, fillColor, grassFill, roughFactor);
+    shadeTri(gfx, left, top,    right, uvLeft, uvTop,    uvRight, plan.brightnessNorth, lrNorthWater, fillColor, grassFill, waterFill, roughFactor);
+    shadeTri(gfx, left, bottom, right, uvLeft, uvBottom, uvRight, plan.brightnessSouth, lrSouthWater, fillColor, grassFill, waterFill, roughFactor);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(left.x, left.y);
