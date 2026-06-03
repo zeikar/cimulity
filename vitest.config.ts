@@ -60,6 +60,7 @@ export default defineConfig({
         'game/render/visuals/polygon/cubePalette.ts',
         'game/render/visuals/polygon/powerPlantGeometry.ts',
         'game/render/visuals/polygon/waterTowerGeometry.ts',
+        'game/render/visuals/polygon/serviceStructureGeometry.ts',
         'game/core/roadNetworkPropagation.ts',
         'game/core/WaterMap.ts',
         'game/core/serviceCoveragePropagation.ts',

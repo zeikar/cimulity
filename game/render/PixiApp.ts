@@ -10,6 +10,7 @@ import { SelectionRenderer } from './SelectionRenderer';
 import { UtilityStatusOverlay } from './overlays/UtilityStatusOverlay';
 import { PowerPlantRenderer } from './PowerPlantRenderer';
 import { WaterTowerRenderer } from './WaterTowerRenderer';
+import { ServiceStructureRenderer } from './ServiceStructureRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
@@ -31,6 +32,7 @@ export class PixiApp {
   private utilityOverlay: UtilityStatusOverlay | null = null;
   private powerPlantRenderer: PowerPlantRenderer | null = null;
   private waterTowerRenderer: WaterTowerRenderer | null = null;
+  private serviceStructureRenderer: ServiceStructureRenderer | null = null;
   private terrainContainer: Container | null = null;
   private buildingContainer: Container | null = null;
   private overlayContainer: Container | null = null;
@@ -113,6 +115,7 @@ export class PixiApp {
     this.tileRenderer = new TileRenderer(this.terrainContainer, this.buildingContainer, registry);
     this.powerPlantRenderer = new PowerPlantRenderer(this.buildingContainer);
     this.waterTowerRenderer = new WaterTowerRenderer(this.buildingContainer);
+    this.serviceStructureRenderer = new ServiceStructureRenderer(this.buildingContainer);
     this.utilityOverlay = new UtilityStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
@@ -122,6 +125,7 @@ export class PixiApp {
     this.tileRenderer.render(this.world, visibleBounds);
     this.powerPlantRenderer.render(this.world, visibleBounds);
     this.waterTowerRenderer.render(this.world, visibleBounds);
+    this.serviceStructureRenderer.render(this.world, visibleBounds);
 
     // Setup render loop
     this.app.ticker.add(() => {
@@ -134,6 +138,9 @@ export class PixiApp {
       }
       if (this.waterTowerRenderer && this.world) {
         this.waterTowerRenderer.render(this.world, visibleBounds);
+      }
+      if (this.serviceStructureRenderer && this.world) {
+        this.serviceStructureRenderer.render(this.world, visibleBounds);
       }
       if (this.utilityOverlay && this.world) {
         this.utilityOverlay.render(this.world, visibleBounds);
@@ -265,6 +272,7 @@ export class PixiApp {
     this.tileRenderer?.destroy();
     this.powerPlantRenderer?.destroy();
     this.waterTowerRenderer?.destroy();
+    this.serviceStructureRenderer?.destroy();
     this.utilityOverlay?.destroy();
     this.selectionRenderer?.destroy();
 
@@ -291,6 +299,7 @@ export class PixiApp {
     this.tileRenderer = null;
     this.powerPlantRenderer = null;
     this.waterTowerRenderer = null;
+    this.serviceStructureRenderer = null;
     this.utilityOverlay = null;
     this.selectionRenderer = null;
     this.terrainContainer = null;
