@@ -4,6 +4,7 @@
  */
 
 import { Graphics, Container } from 'pixi.js';
+import type { Texture } from 'pixi.js';
 import { projectTileCornerScreen } from '@/game/render/IsoTransform';
 import type { ScreenCoord } from '@/game/types/coordinates';
 import { tileFillColor, WATER_COLOR, cornersRenderAsWater } from '../palette';
@@ -11,6 +12,24 @@ import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 import { planDiamondShading } from './diamondShading';
+import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
+import { getGrassTexture } from './faceTexture';
+
+// Grass texture pixels per grid cell. The 384px grass tile then repeats roughly
+// every 1.5 cells (UV is fed in texture-px; Pixi divides by source size for UVs).
+const GRASS_TEXTURE_PX_PER_CELL = 256;
+
+// UV of a corner from its shared integer grid-vertex coord. Neighbouring tiles
+// feed identical coords for a shared corner, so the texture is seamless across
+// tile boundaries.
+function grassCornerUv(vx: number, vy: number): Uv {
+  return { u: vx * GRASS_TEXTURE_PX_PER_CELL, v: vy * GRASS_TEXTURE_PX_PER_CELL };
+}
+
+// Extra darken applied to rough (ambiguous-slope) tiles on top of Lambert
+// shading, as a readability cue. Baked into the flat fill colour AND carried
+// into the textured-grass tint so textured rough tiles keep the same cue.
+const ROUGH_SHAPE_DARKEN = 0.85;
 
 function darken(color: number, factor: number): number {
   const r = Math.round(((color >> 16) & 0xff) * factor);
@@ -35,6 +54,61 @@ function fillTri(
   gfx.fill({ color, alpha });
 }
 
+// Same triangle path as fillTri, but filled with a texture skewed onto the
+// triangle (textureSpace 'global' so the matrix maps texture-px -> local-px) and
+// tinted — for grass, tint = white × Lambert factor so the texture shows dimmed.
+function fillTexturedTri(
+  gfx: Graphics,
+  a: ScreenCoord,
+  b: ScreenCoord,
+  c: ScreenCoord,
+  uvA: Uv,
+  uvB: Uv,
+  uvC: Uv,
+  texture: Texture,
+  tint: number,
+): void {
+  gfx.beginPath();
+  gfx.moveTo(a.x, a.y);
+  gfx.lineTo(b.x, b.y);
+  gfx.lineTo(c.x, c.y);
+  gfx.closePath();
+  gfx.fill({
+    texture,
+    matrix: terrainTriFillMatrix(a, b, c, uvA, uvB, uvC),
+    color: tint,
+    textureSpace: 'global',
+  });
+}
+
+// One shaded surface triangle. Grass land triangles (texture loaded, non-water)
+// draw the grass texture dimmed by the Lambert factor; everything else — water
+// triangles, non-grass tiles, and the headless / load-failure fallback
+// (grassTex === null) — keeps the existing flat Lambert-shaded colour fill,
+// byte-identical to before.
+function shadeTri(
+  gfx: Graphics,
+  a: ScreenCoord,
+  b: ScreenCoord,
+  c: ScreenCoord,
+  uvA: Uv,
+  uvB: Uv,
+  uvC: Uv,
+  brightness: number,
+  isWater: boolean,
+  flatColor: number,
+  grassTex: Texture | null,
+  roughFactor: number,
+): void {
+  if (grassTex && !isWater) {
+    // flatColor already bakes the rough darken; the textured tint starts from
+    // white, so apply roughFactor here to keep the rough cue on textured grass.
+    fillTexturedTri(gfx, a, b, c, uvA, uvB, uvC, grassTex, darken(0xffffff, brightness * roughFactor));
+  } else {
+    fillTri(gfx, a, b, c, darken(isWater ? WATER_COLOR : flatColor, brightness), 1.0);
+  }
+}
+
 function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const h = input.renderHeight ?? 0;
   const c = input.cornerHeights ?? { topH: h, rightH: h, bottomH: h, leftH: h };
@@ -47,7 +121,11 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // visibly darker than its (truly flat) neighbors. Skip the darken when the rendered
   // surface is itself flat (all 4 corner heights equal) — Lambert is already 1.0 there.
   const renderedFlat = c.topH === c.rightH && c.rightH === c.bottomH && c.bottomH === c.leftH;
-  const fillColor = (input.shape === 'rough' && !renderedFlat) ? darken(color, 0.85) : color;
+  const isRough = input.shape === 'rough' && !renderedFlat;
+  const fillColor = isRough ? darken(color, ROUGH_SHAPE_DARKEN) : color;
+  // Same rough cue, as a multiplier — carried into the textured-grass tint
+  // (which starts from white) so textured rough tiles match the flat path.
+  const roughFactor = isRough ? ROUGH_SHAPE_DARKEN : 1;
 
   // Per-triangle "all-3 corners submerged" check: a triangle whose 3 corners
   // are all at or below SEA_LEVEL renders as water, even when the tile's own
@@ -76,6 +154,17 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const bottom = projectTileCornerScreen(tile, 'bottom', c.bottomH);
   const left   = projectTileCornerScreen(tile, 'left',   c.leftH);
 
+  // Grass terrain texture (null until loaded / headless / load-failure).
+  // `grassFill` is non-null only for grass tiles with the texture available; the
+  // corner UVs come from the shared integer grid-vertex coords (top=(x,y),
+  // right=(x+1,y), bottom=(x+1,y+1), left=(x,y+1)) so the texture is seamless
+  // across tile boundaries.
+  const grassFill: Texture | null = input.type === 'grass' ? getGrassTexture() : null;
+  const uvTop    = grassCornerUv(input.x,     input.y);
+  const uvRight  = grassCornerUv(input.x + 1, input.y);
+  const uvBottom = grassCornerUv(input.x + 1, input.y + 1);
+  const uvLeft   = grassCornerUv(input.x,     input.y + 1);
+
   // Filled deformed top
   gfx.beginPath();
   gfx.moveTo(top.x, top.y);
@@ -91,11 +180,9 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // brightness factor differs from 1.0 (the base fill stays visible only as the
   // seam-safety bleed; for brightness === 1.0 the overdraw is bit-identical).
   const plan = planDiamondShading(c);
-  const shadeColor = (factor: number, isWater: boolean) =>
-    darken(isWater ? WATER_COLOR : fillColor, factor);
   if (plan.diagonal === 'tb') {
-    fillTri(gfx, bottom, left,  top, shadeColor(plan.brightnessWest, tbWestWater), 1.0);
-    fillTri(gfx, bottom, right, top, shadeColor(plan.brightnessEast, tbEastWater), 1.0);
+    shadeTri(gfx, bottom, left,  top, uvBottom, uvLeft,  uvTop, plan.brightnessWest, tbWestWater, fillColor, grassFill, roughFactor);
+    shadeTri(gfx, bottom, right, top, uvBottom, uvRight, uvTop, plan.brightnessEast, tbEastWater, fillColor, grassFill, roughFactor);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(top.x, top.y);
@@ -103,8 +190,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
     }
   } else {
-    fillTri(gfx, left, top,    right, shadeColor(plan.brightnessNorth, lrNorthWater), 1.0);
-    fillTri(gfx, left, bottom, right, shadeColor(plan.brightnessSouth, lrSouthWater), 1.0);
+    shadeTri(gfx, left, top,    right, uvLeft, uvTop,    uvRight, plan.brightnessNorth, lrNorthWater, fillColor, grassFill, roughFactor);
+    shadeTri(gfx, left, bottom, right, uvLeft, uvBottom, uvRight, plan.brightnessSouth, lrSouthWater, fillColor, grassFill, roughFactor);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(left.x, left.y);

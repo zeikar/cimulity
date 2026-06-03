@@ -47,6 +47,7 @@ export default defineConfig({
         'game/render/visuals/polygon/cubeBuildingZIndex.ts',
         'game/render/visuals/polygon/DiamondOOBSkirt.ts',
         'game/render/visuals/polygon/diamondShading.ts',
+        'game/render/visuals/polygon/terrainTriFillMatrix.ts',
         'game/render/visuals/lighting.ts',
         'game/core/Terrain.ts',
         'game/core/terrainSlope.ts',
