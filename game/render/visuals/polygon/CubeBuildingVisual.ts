@@ -30,10 +30,13 @@ import {
   wallVariant,
   getRoofTexture,
   roofFaceFillMatrix,
+  wallFaceRepeats,
 } from './faceTexture';
+import { windowSeed, windowCellLit, windowCellQuads } from './windowLights';
 import type { Texture, Matrix } from 'pixi.js';
 import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
+import type { BuildingType } from '@/game/core/Building';
 import type { Terrain } from '@/game/core/Terrain';
 import {
   shadeColor,
@@ -62,31 +65,49 @@ function rightColor(input: BuildingVisualInput): number {
   return shadeColor(0xffffff, 0.75 * densityShade(input.density));
 }
 
-// --- Window lights (prototype) -------------------------------------------
-// Residential walls have transparent (alpha) windows. A glass-colour fill drawn
-// UNDER the wall texture shows through those holes as the window glass, so the
-// "lights" are a render-time choice, not baked into the texture.
-const GLASS_LIT = 0xffcf8a;  // warm interior glow
-const GLASS_DARK = 0x26303f; // unlit cool glass
+// --- Window lights -----------------------------------------------------------
+// Per-type glass colour pairs: lit = emissive interior glow, dark = unlit glass.
+// Distinct palettes give residential/commercial/industrial a clear visual identity.
+const GLASS_COLORS: Record<BuildingType, { lit: number; dark: number }> = {
+  residential: { lit: 0xffcf8a, dark: 0x26303f }, // warm amber / cool slate
+  commercial:  { lit: 0xbfe3ff, dark: 0x1e2a38 }, // cool blue-white / deep blue
+  industrial:  { lit: 0xffe2a8, dark: 0x2a2824 }, // dim warm / dark brown-grey
+};
 
-// Stable per-building lit/unlit choice (hash of buildingId, salted so it does
-// not correlate with wallVariant which hashes the same id). ~3/5 of buildings lit.
-function windowLit(buildingId: number): boolean {
-  let h = (buildingId ^ 0x9e3779b9) | 0;
-  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
-  h = (h ^ (h >>> 16)) >>> 0;
-  return h % 5 < 3;
+// Glass backing colour for a single window cell or a whole face.
+// Lit cells read as emissive (brightness floored so the shadow face still glows);
+// unlit cells take the full face shading like the wall.
+function glassColor(type: BuildingType, lit: boolean, faceFactor: number, density: 0 | 1 | 2): number {
+  const { lit: litColor, dark: darkColor } = GLASS_COLORS[type];
+  if (lit) {
+    const factor = (0.7 + 0.3 * faceFactor) * densityShade(density);
+    return shadeColor(litColor, factor);
+  }
+  return shadeColor(darkColor, faceFactor * densityShade(density));
 }
 
-// Glass backing colour for a face. Lit windows read as emissive, so they keep
-// most of their brightness even on the shadow side (face shading is floored);
-// unlit glass takes the full face shading like the wall.
-function windowGlass(input: BuildingVisualInput, faceFactor: number): number {
-  if (windowLit(input.buildingId)) {
-    const emissive = 0.7 + 0.3 * faceFactor; // floor so the shadow face still glows
-    return shadeColor(GLASS_LIT, emissive * densityShade(input.density));
+// Draw per-window backing on a wall face: dark base for the whole face, then
+// individual lit cells on top. The wall texture is drawn after this (opaque wall +
+// frames cover everything except the transparent window holes).
+function drawWindowBacking(
+  ctx: GraphicsContext,
+  face: NonNullable<ReturnType<typeof cubeFacePolygons>>['left'],
+  type: BuildingType,
+  density: 0 | 1 | 2,
+  seed: number,
+  faceFactor: number,
+  ox: number,
+  oy: number,
+): void {
+  const { repeatX, repeatY } = wallFaceRepeats(face);
+  // Dark backing for the entire face.
+  fillPoly(ctx, face, glassColor(type, false, faceFactor, density), ox, oy);
+  // Overlay lit cells where the window is on.
+  for (const cell of windowCellQuads(face, repeatX, repeatY)) {
+    if (windowCellLit(seed, cell.col, cell.row)) {
+      fillPoly(ctx, cell.points, glassColor(type, true, faceFactor, density), ox, oy);
+    }
   }
-  return shadeColor(GLASS_DARK, faceFactor * densityShade(input.density));
 }
 
 // ---------------------------------------------------------------------------
@@ -119,13 +140,11 @@ function geometryKey(input: BuildingVisualInput): string {
   return `${input.type}:${input.level}:${input.density}:${shape}`;
 }
 
-// Faces key: geometry plus the facade variant, so same-shape buildings with
-// different wall textures cache as distinct face contexts. Residential also keys
-// on the window-lit state so two same-shape/variant buildings that differ only in
-// lit/unlit windows don't share one cached context.
+// Faces key: geometry plus the facade variant AND the per-building window seed,
+// so buildings with different window-light patterns don't share one cached context.
 function facesKey(input: BuildingVisualInput): string {
   const base = `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
-  return input.type === 'residential' ? `${base}:${windowLit(input.buildingId) ? 'L' : 'D'}` : base;
+  return `${base}:s${windowSeed(input.buildingId)}`;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
@@ -224,14 +243,15 @@ function drawCubeFaces(
 ): void {
   const variant = wallVariant(input.buildingId);
   const wallTex = getWallTexture(input.type, variant);
+  const seed = windowSeed(input.buildingId);
 
-  // Residential walls have transparent windows — paint the glass backing first so
-  // it shows through the holes; the wall texture then draws on top (opaque wall +
-  // frames cover the rest). Other types use opaque walls, so no backing is needed.
-  if (input.type === 'residential') {
-    fillPoly(ctx, faces.left, windowGlass(input, 0.55), ox, oy);
-    fillPoly(ctx, faces.right, windowGlass(input, 0.75), ox, oy);
-  }
+  // Paint per-window glass backing BEFORE the wall texture so transparent window
+  // holes in the texture reveal the correct lit/unlit glass colour beneath.
+  // All zone types get this treatment; commercial/industrial walls are currently
+  // opaque, so their backing is hidden — harmless, and ready when those textures
+  // gain transparency.
+  drawWindowBacking(ctx, faces.left, input.type, input.density, seed, 0.55, ox, oy);
+  drawWindowBacking(ctx, faces.right, input.type, input.density, seed, 0.75, ox, oy);
 
   drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
   drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
