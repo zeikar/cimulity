@@ -43,7 +43,25 @@ const wallUrl = (type: BuildingType, variant: number) =>
  *  => more, smaller windows per wall. Pixel-art walls use a small (~64px) source
  *  texture, so this is sized to magnify it slightly (chunky dots) rather than
  *  minify. */
-const WALL_TILE_PX = 96;
+export const WALL_TILE_PX = 96;
+
+/**
+ * Compute how many times the wall texture repeats along each axis for a given
+ * face. The face is ordered [topStart, topEnd, bottomEnd, bottomStart]. Used by
+ * both `wallFaceFillMatrix` (texture mapping) and `windowLights` (cell layout),
+ * so the two stay bit-for-bit aligned.
+ */
+export function wallFaceRepeats(face: ReadonlyArray<Point>): { repeatX: number; repeatY: number } {
+  const o = face[0];
+  const ax = face[1].x - o.x;
+  const ay = face[1].y - o.y;
+  const bx = face[3].x - o.x;
+  const by = face[3].y - o.y;
+  return {
+    repeatX: Math.max(0.01, Math.hypot(ax, ay) / WALL_TILE_PX),
+    repeatY: Math.max(0.01, Math.hypot(bx, by) / WALL_TILE_PX),
+  };
+}
 
 /** type -> [variant0, variant1, ...] textures (null until loaded / on failure). */
 const wallTextures = new Map<BuildingType, Array<Texture | null>>();
@@ -153,8 +171,7 @@ export function wallFaceFillMatrix(
   const bx = face[3].x - o.x;
   const by = face[3].y - o.y;
 
-  const repeatX = Math.max(0.01, Math.hypot(ax, ay) / WALL_TILE_PX);
-  const repeatY = Math.max(0.01, Math.hypot(bx, by) / WALL_TILE_PX);
+  const { repeatX, repeatY } = wallFaceRepeats(face);
 
   // x-column (edge dir) = a/(repeatX*texW), y-column (wall drop) = b/(repeatY*texH).
   return new Matrix(

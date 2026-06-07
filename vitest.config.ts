@@ -70,6 +70,7 @@ export default defineConfig({
         'game/core/HospitalCoverageMap.ts',
         'game/core/SchoolCoverageMap.ts',
         'app/hooks/sampleStats.ts',
+        'game/render/visuals/polygon/windowLights.ts',
       ],
       thresholds: {
         lines: 80,
