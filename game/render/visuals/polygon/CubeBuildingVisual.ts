@@ -15,7 +15,7 @@
  * map position.
  */
 
-import { Graphics, GraphicsContext, Container } from 'pixi.js';
+import { Graphics, GraphicsContext, Container, Texture } from 'pixi.js';
 import { tileToScreen, tileToScreenWithHeight } from '@/game/render/IsoTransform';
 import type { Point } from './cubeGeometry';
 import {
@@ -33,12 +33,13 @@ import {
   wallFaceRepeats,
 } from './faceTexture';
 import { windowSeed, windowCellLit, windowCellQuads } from './windowLights';
-import type { Texture, Matrix } from 'pixi.js';
+import type { Matrix } from 'pixi.js';
 import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 import type { BuildingType } from '@/game/core/Building';
 import type { Terrain } from '@/game/core/Terrain';
 import {
+  baseColor,
   shadeColor,
   densityShade,
 } from './cubePalette';
@@ -245,23 +246,32 @@ function drawCubeFaces(
   const wallTex = getWallTexture(input.type, variant);
   const seed = windowSeed(input.buildingId);
 
-  // Paint per-window glass backing BEFORE the wall texture so transparent window
-  // holes in the texture reveal the correct lit/unlit glass colour beneath.
-  // All zone types get this treatment; commercial/industrial walls are currently
-  // opaque, so their backing is hidden — harmless, and ready when those textures
-  // gain transparency.
-  drawWindowBacking(ctx, faces.left, input.type, input.density, seed, 0.55, ox, oy);
-  drawWindowBacking(ctx, faces.right, input.type, input.density, seed, 0.75, ox, oy);
-
-  drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
-  drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
+  if (wallTex !== Texture.EMPTY) {
+    // Paint per-window glass backing BEFORE the wall texture so transparent window
+    // holes in the texture reveal the correct lit/unlit glass colour beneath.
+    // All zone types get this treatment; commercial/industrial walls are currently
+    // opaque, so their backing is hidden — harmless, and ready when those textures
+    // gain transparency.
+    drawWindowBacking(ctx, faces.left, input.type, input.density, seed, 0.55, ox, oy);
+    drawWindowBacking(ctx, faces.right, input.type, input.density, seed, 0.75, ox, oy);
+    drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
+    drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
+  } else {
+    // Wall texture unavailable — fall back to type-colored flat fill so the failure
+    // path preserves residential/commercial/industrial identity instead of rendering gray.
+    const base = baseColor(input.type);
+    const ds = densityShade(input.density);
+    drawPoly(ctx, faces.left, shadeColor(base, 0.55 * ds), 0.5, ox, oy);
+    drawPoly(ctx, faces.right, shadeColor(base, 0.75 * ds), 0.5, ox, oy);
+  }
 
   // Roof: textured top diamond when the rooftop tile is loaded; flat colour otherwise.
   const roofTex = getRoofTexture();
   if (roofTex) {
     drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, ox, oy), topColor(input), 0.55, ox, oy);
   } else {
-    drawPoly(ctx, faces.top, topColor(input), 0.55, ox, oy);
+    // Roof texture unavailable — flat fill using type-colored palette to preserve identity.
+    drawPoly(ctx, faces.top, shadeColor(baseColor(input.type), densityShade(input.density)), 0.55, ox, oy);
   }
 }
 
