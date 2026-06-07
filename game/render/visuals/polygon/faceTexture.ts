@@ -40,8 +40,10 @@ const wallUrl = (type: BuildingType, variant: number) =>
   `${BASE_PATH}/textures/${type}-${variant}.png`;
 
 /** On-screen size (local px) of one full wall tile before it repeats. Smaller
- *  => more, smaller windows per wall. */
-const WALL_TILE_PX = 50;
+ *  => more, smaller windows per wall. Pixel-art walls use a small (~64px) source
+ *  texture, so this is sized to magnify it slightly (chunky dots) rather than
+ *  minify. */
+const WALL_TILE_PX = 96;
 
 /** type -> [variant0, variant1, ...] textures (null until loaded / on failure). */
 const wallTextures = new Map<BuildingType, Array<Texture | null>>();
@@ -54,7 +56,7 @@ function loadTexture(url: string): Promise<Texture | null> {
   if (typeof window === 'undefined') return Promise.resolve(null);
   return Assets.load<Texture>(url)
     .then((t) => {
-      t.source.scaleMode = 'linear';
+      t.source.scaleMode = 'nearest';
       t.source.wrapMode = 'repeat';
       return t;
     })

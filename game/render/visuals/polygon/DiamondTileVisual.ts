@@ -15,10 +15,11 @@ import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
 import { getGrassTexture, getWaterTexture } from './faceTexture';
 
-// Terrain texture pixels per grid cell (shared by grass + water). A 384px tile
-// then repeats roughly every 1.5 cells (UV is fed in texture-px; Pixi divides by
-// source size for UVs).
-const TERRAIN_TEXTURE_PX_PER_CELL = 256;
+// Terrain texture pixels per grid cell (shared by grass + water). UV is fed in
+// texture-px; Pixi divides by source size for UVs. Lower => the tile stretches
+// across more cells and magnifies more on screen (chunkier dots). At 16, a 96px
+// pixel-art tile repeats every 6 cells and each texel is ~4 screen-px (zoom 1).
+const TERRAIN_TEXTURE_PX_PER_CELL = 16;
 
 // UV of a corner from its shared integer grid-vertex coord. Neighbouring tiles
 // feed identical coords for a shared corner, so the texture is seamless across

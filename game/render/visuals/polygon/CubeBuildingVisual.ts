@@ -36,26 +36,57 @@ import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 import type { Terrain } from '@/game/core/Terrain';
 import {
-  baseColor,
   shadeColor,
   densityShade,
 } from './cubePalette';
 import { cubeBodyHeightPx } from './cubeLift';
 
 function topColor(input: BuildingVisualInput): number {
-  // Top face: building palette × density tint. Brighter / more saturated than
-  // either side face so the cube reads as 3D against the ground.
-  return shadeColor(baseColor(input.type), densityShade(input.density));
+  // Top face: full-brightness white-based tint (face shading only). The roof
+  // texture carries its own colour, so we don't fold in the building-type
+  // palette here — multiplying by white preserves the texture's hue while the
+  // density factor keeps the subtle per-density darkening.
+  return shadeColor(0xffffff, densityShade(input.density));
 }
 
 function leftColor(input: BuildingVisualInput): number {
-  // Left face — strongest shadow side (~55% brightness).
-  return shadeColor(baseColor(input.type), 0.55 * densityShade(input.density));
+  // Left face — strongest shadow side (~55% brightness). Full-colour pixel-art
+  // walls carry their own hue, so the tint is white-based (face shading only);
+  // multiplying by the texture preserves its colour instead of adding a type cast.
+  return shadeColor(0xffffff, 0.55 * densityShade(input.density));
 }
 
 function rightColor(input: BuildingVisualInput): number {
-  // Right face — softer shadow (~75% brightness).
-  return shadeColor(baseColor(input.type), 0.75 * densityShade(input.density));
+  // Right face — softer shadow (~75% brightness). White-based for the same reason
+  // as leftColor (texture supplies the colour).
+  return shadeColor(0xffffff, 0.75 * densityShade(input.density));
+}
+
+// --- Window lights (prototype) -------------------------------------------
+// Residential walls have transparent (alpha) windows. A glass-colour fill drawn
+// UNDER the wall texture shows through those holes as the window glass, so the
+// "lights" are a render-time choice, not baked into the texture.
+const GLASS_LIT = 0xffcf8a;  // warm interior glow
+const GLASS_DARK = 0x26303f; // unlit cool glass
+
+// Stable per-building lit/unlit choice (hash of buildingId, salted so it does
+// not correlate with wallVariant which hashes the same id). ~3/5 of buildings lit.
+function windowLit(buildingId: number): boolean {
+  let h = (buildingId ^ 0x9e3779b9) | 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h % 5 < 3;
+}
+
+// Glass backing colour for a face. Lit windows read as emissive, so they keep
+// most of their brightness even on the shadow side (face shading is floored);
+// unlit glass takes the full face shading like the wall.
+function windowGlass(input: BuildingVisualInput, faceFactor: number): number {
+  if (windowLit(input.buildingId)) {
+    const emissive = 0.7 + 0.3 * faceFactor; // floor so the shadow face still glows
+    return shadeColor(GLASS_LIT, emissive * densityShade(input.density));
+  }
+  return shadeColor(GLASS_DARK, faceFactor * densityShade(input.density));
 }
 
 // ---------------------------------------------------------------------------
@@ -89,9 +120,12 @@ function geometryKey(input: BuildingVisualInput): string {
 }
 
 // Faces key: geometry plus the facade variant, so same-shape buildings with
-// different wall textures cache as distinct face contexts.
+// different wall textures cache as distinct face contexts. Residential also keys
+// on the window-lit state so two same-shape/variant buildings that differ only in
+// lit/unlit windows don't share one cached context.
 function facesKey(input: BuildingVisualInput): string {
-  return `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
+  const base = `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
+  return input.type === 'residential' ? `${base}:${windowLit(input.buildingId) ? 'L' : 'D'}` : base;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
@@ -143,6 +177,24 @@ function drawTexturedPoly(
   ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
 }
 
+// Fill-only path (no stroke) — used for the window-glass backing drawn under a
+// textured wall, where the wall texture supplies the outline.
+function fillPoly(
+  ctx: GraphicsContext,
+  points: ReadonlyArray<Point>,
+  fillColor: number,
+  ox: number,
+  oy: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(points[0].x + ox, points[0].y + oy);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x + ox, points[i].y + oy);
+  }
+  ctx.closePath();
+  ctx.fill({ color: fillColor });
+}
+
 // Shadows must not have outlines — drawPoly always strokes, so we need a separate path.
 function drawShadow(ctx: GraphicsContext, polygon: ReadonlyArray<Point>, ox: number, oy: number): void {
   ctx.beginPath();
@@ -172,6 +224,15 @@ function drawCubeFaces(
 ): void {
   const variant = wallVariant(input.buildingId);
   const wallTex = getWallTexture(input.type, variant);
+
+  // Residential walls have transparent windows — paint the glass backing first so
+  // it shows through the holes; the wall texture then draws on top (opaque wall +
+  // frames cover the rest). Other types use opaque walls, so no backing is needed.
+  if (input.type === 'residential') {
+    fillPoly(ctx, faces.left, windowGlass(input, 0.55), ox, oy);
+    fillPoly(ctx, faces.right, windowGlass(input, 0.75), ox, oy);
+  }
+
   drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
   drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
 
