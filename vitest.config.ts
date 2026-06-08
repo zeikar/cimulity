@@ -71,6 +71,7 @@ export default defineConfig({
         'game/core/SchoolCoverageMap.ts',
         'app/hooks/sampleStats.ts',
         'game/render/visuals/polygon/windowLights.ts',
+        'game/render/roadAutoTile.ts',
       ],
       thresholds: {
         lines: 80,
