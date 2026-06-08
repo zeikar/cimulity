@@ -26,6 +26,7 @@ import { BuildingType } from '../core/Building';
 import type { World } from '../core/World';
 import type { Building } from '../core/Building';
 import type { Terrain } from '../core/Terrain';
+import type { GameMap } from '../core/Map';
 import type { BuildingVisual, MapBounds } from './visuals/TileVisual';
 import type { VisibleTileBounds } from './viewportCulling';
 import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
@@ -127,7 +128,7 @@ export class TileRenderer {
           const tile = map.getTile(x, y);
           if (!tile) continue;
           const index = y * mapWidth + x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds, map);
         }
         for (const [idx, entry] of this.tiles) {
           const x = idx % mapWidth;
@@ -140,7 +141,7 @@ export class TileRenderer {
       } else {
         for (const tile of map.iterateTiles()) {
           const index = tile.y * mapWidth + tile.x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds, map);
         }
       }
 
@@ -169,7 +170,7 @@ export class TileRenderer {
           const tile = map.getTile(x, y);
           if (!tile) continue;
           const index = y * mapWidth + x;
-          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds);
+          this.syncTile(index, tile.x, tile.y, tile.type, tile.level, terrain, mapBounds, map);
         }
         this.pendingTileChanges = [];
       }
@@ -222,14 +223,20 @@ export class TileRenderer {
    * Terrain visual is never unmounted when a building is created on that tile —
    * both layers coexist (see file-level comment).
    */
-  private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain, mapBounds: MapBounds): void {
+  private syncTile(index: number, x: number, y: number, type: TileType, level: number, terrain: Terrain, mapBounds: MapBounds, map: GameMap): void {
     const existing = this.tiles.get(index);
     const visual = this.registry.getTerrain(type);
     const tileElevation = terrain.getTileElevation(x, y);
     const renderHeight = terrain.getRenderHeight(x, y);
     const cornerHeights = tileCornerHeights(terrain, x, y);
     const shape = terrain.getTerrainShape(x, y);
-    const input = { x, y, type, level, tileElevation, renderHeight, cornerHeights, shape, mapBounds };
+    // Road auto-tiling reads orthogonal/diagonal neighbour types to pick a band
+    // shape. Build the probe ONLY for road tiles to avoid per-tile closure churn
+    // on the vast majority (grass/zones/etc.) that ignore it.
+    const roadNeighbors = type === TileType.ROAD
+      ? (dx: number, dy: number) => map.getTile(x + dx, y + dy)?.type === TileType.ROAD
+      : undefined;
+    const input = { x, y, type, level, tileElevation, renderHeight, cornerHeights, shape, mapBounds, roadNeighbors };
 
     if (!existing) {
       const displayObject = visual.mount(input, this.terrainContainer);

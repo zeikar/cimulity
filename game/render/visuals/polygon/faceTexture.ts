@@ -36,6 +36,7 @@ const BUILDING_TYPES: readonly BuildingType[] = ['residential', 'commercial', 'i
 const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
 const GRASS_URL = `${BASE_PATH}/textures/grass.png`;
 const WATER_URL = `${BASE_PATH}/textures/water.png`;
+const ROAD_URL = `${BASE_PATH}/textures/road.png`;
 const wallUrl = (type: BuildingType, variant: number) =>
   `${BASE_PATH}/textures/${type}-${variant}.png`;
 
@@ -68,6 +69,7 @@ const wallTextures = new Map<BuildingType, Array<Texture | null>>();
 let roofTexture: Texture | null = null;
 let grassTexture: Texture | null = null;
 let waterTexture: Texture | null = null;
+let roadTexture: Texture | null = null;
 
 function loadTexture(url: string): Promise<Texture | null> {
   // No asset loader without a browser (headless vitest mounts visuals directly).
@@ -104,6 +106,7 @@ export async function preloadFaceTextures(): Promise<void> {
   jobs.push(loadTexture(ROOF_URL).then((t) => { roofTexture = t; }));
   jobs.push(loadTexture(GRASS_URL).then((t) => { grassTexture = t; }));
   jobs.push(loadTexture(WATER_URL).then((t) => { waterTexture = t; }));
+  jobs.push(loadTexture(ROAD_URL).then((t) => { roadTexture = t; }));
   await Promise.all(jobs);
 }
 
@@ -140,6 +143,11 @@ export function getGrassTexture(): Texture | null {
 /** Water terrain texture (COLOUR), or null until loaded (caller draws flat water then). */
 export function getWaterTexture(): Texture | null {
   return waterTexture;
+}
+
+/** Road asphalt texture (opaque COLOUR), or null until loaded (caller draws flat-colour bands then). */
+export function getRoadTexture(): Texture | null {
+  return roadTexture;
 }
 
 /**

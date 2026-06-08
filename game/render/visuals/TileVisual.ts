@@ -27,6 +27,13 @@ export interface TileVisualInput {
   cornerHeights?: CornerHeights;
   shape?: TerrainShape;
   mapBounds?: MapBounds;
+  /**
+   * Road auto-tile neighbourhood probe: returns true iff the tile at offset
+   * (dx, dy) is a ROAD. Supplied by the renderer ONLY for ROAD tiles; omitted
+   * for non-road tiles and test fixtures (a missing probe yields an `isolated`
+   * road). Pure read — the visual never mutates core through it.
+   */
+  roadNeighbors?: (dx: number, dy: number) => boolean;
 }
 
 export interface BuildingVisualInput {

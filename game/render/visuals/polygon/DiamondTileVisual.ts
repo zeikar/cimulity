@@ -5,15 +5,17 @@
 
 import { Graphics, Container } from 'pixi.js';
 import type { Texture } from 'pixi.js';
-import { projectTileCornerScreen } from '@/game/render/IsoTransform';
+import { projectTileCornerScreen, ISO_CONFIG } from '@/game/render/IsoTransform';
 import type { ScreenCoord } from '@/game/types/coordinates';
-import { tileFillColor, WATER_COLOR, cornersRenderAsWater } from '../palette';
+import { tileFillColor, WATER_COLOR, cornersRenderAsWater, TILE_COLORS } from '../palette';
 import { computeTerrainZIndex } from '../../terrain/terrainZIndex';
+import { roadAutoTile, type RoadDescriptor } from '../../roadAutoTile';
+import { TileType } from '@/game/core/Tile';
 import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
-import { getGrassTexture, getWaterTexture } from './faceTexture';
+import { getGrassTexture, getWaterTexture, getRoadTexture } from './faceTexture';
 
 // Terrain texture pixels per grid cell (shared by grass + water). UV is fed in
 // texture-px; Pixi divides by source size for UVs. Lower => the tile stretches
@@ -119,6 +121,232 @@ function shadeTri(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Road auto-tile band geometry (PRIVATE to this file — render glue, not part of
+// the gated pure roadAutoTile classifier).
+//
+// A road tile draws its diamond BASE as ordinary grass (see drawDiamond), then
+// opaque asphalt BANDS on top per the autotile mask, so each kind looks
+// distinct with visible grass shoulders. Band shape = geometry, not texture
+// alpha (the asphalt texture is opaque).
+//
+// All math is in deformed tile-local SCREEN space (post-projection), so bands
+// follow ramps. Geometry assumptions (flagged for the lead's visual check):
+//   - perp(v) = { x: -v.y, y: v.x } (screen-space 90° CCW rotation).
+//   - edgeUnit per arm runs along the shared diamond edge: N top->right,
+//     E right->bottom, S bottom->left, W left->top.
+//   - A band toward an arm is a quad [innerCap0, outerEdge0, outerEdge1,
+//     innerCap1]; the OUTER cap sits FLUSH on the shared edge midpoint so it
+//     ends exactly on the boundary and cannot bleed into the neighbour.
+// ---------------------------------------------------------------------------
+
+const ROAD_HALF_WIDTH = 0.25; // fraction of a tile; band full width = 0.5·tile.
+
+type ArmDir = 'N' | 'E' | 'S' | 'W';
+
+interface RoadDiamond {
+  center: ScreenCoord;
+  /** Shared-edge midpoint per arm direction. */
+  mid: Record<ArmDir, ScreenCoord>;
+  /** Unit vector along the shared diamond edge per arm direction. */
+  edgeUnit: Record<ArmDir, ScreenCoord>;
+}
+
+function mid(a: ScreenCoord, b: ScreenCoord): ScreenCoord {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function sub(a: ScreenCoord, b: ScreenCoord): ScreenCoord {
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+
+function add(a: ScreenCoord, b: ScreenCoord): ScreenCoord {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function scale(v: ScreenCoord, s: number): ScreenCoord {
+  return { x: v.x * s, y: v.y * s };
+}
+
+function normalize(v: ScreenCoord): ScreenCoord {
+  const len = Math.hypot(v.x, v.y) || 1;
+  return { x: v.x / len, y: v.y / len };
+}
+
+/** Screen-space 90° rotation (CCW). */
+function perp(v: ScreenCoord): ScreenCoord {
+  return { x: -v.y, y: v.x };
+}
+
+function buildRoadDiamond(
+  top: ScreenCoord,
+  right: ScreenCoord,
+  bottom: ScreenCoord,
+  left: ScreenCoord,
+): RoadDiamond {
+  return {
+    center: {
+      x: (top.x + right.x + bottom.x + left.x) / 4,
+      y: (top.y + right.y + bottom.y + left.y) / 4,
+    },
+    mid: {
+      N: mid(top, right),    // shared with (x, y-1)
+      E: mid(right, bottom), // shared with (x+1, y)
+      S: mid(bottom, left),  // shared with (x, y+1)
+      W: mid(left, top),     // shared with (x-1, y)
+    },
+    edgeUnit: {
+      N: normalize(sub(right, top)),
+      E: normalize(sub(bottom, right)),
+      S: normalize(sub(left, bottom)),
+      W: normalize(sub(top, left)),
+    },
+  };
+}
+
+/**
+ * Band quad toward `dir`: inner cap near the tile center + outer cap flush on
+ * the shared edge midpoint. Wound [Ci0, E0, E1, Ci1].
+ */
+function bandQuad(d: RoadDiamond, dir: ArmDir, halfW: number): ScreenCoord[] {
+  const C = d.center;
+  const m = d.mid[dir];
+  const dirVec = normalize(sub(m, C));
+  const nrm = perp(dirVec);
+  const eu = d.edgeUnit[dir];
+  const Ci0 = add(C, scale(nrm, halfW));
+  const Ci1 = sub(C, scale(nrm, halfW));
+  const E0 = add(m, scale(eu, halfW));
+  const E1 = sub(m, scale(eu, halfW));
+  return [Ci0, E0, E1, Ci1];
+}
+
+/** A small asphalt diamond centred at C, half-side halfW (axis-aligned in screen). */
+function hubQuad(d: RoadDiamond, halfW: number): ScreenCoord[] {
+  const C = d.center;
+  return [
+    { x: C.x,         y: C.y - halfW },
+    { x: C.x + halfW, y: C.y },
+    { x: C.x,         y: C.y + halfW },
+    { x: C.x - halfW, y: C.y },
+  ];
+}
+
+/**
+ * Diagonal (staircase elbow) chamfer band spanning the two adjacent shared
+ * edges A and B. EXACT quad = [edgeA0, edgeB0, edgeB1, edgeA1] where edge?0/1 are
+ * the same band-width endpoints bandQuad puts on each shared edge. If that
+ * winding self-crosses (perimeter figure-eight), swap edgeB0/edgeB1.
+ */
+function diagonalQuad(d: RoadDiamond, a: ArmDir, b: ArmDir, halfW: number): ScreenCoord[] {
+  const mA = d.mid[a];
+  const mB = d.mid[b];
+  const euA = d.edgeUnit[a];
+  const euB = d.edgeUnit[b];
+  const a0 = add(mA, scale(euA, halfW));
+  const a1 = sub(mA, scale(euA, halfW));
+  const b0 = add(mB, scale(euB, halfW));
+  const b1 = sub(mB, scale(euB, halfW));
+  const quad = [a0, b0, b1, a1];
+  return segmentsIntersect(quad[0], quad[1], quad[2], quad[3])
+    ? [a0, b1, b0, a1] // swap edgeB0/edgeB1 to undo the self-crossing
+    : quad;
+}
+
+/** Do open segments p1p2 and p3p4 cross? Used to detect a self-crossing quad. */
+function segmentsIntersect(p1: ScreenCoord, p2: ScreenCoord, p3: ScreenCoord, p4: ScreenCoord): boolean {
+  const d = (a: ScreenCoord, b: ScreenCoord, c: ScreenCoord) =>
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const d1 = d(p3, p4, p1);
+  const d2 = d(p3, p4, p2);
+  const d3 = d(p1, p2, p3);
+  const d4 = d(p1, p2, p4);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+/** Centerline along which a band's texture x-axis runs (origin + unit dir). */
+interface UvAxis {
+  origin: ScreenCoord;
+  dir: ScreenCoord; // unit vector
+}
+
+/**
+ * Fill one band quad (4 screen points) with the road texture (or flat road
+ * colour when null), split into two triangles. Each corner's UV is its (u, v) in
+ * the band's local frame: u = projection ONTO the centerline `axis.dir` from
+ * `axis.origin`, v = signed perpendicular distance — so the asphalt runs ALONG
+ * the centerline regardless of how the quad corners are ordered. `tint` is white
+ * × Lambert brightness (mirrors grass).
+ */
+function fillBandQuad(
+  gfx: Graphics,
+  quad: ScreenCoord[],
+  axis: UvAxis,
+  roadTex: Texture | null,
+  tint: number,
+): void {
+  const [p0, p1, p2, p3] = quad;
+  if (roadTex) {
+    const nrm = perp(axis.dir); // band-width axis (unit)
+    const uvOf = (p: ScreenCoord): Uv => {
+      const rx = p.x - axis.origin.x;
+      const ry = p.y - axis.origin.y;
+      return { u: rx * axis.dir.x + ry * axis.dir.y, v: rx * nrm.x + ry * nrm.y };
+    };
+    const u0 = uvOf(p0), u1 = uvOf(p1), u2 = uvOf(p2), u3 = uvOf(p3);
+    fillTexturedTri(gfx, p0, p1, p2, u0, u1, u2, roadTex, tint);
+    fillTexturedTri(gfx, p0, p2, p3, u0, u2, u3, roadTex, tint);
+  } else {
+    fillTri(gfx, p0, p1, p2, TILE_COLORS.road, 1.0);
+    fillTri(gfx, p0, p2, p3, TILE_COLORS.road, 1.0);
+  }
+}
+
+/** Centerline axis for a straight arm band: from the tile centre toward m{dir}. */
+function bandAxis(d: RoadDiamond, dir: ArmDir): UvAxis {
+  return { origin: d.center, dir: normalize(sub(d.mid[dir], d.center)) };
+}
+
+/** Centerline axis for the hub: arbitrary (square texture patch) — screen +x. */
+const HUB_AXIS_DIR: ScreenCoord = { x: 1, y: 0 };
+
+/**
+ * Draw all asphalt bands for a road tile over the already-drawn grass base.
+ * Reads the mask via roadAutoTile (the gated pure classifier) and emits band
+ * geometry per kind. `brightness` is the flat-tile Lambert factor (1.0 for a
+ * flat road) so the asphalt dims with slope like the grass under it.
+ */
+function drawRoadBands(
+  gfx: Graphics,
+  d: RoadDiamond,
+  desc: RoadDescriptor,
+  halfW: number,
+  roadTex: Texture | null,
+  brightness: number,
+): void {
+  const tint = darken(0xffffff, brightness);
+
+  if (desc.kind === 'diagonal') {
+    // Two adjacent arms forming a staircase elbow → single chamfer band, no hub.
+    // Texture x-axis follows the centerline between the two edge midpoints.
+    const [a, b] = desc.arms as ArmDir[];
+    const axis: UvAxis = { origin: d.mid[a], dir: normalize(sub(d.mid[b], d.mid[a])) };
+    fillBandQuad(gfx, diagonalQuad(d, a, b, halfW), axis, roadTex, tint);
+    return;
+  }
+
+  // Hub for every non-through kind so arms join cleanly at the centre.
+  // straight is the only kind whose two opposite bands already form a continuous
+  // line through C, so it needs no separate hub.
+  if (desc.kind !== 'straight') {
+    fillBandQuad(gfx, hubQuad(d, halfW), { origin: d.center, dir: HUB_AXIS_DIR }, roadTex, tint);
+  }
+
+  for (const arm of desc.arms) {
+    fillBandQuad(gfx, bandQuad(d, arm as ArmDir, halfW), bandAxis(d, arm as ArmDir), roadTex, tint);
+  }
+}
+
 function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const h = input.renderHeight ?? 0;
   const c = input.cornerHeights ?? { topH: h, rightH: h, bottomH: h, leftH: h };
@@ -132,7 +360,12 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // surface is itself flat (all 4 corner heights equal) — Lambert is already 1.0 there.
   const renderedFlat = c.topH === c.rightH && c.rightH === c.bottomH && c.bottomH === c.leftH;
   const isRough = input.shape === 'rough' && !renderedFlat;
-  const fillColor = isRough ? darken(color, ROUGH_SHAPE_DARKEN) : color;
+  // A road tile's diamond BASE renders as ordinary grass — opaque asphalt bands
+  // draw ON TOP (see drawRoadBands). So the base flat-fill colour is the grass
+  // colour, never road-gray; the asphalt shape is what makes the road read.
+  const isRoad = input.type === TileType.ROAD;
+  const baseTypeColor = isRoad ? TILE_COLORS.grass : color;
+  const fillColor = isRough ? darken(baseTypeColor, ROUGH_SHAPE_DARKEN) : baseTypeColor;
   // Same rough cue, as a multiplier — carried into the textured-grass tint
   // (which starts from white) so textured rough tiles match the flat path.
   const roughFactor = isRough ? ROUGH_SHAPE_DARKEN : 1;
@@ -170,7 +403,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // type-gated — the per-triangle `isWater` flag gates it. Corner UVs come from
   // the shared integer grid-vertex coords (top=(x,y), right=(x+1,y),
   // bottom=(x+1,y+1), left=(x,y+1)) so both textures are seamless across tiles.
-  const grassFill: Texture | null = input.type === 'grass' ? getGrassTexture() : null;
+  // Road tiles use the grass texture for their base too (asphalt bands overlay).
+  const grassFill: Texture | null = input.type === 'grass' || isRoad ? getGrassTexture() : null;
   const waterFill: Texture | null = getWaterTexture();
   const uvTop    = terrainCornerUv(input.x,     input.y);
   const uvRight  = terrainCornerUv(input.x + 1, input.y);
@@ -212,6 +446,21 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
     }
   }
 
+  // Road asphalt bands — drawn ON TOP of the grass base per the autotile mask.
+  // INSIDE drawDiamond (not an early-return path) so the OOB skirt below still
+  // runs for map-edge road tiles exactly as for any other tile. Uses DEFORMED
+  // corners so bands follow ramps. brightness averages the two triangle Lambert
+  // factors (== 1.0 on flat tiles) so the asphalt dims with slope like the grass.
+  if (isRoad) {
+    const desc = roadAutoTile(input.roadNeighbors ?? (() => false));
+    const roadDiamond = buildRoadDiamond(top, right, bottom, left);
+    const halfW = ROAD_HALF_WIDTH * ISO_CONFIG.TILE_HEIGHT;
+    const bandBrightness = plan.diagonal === 'tb'
+      ? (plan.brightnessWest + plan.brightnessEast) / 2
+      : (plan.brightnessNorth + plan.brightnessSouth) / 2;
+    drawRoadBands(gfx, roadDiamond, desc, halfW, getRoadTexture(), bandBrightness);
+  }
+
   // OOB skirt — drop a vertical quad from south/east deformed corners to a
   // floor below the world for map-edge tiles. Skip when mapBounds is unknown.
   if (input.mapBounds) {
@@ -239,13 +488,17 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // renderer's z-sort interleaves this tile's outline with neighbor fills.
   // alignment: 1 keeps the stroke fully INSIDE the deformed quad so adjacent
   // tiles (mounted later in row-major order) cannot overdraw it with their fill.
-  gfx.beginPath();
-  gfx.moveTo(top.x, top.y);
-  gfx.lineTo(right.x, right.y);
-  gfx.lineTo(bottom.x, bottom.y);
-  gfx.lineTo(left.x, left.y);
-  gfx.closePath();
-  gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 1 });
+  // Suppressed for road tiles so the grid stroke doesn't cut across the road
+  // surface (the asphalt bands carry the road's own visual edge).
+  if (!isRoad) {
+    gfx.beginPath();
+    gfx.moveTo(top.x, top.y);
+    gfx.lineTo(right.x, right.y);
+    gfx.lineTo(bottom.x, bottom.y);
+    gfx.lineTo(left.x, left.y);
+    gfx.closePath();
+    gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 1 });
+  }
 }
 
 export const DiamondTileVisual: TerrainTileVisual = {
