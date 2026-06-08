@@ -72,6 +72,7 @@ export default defineConfig({
         'app/hooks/sampleStats.ts',
         'game/render/visuals/polygon/windowLights.ts',
         'game/render/roadAutoTile.ts',
+        'game/render/visuals/polygon/roadHalfWidth.ts',
       ],
       thresholds: {
         lines: 80,

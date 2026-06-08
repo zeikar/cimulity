@@ -16,6 +16,7 @@ import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
 import { getGrassTexture, getWaterTexture, getRoadTexture } from './faceTexture';
+import { maxRoadHalfWidthForDiamond } from './roadHalfWidth';
 
 // Terrain texture pixels per grid cell (shared by grass + water). UV is fed in
 // texture-px; Pixi divides by source size for UVs. Lower => the tile stretches
@@ -140,13 +141,13 @@ function shadeTri(
 //     ends exactly on the boundary and cannot bleed into the neighbour.
 // ---------------------------------------------------------------------------
 
-// Fraction of a tile; band full width = 0.64·tile. The wider band (vs the old
-// 0.5) makes the ~1/6 curb strips in the cross-section texture read on screen
-// while a straight road still shows grass shoulders (0.64 < 1).
-// SAFE UPPER BOUND: for the part-B SQUARE hub to stay inside the 64×32 diamond,
-// ROAD_HALF_WIDTH must be <= 0.33 (NOT 0.5) — the axis-aligned square of
-// half-side halfW = ROAD_HALF_WIDTH·TILE_HEIGHT centred at C has to fit the
-// diamond. 0.32 is safe.
+// Target road half-width as a fraction of TILE_HEIGHT for a FLAT tile.
+// Band full width = 0.64·tile — makes curb strips in the cross-section texture
+// read on screen while leaving visible grass shoulders (0.64 < 1).
+// On flat tiles the axis-aligned-square half-side 0.32·32 = 10.24px fits inside
+// the 64×32 diamond (maxSquareHalf ≈ 10.67 > 10.24).
+// On coplanar RAMPS the deformed diamond is thinner; per-tile clamping via
+// maxRoadHalfWidthForDiamond keeps bands/hub inside the actual tile boundary.
 const ROAD_HALF_WIDTH = 0.32;
 
 type ArmDir = 'N' | 'E' | 'S' | 'W';
@@ -494,7 +495,13 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   if (isRoad) {
     const desc = roadAutoTile(input.roadNeighbors ?? (() => false));
     const roadDiamond = buildRoadDiamond(top, right, bottom, left);
-    const halfW = ROAD_HALF_WIDTH * ISO_CONFIG.TILE_HEIGHT;
+    // Clamp to the deformed diamond so bands/hub can't bleed outside the tile
+    // on coplanar ramps. On flat tiles maxRoadHalfWidthForDiamond ≈ 10.67 so
+    // the target 10.24 is used unchanged.
+    const halfW = Math.min(
+      ROAD_HALF_WIDTH * ISO_CONFIG.TILE_HEIGHT,
+      maxRoadHalfWidthForDiamond(roadDiamond.center, top, right, bottom, left),
+    );
     const bandBrightness = plan.diagonal === 'tb'
       ? (plan.brightnessWest + plan.brightnessEast) / 2
       : (plan.brightnessNorth + plan.brightnessSouth) / 2;
