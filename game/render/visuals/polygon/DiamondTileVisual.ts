@@ -140,7 +140,14 @@ function shadeTri(
 //     ends exactly on the boundary and cannot bleed into the neighbour.
 // ---------------------------------------------------------------------------
 
-const ROAD_HALF_WIDTH = 0.25; // fraction of a tile; band full width = 0.5·tile.
+// Fraction of a tile; band full width = 0.64·tile. The wider band (vs the old
+// 0.5) makes the ~1/6 curb strips in the cross-section texture read on screen
+// while a straight road still shows grass shoulders (0.64 < 1).
+// SAFE UPPER BOUND: for the part-B SQUARE hub to stay inside the 64×32 diamond,
+// ROAD_HALF_WIDTH must be <= 0.33 (NOT 0.5) — the axis-aligned square of
+// half-side halfW = ROAD_HALF_WIDTH·TILE_HEIGHT centred at C has to fit the
+// diamond. 0.32 is safe.
+const ROAD_HALF_WIDTH = 0.32;
 
 type ArmDir = 'N' | 'E' | 'S' | 'W';
 
@@ -219,17 +226,6 @@ function bandQuad(d: RoadDiamond, dir: ArmDir, halfW: number): ScreenCoord[] {
   const E0 = add(m, scale(eu, halfW));
   const E1 = sub(m, scale(eu, halfW));
   return [Ci0, E0, E1, Ci1];
-}
-
-/** A small asphalt diamond centred at C, half-side halfW (axis-aligned in screen). */
-function hubQuad(d: RoadDiamond, halfW: number): ScreenCoord[] {
-  const C = d.center;
-  return [
-    { x: C.x,         y: C.y - halfW },
-    { x: C.x + halfW, y: C.y },
-    { x: C.x,         y: C.y + halfW },
-    { x: C.x - halfW, y: C.y },
-  ];
 }
 
 /**
@@ -316,9 +312,6 @@ function bandAxis(d: RoadDiamond, dir: ArmDir): UvAxis {
   return { origin: d.center, dir: normalize(sub(d.mid[dir], d.center)) };
 }
 
-/** Centerline axis for the hub: arbitrary (square texture patch) — screen +x. */
-const HUB_AXIS_DIR: ScreenCoord = { x: 1, y: 0 };
-
 /**
  * Draw all asphalt bands for a road tile over the already-drawn grass base.
  * Reads the mask via roadAutoTile (the gated pure classifier) and emits band
@@ -353,15 +346,44 @@ function drawRoadBands(
     return;
   }
 
-  // Hub for every non-through kind so arms join cleanly at the centre.
-  // straight is the only kind whose two opposite bands already form a continuous
-  // line through C, so it needs no separate hub.
-  if (desc.kind !== 'straight') {
-    fillBandQuad(gfx, hubQuad(d, halfW), { origin: d.center, dir: HUB_AXIS_DIR }, halfW, roadTex, tint);
-  }
-
+  // Draw the per-arm cross-section bands FIRST, then (for every non-straight
+  // kind) cover the centre with a flat-asphalt SQUARE hub LAST. straight is the
+  // only kind whose two opposite bands already form a continuous line through C,
+  // so it needs no hub.
   for (const arm of desc.arms) {
     fillBandQuad(gfx, bandQuad(d, arm as ArmDir, halfW), bandAxis(d, arm as ArmDir), halfW, roadTex, tint);
+  }
+
+  if (desc.kind !== 'straight') {
+    // Clean SimCity-style intersection: a flat-asphalt patch drawn LAST over the
+    // arm bands, so each arm's converging concrete-sidewalk strips recede under it
+    // and the junction reads as one continuous asphalt surface (the crossing
+    // cross-sections would otherwise overlap into a messy plaid). cross/tee/corner
+    // get a clean junction; end gets a square asphalt CAP over its one band;
+    // isolated (zero arms) is a lone square asphalt PATCH — the hub IS its whole
+    // road shape. Crosswalk markings are a deferred future option.
+    //
+    // SQUARE not diamond: each connected arm's inner cap = C ± nrm·halfW, exactly
+    // halfW from C, so the union of all arm inner caps lies in the DISC of radius
+    // halfW at C. An axis-aligned square centred at C with half-side halfW
+    // (corners C ± (halfW,halfW)) has inscribed-circle radius halfW → it CONTAINS
+    // that disc and covers every arm cap with no sliver. The old DIAMOND-shaped
+    // hub of half-side halfW had inscribed radius only halfW/√2 < halfW, so it
+    // left slivers — hence the square.
+    //
+    // HUB-TINT matches the arm bands so hub + arms dim together on slopes:
+    //   textured  → darken(TILE_COLORS.road, brightness)  (== the arms' white ×
+    //               Lambert tint applied over the #4a4a4a asphalt texture)
+    //   null tex  → raw TILE_COLORS.road at alpha 1.0      (== flat arm fallback)
+    // On flat ground brightness === 1 so darken(...,1) is a no-op.
+    const C = d.center;
+    const hubColor = roadTex ? darken(TILE_COLORS.road, brightness) : TILE_COLORS.road;
+    const s0 = { x: C.x - halfW, y: C.y - halfW };
+    const s1 = { x: C.x + halfW, y: C.y - halfW };
+    const s2 = { x: C.x + halfW, y: C.y + halfW };
+    const s3 = { x: C.x - halfW, y: C.y + halfW };
+    fillTri(gfx, s0, s1, s2, hubColor, 1);
+    fillTri(gfx, s0, s2, s3, hubColor, 1);
   }
 }
 
