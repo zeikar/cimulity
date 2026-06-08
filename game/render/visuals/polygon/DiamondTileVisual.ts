@@ -274,24 +274,33 @@ interface UvAxis {
  * Fill one band quad (4 screen points) with the road texture (or flat road
  * colour when null), split into two triangles. Each corner's UV is its (u, v) in
  * the band's local frame: u = projection ONTO the centerline `axis.dir` from
- * `axis.origin`, v = signed perpendicular distance — so the asphalt runs ALONG
- * the centerline regardless of how the quad corners are ordered. `tint` is white
- * × Lambert brightness (mirrors grass).
+ * `axis.origin` (along-road repeat, unchanged); v is remapped so the band's
+ * perpendicular half-extent `crossHalf` spans the FULL texture height centred —
+ * vRaw=0 (band centre) maps to texH/2 (the dashed centre line in the texture)
+ * and ±crossHalf maps to the texture edges. Without this remap, a 16px-wide band
+ * sampled the same 16px slice from the 48px texture, missing the centre line
+ * entirely. `tint` is white × Lambert brightness (mirrors grass).
  */
 function fillBandQuad(
   gfx: Graphics,
   quad: ScreenCoord[],
   axis: UvAxis,
+  crossHalf: number,
   roadTex: Texture | null,
   tint: number,
 ): void {
   const [p0, p1, p2, p3] = quad;
   if (roadTex) {
     const nrm = perp(axis.dir); // band-width axis (unit)
+    const texH = roadTex.source.height || 1;
     const uvOf = (p: ScreenCoord): Uv => {
       const rx = p.x - axis.origin.x;
       const ry = p.y - axis.origin.y;
-      return { u: rx * axis.dir.x + ry * axis.dir.y, v: rx * nrm.x + ry * nrm.y };
+      const vRaw = rx * nrm.x + ry * nrm.y;
+      return {
+        u: rx * axis.dir.x + ry * axis.dir.y,
+        v: (vRaw / crossHalf) * (texH / 2) + texH / 2,
+      };
     };
     const u0 = uvOf(p0), u1 = uvOf(p1), u2 = uvOf(p2), u3 = uvOf(p3);
     fillTexturedTri(gfx, p0, p1, p2, u0, u1, u2, roadTex, tint);
@@ -331,7 +340,16 @@ function drawRoadBands(
     // Texture x-axis follows the centerline between the two edge midpoints.
     const [a, b] = desc.arms as ArmDir[];
     const axis: UvAxis = { origin: d.mid[a], dir: normalize(sub(d.mid[b], d.mid[a])) };
-    fillBandQuad(gfx, diagonalQuad(d, a, b, halfW), axis, roadTex, tint);
+    const dQuad = diagonalQuad(d, a, b, halfW);
+    // Measure the chamfer's actual perpendicular half-extent against the diagonal
+    // axis normal so the cross-section maps across the chamfer's true width,
+    // which is narrower than halfW (corners sit on diamond-edge units, not the
+    // road-width axis).
+    const dNrm = perp(axis.dir);
+    const diagCrossHalf = Math.max(...dQuad.map(
+      p => Math.abs((p.x - axis.origin.x) * dNrm.x + (p.y - axis.origin.y) * dNrm.y)
+    ));
+    fillBandQuad(gfx, dQuad, axis, diagCrossHalf, roadTex, tint);
     return;
   }
 
@@ -339,11 +357,11 @@ function drawRoadBands(
   // straight is the only kind whose two opposite bands already form a continuous
   // line through C, so it needs no separate hub.
   if (desc.kind !== 'straight') {
-    fillBandQuad(gfx, hubQuad(d, halfW), { origin: d.center, dir: HUB_AXIS_DIR }, roadTex, tint);
+    fillBandQuad(gfx, hubQuad(d, halfW), { origin: d.center, dir: HUB_AXIS_DIR }, halfW, roadTex, tint);
   }
 
   for (const arm of desc.arms) {
-    fillBandQuad(gfx, bandQuad(d, arm as ArmDir, halfW), bandAxis(d, arm as ArmDir), roadTex, tint);
+    fillBandQuad(gfx, bandQuad(d, arm as ArmDir, halfW), bandAxis(d, arm as ArmDir), halfW, roadTex, tint);
   }
 }
 
