@@ -528,17 +528,15 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // renderer's z-sort interleaves this tile's outline with neighbor fills.
   // alignment: 1 keeps the stroke fully INSIDE the deformed quad so adjacent
   // tiles (mounted later in row-major order) cannot overdraw it with their fill.
-  // Suppressed for road tiles so the grid stroke doesn't cut across the road
-  // surface (the asphalt bands carry the road's own visual edge).
-  if (!isRoad) {
-    gfx.beginPath();
-    gfx.moveTo(top.x, top.y);
-    gfx.lineTo(right.x, right.y);
-    gfx.lineTo(bottom.x, bottom.y);
-    gfx.lineTo(left.x, left.y);
-    gfx.closePath();
-    gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 1 });
-  }
+  // Drawn for every tile type, road included — the outline sits on top of the
+  // asphalt bands and restores the uniform grid appearance.
+  gfx.beginPath();
+  gfx.moveTo(top.x, top.y);
+  gfx.lineTo(right.x, right.y);
+  gfx.lineTo(bottom.x, bottom.y);
+  gfx.lineTo(left.x, left.y);
+  gfx.closePath();
+  gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 1 });
 }
 
 export const DiamondTileVisual: TerrainTileVisual = {
