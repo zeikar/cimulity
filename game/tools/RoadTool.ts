@@ -43,8 +43,20 @@ export function snapRoadDragPath(
     Math.abs(endY - start.y)
   );
 
-  for (let i = 0; i <= steps; i++) {
-    push(start.x + stepX * i, start.y + stepY * i);
+  if (stepX !== 0 && stepY !== 0) {
+    // 45° diagonal: emit an edge-connected zigzag (Y-first staircase).
+    // For each diagonal step i, push the diagonal tile then the Y-axis
+    // intermediate so every consecutive pair shares an edge.
+    const len = steps;
+    for (let i = 0; i < len; i++) {
+      push(start.x + stepX * i, start.y + stepY * i);
+      push(start.x + stepX * i, start.y + stepY * (i + 1));
+    }
+    push(start.x + stepX * len, start.y + stepY * len);
+  } else {
+    for (let i = 0; i <= steps; i++) {
+      push(start.x + stepX * i, start.y + stepY * i);
+    }
   }
 
   return tiles;
