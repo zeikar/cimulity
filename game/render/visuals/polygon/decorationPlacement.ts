@@ -6,6 +6,16 @@
  * The hash function uses a salt distinct from windowLights' 0x9e3779b9 and
  * faceTexture's 0x45d9f3b so decoration distributions are independent of
  * building-facade or window-light hashing for any given id.
+ *
+ * Street-tree offset derivation (from IsoTransform.ts iso basis):
+ *   screenX = (tileX - tileY) * 32,  screenY = (tileX + tileY) * 16
+ * So one tile step in each data direction maps to these screen deltas:
+ *   tile (+1, 0) → screen (+32, +16)
+ *   tile (-1, 0) → screen (-32, -16)
+ *   tile ( 0,+1) → screen (-32, +16)
+ *   tile ( 0,-1) → screen (+32, -16)
+ * The tree dx/dy are these unit vectors scaled by STREET_SHOULDER (a fraction
+ * of a tile) so the trunk sits on the grass shoulder, not in the road.
  */
 
 // Salt distinct from windowLights' 0x9e3779b9 / 0x45d9f3b so distributions
@@ -42,6 +52,80 @@ export interface ParkSlot {
   /** Sub-tile screen-space Y offset (px) added to the tile-center position. */
   dy: number;
 }
+
+// ── Street-tree placement ────────────────────────────────────────────────────
+
+/**
+ * Fraction of the tile used to bias the tree trunk toward the road edge.
+ * TILE_WIDTH=64 → hw=32; TILE_HEIGHT=32 → hh=16.
+ * STREET_SHOULDER=0.25 gives dx-max=8 px, dy-max=4 px — shoulder-width offset.
+ */
+const STREET_SHOULDER = 0.25;
+const HW = 32; // TILE_WIDTH / 2
+const HH = 16; // TILE_HEIGHT / 2
+
+/**
+ * Proportion of roadside grass cells that get a street tree (out of 100).
+ * Lower = sparser. Tunable without touching any other logic.
+ */
+const STREET_DENSITY = 50;
+
+export interface StreetTreeCandidate {
+  /** Unique stable key for this tree. */
+  key: string;
+  /** Sprite variant index (0 or 1). */
+  variant: 0 | 1;
+  /** Screen-space X offset (px) toward the adjacent road edge, from tile center. */
+  dx: number;
+  /** Screen-space Y offset (px) toward the adjacent road edge, from tile center. */
+  dy: number;
+}
+
+/**
+ * Decide whether a street tree stands at grass cell (x, y).
+ *
+ * Returns a StreetTreeCandidate (with shoulder-biased screen offset) when:
+ *   - isPlainGrass(x, y) is true
+ *   - exactly 1 of the 4 orthogonal data neighbors is a road tile
+ *   - decoHash(x, y, STREET_SALT) % 100 < STREET_DENSITY (~50 % density)
+ *
+ * Returns null for junctions (≥2 road neighbors), non-roadside cells (0 road
+ * neighbors), non-grass cells, and cells that fail the hash gate.
+ */
+export function streetTreeForCell(
+  x: number,
+  y: number,
+  isRoad: (x: number, y: number) => boolean,
+  isPlainGrass: (x: number, y: number) => boolean,
+): StreetTreeCandidate | null {
+  if (!isPlainGrass(x, y)) return null;
+
+  // Orthogonal data neighbors: tile-space delta → [neighbor, screen delta]
+  // Screen delta derived from iso basis (see module comment).
+  const neighbors: [nx: number, ny: number, sdx: number, sdy: number][] = [
+    [x + 1, y,     HW * STREET_SHOULDER,  HH * STREET_SHOULDER],  // tile (+1,0)
+    [x - 1, y,    -HW * STREET_SHOULDER, -HH * STREET_SHOULDER],  // tile (-1,0)
+    [x,     y + 1, -HW * STREET_SHOULDER,  HH * STREET_SHOULDER], // tile (0,+1)
+    [x,     y - 1,  HW * STREET_SHOULDER, -HH * STREET_SHOULDER], // tile (0,-1)
+  ];
+
+  const roadNeighbors = neighbors.filter(([nx, ny]) => isRoad(nx, ny));
+
+  if (roadNeighbors.length === 0 || roadNeighbors.length >= 2) return null;
+
+  const h = decoHash(x, y, STREET_SALT);
+  if (h % 100 >= STREET_DENSITY) return null;
+
+  const [, , sdx, sdy] = roadNeighbors[0];
+  return {
+    key: `street:${x}:${y}`,
+    variant: (h % 2) as 0 | 1,
+    dx: sdx,
+    dy: sdy,
+  };
+}
+
+// ── Park placement ───────────────────────────────────────────────────────────
 
 // Tile is 64×32 px in screen space (ISO_CONFIG). Place objects ≈ 1/4 tile from
 // center so they sit near opposite corners without clipping the tile diamond.

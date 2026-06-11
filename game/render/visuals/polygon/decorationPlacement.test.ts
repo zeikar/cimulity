@@ -2,10 +2,163 @@ import { describe, it, expect } from 'vitest';
 import {
   decoHash,
   parkObjectsForCell,
+  streetTreeForCell,
   PARK_SALT,
   STREET_SALT,
   EMPTY_SALT,
 } from './decorationPlacement';
+
+// ── streetTreeForCell ────────────────────────────────────────────────────────
+
+describe('streetTreeForCell', () => {
+  // Helper: all orthogonal neighbors are grass, specific set are roads.
+  const roadSet = (coords: [number, number][]): ((x: number, y: number) => boolean) => {
+    return (x, y) => coords.some(([rx, ry]) => rx === x && ry === y);
+  };
+
+  const alwaysGrass = () => true;
+  const neverGrass  = () => false;
+
+  it('returns null when isPlainGrass is false (DIRT / owned cell)', () => {
+    expect(streetTreeForCell(5, 5, roadSet([[6, 5]]), neverGrass)).toBeNull();
+  });
+
+  it('returns null when no road neighbors (not roadside)', () => {
+    expect(streetTreeForCell(5, 5, roadSet([]), alwaysGrass)).toBeNull();
+  });
+
+  it('returns null when >=2 road neighbors (junction-adjacent / parallel clutter)', () => {
+    // Two road neighbors
+    expect(streetTreeForCell(5, 5, roadSet([[6, 5], [4, 5]]), alwaysGrass)).toBeNull();
+    // Three road neighbors
+    expect(streetTreeForCell(5, 5, roadSet([[6, 5], [4, 5], [5, 6]]), alwaysGrass)).toBeNull();
+    // All four
+    expect(streetTreeForCell(5, 5, roadSet([[6, 5], [4, 5], [5, 6], [5, 4]]), alwaysGrass)).toBeNull();
+  });
+
+  it('is deterministic — same (x,y) always returns the same NON-NULL result', () => {
+    // Find a coordinate that actually passes the hash gate so we exercise the
+    // placed path, not just null === null.
+    for (let x = 0; x < 20; x++) {
+      for (let y = 0; y < 20; y++) {
+        const roads = roadSet([[x + 1, y]]);
+        const a = streetTreeForCell(x, y, roads, alwaysGrass);
+        if (a !== null) {
+          const b = streetTreeForCell(x, y, roads, alwaysGrass);
+          expect(b).not.toBeNull();
+          expect(a).toEqual(b);
+          return;
+        }
+      }
+    }
+    throw new Error('No placed tree found in 20×20 sweep — density constant may be 0');
+  });
+
+  it('key is "street:x:y"', () => {
+    // Find a coordinate that passes the hash gate with a single road neighbor.
+    // We sweep until we find one (deterministic, so always the same cell).
+    for (let x = 0; x < 20; x++) {
+      for (let y = 0; y < 20; y++) {
+        const result = streetTreeForCell(x, y, roadSet([[x + 1, y]]), alwaysGrass);
+        if (result !== null) {
+          expect(result.key).toBe(`street:${x}:${y}`);
+          return;
+        }
+      }
+    }
+    throw new Error('No placed tree found in 20×20 sweep — density constant may be 0');
+  });
+
+  it('variant is 0 or 1', () => {
+    let foundPlaced = false;
+    for (let x = 0; x < 10; x++) {
+      for (let y = 0; y < 10; y++) {
+        const result = streetTreeForCell(x, y, roadSet([[x + 1, y]]), alwaysGrass);
+        if (result !== null) {
+          expect([0, 1]).toContain(result.variant);
+          foundPlaced = true;
+        }
+      }
+    }
+    // Guard: at least one cell must have been placed — if STREET_DENSITY were 0
+    // the loop above would pass vacuously without testing anything.
+    expect(foundPlaced).toBe(true);
+  });
+
+  it('~50% gate yields a mix of placed and null over a coordinate sweep', () => {
+    let placed = 0;
+    let skipped = 0;
+    for (let x = 0; x < 30; x++) {
+      for (let y = 0; y < 30; y++) {
+        const result = streetTreeForCell(x, y, roadSet([[x + 1, y]]), alwaysGrass);
+        if (result !== null) placed++; else skipped++;
+      }
+    }
+    // With STREET_DENSITY=50 we expect roughly 50% placed; allow 20–80% range
+    // to avoid flakiness while confirming the gate actually fires in both directions.
+    const total = placed + skipped;
+    expect(placed).toBeGreaterThan(total * 0.2);
+    expect(placed).toBeLessThan(total * 0.8);
+  });
+
+  describe('dx/dy offset sign toward each of the four road directions', () => {
+    // Iso basis: tileToScreen(tx,ty) = { x:(tx-ty)*32, y:(tx+ty)*16 }
+    // Screen delta for each unit tile step:
+    //   tile (+1,0) → screen (+32,+16)  → positive dx, positive dy
+    //   tile (-1,0) → screen (-32,-16)  → negative dx, negative dy
+    //   tile (0,+1) → screen (-32,+16)  → negative dx, positive dy
+    //   tile (0,-1) → screen (+32,-16)  → positive dx, negative dy
+
+    function findPlaced(
+      cx: number,
+      cy: number,
+      road: [number, number],
+    ) {
+      // Sweep nearby coordinates until we find one that passes the hash gate.
+      for (let ox = 0; ox < 40; ox++) {
+        for (let oy = 0; oy < 40; oy++) {
+          const x = cx + ox;
+          const y = cy + oy;
+          const rx = road[0] - cx + x;
+          const ry = road[1] - cy + y;
+          const result = streetTreeForCell(x, y, roadSet([[rx, ry]]), alwaysGrass);
+          if (result !== null) return result;
+        }
+      }
+      return null;
+    }
+
+    it('road to the +X side (x+1, y) → dx > 0, dy > 0', () => {
+      const result = findPlaced(0, 0, [1, 0]);
+      expect(result).not.toBeNull();
+      expect(result!.dx).toBeGreaterThan(0);
+      expect(result!.dy).toBeGreaterThan(0);
+    });
+
+    it('road to the -X side (x-1, y) → dx < 0, dy < 0', () => {
+      const result = findPlaced(10, 10, [9, 10]);
+      expect(result).not.toBeNull();
+      expect(result!.dx).toBeLessThan(0);
+      expect(result!.dy).toBeLessThan(0);
+    });
+
+    it('road to the +Y side (x, y+1) → dx < 0, dy > 0', () => {
+      const result = findPlaced(0, 0, [0, 1]);
+      expect(result).not.toBeNull();
+      expect(result!.dx).toBeLessThan(0);
+      expect(result!.dy).toBeGreaterThan(0);
+    });
+
+    it('road to the -Y side (x, y-1) → dx > 0, dy < 0', () => {
+      const result = findPlaced(10, 10, [10, 9]);
+      expect(result).not.toBeNull();
+      expect(result!.dx).toBeGreaterThan(0);
+      expect(result!.dy).toBeLessThan(0);
+    });
+  });
+});
+
+// ── decoHash ─────────────────────────────────────────────────────────────────
 
 describe('decoHash', () => {
   it('is deterministic — same args always return the same value', () => {
