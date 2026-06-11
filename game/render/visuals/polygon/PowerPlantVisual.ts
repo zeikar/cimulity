@@ -22,6 +22,15 @@ import {
   powerPlantCubeFaces,
   type PowerPlantCubeSpec,
 } from './powerPlantGeometry';
+import {
+  getPowerPlantWallTexture,
+  getChimneyTexture,
+  getRoofTexture,
+  wallFaceFillMatrix,
+  roofFaceFillMatrix,
+} from './faceTexture';
+import { drawTexturedPoly, drawPoly, drawWindowBacking } from './texturedFace';
+import { windowSeed } from './windowLights';
 import type { Point } from './cubeGeometry';
 import type { Structure } from '@/game/core/StructureMap';
 import type { Terrain } from '@/game/core/Terrain';
@@ -45,31 +54,15 @@ function baseForSpec(spec: PowerPlantCubeSpec): number {
   return spec.role === 'body' ? BODY_BASE : CHIMNEY_BASE;
 }
 
-function drawFaces(
-  gfx: Graphics,
-  faces: { top: Point[]; left: Point[]; right: Point[] },
-  base: number,
-): void {
-  // Left → right → top (painter's order: back sides before top face).
-  drawPoly(gfx, faces.left,  shadeColor(base, SHADE_LEFT),  STROKE_ALPHA_SIDE);
-  drawPoly(gfx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE);
-  drawPoly(gfx, faces.top,   shadeColor(base, SHADE_TOP),   STROKE_ALPHA_TOP);
-}
-
-function drawPoly(
-  gfx: Graphics,
-  points: ReadonlyArray<Point>,
-  fillColor: number,
-  strokeAlpha: number,
-): void {
-  gfx.beginPath();
-  gfx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) {
-    gfx.lineTo(points[i].x, points[i].y);
+// Glass backing colour for a power plant body wall face.
+// Dim warm industrial glow — sparse windowed texture means only a few cells
+// reveal glass, but the palette reads as operational/industrial.
+function glassColor(lit: boolean, faceFactor: number): number {
+  if (lit) {
+    // Emissive warm glow, floored so even the shadow face has visible light.
+    return shadeColor(0xffd089, 0.7 + 0.3 * faceFactor);
   }
-  gfx.closePath();
-  gfx.fill({ color: fillColor });
-  gfx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
+  return shadeColor(0x222018, faceFactor);
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +87,7 @@ export class PowerPlantVisual {
     wrapper.addChild(gfx);
     this.wrapperChild.set(wrapper, gfx);
 
-    this._draw(gfx, anchor);
+    this._draw(gfx, structure);
 
     parent.addChild(wrapper);
     return wrapper;
@@ -138,12 +131,15 @@ export class PowerPlantVisual {
    * Draw the full power-plant composition into `gfx` in the correct back-to-front
    * order: body first, then chimneys sorted by ascending (anchor.x+anchor.y, anchor.y).
    */
-  private _draw(gfx: Graphics, anchor: { x: number; y: number }): void {
+  private _draw(gfx: Graphics, structure: Structure): void {
+    const anchor = structure.anchor;
+    const ctx = gfx.context;
     const specs = powerPlantCubeSpecs(anchor);
+    const seed = windowSeed(structure.id);
 
     const bodySpec = specs.find((s) => s.role === 'body')!;
     // Body is always drawn before any chimney so chimney cubes overlap it correctly.
-    drawFaces(gfx, powerPlantCubeFaces(bodySpec, anchor), baseForSpec(bodySpec));
+    this._drawCube(ctx, powerPlantCubeFaces(bodySpec, anchor), baseForSpec(bodySpec), 'body', seed);
 
     const chimneySpecs = specs
       .filter((s) => s.role === 'chimney')
@@ -154,7 +150,62 @@ export class PowerPlantVisual {
       });
 
     for (const spec of chimneySpecs) {
-      drawFaces(gfx, powerPlantCubeFaces(spec, anchor), baseForSpec(spec));
+      this._drawCube(ctx, powerPlantCubeFaces(spec, anchor), baseForSpec(spec), 'chimney', seed);
+    }
+  }
+
+  private _drawCube(
+    ctx: import('pixi.js').GraphicsContext,
+    faces: { top: Point[]; left: Point[]; right: Point[] },
+    base: number,
+    role: 'body' | 'chimney',
+    seed: number,
+  ): void {
+    const roofTex = getRoofTexture();
+
+    if (role === 'body') {
+      const wallTex = getPowerPlantWallTexture();
+
+      // LEFT face
+      if (wallTex !== null) {
+        // Windowed body wall: paint glass backing before wall texture.
+        drawWindowBacking(ctx, faces.left, (lit) => glassColor(lit, SHADE_LEFT), seed, 0, 0);
+        drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, 0, 0, wallTex), shadeColor(0xffffff, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+      } else {
+        drawPoly(ctx, faces.left, shadeColor(base, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+      }
+
+      // RIGHT face
+      if (wallTex !== null) {
+        drawWindowBacking(ctx, faces.right, (lit) => glassColor(lit, SHADE_RIGHT), seed, 0, 0);
+        drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, 0, 0, wallTex), shadeColor(0xffffff, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+      } else {
+        drawPoly(ctx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+      }
+    } else {
+      // Chimney: opaque walls — NO window backing.
+      const chimneyTex = getChimneyTexture();
+
+      // LEFT face
+      if (chimneyTex !== null) {
+        drawTexturedPoly(ctx, faces.left, chimneyTex, wallFaceFillMatrix(faces.left, 0, 0, chimneyTex), shadeColor(0xffffff, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+      } else {
+        drawPoly(ctx, faces.left, shadeColor(base, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+      }
+
+      // RIGHT face
+      if (chimneyTex !== null) {
+        drawTexturedPoly(ctx, faces.right, chimneyTex, wallFaceFillMatrix(faces.right, 0, 0, chimneyTex), shadeColor(0xffffff, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+      } else {
+        drawPoly(ctx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+      }
+    }
+
+    // TOP face — same roof rule for every cube (body and chimneys).
+    if (roofTex !== null) {
+      drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, 0, 0), shadeColor(0xffffff, SHADE_TOP), STROKE_ALPHA_TOP, 0, 0);
+    } else {
+      drawPoly(ctx, faces.top, shadeColor(base, SHADE_TOP), STROKE_ALPHA_TOP, 0, 0);
     }
   }
 }

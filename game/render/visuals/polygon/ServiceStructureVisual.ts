@@ -17,8 +17,19 @@ import {
   serviceStructureBaseColor,
   serviceStructureCubeFaces,
   isServiceStructureType,
+  type ServiceStructureType,
 } from './serviceStructureGeometry';
-import type { Point } from './cubeGeometry';
+import {
+  getPoliceWallTexture,
+  getFireWallTexture,
+  getHospitalWallTexture,
+  getSchoolWallTexture,
+  getRoofTexture,
+  wallFaceFillMatrix,
+  roofFaceFillMatrix,
+} from './faceTexture';
+import { drawTexturedPoly, drawPoly, drawWindowBacking } from './texturedFace';
+import { windowSeed } from './windowLights';
 import type { Structure } from '@/game/core/StructureMap';
 import type { Terrain } from '@/game/core/Terrain';
 
@@ -29,20 +40,41 @@ const SHADE_LEFT = 0.55;
 const STROKE_ALPHA_TOP = 0.55;
 const STROKE_ALPHA_SIDE = 0.5;
 
-function drawPoly(
-  gfx: Graphics,
-  points: ReadonlyArray<Point>,
-  fillColor: number,
-  strokeAlpha: number,
-): void {
-  gfx.beginPath();
-  gfx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) {
-    gfx.lineTo(points[i].x, points[i].y);
+// Per-type glass colour pairs for the windowed civic walls.
+// Each type gets a distinct hue so police/fire/hospital/school are immediately
+// readable at a glance without relying solely on wall colour.
+const CIVIC_GLASS: Record<ServiceStructureType, { lit: number; dark: number }> = {
+  // Hospital: cool clinical white-blue — sterile, high-occupancy feel.
+  hospital:       { lit: 0xe8f4ff, dark: 0x1e2f40 },
+  // Police: cool authority blue — distinct from the hospital but similarly cold.
+  police_station: { lit: 0xb0d4ff, dark: 0x14233a },
+  // Fire: warm amber-red — heat and urgency; contrasts with the cool civic types.
+  fire_station:   { lit: 0xffd090, dark: 0x2a1a0e },
+  // School: warm amber — welcoming and energetic.
+  school:         { lit: 0xffe0a0, dark: 0x2a200c },
+};
+
+// Map civic type to its wall texture getter.
+function wallTextureForType(type: ServiceStructureType) {
+  switch (type) {
+    case 'police_station': return getPoliceWallTexture();
+    case 'fire_station':   return getFireWallTexture();
+    case 'hospital':       return getHospitalWallTexture();
+    case 'school':         return getSchoolWallTexture();
   }
-  gfx.closePath();
-  gfx.fill({ color: fillColor });
-  gfx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
+}
+
+// Glass backing colour for a civic wall face.
+// Structures have no density variable (each civic building is one size), so the
+// density factor used in CubeBuildingVisual's glassColor is simply absent — this
+// is not dropping a live variable; there is no density to fold in.
+function glassColor(type: ServiceStructureType, lit: boolean, faceFactor: number): number {
+  const { lit: litColor, dark: darkColor } = CIVIC_GLASS[type];
+  if (lit) {
+    // Emissive interior: floor brightness so even the shadowed face glows.
+    return shadeColor(litColor, 0.7 + 0.3 * faceFactor);
+  }
+  return shadeColor(darkColor, faceFactor);
 }
 
 export class ServiceStructureVisual {
@@ -94,10 +126,39 @@ export class ServiceStructureVisual {
     const faces = serviceStructureCubeFaces(structure.footprint, structure.anchor);
     if (faces === null) return; // non-rect footprint — impossible for a placed structure
 
-    const base = serviceStructureBaseColor(structure.type);
+    const type = structure.type;
+    const base = serviceStructureBaseColor(type);
+    const ctx = gfx.context;
+    const wallTex = wallTextureForType(type);
+    const seed = windowSeed(structure.id);
+    const roofTex = getRoofTexture();
+
     // Painter's order: back side walls before the top face.
-    drawPoly(gfx, faces.left, shadeColor(base, SHADE_LEFT), STROKE_ALPHA_SIDE);
-    drawPoly(gfx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE);
-    drawPoly(gfx, faces.top, shadeColor(base, SHADE_TOP), STROKE_ALPHA_TOP);
+
+    // LEFT face
+    if (wallTex !== null) {
+      // Paint window glass backing before the wall so transparent window holes
+      // in the wall texture reveal the correct lit/unlit glass colour beneath.
+      drawWindowBacking(ctx, faces.left, (lit) => glassColor(type, lit, SHADE_LEFT), seed, 0, 0);
+      drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, 0, 0, wallTex), shadeColor(0xffffff, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+    } else {
+      // Texture unavailable — solid fill; skip window backing (no holes to reveal).
+      drawPoly(ctx, faces.left, shadeColor(base, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+    }
+
+    // RIGHT face
+    if (wallTex !== null) {
+      drawWindowBacking(ctx, faces.right, (lit) => glassColor(type, lit, SHADE_RIGHT), seed, 0, 0);
+      drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, 0, 0, wallTex), shadeColor(0xffffff, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+    } else {
+      drawPoly(ctx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+    }
+
+    // TOP face
+    if (roofTex !== null) {
+      drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, 0, 0), shadeColor(0xffffff, SHADE_TOP), STROKE_ALPHA_TOP, 0, 0);
+    } else {
+      drawPoly(ctx, faces.top, shadeColor(base, SHADE_TOP), STROKE_ALPHA_TOP, 0, 0);
+    }
   }
 }

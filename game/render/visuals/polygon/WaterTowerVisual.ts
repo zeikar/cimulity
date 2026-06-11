@@ -21,6 +21,14 @@ import {
   waterTowerCubeFaces,
   type WaterTowerCubeSpec,
 } from './waterTowerGeometry';
+import {
+  getWaterTowerBodyTexture,
+  getWaterTowerTankTexture,
+  getRoofTexture,
+  wallFaceFillMatrix,
+  roofFaceFillMatrix,
+} from './faceTexture';
+import { drawTexturedPoly, drawPoly } from './texturedFace';
 import type { Point } from './cubeGeometry';
 import type { Structure } from '@/game/core/StructureMap';
 import type { Terrain } from '@/game/core/Terrain';
@@ -42,33 +50,6 @@ const STROKE_ALPHA_SIDE = 0.5;
 
 function baseForSpec(spec: WaterTowerCubeSpec): number {
   return spec.role === 'body' ? BODY_BASE : TANK_BASE;
-}
-
-function drawFaces(
-  gfx: Graphics,
-  faces: { top: Point[]; left: Point[]; right: Point[] },
-  base: number,
-): void {
-  // Left → right → top (painter's order: back sides before top face).
-  drawPoly(gfx, faces.left,  shadeColor(base, SHADE_LEFT),  STROKE_ALPHA_SIDE);
-  drawPoly(gfx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE);
-  drawPoly(gfx, faces.top,   shadeColor(base, SHADE_TOP),   STROKE_ALPHA_TOP);
-}
-
-function drawPoly(
-  gfx: Graphics,
-  points: ReadonlyArray<Point>,
-  fillColor: number,
-  strokeAlpha: number,
-): void {
-  gfx.beginPath();
-  gfx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) {
-    gfx.lineTo(points[i].x, points[i].y);
-  }
-  gfx.closePath();
-  gfx.fill({ color: fillColor });
-  gfx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +74,7 @@ export class WaterTowerVisual {
     wrapper.addChild(gfx);
     this.wrapperChild.set(wrapper, gfx);
 
-    this._draw(gfx, anchor);
+    this._draw(gfx, structure);
 
     parent.addChild(wrapper);
     return wrapper;
@@ -137,14 +118,49 @@ export class WaterTowerVisual {
    * Draw the full water-tower composition into `gfx` in the correct back-to-front
    * order: body first, then the tank cube on top.
    */
-  private _draw(gfx: Graphics, anchor: { x: number; y: number }): void {
+  private _draw(gfx: Graphics, structure: Structure): void {
+    const anchor = structure.anchor;
+    const ctx = gfx.context;
     const specs = waterTowerCubeSpecs(anchor);
 
     const bodySpec = specs.find((s) => s.role === 'body')!;
     // Body is always drawn before the tank so the tank cube overlaps it correctly.
-    drawFaces(gfx, waterTowerCubeFaces(bodySpec, anchor), baseForSpec(bodySpec));
+    this._drawCube(ctx, waterTowerCubeFaces(bodySpec, anchor), baseForSpec(bodySpec), 'body');
 
     const tankSpec = specs.find((s) => s.role === 'tank')!;
-    drawFaces(gfx, waterTowerCubeFaces(tankSpec, anchor), baseForSpec(tankSpec));
+    this._drawCube(ctx, waterTowerCubeFaces(tankSpec, anchor), baseForSpec(tankSpec), 'tank');
+  }
+
+  private _drawCube(
+    ctx: import('pixi.js').GraphicsContext,
+    faces: { top: Point[]; left: Point[]; right: Point[] },
+    base: number,
+    role: 'body' | 'tank',
+  ): void {
+    const wallTex = role === 'body' ? getWaterTowerBodyTexture() : getWaterTowerTankTexture();
+    const roofTex = getRoofTexture();
+
+    // Both body and tank are opaque — NO window backing for either.
+
+    // LEFT face
+    if (wallTex !== null) {
+      drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, 0, 0, wallTex), shadeColor(0xffffff, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+    } else {
+      drawPoly(ctx, faces.left, shadeColor(base, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+    }
+
+    // RIGHT face
+    if (wallTex !== null) {
+      drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, 0, 0, wallTex), shadeColor(0xffffff, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+    } else {
+      drawPoly(ctx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+    }
+
+    // TOP face — same roof rule for every cube (body and tank).
+    if (roofTex !== null) {
+      drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, 0, 0), shadeColor(0xffffff, SHADE_TOP), STROKE_ALPHA_TOP, 0, 0);
+    } else {
+      drawPoly(ctx, faces.top, shadeColor(base, SHADE_TOP), STROKE_ALPHA_TOP, 0, 0);
+    }
   }
 }
