@@ -150,10 +150,19 @@ function shadeTri(
 // maxRoadHalfWidthForDiamond keeps bands/hub inside the actual tile boundary.
 const ROAD_HALF_WIDTH = 0.32;
 
+// Intersection-hub size as a fraction of the minimal clean coverage. 1.0 = the
+// mini-diamond's inscribed circle exactly equals the arm-cap radius halfW, which
+// is precisely the overlap region of two crossing bands (see drawRoadBands). Below
+// 1.0 the hub shrinks inside that overlap, so a crossing road's curb can peek a
+// sliver into the junction; the trade buys a daintier, less chunky junction patch.
+const HUB_COVERAGE = 0.82;
+
 type ArmDir = 'N' | 'E' | 'S' | 'W';
 
 interface RoadDiamond {
   center: ScreenCoord;
+  /** The four (possibly deformed) projected diamond corners. */
+  corners: { top: ScreenCoord; right: ScreenCoord; bottom: ScreenCoord; left: ScreenCoord };
   /** Shared-edge midpoint per arm direction. */
   mid: Record<ArmDir, ScreenCoord>;
   /** Unit vector along the shared diamond edge per arm direction. */
@@ -186,6 +195,14 @@ function perp(v: ScreenCoord): ScreenCoord {
   return { x: -v.y, y: v.x };
 }
 
+/** Perpendicular distance from point C to the line through A and B. */
+function perpDist(C: ScreenCoord, a: ScreenCoord, b: ScreenCoord): number {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const len = Math.hypot(abx, aby) || 1;
+  return Math.abs(abx * (C.y - a.y) - aby * (C.x - a.x)) / len;
+}
+
 function buildRoadDiamond(
   top: ScreenCoord,
   right: ScreenCoord,
@@ -197,6 +214,7 @@ function buildRoadDiamond(
       x: (top.x + right.x + bottom.x + left.x) / 4,
       y: (top.y + right.y + bottom.y + left.y) / 4,
     },
+    corners: { top, right, bottom, left },
     mid: {
       N: mid(top, right),    // shared with (x, y-1)
       E: mid(right, bottom), // shared with (x+1, y)
@@ -360,17 +378,26 @@ function drawRoadBands(
     // arm bands, so each arm's converging concrete-sidewalk strips recede under it
     // and the junction reads as one continuous asphalt surface (the crossing
     // cross-sections would otherwise overlap into a messy plaid). cross/tee/corner
-    // get a clean junction; end gets a square asphalt CAP over its one band;
-    // isolated (zero arms) is a lone square asphalt PATCH — the hub IS its whole
-    // road shape. Crosswalk markings are a deferred future option.
+    // get a clean junction; end gets an asphalt CAP over its one band; isolated
+    // (zero arms) is a lone asphalt PATCH — the hub IS its whole road shape.
+    // Crosswalk markings are a deferred future option.
     //
-    // SQUARE not diamond: each connected arm's inner cap = C ± nrm·halfW, exactly
-    // halfW from C, so the union of all arm inner caps lies in the DISC of radius
-    // halfW at C. An axis-aligned square centred at C with half-side halfW
-    // (corners C ± (halfW,halfW)) has inscribed-circle radius halfW → it CONTAINS
-    // that disc and covers every arm cap with no sliver. The old DIAMOND-shaped
-    // hub of half-side halfW had inscribed radius only halfW/√2 < halfW, so it
-    // left slivers — hence the square.
+    // Shape = a scaled-down copy of the TILE diamond (corners toward top/right/
+    // bottom/left), NOT a screen-axis square. The roads enter through the tile-edge
+    // midpoints, so a tile-aligned mini-diamond meets each arm with a flat edge
+    // that's PARALLEL to the road — it reads as a proper junction. A screen-axis
+    // square instead pokes its corners out along the screen diagonals, 45° off the
+    // road flow, so it looked like a stray rotated diamond dropped on the crossing.
+    //
+    // SIZE: scale s from the centroid so the mini-diamond's inscribed circle is
+    // HUB_COVERAGE × the arm-cap radius halfW (every arm inner cap = C ± nrm·halfW
+    // sits at distance halfW from C; inscribed radius = s · rIns where rIns = min
+    // centre→edge distance, so s = (halfW / rIns) · HUB_COVERAGE). At HUB_COVERAGE 1
+    // the inscribed circle exactly equals the two-band overlap; <1 trades a hair of
+    // crossing-curb sliver for a smaller, less chunky junction patch.
+    // s ⩽ 1 is GUARANTEED (halfW ⩽ maxRoadHalfWidthForDiamond ⩽ rIns, HUB_COVERAGE
+    // ⩽ 1), and a diamond scaled from the centroid by s ⩽ 1 stays inside the tile —
+    // so unlike the old square the hub provably cannot bleed past the tile boundary.
     //
     // HUB-TINT matches the arm bands so hub + arms dim together on slopes:
     //   textured  → darken(TILE_COLORS.road, brightness)  (== the arms' white ×
@@ -378,13 +405,19 @@ function drawRoadBands(
     //   null tex  → raw TILE_COLORS.road at alpha 1.0      (== flat arm fallback)
     // On flat ground brightness === 1 so darken(...,1) is a no-op.
     const C = d.center;
+    const { top, right, bottom, left } = d.corners;
+    const rIns = Math.min(
+      perpDist(C, top, right),
+      perpDist(C, right, bottom),
+      perpDist(C, bottom, left),
+      perpDist(C, left, top),
+    );
+    const s = Math.min(0.95, (halfW / rIns) * HUB_COVERAGE);
+    const toward = (corner: ScreenCoord) => add(C, scale(sub(corner, C), s));
     const hubColor = roadTex ? darken(TILE_COLORS.road, brightness) : TILE_COLORS.road;
-    const s0 = { x: C.x - halfW, y: C.y - halfW };
-    const s1 = { x: C.x + halfW, y: C.y - halfW };
-    const s2 = { x: C.x + halfW, y: C.y + halfW };
-    const s3 = { x: C.x - halfW, y: C.y + halfW };
-    fillTri(gfx, s0, s1, s2, hubColor, 1);
-    fillTri(gfx, s0, s2, s3, hubColor, 1);
+    const ht = toward(top), hr = toward(right), hb = toward(bottom), hl = toward(left);
+    fillTri(gfx, ht, hr, hb, hubColor, 1);
+    fillTri(gfx, ht, hb, hl, hubColor, 1);
   }
 }
 
