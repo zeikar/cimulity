@@ -119,7 +119,7 @@ export class DecorationRenderer {
     const isRoad = (x: number, y: number): boolean =>
       map.getTile(x, y)?.type === TileType.ROAD;
     const isPlainGrass = (x: number, y: number): boolean =>
-      map.getTile(x, y)?.type === TileType.GRASS && structureMap.getStructureAt(x, y) === null;
+      map.getTile(x, y)?.type === TileType.GRASS && !world.isWater(x, y) && structureMap.getStructureAt(x, y) === null;
 
     for (const { x, y } of iterateVisibleTiles(visibleBounds.buildings)) {
       const candidate = streetTreeForCell(x, y, isRoad, isPlainGrass);
