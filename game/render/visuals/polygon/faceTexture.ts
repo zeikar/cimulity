@@ -37,6 +37,7 @@ const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
 const GRASS_URL = `${BASE_PATH}/textures/grass.png`;
 const WATER_URL = `${BASE_PATH}/textures/water.png`;
 const ROAD_URL = `${BASE_PATH}/textures/road.png`;
+const PARK_URL = `${BASE_PATH}/textures/park.png`;
 const POLICE_WALL_URL = `${BASE_PATH}/textures/police-wall.png`;
 const FIRE_WALL_URL = `${BASE_PATH}/textures/fire-wall.png`;
 const HOSPITAL_WALL_URL = `${BASE_PATH}/textures/hospital-wall.png`;
@@ -78,6 +79,7 @@ let roofTexture: Texture | null = null;
 let grassTexture: Texture | null = null;
 let waterTexture: Texture | null = null;
 let roadTexture: Texture | null = null;
+let parkTexture: Texture | null = null;
 let policeWallTexture: Texture | null = null;
 let fireWallTexture: Texture | null = null;
 let hospitalWallTexture: Texture | null = null;
@@ -123,6 +125,7 @@ export async function preloadFaceTextures(): Promise<void> {
   jobs.push(loadTexture(GRASS_URL).then((t) => { grassTexture = t; }));
   jobs.push(loadTexture(WATER_URL).then((t) => { waterTexture = t; }));
   jobs.push(loadTexture(ROAD_URL).then((t) => { roadTexture = t; }));
+  jobs.push(loadTexture(PARK_URL).then((t) => { parkTexture = t; }));
   jobs.push(loadTexture(POLICE_WALL_URL).then((t) => { policeWallTexture = t; }));
   jobs.push(loadTexture(FIRE_WALL_URL).then((t) => { fireWallTexture = t; }));
   jobs.push(loadTexture(HOSPITAL_WALL_URL).then((t) => { hospitalWallTexture = t; }));
@@ -172,6 +175,11 @@ export function getWaterTexture(): Texture | null {
 /** Road asphalt texture (opaque COLOUR), or null until loaded (caller draws flat-colour bands then). */
 export function getRoadTexture(): Texture | null {
   return roadTexture;
+}
+
+/** Park lawn terrain texture (COLOUR), or null until loaded (caller draws flat park colour then). */
+export function getParkTexture(): Texture | null {
+  return parkTexture;
 }
 
 /** Police station wall texture (windowed COLOUR+alpha), or null until loaded. */
