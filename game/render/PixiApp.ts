@@ -11,6 +11,7 @@ import { UtilityStatusOverlay } from './overlays/UtilityStatusOverlay';
 import { PowerPlantRenderer } from './PowerPlantRenderer';
 import { WaterTowerRenderer } from './WaterTowerRenderer';
 import { ServiceStructureRenderer } from './ServiceStructureRenderer';
+import { DecorationRenderer } from './DecorationRenderer';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 import { mapWorldExtent, cameraBounds, centerOffset } from './cameraConstraints';
 import { visibleTileBounds, type VisibleTileBounds } from './viewportCulling';
@@ -34,6 +35,7 @@ export class PixiApp {
   private powerPlantRenderer: PowerPlantRenderer | null = null;
   private waterTowerRenderer: WaterTowerRenderer | null = null;
   private serviceStructureRenderer: ServiceStructureRenderer | null = null;
+  private decorationRenderer: DecorationRenderer | null = null;
   private terrainContainer: Container | null = null;
   private buildingContainer: Container | null = null;
   private overlayContainer: Container | null = null;
@@ -117,6 +119,7 @@ export class PixiApp {
     this.powerPlantRenderer = new PowerPlantRenderer(this.buildingContainer);
     this.waterTowerRenderer = new WaterTowerRenderer(this.buildingContainer);
     this.serviceStructureRenderer = new ServiceStructureRenderer(this.buildingContainer);
+    this.decorationRenderer = new DecorationRenderer(this.buildingContainer);
     this.utilityOverlay = new UtilityStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
@@ -132,6 +135,9 @@ export class PixiApp {
     this.powerPlantRenderer.render(this.world, visibleBounds);
     this.waterTowerRenderer.render(this.world, visibleBounds);
     this.serviceStructureRenderer.render(this.world, visibleBounds);
+    if (this.decorationRenderer && this.world && visibleBounds) {
+      this.decorationRenderer.render(this.world, visibleBounds);
+    }
 
     // Setup render loop
     this.app.ticker.add(() => {
@@ -147,6 +153,9 @@ export class PixiApp {
       }
       if (this.serviceStructureRenderer && this.world) {
         this.serviceStructureRenderer.render(this.world, visibleBounds);
+      }
+      if (this.decorationRenderer && this.world && visibleBounds) {
+        this.decorationRenderer.render(this.world, visibleBounds);
       }
       if (this.utilityOverlay && this.world) {
         this.utilityOverlay.render(this.world, visibleBounds);
@@ -279,6 +288,7 @@ export class PixiApp {
     this.powerPlantRenderer?.destroy();
     this.waterTowerRenderer?.destroy();
     this.serviceStructureRenderer?.destroy();
+    this.decorationRenderer?.destroy();
     this.utilityOverlay?.destroy();
     this.selectionRenderer?.destroy();
 
@@ -291,8 +301,9 @@ export class PixiApp {
     this.buildingContainer?.destroy({ children: true });
     this.overlayContainer?.destroy({ children: true });
     this.selectionContainer?.destroy({ children: true });
-    // When sprite-based visuals land, destroy spritesheets here with
-    // `destroy({ texture: true, textureSource: true })`.
+    // Decoration sprite textures (tree/bench/flowerbed) are shared Assets.load
+    // textures held by faceTexture for the process lifetime — intentionally not
+    // destroyed here (matches all other face textures; keeps HMR re-init safe).
 
     if (this.app) {
       // removeView: true — Pixi owns this canvas; remove it so the next
@@ -306,6 +317,7 @@ export class PixiApp {
     this.powerPlantRenderer = null;
     this.waterTowerRenderer = null;
     this.serviceStructureRenderer = null;
+    this.decorationRenderer = null;
     this.utilityOverlay = null;
     this.selectionRenderer = null;
     this.terrainContainer = null;
