@@ -73,6 +73,7 @@ export default defineConfig({
         'game/render/visuals/polygon/windowLights.ts',
         'game/render/roadAutoTile.ts',
         'game/render/visuals/polygon/roadHalfWidth.ts',
+        'game/render/visuals/polygon/decorationPlacement.ts',
       ],
       thresholds: {
         lines: 80,
