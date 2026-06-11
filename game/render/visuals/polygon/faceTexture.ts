@@ -46,6 +46,10 @@ const POWERPLANT_WALL_URL = `${BASE_PATH}/textures/powerplant-wall.png`;
 const CHIMNEY_URL = `${BASE_PATH}/textures/chimney.png`;
 const WATERTOWER_BODY_URL = `${BASE_PATH}/textures/watertower-body.png`;
 const WATERTOWER_TANK_URL = `${BASE_PATH}/textures/watertower-tank.png`;
+const TREE_0_URL = `${BASE_PATH}/textures/tree-0.png`;
+const TREE_1_URL = `${BASE_PATH}/textures/tree-1.png`;
+const BENCH_URL = `${BASE_PATH}/textures/bench.png`;
+const FLOWERBED_URL = `${BASE_PATH}/textures/flowerbed.png`;
 const wallUrl = (type: BuildingType, variant: number) =>
   `${BASE_PATH}/textures/${type}-${variant}.png`;
 
@@ -88,6 +92,10 @@ let powerPlantWallTexture: Texture | null = null;
 let chimneyTexture: Texture | null = null;
 let waterTowerBodyTexture: Texture | null = null;
 let waterTowerTankTexture: Texture | null = null;
+let tree0Texture: Texture | null = null;
+let tree1Texture: Texture | null = null;
+let benchTexture: Texture | null = null;
+let flowerbedTexture: Texture | null = null;
 
 function loadTexture(url: string): Promise<Texture | null> {
   // No asset loader without a browser (headless vitest mounts visuals directly).
@@ -134,6 +142,10 @@ export async function preloadFaceTextures(): Promise<void> {
   jobs.push(loadTexture(CHIMNEY_URL).then((t) => { chimneyTexture = t; }));
   jobs.push(loadTexture(WATERTOWER_BODY_URL).then((t) => { waterTowerBodyTexture = t; }));
   jobs.push(loadTexture(WATERTOWER_TANK_URL).then((t) => { waterTowerTankTexture = t; }));
+  jobs.push(loadTexture(TREE_0_URL).then((t) => { tree0Texture = t; }));
+  jobs.push(loadTexture(TREE_1_URL).then((t) => { tree1Texture = t; }));
+  jobs.push(loadTexture(BENCH_URL).then((t) => { benchTexture = t; }));
+  jobs.push(loadTexture(FLOWERBED_URL).then((t) => { flowerbedTexture = t; }));
   await Promise.all(jobs);
 }
 
@@ -220,6 +232,21 @@ export function getWaterTowerBodyTexture(): Texture | null {
 /** Water tower tank texture (opaque COLOUR), or null until loaded. */
 export function getWaterTowerTankTexture(): Texture | null {
   return waterTowerTankTexture;
+}
+
+/** Tree decoration texture (COLOUR+alpha), or null until loaded. variant 0 = round deciduous, 1 = conifer. */
+export function getTreeTexture(variant: 0 | 1): Texture | null {
+  return variant === 0 ? tree0Texture : tree1Texture;
+}
+
+/** Park bench decoration texture (COLOUR+alpha), or null until loaded. */
+export function getBenchTexture(): Texture | null {
+  return benchTexture;
+}
+
+/** Flowerbed decoration texture (COLOUR+alpha), or null until loaded. */
+export function getFlowerbedTexture(): Texture | null {
+  return flowerbedTexture;
 }
 
 /**
