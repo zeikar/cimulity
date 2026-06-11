@@ -3,10 +3,141 @@ import {
   decoHash,
   parkObjectsForCell,
   streetTreeForCell,
+  landTreesForCell,
   PARK_SALT,
   STREET_SALT,
   EMPTY_SALT,
+  EMPTY_DENSITY,
 } from './decorationPlacement';
+
+// ── landTreesForCell ─────────────────────────────────────────────────────────
+
+describe('landTreesForCell', () => {
+  const alwaysGrass = () => true;
+  const neverGrass  = () => false;
+
+  it('returns [] when isPlainGrass is false (DIRT / owned cell)', () => {
+    // Sweep to find a cell that would pass the hash gate, then confirm it
+    // returns [] when isPlainGrass says no.
+    for (let x = 0; x < 50; x++) {
+      for (let y = 0; y < 50; y++) {
+        if (landTreesForCell(x, y, alwaysGrass).length > 0) {
+          expect(landTreesForCell(x, y, neverGrass)).toEqual([]);
+          return;
+        }
+      }
+    }
+    throw new Error('No cell passed hash gate in 50×50 sweep — EMPTY_DENSITY may be 0');
+  });
+
+  it('is deterministic — same (x,y) always returns identical LandTree[]', () => {
+    for (let x = 0; x < 30; x++) {
+      for (let y = 0; y < 30; y++) {
+        const a = landTreesForCell(x, y, alwaysGrass);
+        const b = landTreesForCell(x, y, alwaysGrass);
+        expect(a).toEqual(b);
+      }
+    }
+  });
+
+  it('count is always 0, 1, or 2', () => {
+    for (let x = 0; x < 50; x++) {
+      for (let y = 0; y < 50; y++) {
+        const trees = landTreesForCell(x, y, alwaysGrass);
+        expect(trees.length).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  it('key format is "land:x:y:slotIndex"', () => {
+    for (let x = 0; x < 50; x++) {
+      for (let y = 0; y < 50; y++) {
+        const trees = landTreesForCell(x, y, alwaysGrass);
+        trees.forEach((t, i) => {
+          expect(t.key).toBe(`land:${x}:${y}:${i}`);
+          expect(t.slotIndex).toBe(i);
+        });
+      }
+    }
+  });
+
+  it('variant is 0 or 1', () => {
+    let foundPlaced = false;
+    for (let x = 0; x < 50; x++) {
+      for (let y = 0; y < 50; y++) {
+        const trees = landTreesForCell(x, y, alwaysGrass);
+        for (const t of trees) {
+          expect([0, 1]).toContain(t.variant);
+          foundPlaced = true;
+        }
+      }
+    }
+    expect(foundPlaced).toBe(true);
+  });
+
+  it('jitter stays within tile diamond half-extents (HW*0.6=~19, HH*0.6=~9)', () => {
+    // HW=32, HH=16
+    const DX_BOUND = Math.floor(32 * 0.6); // 19
+    const DY_BOUND = Math.floor(16 * 0.6); // 9
+    for (let x = 0; x < 50; x++) {
+      for (let y = 0; y < 50; y++) {
+        const trees = landTreesForCell(x, y, alwaysGrass);
+        for (const t of trees) {
+          expect(Math.abs(t.dx)).toBeLessThanOrEqual(DX_BOUND);
+          expect(Math.abs(t.dy)).toBeLessThanOrEqual(DY_BOUND);
+        }
+      }
+    }
+  });
+
+  it('overall cell-hosting density lands ~10–22% across a coordinate sweep', () => {
+    let hosting = 0;
+    const total = 100 * 100;
+    for (let x = 0; x < 100; x++) {
+      for (let y = 0; y < 100; y++) {
+        if (landTreesForCell(x, y, alwaysGrass).length > 0) hosting++;
+      }
+    }
+    const rate = hosting / total;
+    expect(rate).toBeGreaterThan(0.10);
+    expect(rate).toBeLessThan(0.22);
+  });
+
+  it('clustering raises average tree count when neighbors also qualify vs isolated cells', () => {
+    // A cell with many qualifying neighbors should on average have more trees
+    // than one whose neighbors do not pass the gate.
+    // We approximate by finding cells whose all-4 neighbors pass vs cells whose
+    // no neighbors pass (using the same decoHash gate the implementation uses).
+    const qualifies = (x: number, y: number) =>
+      decoHash(x, y, EMPTY_SALT) % 100 < EMPTY_DENSITY;
+
+    let sumClustered = 0, cntClustered = 0;
+    let sumIsolated  = 0, cntIsolated  = 0;
+
+    for (let x = 1; x < 200; x++) {
+      for (let y = 1; y < 200; y++) {
+        if (!qualifies(x, y)) continue; // only look at base-gate-passing cells
+        const nCount = [
+          qualifies(x + 1, y), qualifies(x - 1, y),
+          qualifies(x, y + 1), qualifies(x, y - 1),
+        ].filter(Boolean).length;
+
+        const trees = landTreesForCell(x, y, alwaysGrass).length;
+        if (nCount >= 2) { sumClustered += trees; cntClustered++; }
+        if (nCount === 0) { sumIsolated  += trees; cntIsolated++;  }
+      }
+    }
+
+    // Both groups must be non-trivial for the assertion to be meaningful.
+    expect(cntClustered).toBeGreaterThan(5);
+    expect(cntIsolated).toBeGreaterThan(5);
+
+    const avgClustered = sumClustered / cntClustered;
+    const avgIsolated  = sumIsolated  / cntIsolated;
+    // Clustered cells should have strictly more trees on average.
+    expect(avgClustered).toBeGreaterThan(avgIsolated);
+  });
+});
 
 // ── streetTreeForCell ────────────────────────────────────────────────────────
 

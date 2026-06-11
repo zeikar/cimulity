@@ -125,6 +125,89 @@ export function streetTreeForCell(
   };
 }
 
+// ── Empty-land (plain-grass) tree placement ──────────────────────────────────
+
+/**
+ * Fraction of plain-grass cells that host ≥1 tree (out of 100).
+ * EMPTY_DENSITY=15 → ~15% cell-hosting rate, within the 10–20% design target.
+ */
+export const EMPTY_DENSITY = 15;
+
+export interface LandTree {
+  /** Unique stable key: "land:x:y:i" where i is the slot index on this cell. */
+  key: string;
+  /** Sprite variant (0 or 1). */
+  variant: 0 | 1;
+  /** Sub-tile screen-space X offset (px) from tile center. */
+  dx: number;
+  /** Sub-tile screen-space Y offset (px) from tile center. */
+  dy: number;
+  /** Slot index within this cell (0 or 1); use for intra-tile z ordering. */
+  slotIndex: number;
+}
+
+/**
+ * Returns 0–2 deterministic trees for a plain-grass cell (x, y).
+ *
+ * Eligibility (GRASS + no structure owner, DIRT excluded) is fully delegated to
+ * the isPlainGrass predicate — this function never inspects tile state itself.
+ *
+ * Clustering is hash-driven on orthogonal neighbor coordinates (not isPlainGrass
+ * on neighbors) so a cell's tree count stays stable regardless of what gets built
+ * on adjacent tiles after placement.
+ */
+export function landTreesForCell(
+  x: number,
+  y: number,
+  isPlainGrass: (x: number, y: number) => boolean,
+): LandTree[] {
+  if (!isPlainGrass(x, y)) return [];
+
+  // Base gate: ~EMPTY_DENSITY% of cells host any trees.
+  if (decoHash(x, y, EMPTY_SALT) % 100 >= EMPTY_DENSITY) return [];
+
+  // Clustering: count orthogonal neighbors that also pass the base density gate.
+  // Deliberately uses decoHash on neighbor coords (not isPlainGrass on neighbors)
+  // so cluster size is map-mutation-independent and purely hash-driven.
+  const neighborPasses = [
+    decoHash(x + 1, y, EMPTY_SALT) % 100 < EMPTY_DENSITY,
+    decoHash(x - 1, y, EMPTY_SALT) % 100 < EMPTY_DENSITY,
+    decoHash(x, y + 1, EMPTY_SALT) % 100 < EMPTY_DENSITY,
+    decoHash(x, y - 1, EMPTY_SALT) % 100 < EMPTY_DENSITY,
+  ];
+  const qualifyingNeighbors = neighborPasses.filter(Boolean).length;
+
+  // Base count is always 1 (cell passed the gate above).
+  // Add a second tree when ≥2 neighbors also pass, forming loose groves.
+  const count = qualifyingNeighbors >= 2 ? 2 : 1;
+
+  const trees: LandTree[] = [];
+  for (let i = 0; i < count; i++) {
+    // Use separate salted hashes for dx, dy, and variant to avoid correlation.
+    // +10/+20 shifts keep the three channels collision-free while max count ≤ 9;
+    // raise these shift constants if the tree count cap ever grows beyond that.
+    const hx = decoHash(x, y, i, EMPTY_SALT);
+    const hy = decoHash(x, y, i + 10, EMPTY_SALT); // shifted slot index decorrelates dy
+    const hv = decoHash(x, y, i + 20, EMPTY_SALT); // shifted again for variant
+
+    // Jitter: |dx| ≤ floor(HW*0.6) = 19px, |dy| ≤ floor(HH*0.6) = 9px (trees stay on-cell).
+    // Map the low bits to a signed range: (bits % range) - half_range.
+    const dxRange = Math.floor(HW * 0.6) * 2;
+    const dyRange = Math.floor(HH * 0.6) * 2;
+    const dx = (hx % dxRange) - Math.floor(dxRange / 2);
+    const dy = (hy % dyRange) - Math.floor(dyRange / 2);
+
+    trees.push({
+      key: `land:${x}:${y}:${i}`,
+      variant: (hv % 2) as 0 | 1,
+      dx,
+      dy,
+      slotIndex: i,
+    });
+  }
+  return trees;
+}
+
 // ── Park placement ───────────────────────────────────────────────────────────
 
 // Tile is 64×32 px in screen space (ISO_CONFIG). Place objects ≈ 1/4 tile from
