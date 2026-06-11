@@ -4,8 +4,8 @@
  *
  * Keyed by stable slot key (string) — one Sprite per decoration slot. Scans the
  * structure map every frame for 'park' structures (park: prefix) and iterates
- * visible tiles for street trees (street: prefix). Both share a single prune
- * pass so road removal auto-removes its trees.
+ * visible tiles for street trees (street: prefix) and empty-land trees (land:
+ * prefix). All three share a single prune pass so removal is automatic.
  *
  * Shared decoration textures (loaded by faceTexture's preloadFaceTextures) are
  * held for the process lifetime and are NOT destroyed here — see faceTexture.ts
@@ -22,7 +22,7 @@ import { tileToScreenWithHeight, ISO_CONFIG } from './IsoTransform';
 import { isBuildingVisible, iterateVisibleTiles } from './viewportCulling';
 import type { VisibleTileBounds } from './viewportCulling';
 import { computeZIndex } from './visuals/polygon/cubeBuildingZIndex';
-import { parkObjectsForCell, streetTreeForCell } from './visuals/polygon/decorationPlacement';
+import { parkObjectsForCell, streetTreeForCell, landTreesForCell } from './visuals/polygon/decorationPlacement';
 import type { ParkObjectKind } from './visuals/polygon/decorationPlacement';
 import {
   getTreeTexture,
@@ -123,17 +123,33 @@ export class DecorationRenderer {
 
     for (const { x, y } of iterateVisibleTiles(visibleBounds.buildings)) {
       const candidate = streetTreeForCell(x, y, isRoad, isPlainGrass);
-      if (candidate === null) continue;
+      if (candidate !== null) {
+        const screen = tileToScreenWithHeight({ x, y }, terrain.getRenderHeight(x, y));
+        const posX = screen.x + candidate.dx;
+        const posY = screen.y + ISO_CONFIG.TILE_HEIGHT / 2 + candidate.dy;
+        const zIndex = computeZIndex([{ x, y }]);
+        this.mountOrUpdate(candidate.key, getTreeTexture(candidate.variant), posX, posY, zIndex, visibleKeys);
+        // Roadside cell hosts a street tree — skip land trees to avoid double-placement.
+        continue;
+      }
 
+      // Empty-land pass: only reached when no street tree here. Resolve trees
+      // before the screen projection so the terrain read stays off the hot path
+      // for the majority of (non-grass) tiles, which yield no trees.
+      const landTrees = landTreesForCell(x, y, isPlainGrass);
+      if (landTrees.length === 0) continue;
       const screen = tileToScreenWithHeight({ x, y }, terrain.getRenderHeight(x, y));
-      const posX = screen.x + candidate.dx;
-      const posY = screen.y + ISO_CONFIG.TILE_HEIGHT / 2 + candidate.dy;
-      const zIndex = computeZIndex([{ x, y }]);
-      this.mountOrUpdate(candidate.key, getTreeTexture(candidate.variant), posX, posY, zIndex, visibleKeys);
+      const baseZ = computeZIndex([{ x, y }]);
+      for (const tree of landTrees) {
+        const posX = screen.x + tree.dx;
+        const posY = screen.y + ISO_CONFIG.TILE_HEIGHT / 2 + tree.dy;
+        const zIndex = baseZ + tree.slotIndex * 0.1;
+        this.mountOrUpdate(tree.key, getTreeTexture(tree.variant), posX, posY, zIndex, visibleKeys);
+      }
     }
 
-    // Prune sprites for keys absent from the current visible pass (covers both
-    // park: and street: prefixes — no separate prune needed).
+    // Prune sprites for keys absent from the current visible pass (covers
+    // park:, street:, and land: prefixes — no separate prune needed).
     for (const [key, sprite] of this.byKey) {
       if (!visibleKeys.has(key)) {
         // Default destroy options — do NOT pass { texture: true }; the texture
