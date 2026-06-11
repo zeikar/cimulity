@@ -37,6 +37,14 @@ const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
 const GRASS_URL = `${BASE_PATH}/textures/grass.png`;
 const WATER_URL = `${BASE_PATH}/textures/water.png`;
 const ROAD_URL = `${BASE_PATH}/textures/road.png`;
+const POLICE_WALL_URL = `${BASE_PATH}/textures/police-wall.png`;
+const FIRE_WALL_URL = `${BASE_PATH}/textures/fire-wall.png`;
+const HOSPITAL_WALL_URL = `${BASE_PATH}/textures/hospital-wall.png`;
+const SCHOOL_WALL_URL = `${BASE_PATH}/textures/school-wall.png`;
+const POWERPLANT_WALL_URL = `${BASE_PATH}/textures/powerplant-wall.png`;
+const CHIMNEY_URL = `${BASE_PATH}/textures/chimney.png`;
+const WATERTOWER_BODY_URL = `${BASE_PATH}/textures/watertower-body.png`;
+const WATERTOWER_TANK_URL = `${BASE_PATH}/textures/watertower-tank.png`;
 const wallUrl = (type: BuildingType, variant: number) =>
   `${BASE_PATH}/textures/${type}-${variant}.png`;
 
@@ -70,6 +78,14 @@ let roofTexture: Texture | null = null;
 let grassTexture: Texture | null = null;
 let waterTexture: Texture | null = null;
 let roadTexture: Texture | null = null;
+let policeWallTexture: Texture | null = null;
+let fireWallTexture: Texture | null = null;
+let hospitalWallTexture: Texture | null = null;
+let schoolWallTexture: Texture | null = null;
+let powerPlantWallTexture: Texture | null = null;
+let chimneyTexture: Texture | null = null;
+let waterTowerBodyTexture: Texture | null = null;
+let waterTowerTankTexture: Texture | null = null;
 
 function loadTexture(url: string): Promise<Texture | null> {
   // No asset loader without a browser (headless vitest mounts visuals directly).
@@ -107,6 +123,14 @@ export async function preloadFaceTextures(): Promise<void> {
   jobs.push(loadTexture(GRASS_URL).then((t) => { grassTexture = t; }));
   jobs.push(loadTexture(WATER_URL).then((t) => { waterTexture = t; }));
   jobs.push(loadTexture(ROAD_URL).then((t) => { roadTexture = t; }));
+  jobs.push(loadTexture(POLICE_WALL_URL).then((t) => { policeWallTexture = t; }));
+  jobs.push(loadTexture(FIRE_WALL_URL).then((t) => { fireWallTexture = t; }));
+  jobs.push(loadTexture(HOSPITAL_WALL_URL).then((t) => { hospitalWallTexture = t; }));
+  jobs.push(loadTexture(SCHOOL_WALL_URL).then((t) => { schoolWallTexture = t; }));
+  jobs.push(loadTexture(POWERPLANT_WALL_URL).then((t) => { powerPlantWallTexture = t; }));
+  jobs.push(loadTexture(CHIMNEY_URL).then((t) => { chimneyTexture = t; }));
+  jobs.push(loadTexture(WATERTOWER_BODY_URL).then((t) => { waterTowerBodyTexture = t; }));
+  jobs.push(loadTexture(WATERTOWER_TANK_URL).then((t) => { waterTowerTankTexture = t; }));
   await Promise.all(jobs);
 }
 
@@ -148,6 +172,46 @@ export function getWaterTexture(): Texture | null {
 /** Road asphalt texture (opaque COLOUR), or null until loaded (caller draws flat-colour bands then). */
 export function getRoadTexture(): Texture | null {
   return roadTexture;
+}
+
+/** Police station wall texture (windowed COLOUR+alpha), or null until loaded. */
+export function getPoliceWallTexture(): Texture | null {
+  return policeWallTexture;
+}
+
+/** Fire station wall texture (windowed COLOUR+alpha), or null until loaded. */
+export function getFireWallTexture(): Texture | null {
+  return fireWallTexture;
+}
+
+/** Hospital wall texture (windowed COLOUR+alpha), or null until loaded. */
+export function getHospitalWallTexture(): Texture | null {
+  return hospitalWallTexture;
+}
+
+/** School wall texture (windowed COLOUR+alpha), or null until loaded. */
+export function getSchoolWallTexture(): Texture | null {
+  return schoolWallTexture;
+}
+
+/** Power plant wall texture (windowed COLOUR+alpha), or null until loaded. */
+export function getPowerPlantWallTexture(): Texture | null {
+  return powerPlantWallTexture;
+}
+
+/** Chimney texture (opaque COLOUR), or null until loaded. */
+export function getChimneyTexture(): Texture | null {
+  return chimneyTexture;
+}
+
+/** Water tower body texture (opaque COLOUR), or null until loaded. */
+export function getWaterTowerBodyTexture(): Texture | null {
+  return waterTowerBodyTexture;
+}
+
+/** Water tower tank texture (opaque COLOUR), or null until loaded. */
+export function getWaterTowerTankTexture(): Texture | null {
+  return waterTowerTankTexture;
 }
 
 /**
