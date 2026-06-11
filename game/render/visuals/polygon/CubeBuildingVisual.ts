@@ -30,10 +30,8 @@ import {
   wallVariant,
   getRoofTexture,
   roofFaceFillMatrix,
-  wallFaceRepeats,
 } from './faceTexture';
-import { windowSeed, windowCellLit, windowCellQuads } from './windowLights';
-import type { Matrix } from 'pixi.js';
+import { windowSeed } from './windowLights';
 import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 import type { BuildingType } from '@/game/core/Building';
@@ -44,6 +42,7 @@ import {
   densityShade,
 } from './cubePalette';
 import { cubeBodyHeightPx } from './cubeLift';
+import { drawTexturedPoly, drawPoly, drawWindowBacking } from './texturedFace';
 
 function topColor(input: BuildingVisualInput): number {
   // Top face: full-brightness white-based tint (face shading only). The roof
@@ -85,30 +84,6 @@ function glassColor(type: BuildingType, lit: boolean, faceFactor: number, densit
     return shadeColor(litColor, factor);
   }
   return shadeColor(darkColor, faceFactor * densityShade(density));
-}
-
-// Draw per-window backing on a wall face: dark base for the whole face, then
-// individual lit cells on top. The wall texture is drawn after this (opaque wall +
-// frames cover everything except the transparent window holes).
-function drawWindowBacking(
-  ctx: GraphicsContext,
-  face: NonNullable<ReturnType<typeof cubeFacePolygons>>['left'],
-  type: BuildingType,
-  density: 0 | 1 | 2,
-  seed: number,
-  faceFactor: number,
-  ox: number,
-  oy: number,
-): void {
-  const { repeatX, repeatY } = wallFaceRepeats(face);
-  // Dark backing for the entire face.
-  fillPoly(ctx, face, glassColor(type, false, faceFactor, density), ox, oy);
-  // Overlay lit cells where the window is on.
-  for (const cell of windowCellQuads(face, repeatX, repeatY)) {
-    if (windowCellLit(seed, cell.col, cell.row)) {
-      fillPoly(ctx, cell.points, glassColor(type, true, faceFactor, density), ox, oy);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -156,65 +131,6 @@ export const SHADOW_Z_OFFSET = -1_000_000;
 // Context builders
 // ---------------------------------------------------------------------------
 
-function drawPoly(
-  ctx: GraphicsContext,
-  points: ReadonlyArray<Point>,
-  fillColor: number,
-  strokeAlpha: number,
-  ox: number,
-  oy: number,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(points[0].x + ox, points[0].y + oy);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x + ox, points[i].y + oy);
-  }
-  ctx.closePath();
-  ctx.fill({ color: fillColor });
-  ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
-}
-
-// SPIKE: textured face fill. Same path as drawPoly, but fills with a texture
-// skewed onto the parallelogram face (matrix) and tinted by the face's shaded
-// colour. textureSpace 'global' so the matrix maps texture-px -> local-px.
-function drawTexturedPoly(
-  ctx: GraphicsContext,
-  points: ReadonlyArray<Point>,
-  texture: Texture,
-  matrix: Matrix,
-  tintColor: number,
-  strokeAlpha: number,
-  ox: number,
-  oy: number,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(points[0].x + ox, points[0].y + oy);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x + ox, points[i].y + oy);
-  }
-  ctx.closePath();
-  ctx.fill({ texture, matrix, color: tintColor, textureSpace: 'global' });
-  ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
-}
-
-// Fill-only path (no stroke) — used for the window-glass backing drawn under a
-// textured wall, where the wall texture supplies the outline.
-function fillPoly(
-  ctx: GraphicsContext,
-  points: ReadonlyArray<Point>,
-  fillColor: number,
-  ox: number,
-  oy: number,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(points[0].x + ox, points[0].y + oy);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x + ox, points[i].y + oy);
-  }
-  ctx.closePath();
-  ctx.fill({ color: fillColor });
-}
-
 // Shadows must not have outlines — drawPoly always strokes, so we need a separate path.
 function drawShadow(ctx: GraphicsContext, polygon: ReadonlyArray<Point>, ox: number, oy: number): void {
   ctx.beginPath();
@@ -252,8 +168,8 @@ function drawCubeFaces(
     // All zone types get this treatment; commercial/industrial walls are currently
     // opaque, so their backing is hidden — harmless, and ready when those textures
     // gain transparency.
-    drawWindowBacking(ctx, faces.left, input.type, input.density, seed, 0.55, ox, oy);
-    drawWindowBacking(ctx, faces.right, input.type, input.density, seed, 0.75, ox, oy);
+    drawWindowBacking(ctx, faces.left, (lit) => glassColor(input.type, lit, 0.55, input.density), seed, ox, oy);
+    drawWindowBacking(ctx, faces.right, (lit) => glassColor(input.type, lit, 0.75, input.density), seed, ox, oy);
     drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
     drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
   } else {
