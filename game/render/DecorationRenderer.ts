@@ -40,6 +40,14 @@ function resolveTexture(kind: ParkObjectKind): Texture | null {
   }
 }
 
+// Within-tile depth tiebreak: objects on the SAME tile sort by their feet
+// screen-Y (iso painter's order). dy is the only within-tile variable in the
+// feet position, so a higher dy (more toward the front/south) gets a higher
+// zIndex and draws on top. The factor keeps the offset a small fraction
+// (|dy|≤~9 ⇒ |offset|≤~0.09), far inside the 1000-spaced per-tile bands, so it
+// never reorders distinct tiles.
+const WITHIN_TILE_DEPTH = 0.01;
+
 export class DecorationRenderer {
   private readonly buildingContainer: Container;
   private readonly byKey: Map<string, Sprite> = new Map();
@@ -109,7 +117,7 @@ export class DecorationRenderer {
         const slot = slots[slotIndex];
         const posX = screen.x + slot.dx;
         const posY = screen.y + ISO_CONFIG.TILE_HEIGHT / 2 + slot.dy;
-        const zIndex = baseZ + slotIndex * 0.1;
+        const zIndex = baseZ + slot.dy * WITHIN_TILE_DEPTH;
         this.mountOrUpdate(slot.key, resolveTexture(slot.kind), posX, posY, zIndex, visibleKeys);
       }
     }
@@ -143,7 +151,7 @@ export class DecorationRenderer {
       for (const tree of landTrees) {
         const posX = screen.x + tree.dx;
         const posY = screen.y + ISO_CONFIG.TILE_HEIGHT / 2 + tree.dy;
-        const zIndex = baseZ + tree.slotIndex * 0.1;
+        const zIndex = baseZ + tree.dy * WITHIN_TILE_DEPTH;
         this.mountOrUpdate(tree.key, getTreeTexture(tree.variant), posX, posY, zIndex, visibleKeys);
       }
     }
