@@ -15,7 +15,7 @@ import type { TerrainTileVisual, TileVisualInput } from '../TileVisual';
 import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
-import { getGrassTexture, getWaterTexture, getRoadTexture, getParkTexture } from './faceTexture';
+import { getGrassTexture, getWaterTexture, getRoadTexture, getParkTexture, getDirtTexture } from './faceTexture';
 import { maxRoadHalfWidthForDiamond } from './roadHalfWidth';
 
 // Terrain texture pixels per grid cell (shared by grass + water). UV is fed in
@@ -106,6 +106,7 @@ function shadeTri(
   landTex: Texture | null,
   waterTex: Texture | null,
   roughFactor: number,
+  landTintBase: number,
 ): void {
   if (isWater) {
     if (waterTex) {
@@ -115,8 +116,9 @@ function shadeTri(
     }
   } else if (landTex) {
     // flatColor already bakes the rough darken; the textured tint starts from
-    // white, so apply roughFactor here to keep the rough cue on the textured land.
-    fillTexturedTri(gfx, a, b, c, uvA, uvB, uvC, landTex, darken(0xffffff, brightness * roughFactor));
+    // landTintBase (white for grass/park/dirt; zone hue for undeveloped zone tiles),
+    // so apply roughFactor here to keep the rough cue on the textured land.
+    fillTexturedTri(gfx, a, b, c, uvA, uvB, uvC, landTex, darken(landTintBase, brightness * roughFactor));
   } else {
     fillTri(gfx, a, b, c, darken(flatColor, brightness), 1.0);
   }
@@ -478,12 +480,23 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // the shared integer grid-vertex coords (top=(x,y), right=(x+1,y),
   // bottom=(x+1,y+1), left=(x,y+1)) so both textures are seamless across tiles.
   // Road tiles use the grass texture for their base too (asphalt bands overlay).
-  // Park tiles get their own lawn texture; `landFill` is the per-tile land terrain
-  // texture passed to shadeTri (grass for grass/road, park for park, else null →
-  // flat-colour fallback).
+  // Park tiles get their own lawn texture. Undeveloped zone tiles get the grass
+  // texture tinted by the zone hue (so the zone colour reads while sharing the
+  // same geometry). Dirt tiles use their own brown dirt texture (art carries
+  // colour; tint = white). `landFill` is the per-tile terrain texture passed to
+  // shadeTri (null → flat-colour fallback).
+  const zoneTint = input.type === 'zone_residential' ? TILE_COLORS.zone_residential
+    : input.type === 'zone_commercial'  ? TILE_COLORS.zone_commercial
+    : input.type === 'zone_industrial'  ? TILE_COLORS.zone_industrial
+    : null;
+  const isZoneTile = zoneTint !== null;
   const grassFill: Texture | null = input.type === 'grass' || isRoad ? getGrassTexture() : null;
   const parkFill: Texture | null = input.type === 'park' ? getParkTexture() : null;
-  const landFill: Texture | null = grassFill ?? parkFill;
+  const dirtFill: Texture | null = input.type === 'dirt' ? getDirtTexture() : null;
+  const landFill: Texture | null = grassFill ?? parkFill ?? dirtFill ?? (isZoneTile ? getGrassTexture() : null);
+  // White for grass/park/dirt (art carries colour); zone hue tints the grass
+  // texture so undeveloped zone tiles read their zone colour.
+  const landTintBase: number = isZoneTile ? zoneTint! : 0xffffff;
   const waterFill: Texture | null = getWaterTexture();
   const uvTop    = terrainCornerUv(input.x,     input.y);
   const uvRight  = terrainCornerUv(input.x + 1, input.y);
@@ -506,8 +519,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   // seam-safety bleed; for brightness === 1.0 the overdraw is bit-identical).
   const plan = planDiamondShading(c);
   if (plan.diagonal === 'tb') {
-    shadeTri(gfx, bottom, left,  top, uvBottom, uvLeft,  uvTop, plan.brightnessWest, tbWestWater, fillColor, landFill, waterFill, roughFactor);
-    shadeTri(gfx, bottom, right, top, uvBottom, uvRight, uvTop, plan.brightnessEast, tbEastWater, fillColor, landFill, waterFill, roughFactor);
+    shadeTri(gfx, bottom, left,  top, uvBottom, uvLeft,  uvTop, plan.brightnessWest, tbWestWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
+    shadeTri(gfx, bottom, right, top, uvBottom, uvRight, uvTop, plan.brightnessEast, tbEastWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(top.x, top.y);
@@ -515,8 +528,8 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
     }
   } else {
-    shadeTri(gfx, left, top,    right, uvLeft, uvTop,    uvRight, plan.brightnessNorth, lrNorthWater, fillColor, landFill, waterFill, roughFactor);
-    shadeTri(gfx, left, bottom, right, uvLeft, uvBottom, uvRight, plan.brightnessSouth, lrSouthWater, fillColor, landFill, waterFill, roughFactor);
+    shadeTri(gfx, left, top,    right, uvLeft, uvTop,    uvRight, plan.brightnessNorth, lrNorthWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
+    shadeTri(gfx, left, bottom, right, uvLeft, uvBottom, uvRight, plan.brightnessSouth, lrSouthWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
     if (plan.strokeFold) {
       gfx.beginPath();
       gfx.moveTo(left.x, left.y);
