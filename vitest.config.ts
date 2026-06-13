@@ -71,6 +71,7 @@ export default defineConfig({
         'game/core/SchoolCoverageMap.ts',
         'app/hooks/sampleStats.ts',
         'game/render/visuals/polygon/windowLights.ts',
+        'game/render/visuals/polygon/windowGeometry.ts',
         'game/render/roadAutoTile.ts',
         'game/render/visuals/polygon/roadHalfWidth.ts',
         'game/render/visuals/polygon/decorationPlacement.ts',
