@@ -13,6 +13,7 @@
 import type { BuildingType } from '@/game/core/Building';
 import { cubeTypeInsetRatio } from './cubeTypeRatios';
 import type { FracRect } from './massingGeometry';
+import type { FacadeMode } from './windowGeometry';
 
 export type MassingRoof =
   | { kind: 'flat' }
@@ -24,6 +25,8 @@ export type MassingBox = {
   /** Wall height in px; gable boxes rise roof.risePx further above this. */
   wallHeightPx: number;
   roof: MassingRoof;
+  /** Wall-window style for this box; tower = curtain, else punched. */
+  facade: FacadeMode;
 };
 
 export type MassingProp =
@@ -156,6 +159,7 @@ function gableRoof(bodyH: number, outer: FracRect, seed: number): MassingBox {
     baseLiftPx: 0,
     wallHeightPx: wallH,
     roof: { kind: 'gable', ridgeAxis, risePx: rise, color },
+    facade: 'punched',
   };
 }
 
@@ -181,10 +185,10 @@ function residentialPlan(
     const { main, wing } = splitMainWing(outer, wingFrac);
     mainRect = main;
     const wingH = Math.max(4, Math.round(bodyH * (0.55 + 0.15 * seedUnit(seed, 5))));
-    boxes.push({ rect: main, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' } });
-    boxes.push({ rect: wing, baseLiftPx: 0, wallHeightPx: wingH, roof: { kind: 'flat' } });
+    boxes.push({ rect: main, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' }, facade: 'punched' });
+    boxes.push({ rect: wing, baseLiftPx: 0, wallHeightPx: wingH, roof: { kind: 'flat' }, facade: 'punched' });
   } else {
-    boxes.push({ rect: outer, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' } });
+    boxes.push({ rect: outer, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' }, facade: 'punched' });
   }
 
   // High-rise slabs carry a water tank; lower slabs an AC unit. The wing is
@@ -224,8 +228,8 @@ function commercialPlan(
     const ty0 = outer.y0 + (centered ? (sy - th) / 2 : 0);
     const tower: FracRect = { x0: tx0, y0: ty0, x1: tx0 + tw, y1: ty0 + th };
 
-    boxes.push({ rect: outer, baseLiftPx: 0, wallHeightPx: podiumH, roof: { kind: 'flat' } });
-    boxes.push({ rect: tower, baseLiftPx: podiumH, wallHeightPx: towerH, roof: { kind: 'flat' } });
+    boxes.push({ rect: outer, baseLiftPx: 0, wallHeightPx: podiumH, roof: { kind: 'flat' }, facade: 'punched' });
+    boxes.push({ rect: tower, baseLiftPx: podiumH, wallHeightPx: towerH, roof: { kind: 'flat' }, facade: 'curtain' });
 
     if (level >= 5 && seedUnit(seed, 6) < 0.6) {
       props.push({
@@ -250,7 +254,7 @@ function commercialPlan(
     if (rect) props.push({ kind: 'ac', rect, baseLiftPx: bodyH, heightPx: AC_HEIGHT });
   }
   return finishPlan(
-    [{ rect: outer, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' } }],
+    [{ rect: outer, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' }, facade: 'punched' }],
     props,
   );
 }
@@ -270,11 +274,11 @@ function industrialPlan(
     // The wing is sometimes a taller head house — vents go to the back half of
     // the main roof so they stay clear of its screen projection.
     const wingH = Math.max(4, Math.round(bodyH * (seedUnit(seed, 3) < 0.5 ? 1.3 : 0.6)));
-    boxes.push({ rect: main, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' } });
-    boxes.push({ rect: wing, baseLiftPx: 0, wallHeightPx: wingH, roof: { kind: 'flat' } });
+    boxes.push({ rect: main, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' }, facade: 'punched' });
+    boxes.push({ rect: wing, baseLiftPx: 0, wallHeightPx: wingH, roof: { kind: 'flat' }, facade: 'punched' });
     ventRoof = backHalf(main, axis);
   } else {
-    boxes.push({ rect: outer, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' } });
+    boxes.push({ rect: outer, baseLiftPx: 0, wallHeightPx: bodyH, roof: { kind: 'flat' }, facade: 'punched' });
   }
 
   const props: MassingProp[] = [];

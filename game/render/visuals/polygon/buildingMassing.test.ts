@@ -150,6 +150,71 @@ describe('buildMassingPlan — industrial', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Facade field
+// ---------------------------------------------------------------------------
+
+describe('buildMassingPlan — facade field', () => {
+  it('commercial tower box is curtain, its podium is punched', () => {
+    for (let seed = 0; seed < 16; seed++) {
+      const plan = buildMassingPlan(
+        planInput({ type: 'commercial', level: 4, w: 2, h: 2, bodyHeightPx: 70, seed }),
+      );
+      const [podium, tower] = plan.boxes;
+      expect(podium.facade).toBe('punched');
+      expect(tower.facade).toBe('curtain');
+    }
+  });
+
+  it('residential gable house box is punched', () => {
+    const plan = buildMassingPlan(planInput({ type: 'residential', density: 0, seed: 0 }));
+    expect(plan.boxes[0].facade).toBe('punched');
+  });
+
+  it('residential flat box is punched', () => {
+    // density 2 + large bodyH forces the flat-top path (not gable)
+    const plan = buildMassingPlan(
+      planInput({ type: 'residential', density: 2, level: 5, w: 1, h: 1, bodyHeightPx: 40, seed: 0 }),
+    );
+    expect(plan.boxes.every((b) => b.facade === 'punched')).toBe(true);
+  });
+
+  it('commercial low-level fallback box is punched', () => {
+    const plan = buildMassingPlan(planInput({ type: 'commercial', level: 2, w: 2, h: 2 }));
+    expect(plan.boxes).toHaveLength(1);
+    expect(plan.boxes[0].facade).toBe('punched');
+  });
+
+  it('industrial boxes are punched', () => {
+    const plan = buildMassingPlan(
+      planInput({ type: 'industrial', level: 3, w: 2, h: 2, bodyHeightPx: 24 }),
+    );
+    expect(plan.boxes.every((b) => b.facade === 'punched')).toBe(true);
+  });
+
+  it('every box in every plan variant has a defined facade of a valid literal', () => {
+    const types: BuildingType[] = ['residential', 'commercial', 'industrial'];
+    const sizes: Array<[number, number]> = [[1, 1], [2, 1], [2, 2], [3, 2], [4, 4]];
+    const valid = new Set(['punched', 'curtain']);
+    for (const type of types) {
+      for (const level of [1, 3, 5]) {
+        for (const density of [0, 1, 2] as const) {
+          for (const [w, h] of sizes) {
+            for (let seed = 0; seed < 32; seed++) {
+              const plan = buildMassingPlan(
+                planInput({ type, level, density, w, h, seed, bodyHeightPx: 10 + 12 * level }),
+              );
+              for (const box of plan.boxes) {
+                expect(valid).toContain(box.facade);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Degenerate inputs
 // ---------------------------------------------------------------------------
 
