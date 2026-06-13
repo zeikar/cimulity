@@ -31,7 +31,7 @@ export type BoxFaces = { top: Point[]; left: Point[]; right: Point[] };
  *
  * Same ordering conventions as cubeFacePolygons: top is [N, E, S, W]; walls are
  * [topStart, topEnd, bottomEnd, bottomStart] so wallFaceFillMatrix and
- * drawWindowBacking apply unchanged.
+ * drawWindows apply unchanged.
  */
 export function massingBoxFaces(rect: FracRect, baseLiftPx: number, heightPx: number): BoxFaces {
   const topLift = baseLiftPx + heightPx;

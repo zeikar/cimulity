@@ -6,9 +6,10 @@
  * three special-structure visuals can reuse them alongside CubeBuildingVisual
  * without copy-paste.
  *
- * `fillPoly` is intentionally unexported — it is only used by `drawWindowBacking`
- * in this module; callers should use `drawPoly` (which also strokes) or compose
- * their own fills.
+ * Windows are a vector layer drawn ON TOP of the (opaque, windowless) wall
+ * texture: `drawWindows` lays a frame quad and a glass quad per window cell. The
+ * unexported `fillWindowPoly` does the fill-only draws those quads need (the wall
+ * texture already supplies the face outline, so no stroke).
  */
 
 import { GraphicsContext, Texture } from 'pixi.js';
@@ -16,6 +17,16 @@ import type { Matrix } from 'pixi.js';
 import type { Point } from './cubeGeometry';
 import { wallFaceRepeats } from './faceTexture';
 import { windowCellLit, windowCellQuads } from './windowLights';
+import { windowFrameQuad, windowGlassQuad } from './windowGeometry';
+import type { FacadeMode } from './windowGeometry';
+
+/**
+ * Base mullion/frame colour for the on-top window layer — a single dark neutral
+ * shared by every visual. Callers shade it by their face factor so the frame
+ * tracks the wall's brightness; the neutral tone reads correctly over all glass
+ * palettes (residential / commercial / industrial / civic).
+ */
+export const MULLION_COLOR = 0x2b2f36;
 
 /**
  * Draw a polygon filled with a texture skewed via `matrix` and tinted by
@@ -63,9 +74,9 @@ export function drawPoly(
   ctx.stroke({ color: 0x000000, width: 1, alpha: strokeAlpha });
 }
 
-// Fill-only path (no stroke) — used for the window-glass backing drawn under a
-// textured wall, where the wall texture supplies the outline.
-function fillPoly(
+// Fill-only path (no stroke) — used for the on-top window frame/glass quads,
+// where the underlying wall texture already supplies the face outline.
+function fillWindowPoly(
   ctx: GraphicsContext,
   points: ReadonlyArray<Point>,
   fillColor: number,
@@ -82,30 +93,28 @@ function fillPoly(
 }
 
 /**
- * Draw per-window glass backing on a wall face.
+ * Draw the per-window vector layer on top of an already-painted wall face.
  *
- * Paints a dark base over the entire face, then overlays lit window cells on top.
- * The wall texture is drawn after this call — its opaque wall + window frames cover
- * everything except the transparent window holes, which reveal the backing.
+ * For each window cell on the face, fills a frame quad then a glass quad whose
+ * colour follows the cell's lit/unlit state. No stroke — the wall texture below
+ * supplies the face outline.
  *
  * `glassColor` is a callback so the caller can close over face-factor and density
  * without baking those values into this generic helper.
  */
-export function drawWindowBacking(
+export function drawWindows(
   ctx: GraphicsContext,
   face: ReadonlyArray<Point>,
+  mode: FacadeMode,
   glassColor: (lit: boolean) => number,
+  frameColor: number,
   seed: number,
   ox: number,
   oy: number,
 ): void {
   const { repeatX, repeatY } = wallFaceRepeats(face);
-  // Dark backing for the entire face.
-  fillPoly(ctx, face, glassColor(false), ox, oy);
-  // Overlay lit cells where the window is on.
   for (const cell of windowCellQuads(face, repeatX, repeatY)) {
-    if (windowCellLit(seed, cell.col, cell.row)) {
-      fillPoly(ctx, cell.points, glassColor(true), ox, oy);
-    }
+    fillWindowPoly(ctx, windowFrameQuad(cell.points, mode), frameColor, ox, oy);
+    fillWindowPoly(ctx, windowGlassQuad(cell.points, mode), glassColor(windowCellLit(seed, cell.col, cell.row)), ox, oy);
   }
 }

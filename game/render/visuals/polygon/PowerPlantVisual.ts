@@ -29,7 +29,7 @@ import {
   wallFaceFillMatrix,
   roofFaceFillMatrix,
 } from './faceTexture';
-import { drawTexturedPoly, drawPoly, drawWindowBacking } from './texturedFace';
+import { drawTexturedPoly, drawPoly, drawWindows, MULLION_COLOR } from './texturedFace';
 import { windowSeed } from './windowLights';
 import type { Point } from './cubeGeometry';
 import type { Structure } from '@/game/core/StructureMap';
@@ -168,17 +168,17 @@ export class PowerPlantVisual {
 
       // LEFT face
       if (wallTex !== null) {
-        // Windowed body wall: paint glass backing before wall texture.
-        drawWindowBacking(ctx, faces.left, (lit) => glassColor(lit, SHADE_LEFT), seed, 0, 0);
+        // Windowless body wall first, then the vector window layer on top.
         drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, 0, 0, wallTex), shadeColor(0xffffff, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
+        drawWindows(ctx, faces.left, 'punched', (lit) => glassColor(lit, SHADE_LEFT), shadeColor(MULLION_COLOR, SHADE_LEFT), seed, 0, 0);
       } else {
         drawPoly(ctx, faces.left, shadeColor(base, SHADE_LEFT), STROKE_ALPHA_SIDE, 0, 0);
       }
 
       // RIGHT face
       if (wallTex !== null) {
-        drawWindowBacking(ctx, faces.right, (lit) => glassColor(lit, SHADE_RIGHT), seed, 0, 0);
         drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, 0, 0, wallTex), shadeColor(0xffffff, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
+        drawWindows(ctx, faces.right, 'punched', (lit) => glassColor(lit, SHADE_RIGHT), shadeColor(MULLION_COLOR, SHADE_RIGHT), seed, 0, 0);
       } else {
         drawPoly(ctx, faces.right, shadeColor(base, SHADE_RIGHT), STROKE_ALPHA_SIDE, 0, 0);
       }

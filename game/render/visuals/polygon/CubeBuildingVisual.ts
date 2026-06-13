@@ -55,7 +55,8 @@ import {
   densityShade,
 } from './cubePalette';
 import { cubeBodyHeightPx } from './cubeLift';
-import { drawTexturedPoly, drawPoly, drawWindowBacking } from './texturedFace';
+import { drawTexturedPoly, drawPoly, drawWindows, MULLION_COLOR } from './texturedFace';
+import type { FacadeMode } from './windowGeometry';
 
 function topColor(input: BuildingVisualInput): number {
   // Top face: full-brightness white-based tint (face shading only). The roof
@@ -99,6 +100,13 @@ function glassColor(type: BuildingType, lit: boolean, faceFactor: number, densit
   return shadeColor(darkColor, faceFactor * densityShade(density));
 }
 
+// Vector mullion tone for the on-top window frames, shaded to the face so the
+// frame tracks the wall's brightness. The shared dark neutral reads over all
+// three GLASS_COLORS palettes, so no per-type mullion colour is needed.
+function mullionColor(faceFactor: number, density: 0 | 1 | 2): number {
+  return shadeColor(MULLION_COLOR, faceFactor * densityShade(density));
+}
+
 // ---------------------------------------------------------------------------
 // structureInput helper
 // ---------------------------------------------------------------------------
@@ -137,6 +145,9 @@ function shadowKey(input: BuildingVisualInput): string {
 // Faces key: geometry plus the facade variant, the per-building window seed,
 // AND the massing seed, so buildings with different window-light patterns or
 // silhouettes don't share one cached context.
+// No facade-mode component is needed: geometryKey (type+level+density+shape) and
+// massingSeed together fully determine the massing plan, and each box's facade is
+// a deterministic function of that plan — not an independent input.
 function facesKey(input: BuildingVisualInput): string {
   const base = `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
   return `${base}:s${windowSeed(input.buildingId)}:m${massingSeed(input.buildingId)}`;
@@ -182,15 +193,12 @@ function drawCubeFaces(
   const seed = windowSeed(input.buildingId);
 
   if (wallTex !== Texture.EMPTY) {
-    // Paint per-window glass backing BEFORE the wall texture so transparent window
-    // holes in the texture reveal the correct lit/unlit glass colour beneath.
-    // All zone types get this treatment; commercial/industrial walls are currently
-    // opaque, so their backing is hidden — harmless, and ready when those textures
-    // gain transparency.
-    drawWindowBacking(ctx, faces.left, (lit) => glassColor(input.type, lit, 0.55, input.density), seed, ox, oy);
-    drawWindowBacking(ctx, faces.right, (lit) => glassColor(input.type, lit, 0.75, input.density), seed, ox, oy);
+    // Windowless wall texture first, then the vector window layer on top.
+    // Irregular cells never carry a tower plan, so the facade is always 'punched'.
     drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
     drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
+    drawWindows(ctx, faces.left, 'punched', (lit) => glassColor(input.type, lit, 0.55, input.density), mullionColor(0.55, input.density), seed, ox, oy);
+    drawWindows(ctx, faces.right, 'punched', (lit) => glassColor(input.type, lit, 0.75, input.density), mullionColor(0.75, input.density), seed, ox, oy);
   } else {
     // Wall texture unavailable — fall back to type-colored flat fill so the failure
     // path preserves residential/commercial/industrial identity instead of rendering gray.
@@ -222,9 +230,6 @@ const ANTENNA_TIP_COLOR = 0xd0d4d8;
 const GABLE_PLASTER = 0xe3dac6;
 // Cream barge-board trim run along the gable rake edges.
 const GABLE_TRIM = 0xece4d2;
-// Neutral wall tone backing the gable triangle so the wall texture's transparent
-// window holes read as solid wall (windowless gable) instead of dark glass.
-const GABLE_WALL_FILL = 0x837c72;
 const PARAPET_COLOR = 0xc9ced3;
 // Roof-slope shading: viewer-facing slopes sit between the top (1.0) and wall
 // factors (0.55 / 0.75); the away slope is the darkest lit surface.
@@ -234,13 +239,14 @@ const SLOPE_FACTOR_BACK = 0.6;
 // Boxes shorter than this skip the parapet trim — the line would dominate them.
 const PARAPET_MIN_WALL_PX = 14;
 
-// One textured wall face (window backing + wall texture), with the flat-tint
-// fallback used when the texture failed to load. faceFactor is the face's
-// brightness (0.55 left / 0.75 right).
+// One textured wall face (windowless wall texture + on-top window layer), with
+// the flat-tint fallback used when the texture failed to load. faceFactor is the
+// face's brightness (0.55 left / 0.75 right).
 function drawTexturedWallFace(
   ctx: GraphicsContext,
   face: ReadonlyArray<Point>,
   faceFactor: number,
+  facade: FacadeMode,
   input: BuildingVisualInput,
   ox: number,
   oy: number,
@@ -248,14 +254,6 @@ function drawTexturedWallFace(
   const wallTex = getWallTexture(input.type, wallVariant(input.buildingId));
   const ds = densityShade(input.density);
   if (wallTex !== Texture.EMPTY) {
-    drawWindowBacking(
-      ctx,
-      face,
-      (lit) => glassColor(input.type, lit, faceFactor, input.density),
-      windowSeed(input.buildingId),
-      ox,
-      oy,
-    );
     drawTexturedPoly(
       ctx,
       face,
@@ -263,6 +261,16 @@ function drawTexturedWallFace(
       wallFaceFillMatrix(face, ox, oy, wallTex),
       shadeColor(0xffffff, faceFactor * ds),
       0.5,
+      ox,
+      oy,
+    );
+    drawWindows(
+      ctx,
+      face,
+      facade,
+      (lit) => glassColor(input.type, lit, faceFactor, input.density),
+      mullionColor(faceFactor, input.density),
+      windowSeed(input.buildingId),
       ox,
       oy,
     );
@@ -279,8 +287,8 @@ function drawFlatMassingBox(
   oy: number,
 ): void {
   const faces = massingBoxFaces(box.rect, box.baseLiftPx, box.wallHeightPx);
-  drawTexturedWallFace(ctx, faces.left, 0.55, input, ox, oy);
-  drawTexturedWallFace(ctx, faces.right, 0.75, input, ox, oy);
+  drawTexturedWallFace(ctx, faces.left, 0.55, box.facade, input, ox, oy);
+  drawTexturedWallFace(ctx, faces.right, 0.75, box.facade, input, ox, oy);
 
   const roofTex = getRoofTexture();
   if (roofTex) {
@@ -327,19 +335,18 @@ function drawGableMassingBox(
   if (g.slopeBack) {
     drawSlope(g.slopeBack, SLOPE_FACTOR_BACK, 0.5);
   }
-  drawTexturedWallFace(ctx, g.wallSW, 0.55, input, ox, oy);
-  drawTexturedWallFace(ctx, g.wallSE, 0.75, input, ox, oy);
+  // Gable boxes are always 'punched' facades.
+  drawTexturedWallFace(ctx, g.wallSW, 0.55, box.facade, input, ox, oy);
+  drawTexturedWallFace(ctx, g.wallSE, 0.75, box.facade, input, ox, oy);
 
   // Gable-end triangle: the wall facade continues up to the ridge, WINDOWLESS.
   // Same wall texture mapped with the matrix of the wall rect below, so the
-  // brick/siding courses line up across the wall/gable seam. The transparent
-  // window holes are backed by a neutral wall tone (not glass), so the attic
-  // reads as solid wall rather than floating attic windows.
+  // brick/siding courses line up across the wall/gable seam. No window pass runs
+  // here — the windowless wall texture is the whole attic surface.
   const gableWallFace = g.gable.side === 'SW' ? g.wallSW : g.wallSE;
   const gableFactor = g.gable.side === 'SW' ? 0.55 : 0.75;
   const wallTex = getWallTexture(input.type, wallVariant(input.buildingId));
   if (wallTex !== Texture.EMPTY) {
-    drawPoly(ctx, g.gable.points, shadeColor(GABLE_WALL_FILL, gableFactor * ds), 0, ox, oy);
     drawTexturedPoly(
       ctx,
       g.gable.points,
