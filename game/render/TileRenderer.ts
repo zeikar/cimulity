@@ -285,24 +285,12 @@ export class TileRenderer {
     this.unmountYardsForBuilding(id);
   }
 
-  /** Mount or update yard polygons for non-structure cells of a building. */
+  /** Mount or update yard polygons for all lot (footprint) cells of a building.
+   * The cube (in buildingContainer) draws on top, so its inset margin reveals the yard underneath. */
   private syncYardCellsForBuilding(building: Building, terrain: Terrain): void {
-    const sr = building.structureRect;
-    const isInsideStructure = (cell: { x: number; y: number }): boolean =>
-      cell.x >= sr.x && cell.x < sr.x + sr.w && cell.y >= sr.y && cell.y < sr.y + sr.h;
-
-    // Mount or update yards for non-structure cells.
+    // Mount or update yards for all footprint cells.
     for (const cell of building.footprint) {
       const key = `${building.id}:${cell.x}:${cell.y}`;
-      if (isInsideStructure(cell)) {
-        // Cell is structure now — unmount any pre-existing yard graphic.
-        const prev = this.yardByKey.get(key);
-        if (prev) {
-          prev.gfx.destroy();
-          this.yardByKey.delete(key);
-        }
-        continue;
-      }
       const existing = this.yardByKey.get(key);
       if (existing) {
         // Update — building may have changed type via merge etc.
