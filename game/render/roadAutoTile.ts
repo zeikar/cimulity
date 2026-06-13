@@ -6,7 +6,7 @@
  * Returns a RoadDescriptor with:
  *   - `mask`  — 4-bit orthogonal neighbour mask (N=1, E=2, S=4, W=8)
  *   - `kind`  — sprite classification
- *   - `arms`  — ordered list of set orthogonal bits as compass letters
+ *   - `arms`  — ordered list of set orthogonal bits as OrthoDirName (compass direction names)
  *
  * Accepted limitations (render-cosmetic only; zero simulation impact):
  *   (a) A single-step diagonal (1,1)->(2,2) emits intermediate tile (1,2) with
@@ -21,6 +21,16 @@ export const E = 2;
 export const S = 4;
 export const W = 8;
 
+export type OrthoDirName = 'N' | 'E' | 'S' | 'W';
+
+/** Single source of truth for the ordered orthogonal direction table. */
+export const ORTHO_DIRS = [
+  { name: 'N' as OrthoDirName, dx: 0,  dy: -1, bit: N },
+  { name: 'E' as OrthoDirName, dx: 1,  dy:  0, bit: E },
+  { name: 'S' as OrthoDirName, dx: 0,  dy:  1, bit: S },
+  { name: 'W' as OrthoDirName, dx: -1, dy:  0, bit: W },
+] as const;
+
 export type RoadSpriteKind =
   | 'isolated'
   | 'end'
@@ -33,28 +43,20 @@ export type RoadSpriteKind =
 export interface RoadDescriptor {
   kind: RoadSpriteKind;
   mask: number;
-  arms: ReadonlyArray<'N' | 'E' | 'S' | 'W'>;
+  arms: ReadonlyArray<OrthoDirName>;
 }
-
-/** Deterministic arm order used throughout. */
-const ARM_ORDER: ReadonlyArray<{ letter: 'N' | 'E' | 'S' | 'W'; bit: number; dx: number; dy: number }> = [
-  { letter: 'N', bit: N, dx: 0,  dy: -1 },
-  { letter: 'E', bit: E, dx: 1,  dy:  0 },
-  { letter: 'S', bit: S, dx: 0,  dy:  1 },
-  { letter: 'W', bit: W, dx: -1, dy:  0 },
-];
 
 export function roadAutoTile(isRoad: (dx: number, dy: number) => boolean): RoadDescriptor {
   // Build the 4-bit orthogonal mask.
   let mask = 0;
-  for (const { bit, dx, dy } of ARM_ORDER) {
+  for (const { bit, dx, dy } of ORTHO_DIRS) {
     if (isRoad(dx, dy)) mask |= bit;
   }
 
   // Collect arms in N,E,S,W order.
-  const arms = ARM_ORDER
+  const arms = ORTHO_DIRS
     .filter(a => (mask & a.bit) !== 0)
-    .map(a => a.letter);
+    .map(a => a.name);
 
   const popcount = arms.length;
 
