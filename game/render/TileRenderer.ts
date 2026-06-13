@@ -89,7 +89,7 @@ export class TileRenderer {
   private tiles: Map<number, TileEntry> = new Map();
   /** building id → mounted building entry */
   private buildingById: Map<number, BuildingEntry> = new Map();
-  /** `${buildingId}:${x}:${y}` → yard Graphics for non-structure lot cells */
+  /** `${buildingId}:${x}:${y}` → yard Graphics for ALL lot (footprint) cells of a building */
   private yardByKey: Map<string, { gfx: Graphics; type: BuildingType }> = new Map();
   /** Set by markDirty() — triggers a full redraw of all tiles on next render(). */
   private fullDirty: boolean = true;
