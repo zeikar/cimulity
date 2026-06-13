@@ -494,9 +494,11 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const parkFill: Texture | null = input.type === 'park' ? getParkTexture() : null;
   const dirtFill: Texture | null = input.type === 'dirt' ? getDirtTexture() : null;
   const landFill: Texture | null = grassFill ?? parkFill ?? dirtFill ?? (isZoneTile ? getGrassTexture() : null);
-  // White for grass/park/dirt (art carries colour); zone hue tints the grass
-  // texture so undeveloped zone tiles read their zone colour.
-  const landTintBase: number = isZoneTile ? zoneTint! : 0xffffff;
+  // White for grass/park/dirt (art carries colour); zone tiles use the
+  // level-aware zone fill colour (baseTypeColor) so the tint matches the
+  // flat-path at the same zone level — using the raw base zone hue (zoneTint)
+  // would ignore level lightening baked into baseTypeColor / tileFillColor().
+  const landTintBase: number = isZoneTile ? baseTypeColor : 0xffffff;
   const waterFill: Texture | null = getWaterTexture();
   const uvTop    = terrainCornerUv(input.x,     input.y);
   const uvRight  = terrainCornerUv(input.x + 1, input.y);

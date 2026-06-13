@@ -63,6 +63,18 @@ function drawYardDiamond(
   const tex = getYardTexture(type);
 
   if (tex !== null) {
+    // Seam-safety bleed: fill the full diamond with the fallback colour first so
+    // any subpixel gap between the two textured triangles doesn't expose the
+    // background — mirrors DiamondTileVisual's base-fill pattern.
+    const bleedColor = lerpToWhite(baseColor(type), 0.4);
+    gfx.beginPath();
+    gfx.moveTo(top.x, top.y);
+    gfx.lineTo(right.x, right.y);
+    gfx.lineTo(bottom.x, bottom.y);
+    gfx.lineTo(left.x, left.y);
+    gfx.closePath();
+    gfx.fill({ color: bleedColor });
+
     // Corner UVs from the shared integer grid-vertex coords — same scheme as
     // DiamondTileVisual so yard tiles are seamless with terrain neighbours.
     const uvTop    = terrainCornerUv(cell.x,     cell.y);
