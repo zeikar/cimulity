@@ -11,7 +11,6 @@
  */
 
 import type { BuildingType } from '@/game/core/Building';
-import { cubeTypeInsetRatio } from './cubeTypeRatios';
 import type { FracRect } from './massingGeometry';
 import type { FacadeMode } from './windowGeometry';
 
@@ -82,6 +81,40 @@ export function seedUnit(seed: number, slot: number): number {
 
 /** Gable roof palette: terracotta, slate, brown, moss — picked per seed. */
 export const GABLE_ROOF_COLORS: readonly number[] = [0xa84a32, 0x5f6e7d, 0x7c6248, 0x586b4a];
+
+// Per-type base inset and jitter range for massingInsetRatio.
+// Residential is generous (suburban lawn feel); commercial stays dense;
+// industrial sits between.
+const MASSING_BASE: Readonly<Record<BuildingType, number>> = {
+  residential: 0.20,
+  commercial: 0.10,
+  industrial: 0.14,
+};
+const MASSING_JITTER: Readonly<Record<BuildingType, number>> = {
+  residential: 0.10,
+  commercial: 0.04,
+  industrial: 0.08,
+};
+
+/**
+ * Randomised lot margin used by the massing path only.
+ * The irregular-footprint fallback (cubeGeometry.cubeFacePolygons) intentionally
+ * keeps the flat cubeTypeInsetRatio; this helper is never used there.
+ *
+ * jitter01 must be a seedUnit(seed, 60) value supplied by the caller.
+ * @returns inset in [0.06, 0.30] (< 0.5 safety bound)
+ */
+export function massingInsetRatio(
+  type: BuildingType,
+  level: number,
+  density: 0 | 1 | 2,
+  jitter01: number,
+): number {
+  const densityFactor = 1 - 0.18 * density;
+  const levelFactor = Math.min(1, Math.max(0.55, 1 - 0.06 * (level - 1)));
+  const raw = MASSING_BASE[type] + MASSING_JITTER[type] * jitter01;
+  return Math.min(0.30, Math.max(0.06, raw * densityFactor * levelFactor));
+}
 
 // Prop footprint sizes in tiles / heights in px — small enough to read as
 // rooftop clutter, large enough to survive the iso projection.
@@ -304,12 +337,15 @@ function industrialPlan(
  * ±10% jitter keeps same-stat neighbours from matching exactly.
  */
 export function buildMassingPlan(input: MassingInput): MassingPlan {
-  const { type, level, w, h, bodyHeightPx, seed } = input;
+  const { type, level, density, w, h, bodyHeightPx, seed } = input;
   if (level <= 0 || bodyHeightPx <= 0 || w <= 0 || h <= 0) {
     return { boxes: [], props: [], totalHeightPx: 0 };
   }
 
-  const inset = cubeTypeInsetRatio(type);
+  // Per-building randomised lot margin (seedUnit slot 60 is unused by the type
+  // sub-plans). The irregular-footprint fallback (cubeGeometry.cubeFacePolygons)
+  // intentionally keeps the flat cubeTypeInsetRatio — this is massing path only.
+  const inset = massingInsetRatio(type, level, density, seedUnit(seed, 60));
   const outer: FracRect = {
     x0: w * inset,
     y0: h * inset,

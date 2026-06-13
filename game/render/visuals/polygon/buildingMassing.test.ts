@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildMassingPlan,
+  massingInsetRatio,
   massingSeed,
   seedUnit,
   GABLE_ROOF_COLORS,
@@ -224,6 +225,143 @@ describe('buildMassingPlan — degenerate inputs', () => {
     expect(buildMassingPlan(planInput({ level: 0 }))).toEqual(empty);
     expect(buildMassingPlan(planInput({ bodyHeightPx: 0 }))).toEqual(empty);
     expect(buildMassingPlan(planInput({ w: 0 }))).toEqual(empty);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// massingInsetRatio formula
+// ---------------------------------------------------------------------------
+
+describe('massingInsetRatio', () => {
+  const types: BuildingType[] = ['residential', 'commercial', 'industrial'];
+  const levels = [1, 3, 5, 7];
+  const densities = [0, 1, 2] as const;
+  const jitters = [0, 0.5, 0.999];
+
+  it('domain invariant: result is always in [0.06, 0.30] for all inputs', () => {
+    for (const type of types) {
+      for (const level of levels) {
+        for (const density of densities) {
+          for (const jitter01 of jitters) {
+            const v = massingInsetRatio(type, level, density, jitter01);
+            expect(v).toBeGreaterThanOrEqual(0.06);
+            expect(v).toBeLessThanOrEqual(0.30);
+            // Also satisfies the broader domain invariant 0 <= inset < 0.5.
+            expect(v).toBeGreaterThanOrEqual(0);
+            expect(v).toBeLessThan(0.5);
+          }
+        }
+      }
+    }
+  });
+
+  it('monotonic in jitter: higher jitter01 produces equal or larger inset', () => {
+    for (const type of types) {
+      for (const level of levels) {
+        for (const density of densities) {
+          const lo = massingInsetRatio(type, level, density, 0);
+          const hi = massingInsetRatio(type, level, density, 0.999);
+          expect(lo).toBeLessThanOrEqual(hi);
+        }
+      }
+    }
+  });
+
+  it('low-density residential at low level is more generous than high-density commercial at high level', () => {
+    for (const j of [0, 0.5]) {
+      const suburban = massingInsetRatio('residential', 1, 0, j);
+      const downtown = massingInsetRatio('commercial', 7, 2, j);
+      expect(suburban).toBeGreaterThan(downtown);
+    }
+  });
+
+  it('taller buildings are tighter (level monotonic at fixed jitter and density)', () => {
+    for (const type of types) {
+      for (const density of densities) {
+        const low = massingInsetRatio(type, 1, density, 0.5);
+        const high = massingInsetRatio(type, 7, density, 0.5);
+        expect(low).toBeGreaterThanOrEqual(high);
+      }
+    }
+  });
+
+  it('higher density is tighter (density monotonic at fixed level and jitter)', () => {
+    for (const type of types) {
+      for (const level of levels) {
+        const sparse = massingInsetRatio(type, level, 0, 0.5);
+        const dense = massingInsetRatio(type, level, 2, 0.5);
+        expect(sparse).toBeGreaterThanOrEqual(dense);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildMassingPlan wiring assertions
+// ---------------------------------------------------------------------------
+
+describe('buildMassingPlan — massingInsetRatio wiring', () => {
+  it('box rect reflects the seeded inset (residential density:0 → single gable box = outer)', () => {
+    // density:0, level:1 → always gable, whose rect IS the outer rect.
+    const type: BuildingType = 'residential';
+    const level = 1;
+    const density = 0 as const;
+    const seed = 7;
+    const w = 2;
+    const h = 2;
+
+    const inset = massingInsetRatio(type, level, density, seedUnit(seed, 60));
+    const plan = buildMassingPlan({ type, level, density, w, h, bodyHeightPx: 40, seed });
+
+    expect(plan.boxes).toHaveLength(1);
+    const rect = plan.boxes[0].rect;
+    expect(rect.x0).toBeCloseTo(w * inset, 6);
+    expect(rect.y0).toBeCloseTo(h * inset, 6);
+    expect(rect.x1).toBeCloseTo(w * (1 - inset), 6);
+    expect(rect.y1).toBeCloseTo(h * (1 - inset), 6);
+  });
+
+  it('two seeds that differ in seedUnit(seed,60) produce different box rects', () => {
+    // Pick seeds whose slot-60 values differ — verify before asserting.
+    // seed=0 and seed=1 are virtually guaranteed to differ, confirm it.
+    const seed0 = 0;
+    const seed1 = 1;
+    expect(seedUnit(seed0, 60)).not.toBe(seedUnit(seed1, 60));
+
+    const plan0 = buildMassingPlan({ type: 'residential', level: 1, density: 0, w: 2, h: 2, bodyHeightPx: 40, seed: seed0 });
+    const plan1 = buildMassingPlan({ type: 'residential', level: 1, density: 0, w: 2, h: 2, bodyHeightPx: 40, seed: seed1 });
+
+    // The rects encode the inset; different insets → different rects.
+    expect(plan0.boxes[0].rect.x0).not.toBeCloseTo(plan1.boxes[0].rect.x0, 6);
+  });
+
+  it('regression: seeded inset differs from old flat literal and stays within [0.06, 0.30]', () => {
+    // Old flat literals: residential=0.05, commercial=0.12, industrial=0.05.
+    const OLD_FLAT: Record<BuildingType, number> = {
+      residential: 0.05,
+      commercial: 0.12,
+      industrial: 0.05,
+    };
+
+    const type: BuildingType = 'residential';
+    const level = 1;
+    const density = 0 as const;
+    const seed = 42;
+    const w = 2;
+    const h = 2;
+
+    const inset = massingInsetRatio(type, level, density, seedUnit(seed, 60));
+    // Inset must be within tuned range.
+    expect(inset).toBeGreaterThanOrEqual(0.06);
+    expect(inset).toBeLessThanOrEqual(0.30);
+    // And it must differ from the old flat value.
+    expect(inset).not.toBeCloseTo(OLD_FLAT[type], 5);
+
+    // Verify through the plan that the rect is NOT the old flat-inset rect.
+    const plan = buildMassingPlan({ type, level, density, w, h, bodyHeightPx: 40, seed });
+    const rect = plan.boxes[0].rect;
+    const oldX0 = w * OLD_FLAT[type];
+    expect(rect.x0).not.toBeCloseTo(oldX0, 5);
   });
 });
 
