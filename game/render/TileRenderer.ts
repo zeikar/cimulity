@@ -21,7 +21,7 @@ import { mountYardCell, updateYardCell } from './visuals/polygon/YardVisual';
 import { VisualRegistry } from './visuals/visualRegistry';
 import { DiamondTileVisual } from './visuals/polygon/DiamondTileVisual';
 import { CubeBuildingVisual } from './visuals/polygon/CubeBuildingVisual';
-import { TileType } from '../core/Tile';
+import { TileType, isZoneType } from '../core/Tile';
 import { BuildingType } from '../core/Building';
 import type { World } from '../core/World';
 import type { Building } from '../core/Building';
@@ -231,9 +231,9 @@ export class TileRenderer {
     const cornerHeights = tileCornerHeights(terrain, x, y);
     const shape = terrain.getTerrainShape(x, y);
     // Road auto-tiling reads orthogonal/diagonal neighbour types to pick a band
-    // shape. Build the probe ONLY for road tiles to avoid per-tile closure churn
-    // on the vast majority (grass/zones/etc.) that ignore it.
-    const roadNeighbors = type === TileType.ROAD
+    // shape. Sidewalk apron on zones also reads this probe. Build for road and
+    // zone tiles; avoid closure churn on grass/dirt/park/service that ignore it.
+    const roadNeighbors = (type === TileType.ROAD || isZoneType(type))
       ? (dx: number, dy: number) => map.getTile(x + dx, y + dy)?.type === TileType.ROAD
       : undefined;
     const input = { x, y, type, level, tileElevation, renderHeight, cornerHeights, shape, mapBounds, roadNeighbors };
