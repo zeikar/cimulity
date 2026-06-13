@@ -39,6 +39,10 @@ const GRASS_URL = `${BASE_PATH}/textures/grass.png`;
 const WATER_URL = `${BASE_PATH}/textures/water.png`;
 const ROAD_URL = `${BASE_PATH}/textures/road.png`;
 const PARK_URL = `${BASE_PATH}/textures/park.png`;
+const DIRT_URL = `${BASE_PATH}/textures/dirt.png`;
+const YARD_RESIDENTIAL_URL = `${BASE_PATH}/textures/yard-residential.png`;
+const YARD_COMMERCIAL_URL = `${BASE_PATH}/textures/yard-commercial.png`;
+const YARD_INDUSTRIAL_URL = `${BASE_PATH}/textures/yard-industrial.png`;
 const POLICE_WALL_URL = `${BASE_PATH}/textures/police-wall.png`;
 const FIRE_WALL_URL = `${BASE_PATH}/textures/fire-wall.png`;
 const HOSPITAL_WALL_URL = `${BASE_PATH}/textures/hospital-wall.png`;
@@ -86,6 +90,10 @@ let grassTexture: Texture | null = null;
 let waterTexture: Texture | null = null;
 let roadTexture: Texture | null = null;
 let parkTexture: Texture | null = null;
+let dirtTexture: Texture | null = null;
+let yardResidentialTexture: Texture | null = null;
+let yardCommercialTexture: Texture | null = null;
+let yardIndustrialTexture: Texture | null = null;
 let policeWallTexture: Texture | null = null;
 let fireWallTexture: Texture | null = null;
 let hospitalWallTexture: Texture | null = null;
@@ -137,6 +145,10 @@ export async function preloadFaceTextures(): Promise<void> {
   jobs.push(loadTexture(WATER_URL).then((t) => { waterTexture = t; }));
   jobs.push(loadTexture(ROAD_URL).then((t) => { roadTexture = t; }));
   jobs.push(loadTexture(PARK_URL).then((t) => { parkTexture = t; }));
+  jobs.push(loadTexture(DIRT_URL).then((t) => { dirtTexture = t; }));
+  jobs.push(loadTexture(YARD_RESIDENTIAL_URL).then((t) => { yardResidentialTexture = t; }));
+  jobs.push(loadTexture(YARD_COMMERCIAL_URL).then((t) => { yardCommercialTexture = t; }));
+  jobs.push(loadTexture(YARD_INDUSTRIAL_URL).then((t) => { yardIndustrialTexture = t; }));
   jobs.push(loadTexture(POLICE_WALL_URL).then((t) => { policeWallTexture = t; }));
   jobs.push(loadTexture(FIRE_WALL_URL).then((t) => { fireWallTexture = t; }));
   jobs.push(loadTexture(HOSPITAL_WALL_URL).then((t) => { hospitalWallTexture = t; }));
@@ -200,6 +212,20 @@ export function getRoadTexture(): Texture | null {
 /** Park lawn terrain texture (COLOUR), or null until loaded (caller draws flat park colour then). */
 export function getParkTexture(): Texture | null {
   return parkTexture;
+}
+
+/** Bare dirt terrain texture (COLOUR), or null until loaded (caller draws flat dirt colour then). */
+export function getDirtTexture(): Texture | null {
+  return dirtTexture;
+}
+
+/** Per-type yard ground texture (COLOUR) displayed around zone buildings, or null until loaded (flat fallback). */
+export function getYardTexture(type: BuildingType): Texture | null {
+  switch (type) {
+    case 'residential': return yardResidentialTexture;
+    case 'commercial':  return yardCommercialTexture;
+    case 'industrial':  return yardIndustrialTexture;
+  }
 }
 
 /** Police station wall texture (opaque COLOUR, windowless — windows drawn on top as vector), or null until loaded. */
