@@ -74,6 +74,8 @@ export default defineConfig({
         'game/render/roadAutoTile.ts',
         'game/render/visuals/polygon/roadHalfWidth.ts',
         'game/render/visuals/polygon/decorationPlacement.ts',
+        'game/render/visuals/polygon/massingGeometry.ts',
+        'game/render/visuals/polygon/buildingMassing.ts',
       ],
       thresholds: {
         lines: 80,

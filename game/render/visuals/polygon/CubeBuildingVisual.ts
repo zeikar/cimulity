@@ -1,5 +1,8 @@
 /**
- * BuildingVisual that draws a plain isometric cube (no variation) for level > 0.
+ * BuildingVisual that draws procedurally-massed isometric buildings for
+ * level > 0: canonical rectangular footprints render a per-building massing
+ * plan (podium + tower, main + wing, gable house, rooftop props — see
+ * buildingMassing), while irregular footprints keep the legacy per-cell cube.
  *
  * The visual returns a stable wrapper `Container` whose child is a polygon
  * `Graphics` driven by a cached anchor-local `GraphicsContext`. The shadow
@@ -32,6 +35,14 @@ import {
   roofFaceFillMatrix,
 } from './faceTexture';
 import { windowSeed } from './windowLights';
+import {
+  buildMassingPlan,
+  massingSeed,
+  type MassingBox,
+  type MassingPlan,
+  type MassingProp,
+} from './buildingMassing';
+import { fracToLocal, massingBoxFaces, massingGableFaces } from './massingGeometry';
 import { computeZIndex } from './cubeBuildingZIndex';
 import type { BuildingVisual, BuildingVisualInput } from '../TileVisual';
 import type { BuildingType } from '@/game/core/Building';
@@ -109,18 +120,24 @@ function structureInputOf(input: BuildingVisualInput): BuildingVisualInput {
 // Cache key
 // ---------------------------------------------------------------------------
 
-// Geometry-only key: cube silhouette / shadow depend on type+level+density+shape
-// but NOT on the wall facade, so shadows share one context across variants.
+// Geometry-only key: type+level+density+shape — the shared base for both keys.
 function geometryKey(input: BuildingVisualInput): string {
   const shape = normalizeFootprint(input.footprint, input.anchor);
   return `${input.type}:${input.level}:${input.density}:${shape}`;
 }
 
-// Faces key: geometry plus the facade variant AND the per-building window seed,
-// so buildings with different window-light patterns don't share one cached context.
+// Shadow key: geometry plus the massing seed — the shadow silhouette follows the
+// massing plan (jittered height, box extents), not just the footprint shape.
+function shadowKey(input: BuildingVisualInput): string {
+  return `${geometryKey(input)}:m${massingSeed(input.buildingId)}`;
+}
+
+// Faces key: geometry plus the facade variant, the per-building window seed,
+// AND the massing seed, so buildings with different window-light patterns or
+// silhouettes don't share one cached context.
 function facesKey(input: BuildingVisualInput): string {
   const base = `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
-  return `${base}:s${windowSeed(input.buildingId)}`;
+  return `${base}:s${windowSeed(input.buildingId)}:m${massingSeed(input.buildingId)}`;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
@@ -191,18 +208,199 @@ function drawCubeFaces(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Massing draw path (canonical rectangular footprints)
+// ---------------------------------------------------------------------------
+
+// Flat-tint colours for rooftop props and gable-end plaster; walls and flat
+// roofs keep the texture pipeline.
+const PROP_COLORS = { ac: 0x9aa3ab, tank: 0x7d8a96, vent: 0xb0a191 } as const;
+const ANTENNA_COLOR = 0x3a3f44;
+const ANTENNA_TIP_COLOR = 0xd0d4d8;
+const GABLE_PLASTER = 0xe3dac6;
+const PARAPET_COLOR = 0xc9ced3;
+// Roof-slope shading: viewer-facing slopes sit between the top (1.0) and wall
+// factors (0.55 / 0.75); the away slope is the darkest lit surface.
+const SLOPE_FACTOR_SW = 0.72;
+const SLOPE_FACTOR_SE = 0.86;
+const SLOPE_FACTOR_BACK = 0.6;
+// Boxes shorter than this skip the parapet trim — the line would dominate them.
+const PARAPET_MIN_WALL_PX = 14;
+
+// One textured wall face (window backing + wall texture), with the flat-tint
+// fallback used when the texture failed to load. faceFactor is the face's
+// brightness (0.55 left / 0.75 right).
+function drawTexturedWallFace(
+  ctx: GraphicsContext,
+  face: ReadonlyArray<Point>,
+  faceFactor: number,
+  input: BuildingVisualInput,
+  ox: number,
+  oy: number,
+): void {
+  const wallTex = getWallTexture(input.type, wallVariant(input.buildingId));
+  const ds = densityShade(input.density);
+  if (wallTex !== Texture.EMPTY) {
+    drawWindowBacking(
+      ctx,
+      face,
+      (lit) => glassColor(input.type, lit, faceFactor, input.density),
+      windowSeed(input.buildingId),
+      ox,
+      oy,
+    );
+    drawTexturedPoly(
+      ctx,
+      face,
+      wallTex,
+      wallFaceFillMatrix(face, ox, oy, wallTex),
+      shadeColor(0xffffff, faceFactor * ds),
+      0.5,
+      ox,
+      oy,
+    );
+  } else {
+    drawPoly(ctx, face, shadeColor(baseColor(input.type), faceFactor * ds), 0.5, ox, oy);
+  }
+}
+
+function drawFlatMassingBox(
+  ctx: GraphicsContext,
+  box: MassingBox,
+  input: BuildingVisualInput,
+  ox: number,
+  oy: number,
+): void {
+  const faces = massingBoxFaces(box.rect, box.baseLiftPx, box.wallHeightPx);
+  drawTexturedWallFace(ctx, faces.left, 0.55, input, ox, oy);
+  drawTexturedWallFace(ctx, faces.right, 0.75, input, ox, oy);
+
+  const roofTex = getRoofTexture();
+  if (roofTex) {
+    drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, ox, oy), topColor(input), 0.55, ox, oy);
+  } else {
+    drawPoly(ctx, faces.top, shadeColor(baseColor(input.type), densityShade(input.density)), 0.55, ox, oy);
+  }
+
+  if (box.wallHeightPx >= PARAPET_MIN_WALL_PX) {
+    // Parapet trim along the two viewer-facing roof edges (E -> S -> W).
+    ctx.beginPath();
+    ctx.moveTo(faces.top[1].x + ox, faces.top[1].y + oy);
+    ctx.lineTo(faces.top[2].x + ox, faces.top[2].y + oy);
+    ctx.lineTo(faces.top[3].x + ox, faces.top[3].y + oy);
+    ctx.stroke({ color: PARAPET_COLOR, width: 1.5, alpha: 0.85 });
+  }
+}
+
+function drawGableMassingBox(
+  ctx: GraphicsContext,
+  box: MassingBox,
+  roof: Extract<MassingBox['roof'], { kind: 'gable' }>,
+  input: BuildingVisualInput,
+  ox: number,
+  oy: number,
+): void {
+  const g = massingGableFaces(box.rect, box.baseLiftPx, box.wallHeightPx, roof.risePx, roof.ridgeAxis);
+  const ds = densityShade(input.density);
+
+  if (g.slopeBack) {
+    drawPoly(ctx, g.slopeBack, shadeColor(roof.color, SLOPE_FACTOR_BACK * ds), 0.5, ox, oy);
+  }
+  drawTexturedWallFace(ctx, g.wallSW, 0.55, input, ox, oy);
+  drawTexturedWallFace(ctx, g.wallSE, 0.75, input, ox, oy);
+  drawPoly(
+    ctx,
+    g.gable.points,
+    shadeColor(GABLE_PLASTER, (g.gable.side === 'SW' ? 0.55 : 0.75) * ds),
+    0.5,
+    ox,
+    oy,
+  );
+  const frontFactor = roof.ridgeAxis === 'x' ? SLOPE_FACTOR_SW : SLOPE_FACTOR_SE;
+  drawPoly(ctx, g.slopeFront, shadeColor(roof.color, frontFactor * ds), 0.55, ox, oy);
+}
+
+function drawMassingProp(
+  ctx: GraphicsContext,
+  prop: MassingProp,
+  density: 0 | 1 | 2,
+  ox: number,
+  oy: number,
+): void {
+  const ds = densityShade(density);
+  if (prop.kind === 'antenna') {
+    const base = fracToLocal(prop.tx, prop.ty, prop.baseLiftPx);
+    ctx.beginPath();
+    ctx.moveTo(base.x + ox, base.y + oy);
+    ctx.lineTo(base.x + ox, base.y + oy - prop.heightPx);
+    ctx.stroke({ color: ANTENNA_COLOR, width: 1.5, alpha: 0.95 });
+    ctx.circle(base.x + ox, base.y + oy - prop.heightPx, 1.2);
+    ctx.fill({ color: ANTENNA_TIP_COLOR });
+    return;
+  }
+  const color = PROP_COLORS[prop.kind];
+  const faces = massingBoxFaces(prop.rect, prop.baseLiftPx, prop.heightPx);
+  drawPoly(ctx, faces.left, shadeColor(color, 0.55 * ds), 0.4, ox, oy);
+  drawPoly(ctx, faces.right, shadeColor(color, 0.75 * ds), 0.4, ox, oy);
+  drawPoly(ctx, faces.top, shadeColor(color, ds), 0.4, ox, oy);
+}
+
+function massingPlanFor(input: BuildingVisualInput): MassingPlan {
+  return buildMassingPlan({
+    type: input.type,
+    level: input.level,
+    density: input.density,
+    w: input.structureRect.w,
+    h: input.structureRect.h,
+    bodyHeightPx: cubeBodyHeightPx(input.level, input.density, input.type),
+    seed: massingSeed(input.buildingId),
+  });
+}
+
+function drawBuildingMassing(
+  ctx: GraphicsContext,
+  input: BuildingVisualInput,
+  ox: number,
+  oy: number,
+): boolean {
+  const plan = massingPlanFor(input);
+  if (plan.boxes.length === 0) return false;
+  for (const box of plan.boxes) {
+    if (box.roof.kind === 'gable') {
+      drawGableMassingBox(ctx, box, box.roof, input, ox, oy);
+    } else {
+      drawFlatMassingBox(ctx, box, input, ox, oy);
+    }
+  }
+  for (const prop of plan.props) {
+    drawMassingProp(ctx, prop, input.density, ox, oy);
+  }
+  return true;
+}
+
 function buildShadowContext(input: BuildingVisualInput): GraphicsContext | null {
   if (input.level === 0) return null;
 
   const ctx = new GraphicsContext();
 
   if (isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
-    const faces = cubeFacePolygons(
-      input.type, input.level, input.density,
-      input.footprint, input.anchor,
-    );
-    if (faces === null) return null;
-    drawCubeShadow(ctx, faces, 0, 0);
+    // Shadow from the massing plan so it matches the drawn silhouette: one
+    // ground-shadow polygon per box (cast from that box's own top height), all
+    // filled in a single pass so overlaps don't double-darken. Props (antennas,
+    // vents) are too thin to read in a soft blob and are excluded.
+    const plan = massingPlanFor(input);
+    if (plan.boxes.length === 0) return null;
+    ctx.beginPath();
+    for (const b of plan.boxes) {
+      const top = b.baseLiftPx + b.wallHeightPx + (b.roof.kind === 'gable' ? b.roof.risePx : 0);
+      // Virtual ground-to-top box: cubeShadowPolygon grounds the shadow at the
+      // faces' wall bottom, so the box must start at the tile plane.
+      const poly = cubeShadowPolygon(massingBoxFaces(b.rect, 0, top));
+      ctx.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+      ctx.closePath();
+    }
+    ctx.fill({ color: SHADOW_COLOR, alpha: SHADOW_ALPHA });
     return ctx;
   }
 
@@ -230,13 +428,7 @@ function buildFacesContext(input: BuildingVisualInput): GraphicsContext | null {
   const ctx = new GraphicsContext();
 
   if (isNwAnchoredFullRectFootprint(input.footprint, input.anchor)) {
-    const faces = cubeFacePolygons(
-      input.type, input.level, input.density,
-      input.footprint, input.anchor,
-    );
-    if (faces === null) return null;
-    drawCubeFaces(ctx, faces, input, 0, 0);
-    return ctx;
+    return drawBuildingMassing(ctx, input, 0, 0) ? ctx : null;
   }
 
   // Irregular footprint: one cube per cell, back-to-front.
@@ -284,7 +476,7 @@ export class CubeBuildingVisual implements BuildingVisual {
 
   private getOrBuildShadowContext(input: BuildingVisualInput): GraphicsContext | null {
     if (input.level === 0) return null;
-    const key = geometryKey(input);
+    const key = shadowKey(input);
     let ctx = this.shadowCache.get(key);
     if (!ctx) {
       ctx = buildShadowContext(input) ?? undefined;
@@ -411,9 +603,10 @@ export class CubeBuildingVisual implements BuildingVisual {
     const structureInput = structureInputOf(building);
     const h = terrain.getRenderHeight(structureInput.anchor.x, structureInput.anchor.y);
     const screen = tileToScreenWithHeight(structureInput.anchor, h);
-    const lift = cubeBodyHeightPx(building.level, building.density, building.type);
-    // Cube top is ABOVE the anchor in screen space — subtract the lift.
-    // For level-0 buildings (lift === 0), returns the terrain-top screen-y.
+    // Massing plan top (tower / gable ridge / props included) so floating icons
+    // clear the tallest element. For level-0 buildings (empty plan), returns the
+    // terrain-top screen-y.
+    const lift = massingPlanFor(building).totalHeightPx;
     return screen.y - lift;
   }
 
