@@ -5,6 +5,15 @@ import { baseColor, lerpToWhite } from './cubePalette';
 import type { BuildingType } from '@/game/core/Building';
 import type { Terrain } from '@/game/core/Terrain';
 import { tileCornerHeights } from '@/game/render/terrain/tileCornerHeights';
+import { getYardTexture } from './faceTexture';
+import { terrainTriFillMatrix } from './terrainTriFillMatrix';
+import { planDiamondShading } from './diamondShading';
+
+// Must match DiamondTileVisual.TERRAIN_TEXTURE_PX_PER_CELL so yards tile seamlessly with terrain.
+const TERRAIN_TEXTURE_PX_PER_CELL = 16;
+function terrainCornerUv(vx: number, vy: number) {
+  return { u: vx * TERRAIN_TEXTURE_PX_PER_CELL, v: vy * TERRAIN_TEXTURE_PX_PER_CELL };
+}
 
 /**
  * Yard polygon: flat diamond at the cell's render height, fill = building's
@@ -51,16 +60,72 @@ function drawYardDiamond(
   const bottom = projectTileCornerScreen(cell, 'bottom', c.bottomH);
   const left   = projectTileCornerScreen(cell, 'left',   c.leftH);
 
-  // Fill: zone color desaturated 40% toward white.
-  const color = lerpToWhite(baseColor(type), 0.4);
+  const tex = getYardTexture(type);
 
+  if (tex !== null) {
+    // Corner UVs from the shared integer grid-vertex coords — same scheme as
+    // DiamondTileVisual so yard tiles are seamless with terrain neighbours.
+    const uvTop    = terrainCornerUv(cell.x,     cell.y);
+    const uvRight  = terrainCornerUv(cell.x + 1, cell.y);
+    const uvBottom = terrainCornerUv(cell.x + 1, cell.y + 1);
+    const uvLeft   = terrainCornerUv(cell.x,     cell.y + 1);
+
+    // Split on the same diagonal terrain uses so the yard tile boundary aligns
+    // with adjacent terrain tiles and neither triangle draws outside a
+    // deformed/concave diamond. Mirrored from DiamondTileVisual's shadeTri
+    // call sites exactly (tb: bottom/left/top + bottom/right/top;
+    // lr: left/top/right + left/bottom/right).
+    const plan = planDiamondShading(c);
+    if (plan.diagonal === 'tb') {
+      gfx.beginPath();
+      gfx.moveTo(bottom.x, bottom.y);
+      gfx.lineTo(left.x, left.y);
+      gfx.lineTo(top.x, top.y);
+      gfx.closePath();
+      gfx.fill({ texture: tex, matrix: terrainTriFillMatrix(bottom, left, top, uvBottom, uvLeft, uvTop), color: 0xffffff, textureSpace: 'global' });
+
+      gfx.beginPath();
+      gfx.moveTo(bottom.x, bottom.y);
+      gfx.lineTo(right.x, right.y);
+      gfx.lineTo(top.x, top.y);
+      gfx.closePath();
+      gfx.fill({ texture: tex, matrix: terrainTriFillMatrix(bottom, right, top, uvBottom, uvRight, uvTop), color: 0xffffff, textureSpace: 'global' });
+    } else {
+      gfx.beginPath();
+      gfx.moveTo(left.x, left.y);
+      gfx.lineTo(top.x, top.y);
+      gfx.lineTo(right.x, right.y);
+      gfx.closePath();
+      gfx.fill({ texture: tex, matrix: terrainTriFillMatrix(left, top, right, uvLeft, uvTop, uvRight), color: 0xffffff, textureSpace: 'global' });
+
+      gfx.beginPath();
+      gfx.moveTo(left.x, left.y);
+      gfx.lineTo(bottom.x, bottom.y);
+      gfx.lineTo(right.x, right.y);
+      gfx.closePath();
+      gfx.fill({ texture: tex, matrix: terrainTriFillMatrix(left, bottom, right, uvLeft, uvBottom, uvRight), color: 0xffffff, textureSpace: 'global' });
+    }
+  } else {
+    // Fallback: zone color desaturated 40% toward white (headless / load-failure).
+    const color = lerpToWhite(baseColor(type), 0.4);
+    gfx.beginPath();
+    gfx.moveTo(top.x, top.y);
+    gfx.lineTo(right.x, right.y);
+    gfx.lineTo(bottom.x, bottom.y);
+    gfx.lineTo(left.x, left.y);
+    gfx.closePath();
+    gfx.fill({ color });
+  }
+
+  // Outline the FULL diamond. Build a fresh diamond path before stroking — in the
+  // textured branch the current path is the last triangle, not the diamond, so a
+  // bare stroke here would trace a triangle (diagonal slash + half-missing border).
   gfx.beginPath();
   gfx.moveTo(top.x, top.y);
   gfx.lineTo(right.x, right.y);
   gfx.lineTo(bottom.x, bottom.y);
   gfx.lineTo(left.x, left.y);
   gfx.closePath();
-  gfx.fill({ color });
   gfx.stroke({ color: 0x000000, width: 1, alpha: 0.35, alignment: 1 });
 
   // Suppress unused-param lint for isWater (kept for parity with DiamondTileVisual idiom):
