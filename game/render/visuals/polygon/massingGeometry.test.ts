@@ -117,6 +117,15 @@ describe('massingGableFaces', () => {
     expect(massingGableFaces(tall, 0, 10, 16, 'y').slopeBack).toBeNull();
   });
 
+  it('orders slope quads with the top edge parallel to the ridge (texture fill convention)', () => {
+    const gx = massingGableFaces(rect, 0, 10, 8, 'x');
+    expect(gx.slopeFront[0]).toEqual(fracToLocal(0, 0.5, 18));
+    expect(gx.slopeFront[1]).toEqual(fracToLocal(2, 0.5, 18));
+    const gy = massingGableFaces({ x0: 0, y0: 0, x1: 1, y1: 2 }, 0, 10, 8, 'y');
+    expect(gy.slopeFront[0]).toEqual(fracToLocal(0.5, 0, 18));
+    expect(gy.slopeFront[1]).toEqual(fracToLocal(0.5, 2, 18));
+  });
+
   it('applies baseLift to every face', () => {
     const grounded = massingGableFaces(rect, 0, 10, 8, 'x');
     const lifted = massingGableFaces(rect, 6, 10, 8, 'x');

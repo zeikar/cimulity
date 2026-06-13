@@ -33,6 +33,8 @@ import {
   wallVariant,
   getRoofTexture,
   roofFaceFillMatrix,
+  getGableRoofTexture,
+  slopeFaceFillMatrix,
 } from './faceTexture';
 import { windowSeed } from './windowLights';
 import {
@@ -303,8 +305,22 @@ function drawGableMassingBox(
   const g = massingGableFaces(box.rect, box.baseLiftPx, box.wallHeightPx, roof.risePx, roof.ridgeAxis);
   const ds = densityShade(input.density);
 
+  // Shingle texture (grayscale) tinted by the seeded roof colour; flat tint
+  // fallback preserves the colour identity when the texture failed to load.
+  const shingleTex = getGableRoofTexture();
+  const drawSlope = (slope: ReadonlyArray<Point>, factor: number, strokeAlpha: number): void => {
+    // The grayscale shingle tile averages ~0.72 luminance; boost the tint so a
+    // textured slope matches the flat-fill brightness of the same factor.
+    const tint = shadeColor(roof.color, factor * ds * (shingleTex ? 1.35 : 1));
+    if (shingleTex) {
+      drawTexturedPoly(ctx, slope, shingleTex, slopeFaceFillMatrix(slope, ox, oy, shingleTex), tint, strokeAlpha, ox, oy);
+    } else {
+      drawPoly(ctx, slope, tint, strokeAlpha, ox, oy);
+    }
+  };
+
   if (g.slopeBack) {
-    drawPoly(ctx, g.slopeBack, shadeColor(roof.color, SLOPE_FACTOR_BACK * ds), 0.5, ox, oy);
+    drawSlope(g.slopeBack, SLOPE_FACTOR_BACK, 0.5);
   }
   drawTexturedWallFace(ctx, g.wallSW, 0.55, input, ox, oy);
   drawTexturedWallFace(ctx, g.wallSE, 0.75, input, ox, oy);
@@ -316,8 +332,7 @@ function drawGableMassingBox(
     ox,
     oy,
   );
-  const frontFactor = roof.ridgeAxis === 'x' ? SLOPE_FACTOR_SW : SLOPE_FACTOR_SE;
-  drawPoly(ctx, g.slopeFront, shadeColor(roof.color, frontFactor * ds), 0.55, ox, oy);
+  drawSlope(g.slopeFront, roof.ridgeAxis === 'x' ? SLOPE_FACTOR_SW : SLOPE_FACTOR_SE, 0.55);
 }
 
 function drawMassingProp(

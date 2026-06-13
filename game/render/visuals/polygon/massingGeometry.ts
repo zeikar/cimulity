@@ -53,9 +53,14 @@ export type GableFaces = {
   wallSE: Point[];
   /** Triangle between the gable-end wall top and the ridge apex, on the visible end. */
   gable: { points: Point[]; side: 'SW' | 'SE' };
-  /** Viewer-facing roof slope (SW-facing for ridge 'x', SE-facing for ridge 'y'). */
+  /**
+   * Viewer-facing roof slope (SW-facing for ridge 'x', SE-facing for ridge 'y').
+   * Ordered [topStart, topEnd, bottomEnd, bottomStart] with the top edge
+   * parallel to the ridge, so texture fill matrices lay shingle courses along
+   * the slope.
+   */
   slopeFront: Point[];
-  /** Away-facing slope; null when it is back-facing in projection (steep roofs). */
+  /** Away-facing slope, same ordering; null when back-facing in projection (steep roofs). */
   slopeBack: Point[] | null;
 };
 
@@ -118,7 +123,7 @@ export function massingGableFaces(
     wallSW,
     wallSE,
     gable: { points: [Stop, ridgeS, Wtop], side: 'SW' },
-    slopeFront: [ridgeN, Etop, Stop, ridgeS],
-    slopeBack: backVisible ? [Ntop, ridgeN, ridgeS, Wtop] : null,
+    slopeFront: [ridgeN, ridgeS, Stop, Etop],
+    slopeBack: backVisible ? [Ntop, Wtop, ridgeS, ridgeN] : null,
   };
 }

@@ -34,6 +34,7 @@ export const WALL_VARIANTS = 3;
 const BUILDING_TYPES: readonly BuildingType[] = ['residential', 'commercial', 'industrial'];
 
 const ROOF_URL = `${BASE_PATH}/textures/roof.png`;
+const GABLE_ROOF_URL = `${BASE_PATH}/textures/gable-roof.png`;
 const GRASS_URL = `${BASE_PATH}/textures/grass.png`;
 const WATER_URL = `${BASE_PATH}/textures/water.png`;
 const ROAD_URL = `${BASE_PATH}/textures/road.png`;
@@ -80,6 +81,7 @@ export function wallFaceRepeats(face: ReadonlyArray<Point>): { repeatX: number; 
 /** type -> [variant0, variant1, ...] textures (null until loaded / on failure). */
 const wallTextures = new Map<BuildingType, Array<Texture | null>>();
 let roofTexture: Texture | null = null;
+let gableRoofTexture: Texture | null = null;
 let grassTexture: Texture | null = null;
 let waterTexture: Texture | null = null;
 let roadTexture: Texture | null = null;
@@ -130,6 +132,7 @@ export async function preloadFaceTextures(): Promise<void> {
     }
   }
   jobs.push(loadTexture(ROOF_URL).then((t) => { roofTexture = t; }));
+  jobs.push(loadTexture(GABLE_ROOF_URL).then((t) => { gableRoofTexture = t; }));
   jobs.push(loadTexture(GRASS_URL).then((t) => { grassTexture = t; }));
   jobs.push(loadTexture(WATER_URL).then((t) => { waterTexture = t; }));
   jobs.push(loadTexture(ROAD_URL).then((t) => { roadTexture = t; }));
@@ -172,6 +175,11 @@ export function getWallTexture(type: BuildingType, variant: number): Texture {
 /** Roof texture, or null until loaded (caller draws a flat-colour roof then). */
 export function getRoofTexture(): Texture | null {
   return roofTexture;
+}
+
+/** Gable shingle texture (GRAYSCALE, tinted by the seeded roof colour), or null until loaded. */
+export function getGableRoofTexture(): Texture | null {
+  return gableRoofTexture;
 }
 
 /** Grass terrain texture (COLOUR), or null until loaded (caller draws flat grass then). */
@@ -281,6 +289,46 @@ export function wallFaceFillMatrix(
   const { repeatX, repeatY } = wallFaceRepeats(face);
 
   // x-column (edge dir) = a/(repeatX*texW), y-column (wall drop) = b/(repeatY*texH).
+  return new Matrix(
+    ax / (repeatX * texW),
+    ay / (repeatX * texW),
+    bx / (repeatY * texH),
+    by / (repeatY * texH),
+    o.x + ox,
+    o.y + oy,
+  );
+}
+
+/** On-screen size (local px) of one shingle tile before it repeats — 1:1 with
+ *  the 48px source so courses stay chunky pixel-art. */
+export const SHINGLE_TILE_PX = 48;
+
+/**
+ * Affine fill matrix mapping the shingle texture onto a gable roof slope.
+ *
+ * `face` is ordered [topStart, topEnd, bottomEnd, bottomStart] with the top
+ * edge parallel to the ridge (see massingGableFaces), so the texture's x-axis
+ * runs shingle courses along the slope and its y-axis follows the drop to the
+ * eave. Same matrix form as wallFaceFillMatrix, with the shingle tile size.
+ */
+export function slopeFaceFillMatrix(
+  face: ReadonlyArray<Point>,
+  ox: number,
+  oy: number,
+  tex: Texture,
+): Matrix {
+  const texW = tex.source.width || 1;
+  const texH = tex.source.height || 1;
+
+  const o = face[0];
+  const ax = face[1].x - o.x;
+  const ay = face[1].y - o.y;
+  const bx = face[3].x - o.x;
+  const by = face[3].y - o.y;
+
+  const repeatX = Math.max(0.01, Math.hypot(ax, ay) / SHINGLE_TILE_PX);
+  const repeatY = Math.max(0.01, Math.hypot(bx, by) / SHINGLE_TILE_PX);
+
   return new Matrix(
     ax / (repeatX * texW),
     ay / (repeatX * texW),
