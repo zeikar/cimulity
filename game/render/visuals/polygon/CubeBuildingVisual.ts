@@ -220,6 +220,11 @@ const PROP_COLORS = { ac: 0x9aa3ab, tank: 0x7d8a96, vent: 0xb0a191 } as const;
 const ANTENNA_COLOR = 0x3a3f44;
 const ANTENNA_TIP_COLOR = 0xd0d4d8;
 const GABLE_PLASTER = 0xe3dac6;
+// Cream barge-board trim run along the gable rake edges.
+const GABLE_TRIM = 0xece4d2;
+// Neutral wall tone backing the gable triangle so the wall texture's transparent
+// window holes read as solid wall (windowless gable) instead of dark glass.
+const GABLE_WALL_FILL = 0x837c72;
 const PARAPET_COLOR = 0xc9ced3;
 // Roof-slope shading: viewer-facing slopes sit between the top (1.0) and wall
 // factors (0.55 / 0.75); the away slope is the darkest lit surface.
@@ -325,15 +330,16 @@ function drawGableMassingBox(
   drawTexturedWallFace(ctx, g.wallSW, 0.55, input, ox, oy);
   drawTexturedWallFace(ctx, g.wallSE, 0.75, input, ox, oy);
 
-  // Gable-end triangle continues the wall facade: same texture, mapped with the
-  // matrix of the wall rect BELOW it so courses align seamlessly (the textures
-  // tile vertically, so the region above the wall top reads as the next floor —
-  // attic windows included). Unlit glass backing shows through the window holes.
+  // Gable-end triangle: the wall facade continues up to the ridge, WINDOWLESS.
+  // Same wall texture mapped with the matrix of the wall rect below, so the
+  // brick/siding courses line up across the wall/gable seam. The transparent
+  // window holes are backed by a neutral wall tone (not glass), so the attic
+  // reads as solid wall rather than floating attic windows.
   const gableWallFace = g.gable.side === 'SW' ? g.wallSW : g.wallSE;
   const gableFactor = g.gable.side === 'SW' ? 0.55 : 0.75;
   const wallTex = getWallTexture(input.type, wallVariant(input.buildingId));
   if (wallTex !== Texture.EMPTY) {
-    drawPoly(ctx, g.gable.points, glassColor(input.type, false, gableFactor, input.density), 0, ox, oy);
+    drawPoly(ctx, g.gable.points, shadeColor(GABLE_WALL_FILL, gableFactor * ds), 0, ox, oy);
     drawTexturedPoly(
       ctx,
       g.gable.points,
@@ -349,6 +355,16 @@ function drawGableMassingBox(
   }
 
   drawSlope(g.slopeFront, roof.ridgeAxis === 'x' ? SLOPE_FACTOR_SW : SLOPE_FACTOR_SE, 0.55);
+
+  // Barge-board trim along the two roof-rake edges (base0 -> apex -> base1,
+  // skipping the wall-top base) — a finished edge separating the windowless
+  // gable from the shingle slopes.
+  const gp = g.gable.points;
+  ctx.beginPath();
+  ctx.moveTo(gp[0].x + ox, gp[0].y + oy);
+  ctx.lineTo(gp[1].x + ox, gp[1].y + oy);
+  ctx.lineTo(gp[2].x + ox, gp[2].y + oy);
+  ctx.stroke({ color: GABLE_TRIM, width: 1.5, alpha: 0.9 });
 }
 
 function drawMassingProp(
