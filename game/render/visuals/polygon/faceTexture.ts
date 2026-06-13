@@ -202,27 +202,27 @@ export function getParkTexture(): Texture | null {
   return parkTexture;
 }
 
-/** Police station wall texture (windowed COLOUR+alpha), or null until loaded. */
+/** Police station wall texture (opaque COLOUR, windowless — windows drawn on top as vector), or null until loaded. */
 export function getPoliceWallTexture(): Texture | null {
   return policeWallTexture;
 }
 
-/** Fire station wall texture (windowed COLOUR+alpha), or null until loaded. */
+/** Fire station wall texture (opaque COLOUR, windowless — windows drawn on top as vector), or null until loaded. */
 export function getFireWallTexture(): Texture | null {
   return fireWallTexture;
 }
 
-/** Hospital wall texture (windowed COLOUR+alpha), or null until loaded. */
+/** Hospital wall texture (opaque COLOUR, windowless — windows drawn on top as vector), or null until loaded. */
 export function getHospitalWallTexture(): Texture | null {
   return hospitalWallTexture;
 }
 
-/** School wall texture (windowed COLOUR+alpha), or null until loaded. */
+/** School wall texture (opaque COLOUR, windowless — windows drawn on top as vector), or null until loaded. */
 export function getSchoolWallTexture(): Texture | null {
   return schoolWallTexture;
 }
 
-/** Power plant wall texture (windowed COLOUR+alpha), or null until loaded. */
+/** Power plant wall texture (opaque COLOUR, windowless — windows drawn on top as vector), or null until loaded. */
 export function getPowerPlantWallTexture(): Texture | null {
   return powerPlantWallTexture;
 }
