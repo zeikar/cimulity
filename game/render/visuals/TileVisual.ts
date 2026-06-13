@@ -29,9 +29,10 @@ export interface TileVisualInput {
   mapBounds?: MapBounds;
   /**
    * Road auto-tile neighbourhood probe: returns true iff the tile at offset
-   * (dx, dy) is a ROAD. Supplied by the renderer ONLY for ROAD tiles; omitted
-   * for non-road tiles and test fixtures (a missing probe yields an `isolated`
-   * road). Pure read — the visual never mutates core through it.
+   * (dx, dy) is a ROAD. Supplied by the renderer for ROAD tiles (auto-tiling)
+   * and zone_* tiles (sidewalk apron needs road adjacency); omitted for other
+   * tile types and test fixtures (a missing probe yields an `isolated` road).
+   * Pure read — the visual never mutates core through it.
    */
   roadNeighbors?: (dx: number, dy: number) => boolean;
 }
