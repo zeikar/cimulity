@@ -67,10 +67,6 @@ describe('apronEdges', () => {
 
 // ── apronBandQuad ─────────────────────────────────────────────────────────────
 
-function dot(a: { x: number; y: number }, b: { x: number; y: number }): number {
-  return a.x * b.x + a.y * b.y;
-}
-
 function sub(a: { x: number; y: number }, b: { x: number; y: number }) {
   return { x: a.x - b.x, y: a.y - b.y };
 }

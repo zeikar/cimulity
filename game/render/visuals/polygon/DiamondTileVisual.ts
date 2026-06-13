@@ -17,6 +17,8 @@ import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
 import { getGrassTexture, getWaterTexture, getRoadTexture, getParkTexture, getDirtTexture } from './faceTexture';
 import { maxRoadHalfWidthForDiamond } from './roadHalfWidth';
+import { apronEdges } from './apronBandGeometry';
+import { drawApronBand } from './apronBandDraw';
 
 // Terrain texture pixels per grid cell (shared by grass + water). UV is fed in
 // texture-px; Pixi divides by source size for UVs. Lower => the tile stretches
@@ -537,6 +539,19 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
       gfx.moveTo(left.x, left.y);
       gfx.lineTo(right.x, right.y);
       gfx.stroke({ color: 0x000000, width: 1, alpha: 0.18 });
+    }
+  }
+
+  // Concrete apron bands — drawn on zone tiles along each road-facing edge, after
+  // shading and before the outline so the outline sits on top. Zone and road are
+  // mutually exclusive tile types, so there is no overlap with the road block.
+  if (isZoneTile && input.roadNeighbors) {
+    const corners = { top, right, bottom, left };
+    const bandBrightness = plan.diagonal === 'tb'
+      ? (plan.brightnessWest + plan.brightnessEast) / 2
+      : (plan.brightnessNorth + plan.brightnessSouth) / 2;
+    for (const e of apronEdges(input.roadNeighbors)) {
+      drawApronBand(gfx, corners, e, bandBrightness);
     }
   }
 
