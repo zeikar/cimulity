@@ -150,7 +150,7 @@ export class TileRenderer {
       for (const b of map.getBuildings().iterBuildings()) {
         if (visibleBounds && !isBuildingVisible(b.footprint, visibleBounds.buildings)) continue;
         visibleIds.add(b.id);
-        this.syncBuilding(b, terrain);
+        this.syncBuilding(b, terrain, map);
       }
       for (const [id, entry] of this.buildingById) {
         if (!visibleIds.has(id)) this.unmountBuilding(id, entry);
@@ -185,7 +185,7 @@ export class TileRenderer {
             const entry = this.buildingById.get(id);
             if (entry) this.unmountBuilding(id, entry);
           } else if (!visibleBounds || isBuildingVisible(building.footprint, visibleBounds.buildings)) {
-            this.syncBuilding(building, terrain);
+            this.syncBuilding(building, terrain, map);
           } else {
             const entry = this.buildingById.get(id);
             if (entry) this.unmountBuilding(id, entry);
@@ -253,7 +253,7 @@ export class TileRenderer {
   }
 
   /** Mount or update a building's visual. */
-  private syncBuilding(building: Building, terrain: Terrain): void {
+  private syncBuilding(building: Building, terrain: Terrain, map: GameMap): void {
     const visual = this.registry.getBuilding(building.type);
     const input = {
       buildingId: building.id,
@@ -274,7 +274,7 @@ export class TileRenderer {
     } else {
       visual.update(input, existing.displayObject);
     }
-    this.syncYardCellsForBuilding(building, terrain);
+    this.syncYardCellsForBuilding(building, terrain, map);
   }
 
   /** Unmount a building by id and remove from the map. */
@@ -287,17 +287,20 @@ export class TileRenderer {
 
   /** Mount or update yard polygons for all lot (footprint) cells of a building.
    * The cube (in buildingContainer) draws on top, so its inset margin reveals the yard underneath. */
-  private syncYardCellsForBuilding(building: Building, terrain: Terrain): void {
+  private syncYardCellsForBuilding(building: Building, terrain: Terrain, map: GameMap): void {
     // Mount or update yards for all footprint cells.
     for (const cell of building.footprint) {
       const key = `${building.id}:${cell.x}:${cell.y}`;
+      // Road-neighbour probe for the apron band — one closure per footprint cell.
+      const roadNeighbors = (dx: number, dy: number) =>
+        map.getTile(cell.x + dx, cell.y + dy)?.type === TileType.ROAD;
       const existing = this.yardByKey.get(key);
       if (existing) {
         // Update — building may have changed type via merge etc.
-        updateYardCell(existing.gfx, cell, building.type, terrain);
+        updateYardCell(existing.gfx, cell, building.type, terrain, roadNeighbors);
         existing.type = building.type;
       } else {
-        const gfx = mountYardCell(this.terrainContainer, cell, building.type, terrain);
+        const gfx = mountYardCell(this.terrainContainer, cell, building.type, terrain, roadNeighbors);
         this.yardByKey.set(key, { gfx, type: building.type });
       }
     }
