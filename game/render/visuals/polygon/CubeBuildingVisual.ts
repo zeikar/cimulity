@@ -324,14 +324,30 @@ function drawGableMassingBox(
   }
   drawTexturedWallFace(ctx, g.wallSW, 0.55, input, ox, oy);
   drawTexturedWallFace(ctx, g.wallSE, 0.75, input, ox, oy);
-  drawPoly(
-    ctx,
-    g.gable.points,
-    shadeColor(GABLE_PLASTER, (g.gable.side === 'SW' ? 0.55 : 0.75) * ds),
-    0.5,
-    ox,
-    oy,
-  );
+
+  // Gable-end triangle continues the wall facade: same texture, mapped with the
+  // matrix of the wall rect BELOW it so courses align seamlessly (the textures
+  // tile vertically, so the region above the wall top reads as the next floor —
+  // attic windows included). Unlit glass backing shows through the window holes.
+  const gableWallFace = g.gable.side === 'SW' ? g.wallSW : g.wallSE;
+  const gableFactor = g.gable.side === 'SW' ? 0.55 : 0.75;
+  const wallTex = getWallTexture(input.type, wallVariant(input.buildingId));
+  if (wallTex !== Texture.EMPTY) {
+    drawPoly(ctx, g.gable.points, glassColor(input.type, false, gableFactor, input.density), 0, ox, oy);
+    drawTexturedPoly(
+      ctx,
+      g.gable.points,
+      wallTex,
+      wallFaceFillMatrix(gableWallFace, ox, oy, wallTex),
+      shadeColor(0xffffff, gableFactor * ds),
+      0.5,
+      ox,
+      oy,
+    );
+  } else {
+    drawPoly(ctx, g.gable.points, shadeColor(GABLE_PLASTER, gableFactor * ds), 0.5, ox, oy);
+  }
+
   drawSlope(g.slopeFront, roof.ridgeAxis === 'x' ? SLOPE_FACTOR_SW : SLOPE_FACTOR_SE, 0.55);
 }
 
