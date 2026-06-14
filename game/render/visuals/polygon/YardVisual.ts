@@ -8,8 +8,6 @@ import { tileCornerHeights } from '@/game/render/terrain/tileCornerHeights';
 import { getYardTexture } from './faceTexture';
 import { terrainTriFillMatrix } from './terrainTriFillMatrix';
 import { planDiamondShading } from './diamondShading';
-import { apronEdges } from './apronBandGeometry';
-import { drawApronBand } from './apronBandDraw';
 
 // Must match DiamondTileVisual.TERRAIN_TEXTURE_PX_PER_CELL so yards tile seamlessly with terrain.
 const TERRAIN_TEXTURE_PX_PER_CELL = 16;
@@ -27,10 +25,9 @@ export function mountYardCell(
   cell: { x: number; y: number },
   type: BuildingType,
   terrain: Terrain,
-  roadNeighbors?: (dx: number, dy: number) => boolean,
 ): Graphics {
   const gfx = new Graphics();
-  drawYardDiamond(gfx, cell, type, terrain, roadNeighbors);
+  drawYardDiamond(gfx, cell, type, terrain);
   gfx.zIndex = computeTerrainZIndex(terrain.getRenderHeight(cell.x, cell.y), cell.x, cell.y);
   parent.addChild(gfx);
   return gfx;
@@ -41,10 +38,9 @@ export function updateYardCell(
   cell: { x: number; y: number },
   type: BuildingType,
   terrain: Terrain,
-  roadNeighbors?: (dx: number, dy: number) => boolean,
 ): void {
   gfx.clear();
-  drawYardDiamond(gfx, cell, type, terrain, roadNeighbors);
+  drawYardDiamond(gfx, cell, type, terrain);
   gfx.zIndex = computeTerrainZIndex(terrain.getRenderHeight(cell.x, cell.y), cell.x, cell.y);
 }
 
@@ -53,7 +49,6 @@ function drawYardDiamond(
   cell: { x: number; y: number },
   type: BuildingType,
   terrain: Terrain,
-  roadNeighbors?: (dx: number, dy: number) => boolean,
 ): void {
   // Pixi v8 reliable predicate: cells exist in Terrain — but for yards we
   // always inherit the cell's render height; cornerHeights via tileCornerHeights
@@ -132,15 +127,6 @@ function drawYardDiamond(
     gfx.lineTo(left.x, left.y);
     gfx.closePath();
     gfx.fill({ color });
-  }
-
-  // Apron band: draw a concrete sidewalk strip on every road-facing edge.
-  // Drawn after the yard fill so the band sits on top of the textured surface,
-  // and before the outline stroke so the grid line renders last (on top).
-  if (roadNeighbors !== undefined) {
-    for (const edge of apronEdges(roadNeighbors)) {
-      drawApronBand(gfx, { top, right, bottom, left }, edge, 1);
-    }
   }
 
   // Outline the FULL diamond. Build a fresh diamond path before stroking — in the

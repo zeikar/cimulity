@@ -29,12 +29,20 @@ export interface TileVisualInput {
   mapBounds?: MapBounds;
   /**
    * Road auto-tile neighbourhood probe: returns true iff the tile at offset
-   * (dx, dy) is a ROAD. Supplied by the renderer for ROAD tiles (auto-tiling)
-   * and zone_* tiles (sidewalk apron needs road adjacency); omitted for other
-   * tile types and test fixtures (a missing probe yields an `isolated` road).
-   * Pure read — the visual never mutates core through it.
+   * (dx, dy) is a ROAD. Supplied by the renderer for ROAD tiles only
+   * (auto-tiling); omitted for other tile types and test fixtures (a missing
+   * probe yields an `isolated` road). Pure read — the visual never mutates
+   * core through it.
    */
   roadNeighbors?: (dx: number, dy: number) => boolean;
+  /**
+   * Developed-land neighbourhood probe: supplied by the renderer for ROAD
+   * tiles only; true iff the neighbour at (dx, dy) is DEVELOPED land = a zone
+   * tile OR any player-placed structure tile (POWER_PLANT, WATER_TOWER,
+   * POLICE_STATION, FIRE_STATION, HOSPITAL, SCHOOL, PARK); OOB → false.
+   * Drives the road-tile sidewalk apron. Pure read, never mutates core.
+   */
+  developedNeighbors?: (dx: number, dy: number) => boolean;
 }
 
 export interface BuildingVisualInput {

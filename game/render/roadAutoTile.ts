@@ -21,10 +21,10 @@ export const E = 2;
 export const S = 4;
 export const W = 8;
 
-export type OrthoDirName = 'N' | 'E' | 'S' | 'W';
+type OrthoDirName = 'N' | 'E' | 'S' | 'W';
 
 /** Single source of truth for the ordered orthogonal direction table. */
-export const ORTHO_DIRS = [
+const ORTHO_DIRS = [
   { name: 'N' as OrthoDirName, dx: 0,  dy: -1, bit: N },
   { name: 'E' as OrthoDirName, dx: 1,  dy:  0, bit: E },
   { name: 'S' as OrthoDirName, dx: 0,  dy:  1, bit: S },

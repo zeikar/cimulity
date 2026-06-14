@@ -33,6 +33,21 @@ import { iterateVisibleTiles, isBuildingVisible } from './viewportCulling';
 import { tileCornerHeights } from './terrain/tileCornerHeights';
 
 /**
+ * Player-placed structure types that count as DEVELOPED land for sidewalk-apron probing.
+ * Developed land = a zone tile OR any placed structure (power plant, water tower, police,
+ * fire, hospital, school, AND park). WATER/DIRT/GRASS/ROAD remain non-developed.
+ * Pure TileType read.
+ */
+const DEVELOPED_STRUCTURE_TYPES: ReadonlySet<TileType> = new Set([
+  TileType.POWER_PLANT, TileType.WATER_TOWER, TileType.POLICE_STATION,
+  TileType.FIRE_STATION, TileType.HOSPITAL, TileType.SCHOOL, TileType.PARK,
+]);
+
+export function isDevelopedLand(type: TileType): boolean {
+  return isZoneType(type) || DEVELOPED_STRUCTURE_TYPES.has(type);
+}
+
+/**
  * Build the visual registry: terrain visuals per TileType and the single
  * shared CubeBuildingVisual instance per BuildingType.
  */
@@ -150,7 +165,7 @@ export class TileRenderer {
       for (const b of map.getBuildings().iterBuildings()) {
         if (visibleBounds && !isBuildingVisible(b.footprint, visibleBounds.buildings)) continue;
         visibleIds.add(b.id);
-        this.syncBuilding(b, terrain, map);
+        this.syncBuilding(b, terrain);
       }
       for (const [id, entry] of this.buildingById) {
         if (!visibleIds.has(id)) this.unmountBuilding(id, entry);
@@ -185,7 +200,7 @@ export class TileRenderer {
             const entry = this.buildingById.get(id);
             if (entry) this.unmountBuilding(id, entry);
           } else if (!visibleBounds || isBuildingVisible(building.footprint, visibleBounds.buildings)) {
-            this.syncBuilding(building, terrain, map);
+            this.syncBuilding(building, terrain);
           } else {
             const entry = this.buildingById.get(id);
             if (entry) this.unmountBuilding(id, entry);
@@ -231,12 +246,15 @@ export class TileRenderer {
     const cornerHeights = tileCornerHeights(terrain, x, y);
     const shape = terrain.getTerrainShape(x, y);
     // Road auto-tiling reads orthogonal/diagonal neighbour types to pick a band
-    // shape. Sidewalk apron on zones also reads this probe. Build for road and
-    // zone tiles; avoid closure churn on grass/dirt/park/service that ignore it.
-    const roadNeighbors = (type === TileType.ROAD || isZoneType(type))
+    // shape; developedNeighbors drives the road-tile sidewalk apron. Both probes
+    // are ROAD-tiles-only — avoid closure churn on grass/dirt/park/zone/service.
+    const roadNeighbors = type === TileType.ROAD
       ? (dx: number, dy: number) => map.getTile(x + dx, y + dy)?.type === TileType.ROAD
       : undefined;
-    const input = { x, y, type, level, tileElevation, renderHeight, cornerHeights, shape, mapBounds, roadNeighbors };
+    const developedNeighbors = type === TileType.ROAD
+      ? (dx: number, dy: number) => { const t = map.getTile(x + dx, y + dy)?.type; return t !== undefined && isDevelopedLand(t); }
+      : undefined;
+    const input = { x, y, type, level, tileElevation, renderHeight, cornerHeights, shape, mapBounds, roadNeighbors, developedNeighbors };
 
     if (!existing) {
       const displayObject = visual.mount(input, this.terrainContainer);
@@ -253,7 +271,7 @@ export class TileRenderer {
   }
 
   /** Mount or update a building's visual. */
-  private syncBuilding(building: Building, terrain: Terrain, map: GameMap): void {
+  private syncBuilding(building: Building, terrain: Terrain): void {
     const visual = this.registry.getBuilding(building.type);
     const input = {
       buildingId: building.id,
@@ -274,7 +292,7 @@ export class TileRenderer {
     } else {
       visual.update(input, existing.displayObject);
     }
-    this.syncYardCellsForBuilding(building, terrain, map);
+    this.syncYardCellsForBuilding(building, terrain);
   }
 
   /** Unmount a building by id and remove from the map. */
@@ -287,20 +305,17 @@ export class TileRenderer {
 
   /** Mount or update yard polygons for all lot (footprint) cells of a building.
    * The cube (in buildingContainer) draws on top, so its inset margin reveals the yard underneath. */
-  private syncYardCellsForBuilding(building: Building, terrain: Terrain, map: GameMap): void {
+  private syncYardCellsForBuilding(building: Building, terrain: Terrain): void {
     // Mount or update yards for all footprint cells.
     for (const cell of building.footprint) {
       const key = `${building.id}:${cell.x}:${cell.y}`;
-      // Road-neighbour probe for the apron band — one closure per footprint cell.
-      const roadNeighbors = (dx: number, dy: number) =>
-        map.getTile(cell.x + dx, cell.y + dy)?.type === TileType.ROAD;
       const existing = this.yardByKey.get(key);
       if (existing) {
         // Update — building may have changed type via merge etc.
-        updateYardCell(existing.gfx, cell, building.type, terrain, roadNeighbors);
+        updateYardCell(existing.gfx, cell, building.type, terrain);
         existing.type = building.type;
       } else {
-        const gfx = mountYardCell(this.terrainContainer, cell, building.type, terrain, roadNeighbors);
+        const gfx = mountYardCell(this.terrainContainer, cell, building.type, terrain);
         this.yardByKey.set(key, { gfx, type: building.type });
       }
     }

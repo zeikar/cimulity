@@ -17,8 +17,9 @@ import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
 import { getGrassTexture, getWaterTexture, getRoadTexture, getParkTexture, getDirtTexture } from './faceTexture';
 import { maxRoadHalfWidthForDiamond } from './roadHalfWidth';
-import { apronEdges } from './apronBandGeometry';
-import { drawApronBand } from './apronBandDraw';
+
+// Concrete sidewalk grey, matching road.png curb colour.
+const SIDEWALK_COLOR = 0x9a9a9a;
 
 // Terrain texture pixels per grid cell (shared by grass + water). UV is fed in
 // texture-px; Pixi divides by source size for UVs. Lower => the tile stretches
@@ -542,19 +543,6 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
     }
   }
 
-  // Concrete apron bands — drawn on zone tiles along each road-facing edge, after
-  // shading and before the outline so the outline sits on top. Zone and road are
-  // mutually exclusive tile types, so there is no overlap with the road block.
-  if (isZoneTile && input.roadNeighbors) {
-    const corners = { top, right, bottom, left };
-    const bandBrightness = plan.diagonal === 'tb'
-      ? (plan.brightnessWest + plan.brightnessEast) / 2
-      : (plan.brightnessNorth + plan.brightnessSouth) / 2;
-    for (const e of apronEdges(input.roadNeighbors)) {
-      drawApronBand(gfx, corners, e, bandBrightness);
-    }
-  }
-
   // Road asphalt bands — drawn ON TOP of the grass base per the autotile mask.
   // INSIDE drawDiamond (not an early-return path) so the OOB skirt below still
   // runs for map-edge road tiles exactly as for any other tile. Uses DEFORMED
@@ -573,6 +561,29 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
     const bandBrightness = plan.diagonal === 'tb'
       ? (plan.brightnessWest + plan.brightnessEast) / 2
       : (plan.brightnessNorth + plan.brightnessSouth) / 2;
+    // Developed-adjacent road tiles get a full concrete base under the asphalt
+    // (sidewalks on all sides; covers ends/corners); roads surrounded only by
+    // undeveloped land keep their grass base (rural).
+    const touchesDeveloped = !!input.developedNeighbors && (
+      input.developedNeighbors(0, -1) ||
+      input.developedNeighbors(1, 0) ||
+      input.developedNeighbors(0, 1) ||
+      input.developedNeighbors(-1, 0)
+    );
+    if (touchesDeveloped) {
+      // Fill the ENTIRE tile diamond with concrete using the same diagonal-split
+      // + fillTri idiom as the grass shading above, so deformed/ramp tiles don't
+      // overflow. bandBrightness carries the Lambert dimming so the concrete dims
+      // with slope like the asphalt above it.
+      const concreteColor = darken(SIDEWALK_COLOR, bandBrightness);
+      if (plan.diagonal === 'tb') {
+        fillTri(gfx, bottom, left,  top,   concreteColor, 1.0);
+        fillTri(gfx, bottom, right, top,   concreteColor, 1.0);
+      } else {
+        fillTri(gfx, left,  top,    right, concreteColor, 1.0);
+        fillTri(gfx, left,  bottom, right, concreteColor, 1.0);
+      }
+    }
     drawRoadBands(gfx, roadDiamond, desc, halfW, getRoadTexture(), bandBrightness);
   }
 

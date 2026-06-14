@@ -9,10 +9,10 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import type { Container } from 'pixi.js';
-import { TileRenderer } from './TileRenderer';
+import { TileRenderer, isDevelopedLand } from './TileRenderer';
 import { VisualRegistry } from './visuals/visualRegistry';
 import { World } from '../core/World';
-import { TileType } from '../core/Tile';
+import { TileType, createTile } from '../core/Tile';
 import type { TerrainTileVisual, BuildingVisual, TileVisualInput, BuildingVisualInput, MapBounds } from './visuals/TileVisual';
 import type { CornerHeights } from './terrain/tileCornerHeights';
 import type { TerrainShape } from '../core/terrainSlope';
@@ -238,5 +238,102 @@ describe('TileRenderer — terrain revision dirty detection', () => {
     renderer.render(world); // second render — no mutation
     renderer.render(world); // third render — no mutation
     expect((terrainVisual.update as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+  });
+});
+
+describe('isDevelopedLand', () => {
+  it('returns true for zone tile types', () => {
+    expect(isDevelopedLand(TileType.ZONE_RESIDENTIAL)).toBe(true);
+    expect(isDevelopedLand(TileType.ZONE_COMMERCIAL)).toBe(true);
+    expect(isDevelopedLand(TileType.ZONE_INDUSTRIAL)).toBe(true);
+  });
+
+  it('returns true for service, utility, and park structure types', () => {
+    expect(isDevelopedLand(TileType.POWER_PLANT)).toBe(true);
+    expect(isDevelopedLand(TileType.WATER_TOWER)).toBe(true);
+    expect(isDevelopedLand(TileType.POLICE_STATION)).toBe(true);
+    expect(isDevelopedLand(TileType.FIRE_STATION)).toBe(true);
+    expect(isDevelopedLand(TileType.HOSPITAL)).toBe(true);
+    expect(isDevelopedLand(TileType.SCHOOL)).toBe(true);
+    expect(isDevelopedLand(TileType.PARK)).toBe(true);
+  });
+
+  it('returns false for non-built-up tile types', () => {
+    expect(isDevelopedLand(TileType.GRASS)).toBe(false);
+    expect(isDevelopedLand(TileType.DIRT)).toBe(false);
+    expect(isDevelopedLand(TileType.ROAD)).toBe(false);
+  });
+});
+
+describe('road developedNeighbors wiring', () => {
+  // Layout (3×3): center tile (1,1) = ROAD, east tile (2,1) = ZONE_RESIDENTIAL (developed),
+  // north tile (1,0) = GRASS (non-developed). Verifies syncTile supplies the correct probe.
+  function makeFullInputCapture() {
+    const captured: TileVisualInput[] = [];
+    const visual: TerrainTileVisual = {
+      layer: 'terrain' as const,
+      mount: vi.fn((input: TileVisualInput, parent: Container) => {
+        captured.push(input);
+        const obj = makeDisplayObject();
+        (parent as ReturnType<typeof makeContainer>).addChild(obj);
+        return obj;
+      }),
+      update: vi.fn((input: TileVisualInput) => { captured.push(input); }),
+      unmount: vi.fn((obj: Container) => { obj.destroy(); }),
+    };
+    return { visual, captured };
+  }
+
+  function makeRegistryForCapture(visual: TerrainTileVisual): VisualRegistry {
+    const registry = new VisualRegistry();
+    const allTypes: TileType[] = [
+      TileType.DIRT, TileType.GRASS, TileType.ROAD,
+      TileType.ZONE_RESIDENTIAL, TileType.ZONE_COMMERCIAL, TileType.ZONE_INDUSTRIAL,
+      TileType.PARK,
+    ];
+    for (const t of allTypes) registry.registerTerrain(t, visual);
+    const stubBuilding: BuildingVisual = {
+      layer: 'building' as const,
+      mount: vi.fn((_input, parent) => { const o = makeDisplayObject(); (parent as ReturnType<typeof makeContainer>).addChild(o); return o; }),
+      update: vi.fn(),
+      unmount: vi.fn((o) => o.destroy()),
+      getCubeTopScreenY: () => 0,
+    };
+    for (const t of ['residential', 'commercial', 'industrial'] as const) registry.registerBuilding(t, stubBuilding);
+    return registry;
+  }
+
+  it('road tile receives developedNeighbors probe; non-road tile does not', () => {
+    const world = new World(3, 3, { regenerate: false });
+    // Place a zone tile at (2,1) — developed neighbour east of the road.
+    world.getMap().setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    // (1,0) is GRASS by default — non-developed north neighbour.
+    // Set (1,1) to ROAD.
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.ROAD));
+
+    const { visual, captured } = makeFullInputCapture();
+    const registry = makeRegistryForCapture(visual);
+    const renderer = new TileRenderer(makeContainer(), makeContainer(), registry);
+    renderer.render(world);
+
+    // Find the road tile input.
+    const roadInput = captured.find((inp) => inp.x === 1 && inp.y === 1);
+    expect(roadInput).toBeDefined();
+    expect(roadInput!.developedNeighbors).toBeDefined();
+    // East neighbour (dx=+1, dy=0) is ZONE_RESIDENTIAL → developed = true.
+    expect(roadInput!.developedNeighbors!(1, 0)).toBe(true);
+    // North neighbour (dx=0, dy=-1) is GRASS → developed = false.
+    expect(roadInput!.developedNeighbors!(0, -1)).toBe(false);
+    // Out-of-bounds offset → getTile returns null → developed = false.
+    expect(roadInput!.developedNeighbors!(-10, -10)).toBe(false);
+
+    // roadNeighbors is also defined for road tiles.
+    expect(roadInput!.roadNeighbors).toBeDefined();
+
+    // A non-road tile (e.g. ZONE_RESIDENTIAL at (2,1)) must NOT have developedNeighbors.
+    const zoneInput = captured.find((inp) => inp.x === 2 && inp.y === 1);
+    expect(zoneInput).toBeDefined();
+    expect(zoneInput!.developedNeighbors).toBeUndefined();
+    expect(zoneInput!.roadNeighbors).toBeUndefined();
   });
 });
