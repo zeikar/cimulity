@@ -175,6 +175,41 @@ describe('Demand', () => {
     expect(v.residential).toBeGreaterThan(0.5);
   });
 
+  it('abandoned buildings do not contribute to per-type demand sums', () => {
+    // Two industrial buildings; marking one abandoned should yield the same demand
+    // as if that building were absent entirely.
+    const withAbandoned = makeBuildingMap();
+    addBuilding(withAbandoned, 0, 0, 0, 'industrial', 4);
+    withAbandoned.addExistingBuilding({
+      id: 1,
+      type: 'industrial',
+      footprint: [{ x: 1, y: 0 }],
+      anchor: { x: 1, y: 0 },
+      level: 4,
+      density: 0,
+      age: 0,
+      abandoned: true,
+      frontage: 'S',
+      structureRect: { x: 1, y: 0, w: 1, h: 1 },
+    });
+
+    const withoutBuilding = makeBuildingMap();
+    addBuilding(withoutBuilding, 0, 0, 0, 'industrial', 4);
+
+    const d1 = new Demand();
+    d1.recompute(withAbandoned);
+    const d2 = new Demand();
+    d2.recompute(withoutBuilding);
+
+    expect(d1.get().residential).toBe(d2.get().residential);
+    expect(d1.get().commercial).toBe(d2.get().commercial);
+    expect(d1.get().industrial).toBe(d2.get().industrial);
+
+    // Sanity: the active building DOES move demand off baseline (so the equality
+    // above is not a trivial both-at-baseline coincidence).
+    expect(d1.get().residential).toBeGreaterThan(0.25);
+  });
+
   it('determinism: two recompute calls on identical input yield byte-identical output', () => {
     const map = makeBuildingMap();
     addBuilding(map, 0, 0, 0, 'residential', 2);

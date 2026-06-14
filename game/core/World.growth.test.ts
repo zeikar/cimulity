@@ -85,6 +85,62 @@ function seedSchool(world: World, ax: number, ay: number): void {
   world.recomputeSchool();
 }
 
+/** Place a 1×1 park at (px,py) and refresh land value (parks feed land value as an additive boost). */
+function seedPark(world: World, px: number, py: number): void {
+  const added = world.getStructureMap().addStructure({ type: 'park', anchor: { x: px, y: py }, footprint: [{ x: px, y: py }] });
+  expect(added).not.toBeNull();
+  world.markLandValueDirty();
+}
+
+/** Fixed cluster anchors fully provisioned by seedServedCluster (R, C, I), see below. */
+const SERVED_R = { x: 3, y: 1 };
+const SERVED_C = { x: 4, y: 1 };
+const SERVED_I = { x: 5, y: 1 };
+
+/**
+ * Fully provision a max-level test cluster: power, water, all four services, AND
+ * high land value (lv ≈ 1.0 at every cluster anchor), so buildings seeded at
+ * ZONE_MAX_LEVEL / level 4 are NOT flagged as abandoned by the abandonment sweep
+ * (Task 4) — abandonment would otherwise freeze them and block the density/merge
+ * behavior under test. Density/merge fixtures place their R/C/I at SERVED_R /
+ * SERVED_C / SERVED_I (frontage 'S', road to the south at y=2) and leave all
+ * gating to this single served layout.
+ *
+ * Layout on a ≥12×6 world: a road ROW at y=2; a power plant and water tower
+ * hung off road spurs; all four 2×2 stations one row below the road (y=3); a
+ * park at (3,0) directly north of the R anchor for the final land-value boost.
+ * Recomputes power/water/coverage/land value before returning, and asserts the
+ * cluster is powered, watered, covered, and supports level 5.
+ */
+function seedServedCluster(world: World): void {
+  const map = world.getMap();
+  const W = map.getWidth();
+  // Cluster zone tiles — the growth loop only visits zone-typed tiles.
+  map.setTile(SERVED_R.x, SERVED_R.y, createTile(SERVED_R.x, SERVED_R.y, TileType.ZONE_RESIDENTIAL));
+  map.setTile(SERVED_C.x, SERVED_C.y, createTile(SERVED_C.x, SERVED_C.y, TileType.ZONE_COMMERCIAL));
+  map.setTile(SERVED_I.x, SERVED_I.y, createTile(SERVED_I.x, SERVED_I.y, TileType.ZONE_INDUSTRIAL));
+  // Road row beneath the cluster (cluster is frontage 'S' onto this road).
+  for (let x = 0; x < W; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+  // Power: plant at (0,3)-(1,4); cell (0,3) adj road (0,2) → powers the road row.
+  seedPower(world, 0, 3);
+  // Water: road spur (W-1,1) up from the road row, tower at (W-1,0) feeding it,
+  // so the watered road row reaches every cluster cell adjacent to it.
+  map.setTile(W - 1, 1, createTile(W - 1, 1, TileType.ROAD));
+  seedWater(world, W - 1, 0); // tower (W-1,0) adj road (W-1,1) → waters spur → road row
+  // Four services adjacent to the road row → coverage chains to the cluster anchors.
+  seedPolice(world, 7, 3);
+  seedFire(world, 9, 3);
+  seedHospital(world, 0, 0);
+  seedSchool(world, 7, 0);
+  // Park directly north of the R anchor for the additive land-value boost.
+  seedPark(world, SERVED_R.x, 0);
+  world.markLandValueDirty();
+  world.recomputeLandValue();
+  for (const a of [SERVED_R, SERVED_C, SERVED_I]) {
+    expect(world.getLandValue().getValue(a.x, a.y)).toBeGreaterThanOrEqual(0.85);
+  }
+}
+
 describe('World.tick() — land value gating of growth', () => {
   it('zones near a road reach higher levels than zones far from any road', () => {
     // Near-road zones at x=0,1 with road at x=2; far zones at x=4,5 with no road anywhere near
@@ -168,122 +224,112 @@ describe('World.tick() — density tier', () => {
   });
 
   it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + demand[type] >= DENSITY_DEMAND_THRESHOLD', () => {
-    // Decision-A: water gates density-bump. (0,1) changed from ZONE_COMMERCIAL to ROAD to allow
-    // an isolated road+tower connection. The commercial demand-seeder building still placed via
-    // addBuilding (tile type not checked). Tower at (0,2)-(1,3) waters road (0,1); zone (0,0)
-    // adj to watered road (0,1) → watered. No LV check for density gate so this is safe.
-    const world = new World(6, 6, { regenerate: false });
+    // The max-level R and its level-4 C/I demand seeders sit on a fully served
+    // cluster (power, water, four services, lv ≈ 1.0) so the abandonment sweep
+    // (Task 4) does not flag any of them — leaving density the only variable.
+    const world = new World(12, 6, { regenerate: false });
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
-    seedWater(world, 0, 2); // tower at (0,2)–(1,3); (0,2) adj to road (0,1) → waters (0,1); zone (0,0) adj to (0,1) → watered
+    seedServedCluster(world);
 
     // Seed building at ZONE_MAX_LEVEL with age just under DENSITY_COOLDOWN_INTERVALS.
     map.getBuildings().addBuilding({
       type: 'residential',
-      footprint: [{ x: 0, y: 0 }],
-      anchor: { x: 0, y: 0 },
+      footprint: [SERVED_R],
+      anchor: SERVED_R,
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       abandoned: false,
-      frontage: 'E',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     map.getBuildings().addBuilding({
       type: 'commercial',
-      footprint: [{ x: 0, y: 1 }],
-      anchor: { x: 0, y: 1 },
+      footprint: [SERVED_C],
+      anchor: SERVED_C,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
-      footprint: [{ x: 1, y: 1 }],
-      anchor: { x: 1, y: 1 },
+      footprint: [SERVED_I],
+      anchor: SERVED_I,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
     });
     world.markDemandDirty();
 
     let densityBumpResult: ReturnType<typeof world.tick> | null = null;
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
       const result = world.tick();
-      const b = map.getBuildings().getBuildingAt(0, 0)!;
+      const b = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
       if (b.density === 1 && densityBumpResult === null) {
         densityBumpResult = result;
         break;
       }
     }
 
-    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    const b = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
     expect(b.density).toBe(1);
     expect(b.level).toBe(ZONE_MAX_LEVEL);
   });
 
   it('density bump emits changedTiles with footprint coords and changedBuildingIds with building id', () => {
-    // Decision-A: same (0,1) ROAD approach as the adjacent density test.
-    const world = new World(6, 6, { regenerate: false });
+    // Fully served cluster so the abandonment sweep (Task 4) leaves the max-level
+    // R and its level-4 C/I demand seeders alone; density is the only variable.
+    const world = new World(12, 6, { regenerate: false });
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
-    seedWater(world, 0, 2); // tower at (0,2)–(1,3); waters road (0,1); zone (0,0) adj → watered
+    seedServedCluster(world);
 
     const building = map.getBuildings().addBuilding({
       type: 'residential',
-      footprint: [{ x: 0, y: 0 }],
-      anchor: { x: 0, y: 0 },
+      footprint: [SERVED_R],
+      anchor: SERVED_R,
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       abandoned: false,
-      frontage: 'E',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     })!;
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     map.getBuildings().addBuilding({
       type: 'commercial',
-      footprint: [{ x: 0, y: 1 }],
-      anchor: { x: 0, y: 1 },
+      footprint: [SERVED_C],
+      anchor: SERVED_C,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
-      footprint: [{ x: 1, y: 1 }],
-      anchor: { x: 1, y: 1 },
+      footprint: [SERVED_I],
+      anchor: SERVED_I,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
     });
     world.markDemandDirty();
 
     let densityTickResult: ReturnType<typeof world.tick> | null = null;
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
       const result = world.tick();
-      const b = map.getBuildings().getBuildingAt(0, 0)!;
+      const b = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
       if (b.density === 1 && densityTickResult === null) {
         densityTickResult = result;
         break;
@@ -292,7 +338,7 @@ describe('World.tick() — density tier', () => {
 
     expect(densityTickResult).not.toBeNull();
     expect(densityTickResult!.changedBuildingIds).toContain(building.id);
-    expect(densityTickResult!.changedTiles).toContainEqual({ x: 0, y: 0 });
+    expect(densityTickResult!.changedTiles).toContainEqual({ x: SERVED_R.x, y: SERVED_R.y });
     expect(densityTickResult!.changedTiles.length).toBeGreaterThanOrEqual(1);
   });
 });
@@ -401,55 +447,50 @@ describe('World.tick() — Branch B road-access gate', () => {
   });
 
   it('existing building loses road access: density bump does not fire', () => {
-    // Decision-A: same isolated road+tower pattern; (0,1) changed from ZONE_COMMERCIAL to ROAD.
-    const world = new World(6, 6, { regenerate: false });
+    // Positive control: a fully served cluster (so abandonment leaves the max-level
+    // R and its level-4 C/I seeders alone) lets density fire.
+    const world = new World(12, 6, { regenerate: false });
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
-    seedWater(world, 0, 2); // tower at (0,2)–(1,3); waters road (0,1); zone (0,0) adj → watered
-    // Positive control: seed at ZONE_MAX_LEVEL, density=0, age just under cooldown.
+    seedServedCluster(world);
     map.getBuildings().addBuilding({
       type: 'residential',
-      footprint: [{ x: 0, y: 0 }],
-      anchor: { x: 0, y: 0 },
+      footprint: [SERVED_R],
+      anchor: SERVED_R,
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
       abandoned: false,
-      frontage: 'E',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
     // Seed C+I level-points >=8 so residentialDemand >= 0.6.
     map.getBuildings().addBuilding({
       type: 'commercial',
-      footprint: [{ x: 0, y: 1 }],
-      anchor: { x: 0, y: 1 },
+      footprint: [SERVED_C],
+      anchor: SERVED_C,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
-      footprint: [{ x: 1, y: 1 }],
-      anchor: { x: 1, y: 1 },
+      footprint: [SERVED_I],
+      anchor: SERVED_I,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
     });
     world.markDemandDirty();
     world.markLandValueDirty();
     // Run enough ticks so density fires (positive control).
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) world.tick();
-    expect(map.getBuildings().getBuildingAt(0, 0)!.density).toBeGreaterThanOrEqual(1);
+    expect(map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!.density).toBeGreaterThanOrEqual(1);
 
     // Negative control: same setup but no road.
     const world2 = new World(6, 6, { regenerate: false });
@@ -512,35 +553,26 @@ describe('World.tick() — Branch B road-access gate', () => {
 
 describe('World.tick() — T3 density-bump E2E', () => {
   it('max-level R with demand satisfied bumps density to 1 after one growth interval', () => {
-    const world = new World(8, 8, { regenerate: false });
+    // Fully served cluster keeps the max-level R and its level-5 industrial demand
+    // seeders out of abandonment so density bumps within one growth interval.
+    const world = new World(12, 6, { regenerate: false });
     const map = world.getMap();
-
-    for (let x = 0; x < 8; x++) {
-      map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
-    }
-    map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
-    map.setTile(2, 3, createTile(2, 3, TileType.ZONE_COMMERCIAL));
-    map.setTile(4, 3, createTile(4, 3, TileType.ZONE_INDUSTRIAL));
-    map.setTile(5, 3, createTile(5, 3, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 0, 3); // plant at (0,3)–(1,4); (0,4) ROAD adj to (0,3) → all road y=4 powered
-    // Decision-A: add road (3,5) + tower (3,6)-(4,7) to water road y=4. Road (3,5) adj to (3,4)=ROAD → connected. Zone (3,3) adj (3,4) → watered.
-    map.setTile(3, 5, createTile(3, 5, TileType.ROAD));
-    seedWater(world, 3, 6); // tower at (3,6)–(4,7); (3,6) adj road (3,5) → waters (3,5) → chain to (3,4) → zone (3,3) watered
+    seedServedCluster(world);
 
     map.getBuildings().addExistingBuilding({
-      id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 },
+      id: 0, type: 'residential', footprint: [SERVED_R], anchor: SERVED_R,
       level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
-      structureRect: { x: 3, y: 3, w: 1, h: 1 },
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 4, y: 3 }], anchor: { x: 4, y: 3 }, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 4, y: 3, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 5, y: 3 }], anchor: { x: 5, y: 3 }, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 5, y: 3, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [SERVED_C], anchor: SERVED_C, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [SERVED_I], anchor: SERVED_I, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 } });
 
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
 
-    const b = map.getBuildings().getBuildingAt(3, 3);
+    const b = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y);
     expect(b).not.toBeNull();
     expect(b!.density).toBe(1);
   });
@@ -624,49 +656,45 @@ describe('World.tick() — density gating (demand-driven)', () => {
   });
 
   it('Fixture B: sufficient C/I level-points → residentialDemand >= threshold → density bumps to 1', () => {
-    // Decision-A: same isolated road+tower pattern; (0,1) from ZONE_COMMERCIAL to ROAD.
-    const world = new World(6, 6, { regenerate: false });
+    // Fully served cluster keeps the max-level R and level-4 C/I seeders out of
+    // abandonment so residential demand stays high and density bumps.
+    const world = new World(12, 6, { regenerate: false });
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    map.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(world, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
-    seedWater(world, 0, 2); // tower at (0,2)–(1,3); waters road (0,1); zone (0,0) adj → watered
+    seedServedCluster(world);
 
     map.getBuildings().addBuilding({
       type: 'residential',
-      footprint: [{ x: 0, y: 0 }],
-      anchor: { x: 0, y: 0 },
+      footprint: [SERVED_R],
+      anchor: SERVED_R,
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS,
       abandoned: false,
-      frontage: 'E',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
     // C+I level-points = 8 → jobsLevels=8, levelSumR=5 → residential=(8-5)/8+0.25=0.625 >= 0.6
     map.getBuildings().addBuilding({
       type: 'commercial',
-      footprint: [{ x: 0, y: 1 }],
-      anchor: { x: 0, y: 1 },
+      footprint: [SERVED_C],
+      anchor: SERVED_C,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 },
     });
     map.getBuildings().addBuilding({
       type: 'industrial',
-      footprint: [{ x: 1, y: 1 }],
-      anchor: { x: 1, y: 1 },
+      footprint: [SERVED_I],
+      anchor: SERVED_I,
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+      structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
     });
     world.markDemandDirty();
 
@@ -674,7 +702,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
 
-    const b = map.getBuildings().getBuildingAt(0, 0)!;
+    const b = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
     expect(b.density).toBe(1);
   });
 
@@ -1099,22 +1127,28 @@ describe('World.tick() — power gate: building loses power → stops aging', ()
 
 describe('World.tick() — power gate: merge blocked without power, succeeds with power', () => {
   it('no merge when both buildings are unpowered; merge succeeds once power is added', () => {
-    // Use a 1×4 lot layout (road at y=4) so land value at anchor y=0 is low enough
-    // (≈0.43 < LEVEL_THRESHOLDS[3]=0.45) that Branch B level-up does NOT fire
-    // and age is not reset by a level-up before the merge pass.
-    // Decision-A: bump to World(6,7); tower (0,5)-(1,6) added from start to water buildings.
-    // No power → first tick: no merge (power gate blocks). Power added → merge fires.
-    // Water is present throughout; only the power gate creates the negative/positive contrast.
-    const world = new World(6, 7, { regenerate: false });
+    // Two adjacent 1×4 R lots (road at y=4) plus level-4 industrial demand seeders
+    // (road at y=6) on land served by all four services + a park, so the
+    // abandonment sweep (Task 4) flags none of them: the R anchors clear level 2
+    // (lv ≈ 0.4, below LEVEL_THRESHOLDS[3]=0.45 so no level-up resets age before
+    // the merge pass), and the industrials clear level 4 (lv ≈ 0.73) so they keep
+    // feeding residential demand. Water is present from the start; only adding
+    // power flips the merge from blocked to firing.
+    const world = new World(14, 10, { regenerate: false });
     const map = world.getMap();
 
-    for (let x = 0; x < 6; x++) {
-      map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
-    }
+    // R lots: cols 0,1 over rows 0..3, fronting the road at y=4.
+    for (let x = 0; x < 14; x++) map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
     for (let y = 0; y < 4; y++) {
       map.setTile(0, y, createTile(0, y, TileType.ZONE_RESIDENTIAL));
       map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
     }
+    // Industrial demand seeders fronting a second road row at y=6, linked to the
+    // y=4 row by a vertical road at (13,5) so one power plant feeds both rows.
+    for (let x = 0; x < 14; x++) map.setTile(x, 6, createTile(x, 6, TileType.ROAD));
+    map.setTile(13, 5, createTile(13, 5, TileType.ROAD));
+    map.setTile(0, 5, createTile(0, 5, TileType.ZONE_INDUSTRIAL));
+    map.setTile(1, 5, createTile(1, 5, TileType.ZONE_INDUSTRIAL));
 
     map.getBuildings().addExistingBuilding({
       id: 0,
@@ -1140,18 +1174,31 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       frontage: 'S',
       structureRect: { x: 1, y: 0, w: 1, h: 4 },
     });
+    // Level-4 industrials (lv ≈ 0.73 supports level 4) → jobsLevels=8, levelSumR=4 →
+    // residential demand = (8-4)/8 + 0.25 = 0.75 ≥ DENSITY_DEMAND_THRESHOLD.
     map.getBuildings().addExistingBuilding({
-      id: 2,
-      type: 'industrial',
-      footprint: [{ x: 4, y: 4 }],
-      anchor: { x: 4, y: 4 },
-      level: 8, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 4, y: 4, w: 1, h: 1 },
+      id: 2, type: 'industrial', footprint: [{ x: 0, y: 5 }], anchor: { x: 0, y: 5 },
+      level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 5, w: 1, h: 1 },
     });
-    // Add water from the start so the positive-control tick (after power is added) fires.
-    // Tower at (0,5)–(1,6): (0,5) adj to (0,4)=ROAD → waters road (0,4)→(1,4)→(2,4)→(3,4).
-    // Zone cells at y=0..3 adj to road y=4 → watered. No-power first tick: merge still blocked by power gate.
-    seedWater(world, 0, 5);
+    map.getBuildings().addExistingBuilding({
+      id: 3, type: 'industrial', footprint: [{ x: 1, y: 5 }], anchor: { x: 1, y: 5 },
+      level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 1, y: 5, w: 1, h: 1 },
+    });
+
+    // Water from the start: tower spur (13,3) off road y=4, tower (13,2) feeding it.
+    map.setTile(13, 3, createTile(13, 3, TileType.ROAD));
+    seedWater(world, 13, 2);
+    // Four services (no power needed) over both road rows so every anchor is covered.
+    seedPolice(world, 4, 2);
+    seedFire(world, 6, 2);
+    seedHospital(world, 8, 2);
+    seedSchool(world, 10, 2);
+    // Park near the R lot tops for the additive boost to clear level 2.
+    seedPark(world, 2, 0);
+    world.markLandValueDirty();
+    world.recomputeLandValue();
     world.markDemandDirty();
 
     // No power — first growth tick: no merge (buildings are unpowered; water alone is not enough).
@@ -1160,9 +1207,12 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
     expect(map.getBuildings().getBuilding(0)).not.toBeNull();
     expect(map.getBuildings().getBuilding(1)).not.toBeNull();
 
-    // Add power for both buildings: plant at (4,3)–(5,4) powers all road y=4.
-    // Buildings have NOT aged (unpowered), so age still satisfies cooldown.
-    seedPower(world, 4, 3);
+    // Add power: plant at (12,7)-(13,8); cell (12,7) adj road (12,6) → powers the
+    // connected road network (y=6 ↔ y=4 via the (13,3) spur). Buildings have NOT
+    // aged (unpowered), so age still satisfies cooldown.
+    seedPower(world, 12, 7);
+    world.markPowerDirty();
+    world.recomputePower();
 
     // Run another growth tick: both powered → merge succeeds.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();

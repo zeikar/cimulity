@@ -24,6 +24,7 @@ export class Demand {
     let levelSumI = 0;
 
     for (const b of buildings.iterBuildings()) {
+      if (b.abandoned) continue;
       if (b.type === 'residential') levelSumR += b.level;
       else if (b.type === 'commercial') levelSumC += b.level;
       else if (b.type === 'industrial') levelSumI += b.level;

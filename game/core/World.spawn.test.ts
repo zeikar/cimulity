@@ -248,22 +248,42 @@ describe('World.tick() — zone growth', () => {
   });
 
   it('at cap, zone no longer contributes to changed', () => {
-    const world = new World(4, 4, { regenerate: false });
+    // A single max-level R on a fully served tile (lv ≈ 1.0) so the abandonment
+    // sweep (Task 4) does NOT flag it — otherwise an abandonment flip would push
+    // its cell into changedTiles. With no C/I jobs, residential demand stays low,
+    // so the capped building neither levels up, bumps density, nor abandons →
+    // changed stays 0. (No empty zone tiles exist, so no spawn fires either.)
+    const world = new World(12, 6, { regenerate: false });
     const map = world.getMap();
-    map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    // Seed a building already at max level so the first growth tick should not level it up
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_RESIDENTIAL));
+    for (let x = 0; x < 12; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    // Four 2×2 service stations one row below the road → coverage reaches (3,1).
+    const station = (ax: number, ay: number) => [
+      { x: ax, y: ay }, { x: ax + 1, y: ay }, { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ];
+    world.getStructureMap().addStructure({ type: 'police_station', anchor: { x: 2, y: 3 }, footprint: station(2, 3) });
+    world.getStructureMap().addStructure({ type: 'fire_station', anchor: { x: 4, y: 3 }, footprint: station(4, 3) });
+    world.getStructureMap().addStructure({ type: 'hospital', anchor: { x: 6, y: 3 }, footprint: station(6, 3) });
+    world.getStructureMap().addStructure({ type: 'school', anchor: { x: 8, y: 3 }, footprint: station(8, 3) });
+    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 3, y: 0 }, footprint: [{ x: 3, y: 0 }] });
+    // Seed a building already at max level so the first growth tick should not level it up.
     map.getBuildings().addBuilding({
       type: 'residential',
-      footprint: [{ x: 0, y: 0 }],
-      anchor: { x: 0, y: 0 },
+      footprint: [{ x: 3, y: 1 }],
+      anchor: { x: 3, y: 1 },
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      structureRect: { x: 3, y: 1, w: 1, h: 1 },
     });
+    world.markServiceDirty();
+    world.markFireDirty();
+    world.markHospitalDirty();
+    world.markSchoolDirty();
+    world.markLandValueDirty();
+    world.recomputeLandValue();
 
     // Run exactly one growth tick
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) {
@@ -273,7 +293,7 @@ describe('World.tick() — zone growth', () => {
         expect(result.changed).toBe(0);
       }
     }
-    expect(map.getBuildings().getBuildingAt(0, 0)?.level).toBe(ZONE_MAX_LEVEL);
+    expect(map.getBuildings().getBuildingAt(3, 1)?.level).toBe(ZONE_MAX_LEVEL);
   });
 });
 

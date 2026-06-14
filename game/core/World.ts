@@ -26,6 +26,7 @@ import {
   hasFrontageRoadAccess,
   canExtendStructure,
   extendStructureToward,
+  isUnderSupported,
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
 import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
@@ -126,9 +127,9 @@ export const MONTHS_PER_YEAR = 12;
  * construction as `changedTiles.length`; it is never independently assigned.
  *
  * Every state mutation (tile write, building create, building level-up, building
- * density bump) MUST push at least one entry into `changedTiles` so that
- * save-scheduling and render-invalidation stay correct. `changed` is a count-only
- * convenience; `changedTiles` is the canonical delta.
+ * density bump, abandonment-state flip) MUST push at least one entry into
+ * `changedTiles` so that save-scheduling and render-invalidation stay correct.
+ * `changed` is a count-only convenience; `changedTiles` is the canonical delta.
  *
  * Corollary: if `changedBuildingIds.length > 0` then `changedTiles.length > 0`.
  * `changedBuildingIds` is an additional channel for building-keyed render lookup —
@@ -139,11 +140,11 @@ export const MONTHS_PER_YEAR = 12;
  * does not mutate any of those maps.
  */
 export interface WorldTickResult {
-  /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups + density bumps). */
+  /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups + density bumps + abandonment-state flips). */
   changedTiles: ReadonlyArray<{ x: number; y: number }>;
   /** Count-only convenience — always equals `changedTiles.length`. */
   changed: number;
-  /** IDs of buildings created, levelled-up, or density-bumped this tick (from the zone growth pass). */
+  /** IDs of buildings created, levelled-up, density-bumped, or abandonment-flipped this tick (from the zone growth pass). */
   changedBuildingIds: ReadonlyArray<number>;
 }
 
@@ -582,6 +583,7 @@ export class World {
     let residentialLandValueSum = 0;
 
     for (const b of this.map.getBuildings().iterBuildings()) {
+      if (b.abandoned) continue;
       if (b.type === 'residential') {
         levelSumR += b.level;
         residentialCount++;
@@ -613,6 +615,7 @@ export class World {
   getPopulation(): number {
     let sum = 0;
     for (const building of this.map.getBuildings().iterBuildings()) {
+      if (building.abandoned) continue;
       sum += building.level;
     }
     return sum * POPULATION_PER_LEVEL;
@@ -811,6 +814,38 @@ export class World {
       const hospitalSvc = this.getHospitalCoverageMap();
       const schoolSvc = this.getSchoolCoverageMap();
 
+      // Abandonment sweep: runs BEFORE demand/growth so the same-tick growth reads
+      // demand that already excludes the just-derelict, and so a building that
+      // recovers this tick is frozen from also growing this tick. `frozenThisTick`
+      // captures every building that is abandoned at sweep entry (so a re-occupied
+      // building — abandoned === false after the flip — is still skipped by the
+      // growth and merge loops, which a plain `abandoned` check would miss).
+      const frozenThisTick = new Set<number>();
+      for (const b of buildings.iterBuildings()) {
+        const lvAt = lv.getValue(b.anchor.x, b.anchor.y);
+        const under = isUnderSupported(b.level, lvAt);
+        if (b.abandoned) {
+          // Frozen regardless of whether it re-occupies this tick.
+          frozenThisTick.add(b.id);
+          if (!under) {
+            // Was abandoned, land value now supports the level → recover.
+            b.abandoned = false;
+            changedBuildingIds.push(b.id);
+            for (const cell of b.footprint) {
+              changedTiles.push({ x: cell.x, y: cell.y });
+            }
+          }
+        } else if (under) {
+          // Land value no longer supports the level → abandon.
+          b.abandoned = true;
+          frozenThisTick.add(b.id);
+          changedBuildingIds.push(b.id);
+          for (const cell of b.footprint) {
+            changedTiles.push({ x: cell.x, y: cell.y });
+          }
+        }
+      }
+
       this.markDemandDirty();
       const demandVec = this.getDemand();
 
@@ -857,6 +892,11 @@ export class World {
         // Branch B: building exists — de-duplicate multi-tile footprints.
         if (processedBuildingIds.has(existing.id)) continue;
         processedBuildingIds.add(existing.id);
+
+        // Abandonment freeze: a derelict (or just-re-occupied) building does not age
+        // or grow this tick. `frozenThisTick` (not `existing.abandoned`) is required —
+        // a building re-occupied THIS tick is `abandoned === false` but must still be skipped.
+        if (frozenThisTick.has(existing.id)) continue;
 
         // Road-access gate: buildings that lose frontage road access do not age or grow.
         if (!hasFrontageRoadAccess(existing, this)) continue;
@@ -929,12 +969,14 @@ export class World {
       for (let i = 0; i < candidates.length; i++) {
         const a = candidates[i];
         if (usedThisTick.has(a.id)) continue;
+        if (frozenThisTick.has(a.id)) continue; // derelict / just-re-occupied — no merge this tick
         if (!hasFrontageRoadAccess(a, this)) continue;
         if (!isBuildingPowered(a, pw)) continue;
         if (!isBuildingWatered(a, wm)) continue;
         for (let j = i + 1; j < candidates.length; j++) {
           const b = candidates[j];
           if (usedThisTick.has(b.id)) continue;
+          if (frozenThisTick.has(b.id)) continue; // derelict / just-re-occupied — no merge this tick
           if (!hasFrontageRoadAccess(b, this)) continue;
           if (!isBuildingPowered(b, pw)) continue;
           if (!isBuildingWatered(b, wm)) continue;

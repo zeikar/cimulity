@@ -47,25 +47,39 @@ describe("World.tick() — merge (Branch B'')", () => {
     world: World;
     ids: number[];
   } {
-    // Map wide enough: n R lots + 2 industrial seeders.
-    // Decision-A: height bumped to 7 so tower (0,5)-(1,6) fits adjacent to road y=4.
-    const world = new World(n + 2, 7, { regenerate: false });
+    // Layout (abandonment-aware, Task 4): the n R lots sit on rows 1..4 fronting a
+    // road at y=5, with a park ROW at y=0 directly north of each anchor. The park
+    // boost lifts every R anchor to lv ≈ 0.405 — above LEVEL_THRESHOLDS[2]=0.25 so
+    // the abandonment sweep leaves the level-2 buildings alone, yet below
+    // LEVEL_THRESHOLDS[3]=0.45 so no level-up resets age before the merge pass.
+    // (Crucially, NO service stations sit near the R lots, so Branch B level-up is
+    // also AND-gated off regardless of land value.) The merge pass (Branch B'')
+    // is not abandonment-gated, so the merge fires.
+    //
+    // Residential demand is driven by an ISOLATED industrial cluster on its own
+    // road network at the bottom of the map: four level-5 industrials on land
+    // served by all four services + parks (lv ≈ 0.9, so they are not abandoned).
+    // Isolating their road keeps their coverage/power from ever reaching the R
+    // anchors. jobsLevels = 4×5 = 20 ≥ 3.08·(n·2) for n ≤ 5, so residential demand
+    // stays ≥ DENSITY_DEMAND_THRESHOLD across the strip sizes used here.
+    const W = Math.max(n + 2, 16);
+    const H = 16;
+    const world = new World(W, H, { regenerate: false });
     const map = world.getMap();
+    const sm = world.getStructureMap();
 
-    // Road row at y=4
-    for (let x = 0; x < n + 2; x++) {
-      map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
-    }
-
-    // R-zone cells for each lot: column x, rows y=0..3
+    // R road row at y=5.
+    for (let x = 0; x < W; x++) map.setTile(x, 5, createTile(x, 5, TileType.ROAD));
+    // R-zone cells for each lot: column x, rows y=1..4.
     for (let x = 0; x < n; x++) {
-      for (let y = 0; y < 4; y++) {
-        map.setTile(x, y, createTile(x, y, TileType.ZONE_RESIDENTIAL));
-      }
+      for (let y = 1; y < 5; y++) map.setTile(x, y, createTile(x, y, TileType.ZONE_RESIDENTIAL));
+    }
+    // Park row north of the anchors (y=0) — additive land-value boost.
+    for (let x = 0; x < n; x++) {
+      expect(sm.addStructure({ type: 'park', anchor: { x, y: 0 }, footprint: [{ x, y: 0 }] })).not.toBeNull();
     }
 
     // Seed R buildings: level=MERGE_LEVEL_THRESHOLD, full structureRect, age past cooldown.
-    // Use addExistingBuilding with explicit ids so we can track them.
     const ids: number[] = [];
     for (let x = 0; x < n; x++) {
       const id = x; // ids 0..n-1
@@ -73,63 +87,66 @@ describe("World.tick() — merge (Branch B'')", () => {
         id,
         type: 'residential',
         footprint: [
-          { x, y: 0 }, { x, y: 1 }, { x, y: 2 }, { x, y: 3 },
+          { x, y: 1 }, { x, y: 2 }, { x, y: 3 }, { x, y: 4 },
         ],
-        anchor: { x, y: 0 },
+        anchor: { x, y: 1 },
         level: MERGE_LEVEL_THRESHOLD,
         density: 0,
         // age must satisfy canMerge for any building id (max stagger = 6).
-        // After Branch B's age+= 1 the age becomes 15, which exceeds
+        // After Branch B's age++ the age becomes 15, exceeding
         // GROWTH_COOLDOWN_INTERVALS + 6 = 14 (worst-case stagger).
-        // No coverage stations are placed here, so the four service AND-gates block
-        // Branch B (level-up) regardless of land value — leaving the buildings at
-        // MERGE_LEVEL_THRESHOLD to merge. (Land value is also low: with serviceScore=0,
-        // anchor row 0 / road row 4 is road-dist 4 → 0.40 * (1-4/7) ≈ 0.17.)
-        // The merge pass (Branch B'') is NOT coverage-gated, so the merge still fires.
         age: GROWTH_COOLDOWN_INTERVALS + 6,
         abandoned: false,
         frontage: 'S',
-        // Full 1×4 structureRect pinned to south (y+h = 0+4 = lot.y+lot.h)
-        structureRect: { x, y: 0, w: 1, h: 4 },
+        // Full 1×4 structureRect pinned to south (y+h = 1+4 = lot.y+lot.h).
+        structureRect: { x, y: 1, w: 1, h: 4 },
       });
       expect(ok).toBe(true);
       ids.push(id);
     }
 
-    // Seed two industrial buildings on the road row to drive residential demand >= 0.6.
-    // jobsLevels = 4+4 = 8, levelSumR = n * MERGE_LEVEL_THRESHOLD = n*2.
-    // For n=2: residential = (8-4)/8+0.25 = 0.75 >= 0.6. For n>2 demand is lower but
-    // we'll use level=8 per industrial to always satisfy the gate.
-    map.getBuildings().addExistingBuilding({
-      id: n,
-      type: 'industrial',
-      footprint: [{ x: n, y: 4 }],
-      anchor: { x: n, y: 4 },
-      level: 8,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'N',
-      structureRect: { x: n, y: 4, w: 1, h: 1 },
-    });
-    map.getBuildings().addExistingBuilding({
-      id: n + 1,
-      type: 'industrial',
-      footprint: [{ x: n + 1, y: 4 }],
-      anchor: { x: n + 1, y: 4 },
-      level: 8,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'N',
-      structureRect: { x: n + 1, y: 4, w: 1, h: 1 },
-    });
+    // Isolated industrial demand cluster: own road row at y=12, four level-5
+    // industrials at y=11, all four services at y=13, parks at (0,10)/(2,10).
+    for (let x = 0; x < W; x++) map.setTile(x, 12, createTile(x, 12, TileType.ROAD));
+    for (let k = 0; k < 4; k++) {
+      map.setTile(k, 11, createTile(k, 11, TileType.ZONE_INDUSTRIAL));
+      map.getBuildings().addExistingBuilding({
+        id: n + k,
+        type: 'industrial',
+        footprint: [{ x: k, y: 11 }],
+        anchor: { x: k, y: 11 },
+        level: 5,
+        density: 0,
+        age: 0,
+        abandoned: false,
+        frontage: 'S',
+        structureRect: { x: k, y: 11, w: 1, h: 1 },
+      });
+    }
+    expect(sm.addStructure({ type: 'police_station', anchor: { x: 6, y: 13 }, footprint: [{ x: 6, y: 13 }, { x: 7, y: 13 }, { x: 6, y: 14 }, { x: 7, y: 14 }] })).not.toBeNull();
+    expect(sm.addStructure({ type: 'fire_station', anchor: { x: 8, y: 13 }, footprint: [{ x: 8, y: 13 }, { x: 9, y: 13 }, { x: 8, y: 14 }, { x: 9, y: 14 }] })).not.toBeNull();
+    expect(sm.addStructure({ type: 'hospital', anchor: { x: 10, y: 13 }, footprint: [{ x: 10, y: 13 }, { x: 11, y: 13 }, { x: 10, y: 14 }, { x: 11, y: 14 }] })).not.toBeNull();
+    expect(sm.addStructure({ type: 'school', anchor: { x: 12, y: 13 }, footprint: [{ x: 12, y: 13 }, { x: 13, y: 13 }, { x: 12, y: 14 }, { x: 13, y: 14 }] })).not.toBeNull();
+    expect(sm.addStructure({ type: 'park', anchor: { x: 0, y: 10 }, footprint: [{ x: 0, y: 10 }] })).not.toBeNull();
+    expect(sm.addStructure({ type: 'park', anchor: { x: 2, y: 10 }, footprint: [{ x: 2, y: 10 }] })).not.toBeNull();
 
-    // Plant at (n, 3)–(n+1, 4): cell (n,4) ROAD adj to (n,3) → all road y=4 powered.
-    // Building footprint cells at y=3 are then powered via adjacency to road y=4.
-    seedPower(world, n, 3);
-    // Decision-A: tower at (0,5)–(1,6): (0,5) adj to (0,4)=ROAD → waters road y=4; zone cells y=0..3 adj y=4 → watered.
-    seedWater(world, 0, 5);
+    // R power: plant at (W-2,6)-(W-1,7); cell (W-2,6) adj road (W-2,5) → powers the
+    // R road row, powering the y=4 R footprint cells via adjacency.
+    seedPower(world, W - 2, 6);
+    // R water: tower at (W-1,4); (W-1,4) adj road (W-1,5) → waters the R road row;
+    // R footprint cells at y=4 adj the road → watered.
+    seedWater(world, W - 1, 4);
+
+    world.markServiceDirty();
+    world.markFireDirty();
+    world.markHospitalDirty();
+    world.markSchoolDirty();
+    world.markLandValueDirty();
+    world.recomputeService();
+    world.recomputeFire();
+    world.recomputeHospital();
+    world.recomputeSchool();
+    world.recomputeLandValue();
     world.markDemandDirty();
     return { world, ids };
   }
@@ -169,8 +186,8 @@ describe("World.tick() — merge (Branch B'')", () => {
     // Level = max of the two (both were MERGE_LEVEL_THRESHOLD)
     expect(merged.level).toBe(Math.max(MERGE_LEVEL_THRESHOLD, MERGE_LEVEL_THRESHOLD));
 
-    // structureRect = bbox union of two 1×4 full structureRects → 2×4
-    expect(merged.structureRect).toEqual({ x: 0, y: 0, w: 2, h: 4 });
+    // structureRect = bbox union of two 1×4 full structureRects → 2×4 (lots at rows 1..4)
+    expect(merged.structureRect).toEqual({ x: 0, y: 1, w: 2, h: 4 });
   });
 
   it('disjoint-pairs-per-tick: 4 buildings [A B C D] → 2 ticks to 1 building', () => {
