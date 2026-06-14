@@ -29,6 +29,7 @@ export interface TileBuildingInfo {
   readonly level: number;
   readonly density: 0 | 1 | 2;
   readonly age: number;
+  readonly abandoned: boolean;
 }
 
 export interface TileInfo {
@@ -196,6 +197,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
           level: building.level,
           density: building.density,
           age: building.age,
+          abandoned: building.abandoned,
         }
       : null,
     structure: structure ? { type: structure.type } : null,

@@ -236,8 +236,41 @@ describe('inspectTile', () => {
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });
     const info = inspectTile(world, { x: 2, y: 2 });
-    expect(info!.building).toEqual({ type: 'residential', level: 1, density: 2, age: 5 });
+    expect(info!.building).toEqual({ type: 'residential', level: 1, density: 2, age: 5, abandoned: false });
     expect(info!.structure).toBeNull();
+  });
+
+  it('surfaces abandoned:true for an abandoned building and abandoned:false for an active one', () => {
+    const world = makeWorld();
+    world.getMap().setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 2,
+      density: 0,
+      age: 10,
+      abandoned: true,
+      frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+    });
+    const abandonedInfo = inspectTile(world, { x: 1, y: 1 });
+    expect(abandonedInfo!.building!.abandoned).toBe(true);
+
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_COMMERCIAL));
+    world.getMap().getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 2, y: 2 }],
+      anchor: { x: 2, y: 2 },
+      level: 1,
+      density: 0,
+      age: 3,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
+    });
+    const activeInfo = inspectTile(world, { x: 2, y: 2 });
+    expect(activeInfo!.building!.abandoned).toBe(false);
   });
 
   it('surfaces a placed structure occupying the tile', () => {

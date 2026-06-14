@@ -184,6 +184,11 @@ export function TileInfoPanel({
             <Row label="Level">{info.building.level}</Row>
             <Row label="Density">{DENSITY_LABELS[info.building.density]}</Row>
             <Row label="Age">{info.building.age}</Row>
+            <Row label="Status">
+              <span style={{ color: info.building.abandoned ? '#ff6b6b' : '#4caf50' }}>
+                {info.building.abandoned ? 'Abandoned' : 'Active'}
+              </span>
+            </Row>
           </>
         )}
 
