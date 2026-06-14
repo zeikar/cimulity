@@ -77,6 +77,7 @@ export default defineConfig({
         'game/render/visuals/polygon/decorationPlacement.ts',
         'game/render/visuals/polygon/massingGeometry.ts',
         'game/render/visuals/polygon/buildingMassing.ts',
+        'game/render/visuals/polygon/sandTriangle.ts',
       ],
       thresholds: {
         lines: 80,
