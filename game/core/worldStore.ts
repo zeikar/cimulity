@@ -21,17 +21,15 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v17' to match WORLD_SAVE_VERSION = 17.
-// Legacy saves at ':v16 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v18' to match WORLD_SAVE_VERSION = 18.
+// Legacy saves at ':v17 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v17';
+const STORAGE_KEY = 'cimulity:save:v18';
 
-// Bumped to 'service-v7' for the city-happiness KPI: World gains the dirty/lazy public
-// getHappiness() (read by the HUD every tick) plus a land-value→happiness cascade in the
-// coverage/land-value dirty methods and happiness dirtying in money mutators / tick / reset.
-// getHappiness is covered by the probe below; the guard bump forces Fast Refresh to discard
-// any stale HMR singleton predating it.
-const WORLD_SINGLETON_GUARD = 'service-v7' as const;
+// Bumped to 'service-v8' for building abandonment: Building schema gains `abandoned: boolean`
+// (v18 save). No new World method was added, so the method probe is unchanged — only the
+// save format and guard token need bumping.
+const WORLD_SINGLETON_GUARD = 'service-v8' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -61,7 +59,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v7 / v17 — city-happiness KPI):
+ * Checked methods (as of service-v8 / v18 — building abandonment):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,
@@ -126,7 +124,7 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
-  // Happiness KPI (added service-v7): derives from land value but is its own public read surface.
+  // Happiness KPI (added service-v7, unchanged in service-v8): derives from land value but is its own public read surface.
   if (typeof world.getHappiness !== 'function') return false;
   // Terrain integration (added in Task 4): elevation r/w, install, revision, water/build predicates.
   if (

@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 17', () => {
-    expect(WORLD_SAVE_VERSION).toBe(17);
+  it('is 18', () => {
+    expect(WORLD_SAVE_VERSION).toBe(18);
   });
 });
 
-describe('v17 serialization', () => {
-  it('WORLD_SAVE_VERSION is 17 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v18 serialization', () => {
+  it('WORLD_SAVE_VERSION is 18 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(17);
-    expect(parsed.v).toBe(17);
+    expect(WORLD_SAVE_VERSION).toBe(18);
+    expect(parsed.v).toBe(18);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -36,15 +36,17 @@ describe('v17 serialization', () => {
     obj.terrain.tileElevations = [[1]];
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
-  it('rejects v16 and older saves without mutating the target world', () => {
+  it('rejects v17 and older saves without mutating the target world', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 16;
+    obj.v = 17;
 
     const world = new World(4, 4, { regenerate: false });
     world.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     expect(world.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
 
+    obj.v = 16;
+    expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 14;
     expect(deserializeWorldInto(world, JSON.stringify(obj))).toBe(false);
     obj.v = 13;
@@ -261,6 +263,75 @@ describe('v17 serialization', () => {
     // Target must be unchanged.
     expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
     expect(target.getMap().getTile(2, 2)?.type).toBe(TileType.GRASS);
+  });
+
+  it('round-trip preserves abandoned: true on a building (v18)', () => {
+    const src = new World(4, 4, { regenerate: false });
+    const map = src.getMap();
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    const ok = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 1,
+      density: 0,
+      age: 10,
+      abandoned: true,
+      frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+    });
+    expect(ok).not.toBeNull();
+
+    const dst = new World(4, 4, { regenerate: false });
+    dst.getMap().setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    expect(deserializeWorldInto(dst, serializeWorld(src))).toBe(true);
+    const b = dst.getMap().getBuildings().getBuildingAt(1, 1);
+    expect(b).not.toBeNull();
+    expect(b!.abandoned).toBe(true);
+  });
+
+  it('rejects a building entry with ab omitted (non-boolean ab)', () => {
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 0,
+      den: 0,
+      age: 0,
+      f: 'S',
+      sr: [0, 0, 1, 1],
+      // ab intentionally omitted — must be rejected
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a building entry with ab: 1 (non-boolean ab)', () => {
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 0,
+      den: 0,
+      age: 0,
+      f: 'S',
+      sr: [0, 0, 1, 1],
+      ab: 1, // number instead of boolean — must be rejected
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('rejects a v17 save (v17 and earlier rejected since v18 is native)', () => {
+    const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    obj.v = 17;
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 });
 
@@ -809,7 +880,7 @@ describe('v16 police station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(17);
+    expect(parsed.v).toBe(18);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -910,7 +981,7 @@ describe('v16 fire station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(17);
+    expect(parsed.v).toBe(18);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1011,7 +1082,7 @@ describe('v16 hospital station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(17);
+    expect(parsed.v).toBe(18);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1112,7 +1183,7 @@ describe('v16 school station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(17);
+    expect(parsed.v).toBe(18);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1207,7 +1278,7 @@ describe('v17 park persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(17);
+    expect(parsed.v).toBe(18);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);

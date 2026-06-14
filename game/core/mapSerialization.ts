@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v17 is native; v16 and earlier are rejected; `worldStore` falls back to a fresh
+ * v18 is native; v17 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -22,9 +22,9 @@ import type { Structure, StructureType } from './StructureMap';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v17 saves are accepted.
+ * This is the `v` value written to disk. Only native v18 saves are accepted.
  */
-export const WORLD_SAVE_VERSION = 17;
+export const WORLD_SAVE_VERSION = 18;
 
 /**
  * Maps a StructureType to its corresponding TileType — single source of truth so
@@ -61,7 +61,7 @@ interface StructureSaveEntry {
 
 /**
  * Wire format for one building entry in `b[]`.
- * Compact tuple-array style: { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age, f, sr: [x,y,w,h] }.
+ * Compact tuple-array style: { id, type, foot: [[x,y],...], anc: [x,y], lvl, den, age, f, sr: [x,y,w,h], ab }.
  */
 interface BuildingSaveEntry {
   id: number;
@@ -73,11 +73,12 @@ interface BuildingSaveEntry {
   age: number;
   f: Frontage;
   sr: [number, number, number, number]; // [x, y, w, h] of structureRect
+  ab: boolean;                          // abandoned flag (v18+)
 }
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 17).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 18).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` and `s[]` are both sorted by id ascending for deterministic byte-equality across round-trips.
@@ -107,6 +108,7 @@ export function serializeWorld(world: World): string {
     age: building.age,
     f: building.frontage,
     sr: [building.structureRect.x, building.structureRect.y, building.structureRect.w, building.structureRect.h] as [number, number, number, number],
+    ab: building.abandoned,
   }));
 
   const allStructures = [...world.getStructureMap().getAllStructures()].sort((a, b) => a.id - b.id);
@@ -176,6 +178,7 @@ function validateBuildingsArray(
     if (!Number.isInteger(e.den) || (e.den !== 0 && e.den !== 1 && e.den !== 2)) return null;
     if (!Number.isInteger(e.age) || e.age < 0) return null;
     if (e.f !== 'N' && e.f !== 'S' && e.f !== 'E' && e.f !== 'W') return null;
+    if (typeof e.ab !== 'boolean') return null;
     if (!Array.isArray(e.foot) || e.foot.length === 0) return null;
 
     const footprintIndices = new Set<number>();
@@ -232,7 +235,7 @@ function validateBuildingsArray(
       level: e.lvl,
       density: e.den as 0 | 1 | 2,
       age: e.age,
-      abandoned: false,
+      abandoned: e.ab,
       frontage: e.f,
       structureRect: sr,
     });
@@ -320,10 +323,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v17 world envelope onto an existing World instance.
+ * Apply a serialized v18 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===17 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===18 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
