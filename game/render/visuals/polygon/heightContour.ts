@@ -15,12 +15,12 @@ export const SAND_MAX_HEIGHT = SEA_LEVEL + 0.5;
  *
  * Tunable. NOTE the procedural generator is gamma-biased LOW: although
  * MAX_ELEVATION is 8, a typical map only PEAKS around 5–6 and most land sits at
- * 1–3. So this is "realistic-max (~6) minus ~2.5", i.e. it catches the genuinely
- * high ground (≥ 4 ≈ the top quarter) and stays reliably visible. Raising it
- * toward 4.5 gives sparser peak caps; tying it to MAX_ELEVATION (e.g. 5.5+) would
- * make rock all but disappear because the terrain rarely reaches there.
+ * 1–3. So `4.5` (rock on height ≥ 5) keeps rock to the genuine PEAK CAPS rather
+ * than whole rocky hillsides — sparser, only the tallest ground. Lower it toward
+ * 3.5 (height ≥ 4) for broader rocky highlands; tying it to MAX_ELEVATION
+ * (e.g. 5.5+) would make rock all but disappear since terrain rarely reaches there.
  */
-export const ROCK_MIN_HEIGHT = 3.5;
+export const ROCK_MIN_HEIGHT = 4.5;
 
 /** Which side of a height contour to keep. */
 export type ContourSide = 'below' | 'above';
