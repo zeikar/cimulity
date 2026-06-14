@@ -110,6 +110,7 @@ describe('buildToolPreview - BULLDOZE multi-tile affected', () => {
       level: opts.level ?? 3,
       density: opts.density ?? 1,
       age: 0,
+      abandoned: false,
       frontage: opts.frontage ?? 'S',
       structureRect: { x: lot.x, y: lot.y, w: lot.w, h: lot.h },
     });

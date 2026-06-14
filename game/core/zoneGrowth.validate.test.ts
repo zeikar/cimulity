@@ -87,6 +87,7 @@ describe('hasRoadAccess', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
@@ -104,6 +105,7 @@ describe('hasRoadAccess', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
@@ -125,6 +127,7 @@ describe('hasRoadAccess', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 2, w: 2, h: 1 },
     })!;
@@ -143,6 +146,7 @@ describe('hasRoadAccess', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
@@ -228,6 +232,7 @@ describe('validateFootprintRect', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });
@@ -275,6 +280,7 @@ describe('hasFrontageRoadAccess', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;
@@ -294,6 +300,7 @@ describe('hasFrontageRoadAccess', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     })!;

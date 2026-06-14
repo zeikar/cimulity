@@ -242,6 +242,7 @@ describe('greedyDepthLot', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 2, w: 1, h: 1 },
     });
@@ -377,7 +378,7 @@ describe('classifyEmptyZoneSpawnBlock', () => {
     world.getMap().setTile(2, 4, createTile(2, 4, TileType.ROAD));
     world.getMap().getBuildings().addBuilding({
       type: 'residential', footprint: [{ x: 2, y: 3 }], anchor: { x: 2, y: 3 },
-      level: 1, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 3, w: 1, h: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 3, w: 1, h: 1 },
     });
     expect(classifyEmptyZoneSpawnBlock({ x: 2, y: 2 }, world, ALL_POWERED)).toBe('road');
   });

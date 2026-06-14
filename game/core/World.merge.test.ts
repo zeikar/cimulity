@@ -87,6 +87,7 @@ describe("World.tick() — merge (Branch B'')", () => {
         // anchor row 0 / road row 4 is road-dist 4 → 0.40 * (1-4/7) ≈ 0.17.)
         // The merge pass (Branch B'') is NOT coverage-gated, so the merge still fires.
         age: GROWTH_COOLDOWN_INTERVALS + 6,
+        abandoned: false,
         frontage: 'S',
         // Full 1×4 structureRect pinned to south (y+h = 0+4 = lot.y+lot.h)
         structureRect: { x, y: 0, w: 1, h: 4 },
@@ -107,6 +108,7 @@ describe("World.tick() — merge (Branch B'')", () => {
       level: 8,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: n, y: 4, w: 1, h: 1 },
     });
@@ -118,6 +120,7 @@ describe("World.tick() — merge (Branch B'')", () => {
       level: 8,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: n + 1, y: 4, w: 1, h: 1 },
     });
@@ -293,6 +296,7 @@ describe("World.tick() — merge (Branch B'')", () => {
       level: MERGE_LEVEL_THRESHOLD,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       // Full 2×4 structureRect pinned to south (y+h = 0+4 = lot.y+lot.h)
       structureRect: { x: 0, y: 0, w: 2, h: 4 },

@@ -27,6 +27,7 @@ function makeBuilding(opts: {
     level: opts.level ?? MERGE_LEVEL_THRESHOLD,
     density: opts.density ?? 0,
     age: opts.age ?? 100,
+    abandoned: false,
     frontage: opts.frontage ?? 'S',
     structureRect: opts.structureRect ?? { x: opts.lot.x, y: opts.lot.y, w: opts.lot.w, h: opts.lot.h },
   };

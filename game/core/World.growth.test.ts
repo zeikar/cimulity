@@ -129,6 +129,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS + 10,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -155,6 +156,7 @@ describe('World.tick() — density tier', () => {
       level: 2,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -187,6 +189,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -198,6 +201,7 @@ describe('World.tick() — density tier', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -208,6 +212,7 @@ describe('World.tick() — density tier', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -246,6 +251,7 @@ describe('World.tick() — density tier', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     })!;
@@ -257,6 +263,7 @@ describe('World.tick() — density tier', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -267,6 +274,7 @@ describe('World.tick() — density tier', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -302,6 +310,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -354,6 +363,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -381,6 +391,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -407,6 +418,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -418,6 +430,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -428,6 +441,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -450,6 +464,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -471,6 +486,7 @@ describe('World.tick() — Branch B road-access gate', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -513,11 +529,11 @@ describe('World.tick() — T3 density-bump E2E', () => {
 
     map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 },
-      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
       structureRect: { x: 3, y: 3, w: 1, h: 1 },
     });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 4, y: 3 }], anchor: { x: 4, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 4, y: 3, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 5, y: 3 }], anchor: { x: 5, y: 3 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 5, y: 3, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 4, y: 3 }], anchor: { x: 4, y: 3 }, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 4, y: 3, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 5, y: 3 }], anchor: { x: 5, y: 3 }, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 5, y: 3, w: 1, h: 1 } });
 
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
@@ -537,9 +553,9 @@ describe('World.getDemand() — freshness', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
 
@@ -554,9 +570,9 @@ describe('World.getDemand() — freshness', () => {
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     world.markDemandDirty();
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
 
@@ -569,7 +585,7 @@ describe('World.getDemand() — freshness', () => {
     const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
     map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 3, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 3, w: 1, h: 1 } });
 
     world.markDemandDirty();
     const demandBefore = world.getDemand().industrial;
@@ -596,6 +612,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS + 1,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -624,6 +641,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -635,6 +653,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -645,6 +664,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -696,6 +716,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 10,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -718,6 +739,7 @@ describe('World.tick() — density gating (demand-driven)', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 10,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -760,6 +782,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x, y, w: 1, h: 1 },
     });
@@ -793,6 +816,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       level: 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1, // after +1 = 8 = cooldown → gate fires
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 3, w: 1, h: 1 },
     });
@@ -862,6 +886,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       level: 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 3, w: 1, h: 1 },
     });
@@ -919,6 +944,7 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       level: 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -1009,6 +1035,7 @@ describe('World.tick() — power gate: footprint-scan vs anchor-only', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 2, h: 1 },
     });
@@ -1049,6 +1076,7 @@ describe('World.tick() — power gate: building loses power → stops aging', ()
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -1096,6 +1124,7 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       level: MERGE_LEVEL_THRESHOLD,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 6,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 4 },
     });
@@ -1107,6 +1136,7 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       level: MERGE_LEVEL_THRESHOLD,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS + 6,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 0, w: 1, h: 4 },
     });
@@ -1115,7 +1145,7 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       type: 'industrial',
       footprint: [{ x: 4, y: 4 }],
       anchor: { x: 4, y: 4 },
-      level: 8, density: 0, age: 0, frontage: 'N',
+      level: 8, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 4, y: 4, w: 1, h: 1 },
     });
     // Add water from the start so the positive-control tick (after power is added) fires.

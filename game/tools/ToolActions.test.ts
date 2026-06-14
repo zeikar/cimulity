@@ -618,6 +618,7 @@ describe('buildToolCommands - POWER_PLANT placement', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 3, y: 3, w: 1, h: 1 },
     });
@@ -890,6 +891,7 @@ describe('buildToolCommands - WATER_TOWER placement', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });

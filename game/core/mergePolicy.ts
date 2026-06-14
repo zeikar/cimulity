@@ -113,6 +113,7 @@ export function mergedBuildingShape(a: Building, b: Building): Omit<Building, 'i
     level: Math.max(a.level, b.level),
     density: Math.max(a.density, b.density) as 0 | 1 | 2,
     age: 0,
+    abandoned: false,
     frontage: a.frontage,
     structureRect: mergedSr,
   };

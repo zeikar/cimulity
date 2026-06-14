@@ -278,6 +278,7 @@ describe('v12 frontage round-trip', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -304,6 +305,7 @@ describe('v12 frontage round-trip', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 1, y: 1, w: 1, h: 2 },
     });

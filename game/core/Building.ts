@@ -16,6 +16,7 @@ export type Building = {
   level: number;
   density: 0 | 1 | 2;
   age: number;
+  abandoned: boolean;
   frontage: Frontage;
   structureRect: Rect;
 };

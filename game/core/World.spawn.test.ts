@@ -260,6 +260,7 @@ describe('World.tick() — zone growth', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -392,6 +393,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       level: 3,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });
@@ -417,6 +419,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       level: 2,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
@@ -443,6 +446,7 @@ describe('World — bulldoze and repaint remove buildings', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -502,6 +506,7 @@ describe('World.tick() — changedBuildingIds contract', () => {
       level: 0,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
@@ -564,6 +569,7 @@ describe('World.tick() — multi-tile building guard', () => {
       level: 0,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 2, h: 2 },
     });
@@ -777,8 +783,8 @@ describe('World.tick() — spawn size', () => {
     // Demand recompute only reads building type + level, not tile type.
     // I buildings on road tiles are invisible to zone growth (iterates zone tiles only)
     // but still drive demand via building type + level.
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
     seedPower(world, 6, 5); // plant at (6,5)–(7,6); cell (6,5) adj to road (6,6) → all road y=6 powered
 
     const preSeededIds = new Set<number>();
@@ -802,8 +808,8 @@ describe('World.tick() — spawn size', () => {
       const world = new World(8, 7, { regenerate: false });
       const map = world.getMap();
       setupZoneBlock(world, 8, 6, 6);
-      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
-      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
+      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 0, y: 6 }], anchor: { x: 0, y: 6 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'N', structureRect: { x: 0, y: 6, w: 1, h: 1 } });
+      map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 1, y: 6 }], anchor: { x: 1, y: 6 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'N', structureRect: { x: 1, y: 6, w: 1, h: 1 } });
       seedPower(world, 6, 5);
       world.markDemandDirty();
       return world;
@@ -848,8 +854,8 @@ describe('World.tick() — T3 spawn-size determinism', () => {
       }
       map.setTile(6, 0, createTile(6, 0, TileType.ZONE_INDUSTRIAL));
       map.setTile(7, 0, createTile(7, 0, TileType.ZONE_INDUSTRIAL));
-      map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 6, y: 0 }], anchor: { x: 6, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 6, y: 0, w: 1, h: 1 } });
-      map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 7, y: 0 }], anchor: { x: 7, y: 0 }, level: 5, density: 0, age: 0, frontage: 'S', structureRect: { x: 7, y: 0, w: 1, h: 1 } });
+      map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 6, y: 0 }], anchor: { x: 6, y: 0 }, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 6, y: 0, w: 1, h: 1 } });
+      map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 7, y: 0 }], anchor: { x: 7, y: 0 }, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 7, y: 0, w: 1, h: 1 } });
       seedPower(world, 0, 3); // plant at (0,3)–(1,4); (0,4) ROAD adj to (0,3) → all road y=4 powered
       world.markDemandDirty();
       return world;

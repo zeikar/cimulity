@@ -69,6 +69,7 @@ describe('GameMap', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });

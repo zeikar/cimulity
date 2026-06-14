@@ -402,6 +402,7 @@ describe('GameLoop', () => {
       level: 5, // ZONE_MAX_LEVEL
       density: 0,
       age: 23, // DENSITY_COOLDOWN_INTERVALS - 1
+      abandoned: false,
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     })!;
@@ -413,6 +414,7 @@ describe('GameLoop', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -423,6 +425,7 @@ describe('GameLoop', () => {
       level: 4,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });

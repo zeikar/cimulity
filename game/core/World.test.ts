@@ -434,6 +434,7 @@ describe('World.tick() — monthly tax settlement', () => {
       level: ZONE_MAX_LEVEL - 1,
       density: 0,
       age: GROWTH_COOLDOWN_INTERVALS - 1,
+      abandoned: false,
       frontage: 'S', // road is south at (0,2)
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -446,6 +447,7 @@ describe('World.tick() — monthly tax settlement', () => {
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
@@ -502,9 +504,9 @@ describe('World.getPopulation()', () => {
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
     // Seed buildings with levels 3, 2, 1 respectively; sum = 6
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 1 } });
     // sum = 3+2+1 = 6; population = 6 * POPULATION_PER_LEVEL
     expect(world.getPopulation()).toBe(6 * POPULATION_PER_LEVEL);
   });
@@ -517,7 +519,7 @@ describe('World.getPopulation()', () => {
     map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
     map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
     // Only the zone at (3,0) has a building
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S', structureRect: { x: 3, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 0, w: 1, h: 1 } });
     expect(world.getPopulation()).toBe(2 * POPULATION_PER_LEVEL);
   });
 
@@ -547,8 +549,8 @@ describe('World.getPopulation() — building-based formula', () => {
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
     // sum = 2+3 = 5
     expect(world.getPopulation()).toBe(5 * POPULATION_PER_LEVEL);
   });
@@ -609,6 +611,7 @@ describe('stagger() — deterministic per-building jitter', () => {
       level: 5,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: 9, y: 1, w: 1, h: 1 },
     });
@@ -1066,6 +1069,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
       level: 1,
       density: 0,
       age: cooldown - 1, // next growth tick will age → cooldown met
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1126,6 +1130,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
@@ -1138,6 +1143,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
       level: 1,
       density: 0,
       age: cooldown + 5, // age already past cooldown
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1176,6 +1182,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'N',
       structureRect: { x: 9, y: 9, w: 1, h: 1 },
     });
@@ -1240,19 +1247,19 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     map.getBuildings().addExistingBuilding({
       id: 900, type: 'commercial',
       footprint: [{ x: 11, y: 5 }], anchor: { x: 11, y: 5 },
-      level: 20, density: 0, age: 0, frontage: 'N',
+      level: 20, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 11, y: 5, w: 1, h: 1 },
     });
     const okA = map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential',
       footprint: [{ x: 5, y: 2 }, { x: 6, y: 2 }], anchor: { x: 5, y: 2 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 5, y: 2, w: 2, h: 1 },
     });
     const okB = map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 7, y: 2 }, { x: 8, y: 2 }], anchor: { x: 7, y: 2 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 7, y: 2, w: 2, h: 1 },
     });
     expect(okA).toBe(true);
@@ -1296,19 +1303,19 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     map.getBuildings().addExistingBuilding({
       id: 900, type: 'commercial',
       footprint: [{ x: 11, y: 5 }], anchor: { x: 11, y: 5 },
-      level: 20, density: 0, age: 0, frontage: 'N',
+      level: 20, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 11, y: 5, w: 1, h: 1 },
     });
     const okA = map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential',
       footprint: [{ x: 5, y: 2 }, { x: 6, y: 2 }], anchor: { x: 5, y: 2 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 5, y: 2, w: 2, h: 1 },
     });
     const okB = map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 7, y: 2 }, { x: 8, y: 2 }], anchor: { x: 7, y: 2 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 7, y: 2, w: 2, h: 1 },
     });
     expect(okA).toBe(true);
@@ -1345,13 +1352,13 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     map.getBuildings().addExistingBuilding({
       id: 800, type: 'commercial',
       footprint: [{ x: 7, y: 7 }], anchor: { x: 7, y: 7 },
-      level: 10, density: 0, age: 0, frontage: 'N',
+      level: 10, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 7, y: 7, w: 1, h: 1 },
     });
     map.getBuildings().addExistingBuilding({
       id: 801, type: 'commercial',
       footprint: [{ x: 8, y: 7 }], anchor: { x: 8, y: 7 },
-      level: 10, density: 0, age: 0, frontage: 'N',
+      level: 10, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 8, y: 7, w: 1, h: 1 },
     });
 
@@ -1362,6 +1369,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
       level: ZONE_MAX_LEVEL,
       density: 0,
       age: DENSITY_COOLDOWN_INTERVALS + 10,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1421,7 +1429,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1433,6 +1441,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
       level: 1,
       density: 0,
       age: cooldown + 5, // past cooldown — only police coverage can block
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1478,7 +1487,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1490,6 +1499,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
       level: 1,
       density: 0,
       age: cooldown + 5,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1521,7 +1531,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 9 }], anchor: { x: 9, y: 9 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 9, w: 1, h: 1 },
     });
 
@@ -1567,7 +1577,7 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1579,6 +1589,7 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
       level: 1,
       density: 0,
       age: cooldown + 5, // past cooldown — only fire coverage can block
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1622,7 +1633,7 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1634,6 +1645,7 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
       level: 1,
       density: 0,
       age: cooldown + 5,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1684,7 +1696,7 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1696,6 +1708,7 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
       level: 1,
       density: 0,
       age: cooldown + 5, // past cooldown — only hospital coverage can block
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1739,7 +1752,7 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1751,6 +1764,7 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
       level: 1,
       density: 0,
       age: cooldown + 5,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1800,7 +1814,7 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1812,6 +1826,7 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
       level: 1,
       density: 0,
       age: cooldown + 5, // past cooldown — only school coverage can block
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -1854,7 +1869,7 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
     map.getBuildings().addExistingBuilding({
       id: 999, type: 'commercial',
       footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, frontage: 'N',
+      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
       structureRect: { x: 9, y: 7, w: 1, h: 1 },
     });
 
@@ -1866,6 +1881,7 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
       level: 1,
       density: 0,
       age: cooldown + 5,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
@@ -2200,7 +2216,7 @@ describe('World.getHappiness() — budget sensitivity', () => {
       w.getMap().getBuildings().addExistingBuilding({
         id: 1, type: 'commercial',
         footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-        level: 1, density: 0, age: 0, frontage: 'S',
+        level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
         structureRect: { x: 0, y: 0, w: 1, h: 1 },
       });
     }
@@ -2216,7 +2232,7 @@ describe('World.getHappiness() — budget sensitivity', () => {
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.setMoney(0);
@@ -2241,25 +2257,25 @@ describe('World.getHappiness() — jobs-balance sensitivity', () => {
     worldBalanced.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     worldBalanced.getMap().getBuildings().addExistingBuilding({
       id: 2, type: 'residential',
       footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 1, y: 0, w: 1, h: 1 },
     });
     worldBalanced.getMap().getBuildings().addExistingBuilding({
       id: 3, type: 'commercial',
       footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 2, y: 0, w: 1, h: 1 },
     });
     worldBalanced.getMap().getBuildings().addExistingBuilding({
       id: 4, type: 'commercial',
       footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 3, y: 0, w: 1, h: 1 },
     });
 
@@ -2267,25 +2283,25 @@ describe('World.getHappiness() — jobs-balance sensitivity', () => {
     worldUnbalanced.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     worldUnbalanced.getMap().getBuildings().addExistingBuilding({
       id: 2, type: 'residential',
       footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 1, y: 0, w: 1, h: 1 },
     });
     worldUnbalanced.getMap().getBuildings().addExistingBuilding({
       id: 3, type: 'residential',
       footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 2, y: 0, w: 1, h: 1 },
     });
     worldUnbalanced.getMap().getBuildings().addExistingBuilding({
       id: 4, type: 'residential',
       footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 3, y: 0, w: 1, h: 1 },
     });
 
@@ -2311,7 +2327,7 @@ describe('World.getHappiness() — land-value sensitivity', () => {
       w.getMap().getBuildings().addExistingBuilding({
         id: 1, type: 'residential',
         footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
-        level: 1, density: 0, age: 0, frontage: 'S',
+        level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
         structureRect: { x: 0, y: 1, w: 1, h: 1 },
       });
     }
@@ -2344,7 +2360,7 @@ describe('World.getHappiness() — B1 station-coverage cascade (all four methods
     w.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     seedPower(w, 4, 3);
@@ -2413,7 +2429,7 @@ describe('World.getHappiness() — reset freshness', () => {
     map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
-      level: 3, density: 0, age: 0, frontage: 'S',
+      level: 3, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
     seedPower(world, 4, 3);
@@ -2435,7 +2451,7 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     // setMoney so initial read is fresh and non-empty.
@@ -2453,7 +2469,7 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.setMoney(100); // start low
@@ -2484,7 +2500,7 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.setMoney(STARTING_FUNDS);
@@ -2504,7 +2520,7 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, frontage: 'S',
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.setMoney(STARTING_FUNDS);
@@ -2533,7 +2549,7 @@ describe('World.getHappiness() — hydration freshness', () => {
     map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 0, y: 2 }], anchor: { x: 0, y: 2 },
-      level: 3, density: 0, age: 0, frontage: 'S',
+      level: 3, density: 0, age: 0, abandoned: false, frontage: 'S',
       structureRect: { x: 0, y: 2, w: 1, h: 1 },
     });
     src.setMoney(STARTING_FUNDS);

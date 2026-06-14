@@ -178,6 +178,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
               level: b.level,
               density: b.density,
               age: b.age ?? 0,
+              abandoned: false,
               frontage: b.frontage,
               structureRect: b.structureRect ?? { x: lot!.x, y: lot!.y, w: lot!.w, h: lot!.h },
             };

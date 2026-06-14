@@ -232,6 +232,7 @@ function validateBuildingsArray(
       level: e.lvl,
       density: e.den as 0 | 1 | 2,
       age: e.age,
+      abandoned: false,
       frontage: e.f,
       structureRect: sr,
     });

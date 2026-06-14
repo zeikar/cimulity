@@ -67,6 +67,7 @@ describe('inspectTile', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 2, h: 1 },
     });
@@ -137,6 +138,7 @@ describe('inspectTile', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 2, h: 1 },
     });
@@ -229,6 +231,7 @@ describe('inspectTile', () => {
       level: 1,
       density: 2,
       age: 5,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });

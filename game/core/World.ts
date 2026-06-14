@@ -840,6 +840,7 @@ export class World {
             level: 1,
             density: 0,
             age: 0,
+            abandoned: false,
             frontage,
             structureRect,
           });

@@ -264,6 +264,7 @@ describe('World procedural terrain — constructor default (regenerate: true)', 
       level: 2,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });

@@ -23,6 +23,7 @@ function addBuilding(
     level,
     density: 0,
     age: 0,
+    abandoned: false,
     frontage: 'S',
     structureRect: { x, y, w: 1, h: 1 },
   });
@@ -148,6 +149,7 @@ describe('Demand', () => {
         level: 0,
         density: 0,
         age: 0,
+        abandoned: false,
         frontage: 'S',
         structureRect: { x: i % 200, y: Math.floor(i / 200), w: 1, h: 1 },
       });
@@ -161,6 +163,7 @@ describe('Demand', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'S',
       structureRect: { x: 100, y: 0, w: 1, h: 1 },
     });

@@ -306,6 +306,7 @@ describe('getWorld — valid v10 save with buildings hydrates frontage', () => {
       level: 1,
       density: 0,
       age: 0,
+      abandoned: false,
       frontage: 'W',
       structureRect: { x: 5, y: 5, w: 1, h: 1 },
     });
