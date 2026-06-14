@@ -3,7 +3,7 @@ import type { Building } from './Building';
 import { TileType } from './Tile';
 import type { Frontage, Rect } from './buildingFootprint';
 import { lotBboxOf } from './buildingFootprint';
-import { MIN_STRUCTURE_DEPTH_CAP } from './growthConstants';
+import { MIN_STRUCTURE_DEPTH_CAP, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
 
 export function depthAxisFromFrontage(frontage: Frontage): { dx: number; dy: number } {
   switch (frontage) {
@@ -347,4 +347,28 @@ export function footprintCells(rect: Rect): Array<{ x: number; y: number }> {
     }
   }
   return cells;
+}
+
+/**
+ * Returns the highest building level that the given land value can support.
+ * Mirrors the LEVEL_THRESHOLDS[level+1] gate in World.tick's level-up branch:
+ * a building may level up to L only when landValue >= LEVEL_THRESHOLDS[L].
+ * Floor is 1 — a building at level 1 is never considered over-supported regardless
+ * of land value (there is no "level 0" to fall back to for an existing building).
+ */
+export function maxSupportedLevel(landValue: number): number {
+  for (let L = ZONE_MAX_LEVEL; L >= 1; L--) {
+    if (landValue >= LEVEL_THRESHOLDS[L]) return L;
+  }
+  return 1;
+}
+
+/**
+ * Returns true when a building's current level exceeds what the land value can
+ * support — the condition that triggers abandonment/dilapidation.
+ * Uses the same LEVEL_THRESHOLDS gate as World.tick's level-up branch.
+ * Level 1 is the floor: a level-1 building is never under-supported.
+ */
+export function isUnderSupported(level: number, landValue: number): boolean {
+  return level > maxSupportedLevel(landValue);
 }

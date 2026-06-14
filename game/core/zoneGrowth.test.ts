@@ -10,6 +10,8 @@ import {
   extendStructureToward,
   structureRectFillsLotDepth,
   canExtendStructure,
+  maxSupportedLevel,
+  isUnderSupported,
 } from './zoneGrowth';
 import { isStructureRectInLot } from './buildingFootprint';
 
@@ -543,5 +545,47 @@ describe('structureRectFillsLotDepth', () => {
   });
   it('E: false when sr.w < lot.w', () => {
     expect(structureRectFillsLotDepth({ x: 3, y: 0, w: 1, h: 1 }, { x: 0, y: 0, w: 4, h: 1 }, 'E')).toBe(false);
+  });
+});
+
+describe('maxSupportedLevel', () => {
+  it('landValue 0 → 1 (floor)', () => {
+    expect(maxSupportedLevel(0)).toBe(1);
+  });
+  it('landValue 0.05 (below threshold[1]=0.1) → 1 (floor)', () => {
+    expect(maxSupportedLevel(0.05)).toBe(1);
+  });
+  it('landValue 0.1 (== threshold[1]) → 1', () => {
+    expect(maxSupportedLevel(0.1)).toBe(1);
+  });
+  it('landValue 0.25 (== threshold[2]) → 2', () => {
+    expect(maxSupportedLevel(0.25)).toBe(2);
+  });
+  it('landValue 0.45 (== threshold[3]) → 3', () => {
+    expect(maxSupportedLevel(0.45)).toBe(3);
+  });
+  it('landValue 0.65 (== threshold[4]) → 4', () => {
+    expect(maxSupportedLevel(0.65)).toBe(4);
+  });
+  it('landValue 0.85 (== threshold[5]) → 5', () => {
+    expect(maxSupportedLevel(0.85)).toBe(5);
+  });
+  it('landValue 1 (above all thresholds) → 5', () => {
+    expect(maxSupportedLevel(1)).toBe(5);
+  });
+});
+
+describe('isUnderSupported', () => {
+  it('level 5, landValue 0.2 → true (level 5 needs 0.85)', () => {
+    expect(isUnderSupported(5, 0.2)).toBe(true);
+  });
+  it('level 2, landValue 0.5 → false (0.5 supports level 3)', () => {
+    expect(isUnderSupported(2, 0.5)).toBe(false);
+  });
+  it('level 1, landValue 0 → false (level-1 floor)', () => {
+    expect(isUnderSupported(1, 0)).toBe(false);
+  });
+  it('level 3, landValue 0.25 → true (level 3 needs 0.45; 0.25 supports only level 2)', () => {
+    expect(isUnderSupported(3, 0.25)).toBe(true);
   });
 });

@@ -28,9 +28,9 @@ import {
   extendStructureToward,
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
-import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
 import { canMerge, mergedBuildingShape } from './mergePolicy';
-export { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
+export { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
 
@@ -56,14 +56,6 @@ export const WATER_INTERVAL = 16;
  * Defense-in-depth periodic force-recompute cadence for service coverage, mirrors POWER_INTERVAL.
  */
 export const SERVICE_INTERVAL = 16;
-/** Maximum zone growth level a tile may reach. */
-export const ZONE_MAX_LEVEL = 5;
-/**
- * Land-value thresholds for level-up gating. Index 0 is reserved/unused —
- * level-0 building creation is unconditional. Indices 1–5 gate upgrade from
- * level (i-1) to level i.
- */
-export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
 /**
  * Minimum growth-opportunity count (age) before a building may gain density.
  * Unit: growth opportunities (same as GROWTH_COOLDOWN_INTERVALS).
