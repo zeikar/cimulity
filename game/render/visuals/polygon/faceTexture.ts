@@ -41,6 +41,7 @@ const ROAD_URL = `${BASE_PATH}/textures/road.png`;
 const PARK_URL = `${BASE_PATH}/textures/park.png`;
 const DIRT_URL = `${BASE_PATH}/textures/dirt.png`;
 const SAND_URL = `${BASE_PATH}/textures/sand.png`;
+const ROCK_URL = `${BASE_PATH}/textures/rock.png`;
 const YARD_RESIDENTIAL_URL = `${BASE_PATH}/textures/yard-residential.png`;
 const YARD_COMMERCIAL_URL = `${BASE_PATH}/textures/yard-commercial.png`;
 const YARD_INDUSTRIAL_URL = `${BASE_PATH}/textures/yard-industrial.png`;
@@ -93,6 +94,7 @@ let roadTexture: Texture | null = null;
 let parkTexture: Texture | null = null;
 let dirtTexture: Texture | null = null;
 let sandTexture: Texture | null = null;
+let rockTexture: Texture | null = null;
 let yardResidentialTexture: Texture | null = null;
 let yardCommercialTexture: Texture | null = null;
 let yardIndustrialTexture: Texture | null = null;
@@ -149,6 +151,7 @@ export async function preloadFaceTextures(): Promise<void> {
   jobs.push(loadTexture(PARK_URL).then((t) => { parkTexture = t; }));
   jobs.push(loadTexture(DIRT_URL).then((t) => { dirtTexture = t; }));
   jobs.push(loadTexture(SAND_URL).then((t) => { sandTexture = t; }));
+  jobs.push(loadTexture(ROCK_URL).then((t) => { rockTexture = t; }));
   jobs.push(loadTexture(YARD_RESIDENTIAL_URL).then((t) => { yardResidentialTexture = t; }));
   jobs.push(loadTexture(YARD_COMMERCIAL_URL).then((t) => { yardCommercialTexture = t; }));
   jobs.push(loadTexture(YARD_INDUSTRIAL_URL).then((t) => { yardIndustrialTexture = t; }));
@@ -226,6 +229,12 @@ export function getDirtTexture(): Texture | null {
  *  falls through to the existing land/flat fill — there is no separate flat-sand fallback). */
 export function getSandTexture(): Texture | null {
   return sandTexture;
+}
+
+/** Highland rock terrain texture (COLOUR), or null until loaded / on failure
+ *  (caller then falls through to the existing land/flat fill — no flat-rock fallback). */
+export function getRockTexture(): Texture | null {
+  return rockTexture;
 }
 
 /** Per-type yard ground texture (COLOUR) displayed around zone buildings, or null until loaded (flat fallback). */
