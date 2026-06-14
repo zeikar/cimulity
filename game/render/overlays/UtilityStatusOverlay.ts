@@ -136,6 +136,7 @@ function buildingToVisualInput(building: Building, renderHeight: number): Buildi
     frontage: building.frontage,
     structureRect: building.structureRect,
     renderHeight,
+    abandoned: building.abandoned,
   };
 }
 

@@ -58,25 +58,33 @@ import { cubeBodyHeightPx } from './cubeLift';
 import { drawTexturedPoly, drawPoly, drawWindows, MULLION_COLOR } from './texturedFace';
 import type { FacadeMode } from './windowGeometry';
 
+// Derelict buildings receive a muted desaturated grey multiplier on all faces.
+// A factor of 0.45 dims and desaturates enough to read as neglected/abandoned.
+const DERELICT_TINT = 0.45;
+
 function topColor(input: BuildingVisualInput): number {
   // Top face: full-brightness white-based tint (face shading only). The roof
   // texture carries its own colour, so we don't fold in the building-type
   // palette here — multiplying by white preserves the texture's hue while the
   // density factor keeps the subtle per-density darkening.
-  return shadeColor(0xffffff, densityShade(input.density));
+  const factor = densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1);
+  return shadeColor(0xffffff, factor);
 }
 
 function leftColor(input: BuildingVisualInput): number {
-  // Left face — strongest shadow side (~55% brightness). Full-colour pixel-art
-  // walls carry their own hue, so the tint is white-based (face shading only);
-  // multiplying by the texture preserves its colour instead of adding a type cast.
-  return shadeColor(0xffffff, 0.55 * densityShade(input.density));
+  // Left face — strongest shadow side (~55% brightness). White-based for the
+  // same reason as rightColor (texture supplies the colour). Derelict buildings
+  // receive an additional muting multiplier.
+  const factor = 0.55 * densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1);
+  return shadeColor(0xffffff, factor);
 }
 
 function rightColor(input: BuildingVisualInput): number {
-  // Right face — softer shadow (~75% brightness). White-based for the same reason
-  // as leftColor (texture supplies the colour).
-  return shadeColor(0xffffff, 0.75 * densityShade(input.density));
+  // Right face — softer shadow (~75% brightness). White-based for the same
+  // reason as leftColor (texture supplies the colour). Derelict buildings
+  // receive an additional muting multiplier.
+  const factor = 0.75 * densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1);
+  return shadeColor(0xffffff, factor);
 }
 
 // --- Window lights -----------------------------------------------------------
@@ -144,13 +152,14 @@ function shadowKey(input: BuildingVisualInput): string {
 
 // Faces key: geometry plus the facade variant, the per-building window seed,
 // AND the massing seed, so buildings with different window-light patterns or
-// silhouettes don't share one cached context.
+// silhouettes don't share one cached context. The abandoned discriminator (:d/:o)
+// ensures occupied and derelict faces of identical geometry cache separately.
 // No facade-mode component is needed: geometryKey (type+level+density+shape) and
 // massingSeed together fully determine the massing plan, and each box's facade is
 // a deterministic function of that plan — not an independent input.
 function facesKey(input: BuildingVisualInput): string {
   const base = `${geometryKey(input)}:${wallVariant(input.buildingId)}`;
-  return `${base}:s${windowSeed(input.buildingId)}:m${massingSeed(input.buildingId)}`;
+  return `${base}:s${windowSeed(input.buildingId)}:m${massingSeed(input.buildingId)}:${input.abandoned ? 'd' : 'o'}`;
 }
 
 // All shadows must draw before any face — large negative offset puts every shadow zIndex
@@ -195,15 +204,18 @@ function drawCubeFaces(
   if (wallTex !== Texture.EMPTY) {
     // Windowless wall texture first, then the vector window layer on top.
     // Irregular cells never carry a tower plan, so the facade is always 'punched'.
+    // Derelict buildings: pass a glassColor callback that ignores `lit` and always
+    // returns the dark/unlit colour — every window reads as boarded/unlit.
+    const derelict = input.abandoned;
     drawTexturedPoly(ctx, faces.left, wallTex, wallFaceFillMatrix(faces.left, ox, oy, wallTex), leftColor(input), 0.5, ox, oy);
     drawTexturedPoly(ctx, faces.right, wallTex, wallFaceFillMatrix(faces.right, ox, oy, wallTex), rightColor(input), 0.5, ox, oy);
-    drawWindows(ctx, faces.left, 'punched', (lit) => glassColor(input.type, lit, 0.55, input.density), mullionColor(0.55, input.density), seed, ox, oy);
-    drawWindows(ctx, faces.right, 'punched', (lit) => glassColor(input.type, lit, 0.75, input.density), mullionColor(0.75, input.density), seed, ox, oy);
+    drawWindows(ctx, faces.left, 'punched', derelict ? () => glassColor(input.type, false, 0.55, input.density) : (lit) => glassColor(input.type, lit, 0.55, input.density), mullionColor(0.55, input.density), seed, ox, oy);
+    drawWindows(ctx, faces.right, 'punched', derelict ? () => glassColor(input.type, false, 0.75, input.density) : (lit) => glassColor(input.type, lit, 0.75, input.density), mullionColor(0.75, input.density), seed, ox, oy);
   } else {
     // Wall texture unavailable — fall back to type-colored flat fill so the failure
     // path preserves residential/commercial/industrial identity instead of rendering gray.
     const base = baseColor(input.type);
-    const ds = densityShade(input.density);
+    const ds = densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1);
     drawPoly(ctx, faces.left, shadeColor(base, 0.55 * ds), 0.5, ox, oy);
     drawPoly(ctx, faces.right, shadeColor(base, 0.75 * ds), 0.5, ox, oy);
   }
@@ -214,7 +226,7 @@ function drawCubeFaces(
     drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, ox, oy), topColor(input), 0.55, ox, oy);
   } else {
     // Roof texture unavailable — flat fill using type-colored palette to preserve identity.
-    drawPoly(ctx, faces.top, shadeColor(baseColor(input.type), densityShade(input.density)), 0.55, ox, oy);
+    drawPoly(ctx, faces.top, shadeColor(baseColor(input.type), densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1)), 0.55, ox, oy);
   }
 }
 
@@ -252,7 +264,8 @@ function drawTexturedWallFace(
   oy: number,
 ): void {
   const wallTex = getWallTexture(input.type, wallVariant(input.buildingId));
-  const ds = densityShade(input.density);
+  const derelict = input.abandoned;
+  const ds = densityShade(input.density) * (derelict ? DERELICT_TINT : 1);
   if (wallTex !== Texture.EMPTY) {
     drawTexturedPoly(
       ctx,
@@ -264,11 +277,13 @@ function drawTexturedWallFace(
       ox,
       oy,
     );
+    // Derelict: ignore `lit` and always return the dark/unlit glass colour so every
+    // window reads as boarded/unlit. Occupied buildings use the normal lit/unlit callback.
     drawWindows(
       ctx,
       face,
       facade,
-      (lit) => glassColor(input.type, lit, faceFactor, input.density),
+      derelict ? () => glassColor(input.type, false, faceFactor, input.density) : (lit) => glassColor(input.type, lit, faceFactor, input.density),
       mullionColor(faceFactor, input.density),
       windowSeed(input.buildingId),
       ox,
@@ -294,7 +309,7 @@ function drawFlatMassingBox(
   if (roofTex) {
     drawTexturedPoly(ctx, faces.top, roofTex, roofFaceFillMatrix(faces.top, ox, oy), topColor(input), 0.55, ox, oy);
   } else {
-    drawPoly(ctx, faces.top, shadeColor(baseColor(input.type), densityShade(input.density)), 0.55, ox, oy);
+    drawPoly(ctx, faces.top, shadeColor(baseColor(input.type), densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1)), 0.55, ox, oy);
   }
 
   if (box.wallHeightPx >= PARAPET_MIN_WALL_PX) {
@@ -316,7 +331,7 @@ function drawGableMassingBox(
   oy: number,
 ): void {
   const g = massingGableFaces(box.rect, box.baseLiftPx, box.wallHeightPx, roof.risePx, roof.ridgeAxis);
-  const ds = densityShade(input.density);
+  const ds = densityShade(input.density) * (input.abandoned ? DERELICT_TINT : 1);
 
   // Shingle texture (grayscale) tinted by the seeded roof colour; flat tint
   // fallback preserves the colour identity when the texture failed to load.

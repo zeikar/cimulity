@@ -283,6 +283,7 @@ export class TileRenderer {
       frontage: building.frontage,
       structureRect: building.structureRect,
       renderHeight: terrain.getRenderHeight(building.structureRect.x, building.structureRect.y),
+      abandoned: building.abandoned,
     };
 
     const existing = this.buildingById.get(building.id);

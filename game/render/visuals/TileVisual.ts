@@ -57,6 +57,8 @@ export interface BuildingVisualInput {
   renderHeight?: number;
   // Sub-rect of footprint where the actual building geometry stands; cube pipeline reads from this. Lot cells outside structureRect are yards.
   structureRect: Rect;
+  /** Render reads core state; muted derelict variant when true. */
+  abandoned: boolean;
 }
 
 export interface TerrainTileVisual {
