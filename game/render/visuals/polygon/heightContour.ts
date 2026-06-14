@@ -9,13 +9,18 @@ import { SEA_LEVEL } from '@/game/core/Terrain';
 export const SAND_MAX_HEIGHT = SEA_LEVEL + 0.5;
 
 /**
- * Land at or ABOVE this height renders as rocky highland ROCK (the high-elevation
+ * Land ABOVE this height renders as rocky highland ROCK (the high-elevation
  * counterpart to SAND). Same contour idea, mirrored: the rock/grass boundary is a
- * constant-height line parallel to the slope. Tunable — the procedural generator
- * is biased low (most land sits at 1–3, peaks rarely exceed ~4), so this is set
- * to catch the higher ground rather than only the very tip.
+ * constant-height line parallel to the slope.
+ *
+ * Tunable. NOTE the procedural generator is gamma-biased LOW: although
+ * MAX_ELEVATION is 8, a typical map only PEAKS around 5–6 and most land sits at
+ * 1–3. So this is "realistic-max (~6) minus ~2.5", i.e. it catches the genuinely
+ * high ground (≥ 4 ≈ the top quarter) and stays reliably visible. Raising it
+ * toward 4.5 gives sparser peak caps; tying it to MAX_ELEVATION (e.g. 5.5+) would
+ * make rock all but disappear because the terrain rarely reaches there.
  */
-export const ROCK_MIN_HEIGHT = 2.5;
+export const ROCK_MIN_HEIGHT = 3.5;
 
 /** Which side of a height contour to keep. */
 export type ContourSide = 'below' | 'above';
@@ -28,34 +33,6 @@ export type ContourSide = 'below' | 'above';
 export type ContourVertex =
   | { readonly kind: 'corner'; readonly i: 0 | 1 | 2 }
   | { readonly kind: 'edge'; readonly a: 0 | 1 | 2; readonly b: 0 | 1 | 2; readonly t: number };
-
-/**
- * Does the tile meet the contour along an EDGE — an edge whose BOTH corners are
- * strictly on the kept side of `threshold`? Pure. Gates the band at the tile
- * level so a single corner crossing the contour (point contact, no real edge)
- * does NOT sprout a stray wedge: only tiles with a genuine submerged shoreline
- * edge get sand, only tiles with a genuine ridge edge get rock. Tiles that DO
- * qualify still draw the full contour on BOTH triangles, so the one-corner
- * sibling triangle keeps the band continuous around the shared corner.
- *
- * For integer heights this matches the intuitive edges: `below`/SAND_MAX_HEIGHT
- * (0.5) needs both corners < 0.5, i.e. both at SEA_LEVEL — a submerged edge.
- */
-export function tileHasContourEdge(
-  topH: number,
-  rightH: number,
-  bottomH: number,
-  leftH: number,
-  threshold: number,
-  keep: ContourSide,
-): boolean {
-  const inSide = (h: number): boolean => (keep === 'below' ? h < threshold : h > threshold);
-  const top = inSide(topH);
-  const right = inSide(rightH);
-  const bottom = inSide(bottomH);
-  const left = inSide(leftH);
-  return (top && right) || (right && bottom) || (bottom && left) || (left && top);
-}
 
 /**
  * Clip ONE terrain triangle at the height contour `threshold`, returning the
@@ -103,11 +80,14 @@ export function contourPolygon(
   });
 
   if (count === 1) {
-    // A single kept corner → a small wedge at that corner. On the classic
-    // two-corner band tile this corner is SHARED with the neighbouring triangle's
-    // full band, so the wedge keeps the band CONTINUOUS around the corner instead
-    // of leaving a notch. The tile-level edge gate above is what suppresses true
-    // point-contact tiles, so this wedge only ever fires on real band tiles.
+    // A single kept corner → a small wedge at that corner. This is intentional:
+    // on a two-corner band tile the corner is SHARED with the neighbouring
+    // triangle's full band, so the wedge keeps the band CONTINUOUS around the
+    // corner instead of leaving a notch; and on a point-contact tile (the contour
+    // dips below/above at one corner only) the wedge fills what would otherwise be
+    // a gap in the band at that corner. There is no tile-level gate — every grass
+    // or road triangle the contour reaches gets its sub-region (the caller's
+    // per-triangle water skip is the only exclusion, keeping sand off water).
     const k: 0 | 1 | 2 = inSide[0] ? 0 : inSide[1] ? 1 : 2;
     const n: 0 | 1 | 2 = ((k + 1) % 3) as 0 | 1 | 2;
     const p: 0 | 1 | 2 = ((k + 2) % 3) as 0 | 1 | 2;

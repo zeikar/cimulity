@@ -1,57 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   contourPolygon,
-  tileHasContourEdge,
   SAND_MAX_HEIGHT,
   ROCK_MIN_HEIGHT,
 } from './heightContour';
 
-const LOW = 0.5; // sand threshold (SAND_MAX_HEIGHT when SEA_LEVEL = 0)
-const HIGH = 2.5; // rock threshold (ROCK_MIN_HEIGHT)
+const LOW = SAND_MAX_HEIGHT; // sand threshold (0.5)
+const HIGH = ROCK_MIN_HEIGHT; // rock threshold (3.5) — fixtures straddle it with 4/2
 
 describe('thresholds', () => {
   it('SAND_MAX_HEIGHT is half a step above the waterline', () => {
     expect(SAND_MAX_HEIGHT).toBe(0.5);
   });
   it('ROCK_MIN_HEIGHT catches the higher ground', () => {
-    expect(ROCK_MIN_HEIGHT).toBe(2.5);
-  });
-});
-
-// Corner order is (topH, rightH, bottomH, leftH). SEA_LEVEL is 0.
-describe('tileHasContourEdge — below (sand / shoreline edge)', () => {
-  it('true when the top-right edge is submerged', () => {
-    expect(tileHasContourEdge(0, 0, 1, 1, LOW, 'below')).toBe(true);
-  });
-  it('true when the right-bottom edge is submerged', () => {
-    expect(tileHasContourEdge(1, 0, 0, 1, LOW, 'below')).toBe(true);
-  });
-  it('true when the bottom-left edge is submerged', () => {
-    expect(tileHasContourEdge(1, 1, 0, 0, LOW, 'below')).toBe(true);
-  });
-  it('true when the left-top edge is submerged', () => {
-    expect(tileHasContourEdge(0, 1, 1, 0, LOW, 'below')).toBe(true);
-  });
-  it('false for a single-corner (point-contact) tile', () => {
-    expect(tileHasContourEdge(0, 1, 1, 1, LOW, 'below')).toBe(false);
-  });
-  it('false for a fully inland tile', () => {
-    expect(tileHasContourEdge(1, 1, 1, 1, LOW, 'below')).toBe(false);
-  });
-});
-
-describe('tileHasContourEdge — above (rock / ridge edge)', () => {
-  it('true when the top-right edge is a high ridge', () => {
-    expect(tileHasContourEdge(3, 3, 1, 1, HIGH, 'above')).toBe(true);
-  });
-  it('true when the bottom-left edge is a high ridge', () => {
-    expect(tileHasContourEdge(1, 1, 3, 3, HIGH, 'above')).toBe(true);
-  });
-  it('false for a single high corner (point peak)', () => {
-    expect(tileHasContourEdge(3, 1, 1, 1, HIGH, 'above')).toBe(false);
-  });
-  it('false for fully low ground', () => {
-    expect(tileHasContourEdge(1, 1, 1, 1, HIGH, 'above')).toBe(false);
+    expect(ROCK_MIN_HEIGHT).toBe(3.5);
   });
 });
 
@@ -126,36 +88,36 @@ describe('contourPolygon — above (highland rock)', () => {
     expect(contourPolygon(1, 1, 1, HIGH, 'above')).toEqual([]);
   });
   it('returns the whole triangle when every corner is above', () => {
-    expect(contourPolygon(3, 3, 3, HIGH, 'above')).toEqual([
+    expect(contourPolygon(4, 4, 4, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 0 },
       { kind: 'corner', i: 1 },
       { kind: 'corner', i: 2 },
     ]);
   });
   it('clips to a wedge at corner 0 when only corner 0 is above, interpolating by height', () => {
-    // cross t = (2.5 - 3) / (1 - 3) = 0.25 along each edge leaving the peak corner.
-    expect(contourPolygon(3, 1, 1, HIGH, 'above')).toEqual([
+    // cross t = (3.5 - 4) / (2 - 4) = 0.25 along each edge leaving the peak corner.
+    expect(contourPolygon(4, 2, 2, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 0 },
       { kind: 'edge', a: 0, b: 1, t: 0.25 },
       { kind: 'edge', a: 0, b: 2, t: 0.25 },
     ]);
   });
   it('clips to a wedge at corner 1 when only corner 1 is above', () => {
-    expect(contourPolygon(1, 3, 1, HIGH, 'above')).toEqual([
+    expect(contourPolygon(2, 4, 2, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 1 },
       { kind: 'edge', a: 1, b: 2, t: 0.25 },
       { kind: 'edge', a: 1, b: 0, t: 0.25 },
     ]);
   });
   it('clips to a wedge at corner 2 when only corner 2 is above', () => {
-    expect(contourPolygon(1, 1, 3, HIGH, 'above')).toEqual([
+    expect(contourPolygon(2, 2, 4, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 2 },
       { kind: 'edge', a: 2, b: 0, t: 0.25 },
       { kind: 'edge', a: 2, b: 1, t: 0.25 },
     ]);
   });
   it('clips to a quad when corner 0 is the only one below', () => {
-    expect(contourPolygon(1, 3, 3, HIGH, 'above')).toEqual([
+    expect(contourPolygon(2, 4, 4, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 1 },
       { kind: 'corner', i: 2 },
       { kind: 'edge', a: 2, b: 0, t: 0.25 },
@@ -163,7 +125,7 @@ describe('contourPolygon — above (highland rock)', () => {
     ]);
   });
   it('clips to a quad when corner 1 is the only one below', () => {
-    expect(contourPolygon(3, 1, 3, HIGH, 'above')).toEqual([
+    expect(contourPolygon(4, 2, 4, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 2 },
       { kind: 'corner', i: 0 },
       { kind: 'edge', a: 0, b: 1, t: 0.25 },
@@ -171,7 +133,7 @@ describe('contourPolygon — above (highland rock)', () => {
     ]);
   });
   it('clips to a quad when corner 2 is the only one below', () => {
-    expect(contourPolygon(3, 3, 1, HIGH, 'above')).toEqual([
+    expect(contourPolygon(4, 4, 2, HIGH, 'above')).toEqual([
       { kind: 'corner', i: 0 },
       { kind: 'corner', i: 1 },
       { kind: 'edge', a: 1, b: 2, t: 0.25 },

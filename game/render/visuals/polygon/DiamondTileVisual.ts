@@ -16,7 +16,7 @@ import { southSkirtVertices, eastSkirtVertices } from './DiamondOOBSkirt';
 import { planDiamondShading } from './diamondShading';
 import { terrainTriFillMatrix, type Uv } from './terrainTriFillMatrix';
 import { getGrassTexture, getWaterTexture, getRoadTexture, getParkTexture, getDirtTexture, getSandTexture, getRockTexture } from './faceTexture';
-import { contourPolygon, tileHasContourEdge, SAND_MAX_HEIGHT, ROCK_MIN_HEIGHT, type ContourVertex, type ContourSide } from './heightContour';
+import { contourPolygon, SAND_MAX_HEIGHT, ROCK_MIN_HEIGHT, type ContourVertex, type ContourSide } from './heightContour';
 import { maxRoadHalfWidthForDiamond } from './roadHalfWidth';
 
 // Concrete sidewalk grey, matching road.png curb colour.
@@ -548,14 +548,12 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   const waterFill: Texture | null = getWaterTexture();
   const sandFill: Texture | null = getSandTexture();
   const rockFill: Texture | null = getRockTexture();
-  // Terrain-band gates: only grass tiles get a band, and only when they meet the
-  // contour along a real EDGE (the per-triangle contour then shapes it). A single
-  // corner crossing the contour (point contact) is excluded so it can't sprout a
-  // stray wedge. SAND = a submerged shoreline edge (below the waterline contour);
-  // ROCK = a high ridge edge (above the rock contour).
-  const isGrassTile = input.type === 'grass';
-  const isBeachTile = isGrassTile && tileHasContourEdge(c.topH, c.rightH, c.bottomH, c.leftH, SAND_MAX_HEIGHT, 'below');
-  const isRockTile  = isGrassTile && tileHasContourEdge(c.topH, c.rightH, c.bottomH, c.leftH, ROCK_MIN_HEIGHT, 'above');
+  // Terrain bands apply to natural-terrain tiles — plain grass AND roads (whose
+  // base is grass too): SAND below the waterline contour, ROCK above the highland
+  // contour. No tile-level edge gate — a single corner crossing the contour gets
+  // its wedge as well, so the band has no gaps at point-contact corners; the
+  // per-triangle water skip still keeps sand off fully-submerged triangles.
+  const isTerrainBand = input.type === 'grass' || isRoad;
   const uvTop    = terrainCornerUv(input.x,     input.y);
   const uvRight  = terrainCornerUv(input.x + 1, input.y);
   const uvBottom = terrainCornerUv(input.x + 1, input.y + 1);
@@ -579,11 +577,11 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   if (plan.diagonal === 'tb') {
     shadeTri(gfx, bottom, left,  top, uvBottom, uvLeft,  uvTop, plan.brightnessWest, tbWestWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
     shadeTri(gfx, bottom, right, top, uvBottom, uvRight, uvTop, plan.brightnessEast, tbEastWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
-    if (isBeachTile && sandFill) {
+    if (isTerrainBand && sandFill) {
       drawTerrainContour(gfx, sandFill, tbWestWater, plan.brightnessWest, SAND_MAX_HEIGHT, 'below', bottom, uvBottom, c.bottomH, left,  uvLeft,  c.leftH,  top, uvTop, c.topH);
       drawTerrainContour(gfx, sandFill, tbEastWater, plan.brightnessEast, SAND_MAX_HEIGHT, 'below', bottom, uvBottom, c.bottomH, right, uvRight, c.rightH, top, uvTop, c.topH);
     }
-    if (isRockTile && rockFill) {
+    if (isTerrainBand && rockFill) {
       drawTerrainContour(gfx, rockFill, false, plan.brightnessWest, ROCK_MIN_HEIGHT, 'above', bottom, uvBottom, c.bottomH, left,  uvLeft,  c.leftH,  top, uvTop, c.topH);
       drawTerrainContour(gfx, rockFill, false, plan.brightnessEast, ROCK_MIN_HEIGHT, 'above', bottom, uvBottom, c.bottomH, right, uvRight, c.rightH, top, uvTop, c.topH);
     }
@@ -596,11 +594,11 @@ function drawDiamond(gfx: Graphics, input: TileVisualInput): void {
   } else {
     shadeTri(gfx, left, top,    right, uvLeft, uvTop,    uvRight, plan.brightnessNorth, lrNorthWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
     shadeTri(gfx, left, bottom, right, uvLeft, uvBottom, uvRight, plan.brightnessSouth, lrSouthWater, fillColor, landFill, waterFill, roughFactor, landTintBase);
-    if (isBeachTile && sandFill) {
+    if (isTerrainBand && sandFill) {
       drawTerrainContour(gfx, sandFill, lrNorthWater, plan.brightnessNorth, SAND_MAX_HEIGHT, 'below', left, uvLeft, c.leftH, top,    uvTop,    c.topH,    right, uvRight, c.rightH);
       drawTerrainContour(gfx, sandFill, lrSouthWater, plan.brightnessSouth, SAND_MAX_HEIGHT, 'below', left, uvLeft, c.leftH, bottom, uvBottom, c.bottomH, right, uvRight, c.rightH);
     }
-    if (isRockTile && rockFill) {
+    if (isTerrainBand && rockFill) {
       drawTerrainContour(gfx, rockFill, false, plan.brightnessNorth, ROCK_MIN_HEIGHT, 'above', left, uvLeft, c.leftH, top,    uvTop,    c.topH,    right, uvRight, c.rightH);
       drawTerrainContour(gfx, rockFill, false, plan.brightnessSouth, ROCK_MIN_HEIGHT, 'above', left, uvLeft, c.leftH, bottom, uvBottom, c.bottomH, right, uvRight, c.rightH);
     }
