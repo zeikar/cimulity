@@ -516,6 +516,8 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.recomputeSchoolIfDirty();
   // Traffic is mark-only on deserialization — getTrafficMap() drains on read.
   world.markTrafficDirty();
+  // Labor is mark-only on deserialization — getLaborMarket()/recomputeTraffic() drain on read.
+  world.markLaborDirty();
 
   return true;
 }

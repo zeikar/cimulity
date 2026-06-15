@@ -2,13 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { TrafficMap } from './TrafficMap';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { GameMap } from './Map';
-import { BuildingMap, type BuildingType } from './Building';
 import { StructureMap } from './StructureMap';
 import { TileType, createTile } from './Tile';
-import type { Frontage } from './buildingFootprint';
+import type { CommuteFlow } from './laborMarket';
 
 // ---------------------------------------------------------------------------
-// Helpers — minimal subset of trafficAssignment.test.ts fixture helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
 function makeMap(
@@ -23,26 +22,7 @@ function makeMap(
   return map;
 }
 
-function addBuilding(
-  bm: BuildingMap,
-  x: number,
-  y: number,
-  type: BuildingType,
-  frontage: Frontage,
-  opts: { level?: number; abandoned?: boolean } = {},
-) {
-  return bm.addBuilding({
-    type,
-    level: opts.level ?? 1,
-    density: 0,
-    age: 0,
-    abandoned: opts.abandoned ?? false,
-    frontage,
-    footprint: [{ x, y }],
-    anchor: { x, y },
-    structureRect: { x, y, w: 1, h: 1 },
-  });
-}
+const idxOf = (w: number, x: number, y: number) => y * w + x;
 
 /** A straight road row at `y` spanning `[x0, x1]` inclusive. */
 function roadRow(y: number, x0: number, x1: number): Array<{ x: number; y: number }> {
@@ -74,21 +54,19 @@ describe('TrafficMap', () => {
     });
   });
 
-  describe('recompute — known fixture', () => {
-    // Residential at (1,0) frontage S → access (1,1).
-    // Commercial at (5,0) frontage S → access (5,1).
-    // Road row y=1 from x=1..5.
+  describe('recompute — explicit flows', () => {
+    // Road row y=1 from x=1..5. Flow origin (1,1) → dest (5,1), count=1.
     // Expected normalized on any path tile = Math.round(255 * 1 / TRAFFIC_CAPACITY) / 255.
     it('road tile on the path has non-zero normalized congestion after recompute', () => {
       const w = 10;
       const map = makeMap(w, 8, roadRow(1, 1, 5));
       const sm = new StructureMap(w, 8);
-      const bm = new BuildingMap(w, 8);
-      addBuilding(bm, 1, 0, 'residential', 'S', { level: 1 });
-      addBuilding(bm, 5, 0, 'commercial', 'S', { level: 1 });
+      const flows: CommuteFlow[] = [
+        { originNode: idxOf(w, 1, 1), destNode: idxOf(w, 5, 1), count: 1 },
+      ];
 
       const tm = new TrafficMap(w, 8);
-      tm.recompute(map, sm, bm);
+      tm.recompute(map, sm, flows);
 
       const expectedRaw = Math.round((255 * 1) / TRAFFIC_CAPACITY);
       const expectedNorm = expectedRaw / 255;
@@ -100,12 +78,12 @@ describe('TrafficMap', () => {
       const w = 10;
       const map = makeMap(w, 8, roadRow(1, 1, 5));
       const sm = new StructureMap(w, 8);
-      const bm = new BuildingMap(w, 8);
-      addBuilding(bm, 1, 0, 'residential', 'S', { level: 1 });
-      addBuilding(bm, 5, 0, 'commercial', 'S', { level: 1 });
+      const flows: CommuteFlow[] = [
+        { originNode: idxOf(w, 1, 1), destNode: idxOf(w, 5, 1), count: 1 },
+      ];
 
       const tm = new TrafficMap(w, 8);
-      tm.recompute(map, sm, bm);
+      tm.recompute(map, sm, flows);
 
       // (0,0) is not a road tile and not on the path.
       expect(tm.getCongestion(0, 0)).toBe(0);
@@ -118,12 +96,12 @@ describe('TrafficMap', () => {
       const w = 10;
       const map = makeMap(w, 8, roadRow(1, 1, 5));
       const sm = new StructureMap(w, 8);
-      const bm = new BuildingMap(w, 8);
-      addBuilding(bm, 1, 0, 'residential', 'S', { level: 1 });
-      addBuilding(bm, 5, 0, 'commercial', 'S', { level: 1 });
+      const flows: CommuteFlow[] = [
+        { originNode: idxOf(w, 1, 1), destNode: idxOf(w, 5, 1), count: 1 },
+      ];
 
       const tm = new TrafficMap(w, 8);
-      tm.recompute(map, sm, bm);
+      tm.recompute(map, sm, flows);
 
       // Verify something is non-zero before clearing.
       expect(tm.getCongestion(3, 1)).toBeGreaterThan(0);

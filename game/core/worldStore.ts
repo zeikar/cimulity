@@ -72,6 +72,8 @@ function readSave(): string | null {
  *          getHospitalCoverageMap, markHospitalDirty, recomputeHospitalIfDirty, recomputeHospital,
  *          getSchoolCoverageMap, markSchoolDirty, recomputeSchoolIfDirty, recomputeSchool,
  *          getTrafficMap, markTrafficDirty, recomputeTrafficIfDirty, recomputeTraffic,
+ *          getLaborMarket, markLaborDirty, recomputeLaborIfDirty, recomputeLabor,
+ *          getEmployed, getUnemployed, getJobsCapacity,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -206,6 +208,18 @@ function hasCurrentWorldApi(world: World): boolean {
     typeof world.markTrafficDirty !== 'function' ||
     typeof world.recomputeTrafficIfDirty !== 'function' ||
     typeof world.recomputeTraffic !== 'function'
+  ) {
+    return false;
+  }
+  // LaborMarketMap API (added in labor-market task): derived labor result + dirty-mark + recompute + thin reads.
+  if (
+    typeof world.getLaborMarket !== 'function' ||
+    typeof world.markLaborDirty !== 'function' ||
+    typeof world.recomputeLaborIfDirty !== 'function' ||
+    typeof world.recomputeLabor !== 'function' ||
+    typeof world.getEmployed !== 'function' ||
+    typeof world.getUnemployed !== 'function' ||
+    typeof world.getJobsCapacity !== 'function'
   ) {
     return false;
   }

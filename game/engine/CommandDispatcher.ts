@@ -357,8 +357,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   }
   // Traffic is mark-only (no eager drain): getTrafficMap() drains on read, so recomputing here
   // would be wasted work — the getter already calls recomputeTrafficIfDirty() lazily.
+  // Labor shares the same invalidation set as traffic (it feeds the commute O-D flows) and is
+  // likewise mark-only — getLaborMarket() / recomputeTraffic() drain it on read.
   if (trafficInvalidated) {
     world.markTrafficDirty();
+    world.markLaborDirty();
   }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }

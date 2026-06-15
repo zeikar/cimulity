@@ -212,6 +212,7 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         world.markSchoolDirty();
         world.recomputeSchoolIfDirty();
         world.markTrafficDirty();
+        world.markLaborDirty();
         return { tilesPlaced, buildingsAdded, elevationsApplied };
       },
       setCameraTile(tileX: number, tileY: number): void {

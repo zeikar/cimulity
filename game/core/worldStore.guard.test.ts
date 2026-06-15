@@ -149,6 +149,13 @@ function makeFullApiStub() {
     markTrafficDirty: () => {},
     recomputeTrafficIfDirty: () => {},
     recomputeTraffic: () => {},
+    getLaborMarket: () => null,
+    markLaborDirty: () => {},
+    recomputeLaborIfDirty: () => {},
+    recomputeLabor: () => {},
+    getEmployed: () => 0,
+    getUnemployed: () => 0,
+    getJobsCapacity: () => 0,
     getStructureMap: () => structureMapStub,
   };
 }
@@ -491,5 +498,31 @@ describe('getWorld — sentinel: stub missing getTrafficMap → fresh World', ()
     expect(typeof result.markTrafficDirty).toBe('function');
     expect(typeof result.recomputeTrafficIfDirty).toBe('function');
     expect(typeof result.recomputeTraffic).toBe('function');
+  });
+});
+
+describe('getWorld — sentinel: stub missing getLaborMarket → fresh World', () => {
+  it('discards a full-API stub that lacks getLaborMarket even when the sentinel matches', () => {
+    // Full API stub minus getLaborMarket — simulates a pre-labor-market singleton.
+    const stale = makeFullApiStub();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (stale as any).getLaborMarket;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = stale;
+    // Current sentinel so only the API probe causes the discard.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'service-v8';
+
+    const result = getWorld();
+
+    expect(result).not.toBe(stale);
+    expect(result).toBeInstanceOf(World);
+    expect(typeof result.getLaborMarket).toBe('function');
+    expect(typeof result.markLaborDirty).toBe('function');
+    expect(typeof result.recomputeLaborIfDirty).toBe('function');
+    expect(typeof result.recomputeLabor).toBe('function');
+    expect(typeof result.getEmployed).toBe('function');
+    expect(typeof result.getUnemployed).toBe('function');
+    expect(typeof result.getJobsCapacity).toBe('function');
   });
 });

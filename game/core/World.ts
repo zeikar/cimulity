@@ -18,6 +18,7 @@ import { FireCoverageMap, isFireAnchorCovered } from './FireCoverageMap';
 import { HospitalCoverageMap, isHospitalAnchorCovered } from './HospitalCoverageMap';
 import { SchoolCoverageMap, isSchoolAnchorCovered } from './SchoolCoverageMap';
 import { TrafficMap } from './TrafficMap';
+import { LaborMarketMap } from './LaborMarketMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -196,6 +197,8 @@ export class World {
   private schoolDirty: boolean = false;
   private traffic: TrafficMap | null = null;
   private trafficDirty: boolean = false;
+  private labor: LaborMarketMap | null = null;
+  private laborDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -576,10 +579,70 @@ export class World {
    * recomputeTraffic) and would cause infinite recursion. Allocate the field directly here.
    */
   recomputeTraffic(): void {
+    // Force-refresh labor FIRST (not the IfDirty variant): recompute always reflects
+    // current buildings, and the cadence force-recompute path must never feed stale or
+    // empty flows. recomputeLabor never calls back into traffic, so no cycle.
+    this.recomputeLabor();
     // Allocate directly — never via getTrafficMap() to avoid re-entering recomputeTrafficIfDirty.
     if (this.traffic === null) this.traffic = new TrafficMap(this.map.getWidth(), this.map.getHeight());
-    this.traffic.recompute(this.map, this.structures, this.map.getBuildings());
+    this.traffic.recompute(this.map, this.structures, this.getLaborMarket().getFlows());
     this.trafficDirty = false;
+  }
+
+  /**
+   * Lazy-allocate and return the LaborMarketMap instance, draining dirtiness before returning.
+   *
+   * Mirrors getTrafficMap's drain-on-read contract: callers always get a fresh snapshot
+   * without needing to manually recompute first.
+   */
+  getLaborMarket(): LaborMarketMap {
+    if (this.labor === null) this.labor = new LaborMarketMap();
+    // Drain-on-read.
+    this.recomputeLaborIfDirty();
+    return this.labor;
+  }
+
+  /**
+   * Mark the labor market as needing recomputation on the next recomputeLaborIfDirty()
+   * or getLaborMarket() call. NO land-value/happiness cascade — labor is DATA-ONLY and
+   * feeds nothing yet (mirrors markTrafficDirty).
+   */
+  markLaborDirty(): void {
+    this.laborDirty = true;
+  }
+
+  /** Recompute the labor market only if dirty; clears the flag. */
+  recomputeLaborIfDirty(): void {
+    if (!this.laborDirty) return;
+    this.recomputeLabor();
+  }
+
+  /**
+   * Unconditional force-recompute; also clears the dirty flag.
+   *
+   * IMPORTANT: must NOT call getLaborMarket() — that drains (calls recomputeLaborIfDirty →
+   * recomputeLabor) and would cause infinite recursion. Allocate the field directly here.
+   */
+  recomputeLabor(): void {
+    // Allocate directly — never via getLaborMarket() to avoid re-entering recomputeLaborIfDirty.
+    if (this.labor === null) this.labor = new LaborMarketMap();
+    this.labor.recompute(this.map, this.structures, this.map.getBuildings());
+    this.laborDirty = false;
+  }
+
+  /** Workers that found a job (drains labor on read). */
+  getEmployed(): number {
+    return this.getLaborMarket().getEmployed();
+  }
+
+  /** Workers with no job (drains labor on read). */
+  getUnemployed(): number {
+    return this.getLaborMarket().getUnemployed();
+  }
+
+  /** Total jobs that exist (drains labor on read). */
+  getJobsCapacity(): number {
+    return this.getLaborMarket().getJobsCapacity();
   }
 
   markDemandDirty(): void {
@@ -705,6 +768,8 @@ export class World {
     this.schoolDirty = false;
     if (this.traffic !== null) this.traffic.clear();
     this.trafficDirty = false;
+    if (this.labor !== null) this.labor.clear();
+    this.laborDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -1063,6 +1128,7 @@ export class World {
       if (changedBuildingIds.length > 0) {
         this.markDemandDirty();
         this.markTrafficDirty();
+        this.markLaborDirty();
       }
     }
 

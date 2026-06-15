@@ -4,14 +4,14 @@
  * DATA-ONLY — no render, no sim feedback.
  *
  * Mirrors the coverage-map holder pattern (`FireCoverageMap`, etc.) with one
- * extra argument on `recompute`: `buildings` (a `BuildingMap`), which
- * `assignTraffic` needs to enumerate residential origins and job destinations.
- * The coverage holders only need `(map, structures)`.
+ * extra argument on `recompute`: `flows` (precomputed commute O-D flows), which
+ * `assignTraffic` loads along their shortest road paths. The coverage holders
+ * only need `(map, structures)`.
  */
 
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
-import type { BuildingMap } from './Building';
+import type { CommuteFlow } from './laborMarket';
 import { assignTraffic } from './trafficAssignment';
 
 export class TrafficMap {
@@ -26,15 +26,14 @@ export class TrafficMap {
   }
 
   /**
-   * Recompute congestion from the current map state.
+   * Recompute congestion from the current map state and precomputed flows.
    *
-   * Unlike the coverage-map holders, this takes an extra `buildings` arg
-   * because `assignTraffic` enumerates both residential origins
-   * (`BuildingMap`) and job destinations — coverage maps only need
-   * `(map, structures)`.
+   * Unlike the coverage-map holders, this takes an extra `flows` arg
+   * because `assignTraffic` loads precomputed commute O-D flows along their
+   * shortest road paths — coverage maps only need `(map, structures)`.
    */
-  recompute(map: GameMap, structures: StructureMap, buildings: BuildingMap): void {
-    this.congestion.set(assignTraffic(map, structures, buildings));
+  recompute(map: GameMap, structures: StructureMap, flows: ReadonlyArray<CommuteFlow>): void {
+    this.congestion.set(assignTraffic(map, structures, flows));
   }
 
   /** Raw congestion intensity at (x, y), range 0..255. Returns 0 for OOB coords. */

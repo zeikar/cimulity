@@ -1,27 +1,30 @@
 /**
- * Pure all-or-nothing static traffic assignment over the ROAD graph.
+ * Pure flow-driven static traffic assignment over the ROAD graph.
  *
- * Each non-abandoned residential ORIGIN routes its whole trip volume (= its
- * `level`) to the SINGLE nearest reachable job DESTINATION (commercial OR
- * industrial), measured in road-hop distance, and accumulates that volume on
- * EVERY road tile along ONE shortest path. The result is normalized per road
- * tile against `TRAFFIC_CAPACITY` into a `0..255` congestion value.
+ * Consumes precomputed aggregate commute O-D flows (origin access node →
+ * destination access node, worker count; see `CommuteFlow`) and loads each
+ * flow's `count` on EVERY road tile along the shortest road path from its
+ * origin to its EXACT destination. The result is normalized per road tile
+ * against `TRAFFIC_CAPACITY` into a `0..255` congestion value.
  *
  * ALGORITHM:
- *   - Each building's ACCESS NODE is the lowest-cell-index ROAD cell on its
- *     frontage face (mirrors the growth road-access gate). A building whose
- *     frontage face has no road has access node -1 and neither originates nor
- *     attracts trips.
- *   - A SINGLE multi-source REVERSE BFS is seeded from ALL destination access
- *     nodes at once (`destDist = 0`, `nextHop = -1`). At discovery of an
- *     unvisited ROAD (non-structure) neighbour it records
- *     `destDist[n] = destDist[cur] + 1` and `nextHop[n] = cur`, yielding per
- *     road node the hop-distance to the NEAREST destination plus the next hop
- *     toward it.
- *   - For each origin with a reachable access node, walk `nextHop` to the
- *     destination adding `vol = b.level` to every node on the path (incl. the
+ *   - Flows are GROUPED by `destNode`. For each distinct destination a SINGLE
+ *     reverse BFS is run, seeded from THAT one node (`destDist = 0`,
+ *     `nextHop = -1`). At discovery of an unvisited ROAD (non-structure)
+ *     neighbour it records `destDist[n] = destDist[cur] + 1` and
+ *     `nextHop[n] = cur`, yielding per road node the hop-distance to that exact
+ *     destination plus the next hop toward it.
+ *   - For each flow in the group, walk `nextHop` from `flow.originNode` to the
+ *     destination adding `flow.count` to every node on the path (incl. the
  *     destination). Termination is guaranteed: `destDist` strictly decreases by
- *     1 each hop, so no per-origin visited guard is needed.
+ *     1 each hop, so no per-flow visited guard is needed. A flow whose origin is
+ *     unreachable from its destination (`destDist === -1`) is skipped — this
+ *     should not happen for honest flows produced by the labor matcher.
+ *
+ * Per-destination routing is REQUIRED: an overflow flow whose origin was matched
+ * to a FARTHER job must load that farther path, not the nearest destination in
+ * the set. A destination-agnostic multi-source BFS would route it to the wrong
+ * destination, so each destination is solved independently.
  *
  * DATA-ONLY: this module reads the maps and mutates NOTHING. It is not wired
  * into render or simulation feedback here, and is not persisted. It must NOT
@@ -30,8 +33,8 @@
 
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
-import type { BuildingMap } from './Building';
-import { ORTHOGONAL, accessNodeFor, buildStructureOwned, isRoadNode } from './roadGraph';
+import type { CommuteFlow } from './laborMarket';
+import { ORTHOGONAL, buildStructureOwned, isRoadNode } from './roadGraph';
 
 /**
  * Trip volume (road-tile load) at which a road tile is considered fully
@@ -40,15 +43,16 @@ import { ORTHOGONAL, accessNodeFor, buildStructureOwned, isRoadNode } from './ro
 export const TRAFFIC_CAPACITY = 64;
 
 /**
- * Compute per-road-tile traffic congestion `0..255` via all-or-nothing
- * nearest-job static assignment. See module JSDoc for the full algorithm.
+ * Compute per-road-tile traffic congestion `0..255` by loading precomputed
+ * commute O-D flows along their exact shortest road paths. See module JSDoc for
+ * the full algorithm.
  *
  * Returns a `Uint8Array` of length `map.getWidth() * map.getHeight()`.
  */
 export function assignTraffic(
   map: GameMap,
   structures: StructureMap,
-  buildings: BuildingMap,
+  flows: ReadonlyArray<CommuteFlow>,
 ): Uint8Array {
   const w = map.getWidth();
   const h = map.getHeight();
@@ -58,64 +62,61 @@ export function assignTraffic(
   // through a placed structure footprint (mirrors the sibling propagators).
   const structureOwned = buildStructureOwned(map, structures);
 
-  // Multi-source reverse BFS state: hop-distance to the nearest destination
-  // access node, and the next-hop road cell toward it. -1 = unvisited.
-  const destDist = new Int32Array(w * h).fill(-1);
-  const nextHop = new Int32Array(w * h).fill(-1);
+  // Group flows by destination node so one reverse BFS serves every flow that
+  // shares a destination, while keeping routing EXACT per destination.
+  const byDest = new Map<number, CommuteFlow[]>();
+  for (const flow of flows) {
+    const group = byDest.get(flow.destNode);
+    if (group === undefined) byDest.set(flow.destNode, [flow]);
+    else group.push(flow);
+  }
+
+  // Reverse BFS state, reused across destinations. -1 = unvisited.
+  const destDist = new Int32Array(w * h);
+  const nextHop = new Int32Array(w * h);
   const queue: number[] = [];
-
-  // Seed every unique destination access node (non-abandoned commercial OR
-  // industrial). All-or-nothing assignment is unweighted on the destination
-  // side, so a node reached from multiple destinations needs seeding once.
-  for (const b of buildings.iterBuildings()) {
-    if (b.abandoned) continue;
-    if (b.type !== 'commercial' && b.type !== 'industrial') continue;
-    const node = accessNodeFor(map, b);
-    if (node < 0) continue;
-    if (destDist[node] !== -1) continue; // already seeded
-    destDist[node] = 0;
-    nextHop[node] = -1;
-    queue.push(node);
-  }
-
-  // Reverse BFS over ROAD (non-structure) cells. Discovery-time parent pointer:
-  // when dequeuing `idx`, an unvisited ROAD neighbour records its distance and
-  // its next hop back toward the nearest destination.
-  let qHead = 0;
-  while (qHead < queue.length) {
-    const idx = queue[qHead++];
-    const cx = idx % w;
-    const cy = (idx - cx) / w;
-    const d = destDist[idx];
-
-    for (const { dx, dy } of ORTHOGONAL) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-      const nIdx = ny * w + nx;
-      if (destDist[nIdx] !== -1) continue; // already visited
-      if (!isRoadNode(map, structureOwned, nIdx)) continue;
-      destDist[nIdx] = d + 1;
-      nextHop[nIdx] = idx;
-      queue.push(nIdx);
-    }
-  }
-
-  // Accumulate raw load: each origin pushes its volume along the single
-  // shortest path to the nearest destination.
   const load = new Float64Array(w * h);
-  for (const b of buildings.iterBuildings()) {
-    if (b.abandoned) continue;
-    if (b.type !== 'residential') continue;
-    const o = accessNodeFor(map, b);
-    if (o < 0 || destDist[o] === -1) continue;
-    const vol = b.level;
-    let cur = o;
-    while (destDist[cur] > 0) {
-      load[cur] += vol;
-      cur = nextHop[cur];
+
+  for (const [destNode, group] of byDest) {
+    // Reset BFS state for this destination.
+    destDist.fill(-1);
+    nextHop.fill(-1);
+    queue.length = 0;
+    destDist[destNode] = 0;
+    queue.push(destNode);
+
+    // Reverse BFS over ROAD (non-structure) cells from this single destination.
+    let qHead = 0;
+    while (qHead < queue.length) {
+      const idx = queue[qHead++];
+      const cx = idx % w;
+      const cy = (idx - cx) / w;
+      const d = destDist[idx];
+
+      for (const { dx, dy } of ORTHOGONAL) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        const nIdx = ny * w + nx;
+        if (destDist[nIdx] !== -1) continue; // already visited
+        if (!isRoadNode(map, structureOwned, nIdx)) continue;
+        destDist[nIdx] = d + 1;
+        nextHop[nIdx] = idx;
+        queue.push(nIdx);
+      }
     }
-    load[cur] += vol; // destination node
+
+    // Walk each flow's path from its origin to THIS destination, adding count.
+    for (const flow of group) {
+      // Guard: an honest flow always has a reachable origin; skip if not.
+      if (destDist[flow.originNode] === -1) continue;
+      let cur = flow.originNode;
+      while (destDist[cur] > 0) {
+        load[cur] += flow.count;
+        cur = nextHop[cur];
+      }
+      load[cur] += flow.count; // destination node
+    }
   }
 
   // Normalize against capacity, clamped to 255.
