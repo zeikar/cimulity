@@ -71,6 +71,7 @@ function readSave(): string | null {
  *          getFireCoverageMap, markFireDirty, recomputeFireIfDirty, recomputeFire,
  *          getHospitalCoverageMap, markHospitalDirty, recomputeHospitalIfDirty, recomputeHospital,
  *          getSchoolCoverageMap, markSchoolDirty, recomputeSchoolIfDirty, recomputeSchool,
+ *          getTrafficMap, markTrafficDirty, recomputeTrafficIfDirty, recomputeTraffic,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -196,6 +197,15 @@ function hasCurrentWorldApi(world: World): boolean {
     typeof world.markSchoolDirty !== 'function' ||
     typeof world.recomputeSchoolIfDirty !== 'function' ||
     typeof world.recomputeSchool !== 'function'
+  ) {
+    return false;
+  }
+  // TrafficMap API (added in traffic task / v18): derived congestion field + dirty-mark + recompute.
+  if (
+    typeof world.getTrafficMap !== 'function' ||
+    typeof world.markTrafficDirty !== 'function' ||
+    typeof world.recomputeTrafficIfDirty !== 'function' ||
+    typeof world.recomputeTraffic !== 'function'
   ) {
     return false;
   }

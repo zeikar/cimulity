@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
@@ -1300,5 +1300,155 @@ describe('CommandDispatcher — park placement (TileType + cost regression guard
     expect(result.changedTiles).toContainEqual({ x: 3, y: 3 });
     // Cost is exactly PARK_COST.
     expect(world.getMoney()).toBe(before - PARK_COST);
+  });
+});
+
+// ---- Traffic dirty-marking tests ----
+
+describe('CommandDispatcher traffic dirty-marking — (a) ROAD edit changes observable congestion', () => {
+  /**
+   * Seed a minimal origin→destination traffic scenario. Buildings use frontage N
+   * so the access road is on row y=0.
+   *
+   * Layout (8×8 world, regenerate:false, all grass default):
+   *   Row 0: ROAD tiles at x=0..3 (connected chain)
+   *   (0,1): ZONE_RESIDENTIAL tile, building with frontage N (access via road at (0,0))
+   *   (3,2): ZONE_COMMERCIAL tile, building with frontage N (access via road at (3,0) through chain)
+   *
+   * Initial traffic: residential trips flow along the road chain → non-zero congestion on (1,0).
+   * After bulldozing road at (1,0): (2,0) and (3,0) are severed from (0,0), so the path is
+   * broken and congestion drops to 0 on (1,0).
+   */
+  it('bulldozing a road tile changes getCongestion on that tile (route severed)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Place road chain at row 0, x=0..3.
+    for (let x = 0; x <= 3; x++) {
+      map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    }
+    // Residential zone tile at (0,1).
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    // Commercial zone tile at (3,2).
+    map.setTile(3, 2, createTile(3, 2, TileType.ZONE_COMMERCIAL));
+
+    // Add a residential building at (0,1) with frontage N — access node on row 0 at x=0.
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 1,
+      age: 0,
+      abandoned: false,
+      frontage: 'N',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    // Add a commercial building at (3,2) with frontage N — access node on row 0..1 at x=3.
+    // Actually commercial at (3,2) with frontage N accesses road at (3,1), not row 0.
+    // Use (3,1) as ROAD so access node is there.
+    map.setTile(3, 1, createTile(3, 1, TileType.ROAD));
+    map.setTile(3, 2, createTile(3, 2, TileType.ZONE_COMMERCIAL));
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 3, y: 2 }],
+      anchor: { x: 3, y: 2 },
+      level: 2,
+      density: 1,
+      age: 0,
+      abandoned: false,
+      frontage: 'N',
+      structureRect: { x: 3, y: 2, w: 1, h: 1 },
+    });
+
+    // Drain traffic to get a baseline — getTrafficMap() drains on read.
+    world.markTrafficDirty();
+    const trafficBefore = world.getTrafficMap().getCongestion(1, 0);
+    // There is a valid route, so congestion should be non-zero.
+    expect(trafficBefore).toBeGreaterThan(0);
+
+    // Bulldoze the road at (1,0) — severs the chain so the residential building
+    // can no longer reach the commercial building.
+    executeClick(Tool.BULLDOZE, { x: 1, y: 0 }, world);
+
+    // getTrafficMap() drains the dirty flag set by the dispatcher.
+    const trafficAfter = world.getTrafficMap().getCongestion(1, 0);
+    expect(trafficAfter).toBe(0);
+  });
+});
+
+describe('CommandDispatcher traffic dirty-marking — (b) structure place/remove calls markTrafficDirty', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('placing a water tower calls markTrafficDirty', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const spy = vi.spyOn(world, 'markTrafficDirty');
+    executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('removing a structure via bulldoze calls markTrafficDirty', () => {
+    const world = new World(8, 8, { regenerate: false });
+    executeClick(Tool.WATER_TOWER, { x: 2, y: 2 }, world);
+    const spy = vi.spyOn(world, 'markTrafficDirty');
+    executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe('CommandDispatcher traffic dirty-marking — (c) zone-bulldoze removing a building', () => {
+  it('bulldozing a zone tile that holds a building changes congestion (OD set shrinks)', () => {
+    const world = new World(8, 8, { regenerate: false });
+    const map = world.getMap();
+
+    // Road chain at row 0, x=0..3.
+    for (let x = 0; x <= 3; x++) {
+      map.setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    }
+    // Road connecting commercial access.
+    map.setTile(3, 1, createTile(3, 1, TileType.ROAD));
+
+    // Residential zone at (0,1) — building with level=4, frontage N.
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 1 }],
+      anchor: { x: 0, y: 1 },
+      level: 4,
+      density: 1,
+      age: 0,
+      abandoned: false,
+      frontage: 'N',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+
+    // Commercial zone at (3,2) — building with level=2, frontage N.
+    map.setTile(3, 2, createTile(3, 2, TileType.ZONE_COMMERCIAL));
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [{ x: 3, y: 2 }],
+      anchor: { x: 3, y: 2 },
+      level: 2,
+      density: 1,
+      age: 0,
+      abandoned: false,
+      frontage: 'N',
+      structureRect: { x: 3, y: 2, w: 1, h: 1 },
+    });
+
+    // Drain to baseline.
+    world.markTrafficDirty();
+    const trafficBefore = world.getTrafficMap().getCongestion(1, 0);
+    expect(trafficBefore).toBeGreaterThan(0);
+
+    // Bulldoze the commercial zone tile at (3,2) — removes the building (the only destination),
+    // so no trips can be assigned and congestion drops to 0.
+    executeClick(Tool.BULLDOZE, { x: 3, y: 2 }, world);
+
+    // getTrafficMap() drains the dirty flag (set via the removedBuildingIds fold).
+    const trafficAfter = world.getTrafficMap().getCongestion(1, 0);
+    expect(trafficAfter).toBe(0);
   });
 });

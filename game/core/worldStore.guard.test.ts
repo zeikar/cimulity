@@ -145,6 +145,10 @@ function makeFullApiStub() {
     markSchoolDirty: () => {},
     recomputeSchoolIfDirty: () => {},
     recomputeSchool: () => {},
+    getTrafficMap: () => null,
+    markTrafficDirty: () => {},
+    recomputeTrafficIfDirty: () => {},
+    recomputeTraffic: () => {},
     getStructureMap: () => structureMapStub,
   };
 }
@@ -464,5 +468,28 @@ describe('getWorld — sentinel: stub missing getHappiness → fresh World', () 
     expect(result).not.toBe(stale);
     expect(result).toBeInstanceOf(World);
     expect(typeof result.getHappiness).toBe('function');
+  });
+});
+
+describe('getWorld — sentinel: stub missing getTrafficMap → fresh World', () => {
+  it('discards a full-API stub that lacks getTrafficMap even when the sentinel matches', () => {
+    // Full API stub minus getTrafficMap — simulates a pre-traffic singleton.
+    const stale = makeFullApiStub();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (stale as any).getTrafficMap;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorld = stale;
+    // Current sentinel so only the API probe causes the discard.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__cimulityWorldGuard = 'service-v8';
+
+    const result = getWorld();
+
+    expect(result).not.toBe(stale);
+    expect(result).toBeInstanceOf(World);
+    expect(typeof result.getTrafficMap).toBe('function');
+    expect(typeof result.markTrafficDirty).toBe('function');
+    expect(typeof result.recomputeTrafficIfDirty).toBe('function');
+    expect(typeof result.recomputeTraffic).toBe('function');
   });
 });

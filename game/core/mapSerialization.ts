@@ -514,6 +514,8 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.markSchoolDirty();
   // Drain school coverage dirty here so the first frame/gate after load never reads a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
   world.recomputeSchoolIfDirty();
+  // Traffic is mark-only on deserialization — getTrafficMap() drains on read.
+  world.markTrafficDirty();
 
   return true;
 }

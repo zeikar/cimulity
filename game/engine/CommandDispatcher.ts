@@ -149,6 +149,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   let fireInvalidated = false;
   let hospitalInvalidated = false;
   let schoolInvalidated = false;
+  let trafficInvalidated = false;
   const pushedChanged = new Set<string>();
   const pushChanged = (x: number, y: number): void => {
     const key = tileKey(x, y);
@@ -241,6 +242,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       fireInvalidated = true;
       hospitalInvalidated = true;
       schoolInvalidated = true;
+      trafficInvalidated = true;
     } else if (cmd.kind === 'remove-structure') {
       const s = world.getStructureMap().getStructure(cmd.structureId);
       // Invariant: tool layer dedupes by id; a stale id cannot reach applyCommands through normal flow.
@@ -275,6 +277,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
       fireInvalidated = true;
       hospitalInvalidated = true;
       schoolInvalidated = true;
+      trafficInvalidated = true;
     } else {
       const prevTile = map.getTile(cmd.x, cmd.y);
       const rec = map.setTileAndReconcile(cmd.x, cmd.y, cmd.tile);
@@ -302,6 +305,7 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
           fireInvalidated = true;
           hospitalInvalidated = true;
           schoolInvalidated = true;
+          trafficInvalidated = true;
         }
       }
       if (rec.removedBuilding !== null) {
@@ -317,6 +321,8 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   }
   if (removedBuildingIds.length > 0) {
     world.markDemandDirty();
+    // A removed building changed the OD set; fold into the single trafficInvalidated path below.
+    trafficInvalidated = true;
   }
   // Post-apply recompute: if any command dirtied power, mark + drain immediately so the
   // next render frame sees a fresh snapshot even when the simulation is paused.
@@ -348,6 +354,11 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   if (schoolInvalidated) {
     world.markSchoolDirty();
     world.recomputeSchoolIfDirty();
+  }
+  // Traffic is mark-only (no eager drain): getTrafficMap() drains on read, so recomputing here
+  // would be wasted work — the getter already calls recomputeTrafficIfDirty() lazily.
+  if (trafficInvalidated) {
+    world.markTrafficDirty();
   }
   return { changedTiles, affectedTiles, removedBuildingIds };
 }
