@@ -11,6 +11,7 @@ import {
   POWER_INTERVAL,
   WATER_INTERVAL,
   SERVICE_INTERVAL,
+  TRAFFIC_INTERVAL,
   DENSITY_COOLDOWN_INTERVALS,
   EMPTY_CITY_HAPPINESS,
   HAPPINESS_W_LAND,
@@ -2623,5 +2624,176 @@ describe('World.getHappiness() — hydration freshness', () => {
     expect(dstHappiness).not.toBe(EMPTY_CITY_HAPPINESS);
     expect(dstHappiness).toBeGreaterThanOrEqual(0);
     expect(dstHappiness).toBeLessThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TrafficMap wiring into World
+// ---------------------------------------------------------------------------
+
+describe('World.getTrafficMap() — drain-on-read', () => {
+  it('markTrafficDirty() + getTrafficMap() returns fresh non-zero congestion WITHOUT manual recompute', () => {
+    // Layout (8×6): road row at y=2. Residential at (0,1) frontage S adj road (0,2).
+    // Commercial (job destination) at (5,1) frontage S adj road (5,2).
+    // assignTraffic routes vol=1 from (0,1) over the road → road tiles carry load → congestion > 0.
+    const world = new World(8, 6, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 8; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'commercial',
+      footprint: [{ x: 5, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 5, y: 1, w: 1, h: 1 },
+    });
+
+    // Mark dirty — getter must drain and deliver fresh data without a manual recompute call.
+    world.markTrafficDirty();
+    const tm = world.getTrafficMap();
+
+    // Road tile (0,2) is the residential origin access node — it must carry load.
+    expect(tm.getCongestion(0, 2)).toBeGreaterThan(0);
+  });
+});
+
+describe('World.tick() — traffic cadence (retained-ref mutation proof)', () => {
+  it('tick to TRAFFIC_INTERVAL mutates the RETAINED TrafficMap instance in place without calling getTrafficMap again', () => {
+    // Layout (8×6): road row at y=2. No zone tiles → no growth → changedBuildingIds stays
+    // empty on every tick → the growth guard never calls markTrafficDirty() during the loop.
+    //
+    // Step 1: seed origin (residential at (0,1)) and destination (commercial at (5,1)).
+    // Step 2: mark dirty + getTrafficMap() drains once → BASELINE on the retained instance.
+    // Step 3: remove the destination directly via BuildingMap (does NOT call markTrafficDirty).
+    //         trafficDirty is now false. expectedNew = 0 (no destination → no route).
+    // Step 4: tick to the TRAFFIC_INTERVAL boundary WITHOUT calling getTrafficMap again and
+    //         WITHOUT calling markTrafficDirty. trafficDirty stays false throughout, so the
+    //         else-branch recomputeTrafficIfDirty() is a no-op on every tick 1..15. Only the
+    //         if (tickCount % TRAFFIC_INTERVAL === 0) recomputeTraffic() force-branch can
+    //         update the retained instance — which is what this test proves.
+    // Step 5: assert retained.getCongestion(px,py) === expectedNew (and !== baseline).
+    const world = new World(8, 6, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 8; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'commercial',
+      footprint: [{ x: 5, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 5, y: 1, w: 1, h: 1 },
+    });
+
+    // Step 2: mark dirty then obtain+RETAIN the TrafficMap reference; drain drains once → BASELINE.
+    world.markTrafficDirty();
+    const retained = world.getTrafficMap();
+    const px = 0; const py = 2; // probe: residential origin access node road tile
+    const baseline = retained.getCongestion(px, py);
+    expect(baseline).toBeGreaterThan(0); // non-zero — route exists
+
+    // Step 3: remove the destination DIRECTLY via BuildingMap — does NOT call markTrafficDirty.
+    // trafficDirty is now false; the else-branch is a no-op until the cadence boundary.
+    map.getBuildings().removeBuilding(2);
+    const expectedNew = 0; // no destination → no route → no load on probe tile
+    expect(expectedNew).not.toBe(baseline); // guard: mutation changes the expected value
+
+    // Step 4: tick to the next TRAFFIC_INTERVAL boundary. Do NOT call markTrafficDirty or
+    // getTrafficMap. trafficDirty stays false → only the cadence force-recompute can update
+    // the retained instance. No zone tiles → no growth → no changedBuildingIds on any tick.
+    const currentTick = world.getTick(); // 0 (no ticks fired yet)
+    const ticksNeeded = TRAFFIC_INTERVAL - (currentTick % TRAFFIC_INTERVAL);
+    for (let i = 0; i < ticksNeeded; i++) {
+      const result = world.tick();
+      // Guard: if growth somehow fired and dirtied traffic via the guard, the else-branch
+      // could drain it early and the cadence branch would not be what updated the map.
+      expect(result.changedBuildingIds).toHaveLength(0);
+    }
+
+    // Step 5: retained instance must have been updated IN PLACE by the cadence block.
+    expect(retained.getCongestion(px, py)).toBe(expectedNew);
+    expect(retained.getCongestion(px, py)).not.toBe(baseline);
+  });
+});
+
+describe('World.tick() — growth pass marks traffic dirty', () => {
+  it('after a growth tick that spawns a building, getTrafficMap() shows non-zero load on the connecting road', () => {
+    // Layout (8×6): road row at y=2. Residential zone (0,1) frontage S → spawn a building.
+    // Commercial (job destination) already at (5,1). After spawn, traffic must route through road.
+    const world = new World(8, 6, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 8; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+
+    // Zone tile for residential — the growth pass will spawn a building here.
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+
+    // Commercial job destination already placed.
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'commercial',
+      footprint: [{ x: 5, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 5, y: 1, w: 1, h: 1 },
+    });
+
+    // Power is required for spawn.
+    seedPower(world, 6, 3); // plant at (6,3)–(7,4); (6,3) adj road (6,2) → powers road row
+
+    // Confirm no residential building yet.
+    expect(map.getBuildings().getBuildingAt(0, 1)).toBeNull();
+
+    // Run until a growth tick spawns the residential building.
+    let spawned = false;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) {
+      const result = world.tick();
+      if (result.changedBuildingIds.length > 0 && map.getBuildings().getBuildingAt(0, 1) !== null) {
+        spawned = true;
+        break;
+      }
+    }
+    expect(spawned).toBe(true);
+
+    // After growth (which calls markTrafficDirty), getTrafficMap() must drain and show load.
+    // The residential building is at (0,1) frontage S → access node is road (0,2).
+    expect(world.getTrafficMap().getCongestion(0, 2)).toBeGreaterThan(0);
+  });
+});
+
+describe('World.reset() — traffic clear (common block)', () => {
+  it('with non-zero traffic present, reset({regenerate:false}) clears all congestion to 0', () => {
+    // Seed buildings and force a recompute so the backing array is non-zero.
+    const world = new World(8, 6, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 8; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'commercial',
+      footprint: [{ x: 5, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 5, y: 1, w: 1, h: 1 },
+    });
+
+    // Force traffic to be computed and non-zero.
+    world.markTrafficDirty();
+    expect(world.getTrafficMap().getCongestion(0, 2)).toBeGreaterThan(0);
+
+    world.reset({ regenerate: false });
+
+    // After reset, getCongestion must return 0 for every tile.
+    const raw = world.getTrafficMap().getRaw();
+    for (let i = 0; i < raw.length; i++) {
+      expect(raw[i]).toBe(0);
+    }
   });
 });

@@ -17,6 +17,7 @@ import { ServiceCoverageMap, isAnchorCovered } from './ServiceCoverageMap';
 import { FireCoverageMap, isFireAnchorCovered } from './FireCoverageMap';
 import { HospitalCoverageMap, isHospitalAnchorCovered } from './HospitalCoverageMap';
 import { SchoolCoverageMap, isSchoolAnchorCovered } from './SchoolCoverageMap';
+import { TrafficMap } from './TrafficMap';
 import { StructureMap } from './StructureMap';
 import {
   pickSeedFrontage,
@@ -57,6 +58,10 @@ export const WATER_INTERVAL = 16;
  * Defense-in-depth periodic force-recompute cadence for service coverage, mirrors POWER_INTERVAL.
  */
 export const SERVICE_INTERVAL = 16;
+/**
+ * Defense-in-depth periodic force-recompute cadence for traffic, mirrors SERVICE_INTERVAL.
+ */
+export const TRAFFIC_INTERVAL = 16;
 /**
  * Minimum growth-opportunity count (age) before a building may gain density.
  * Unit: growth opportunities (same as GROWTH_COOLDOWN_INTERVALS).
@@ -189,6 +194,8 @@ export class World {
   private hospitalDirty: boolean = false;
   private school: SchoolCoverageMap | null = null;
   private schoolDirty: boolean = false;
+  private traffic: TrafficMap | null = null;
+  private trafficDirty: boolean = false;
 
   constructor(mapWidth: number, mapHeight: number, opts?: { regenerate?: boolean }) {
     this.map = new GameMap(mapWidth, mapHeight);
@@ -534,6 +541,47 @@ export class World {
     this.schoolDirty = false;
   }
 
+  /**
+   * Lazy-allocate and return the TrafficMap instance, draining dirtiness before returning.
+   *
+   * NOTE: this getter DRAINS (calls recomputeTrafficIfDirty) — unlike the non-draining
+   * coverage getters (e.g. getFireCoverageMap). This is the stale-free read contract:
+   * callers always get a fresh snapshot without needing to manually recompute first.
+   */
+  getTrafficMap(): TrafficMap {
+    if (this.traffic === null) this.traffic = new TrafficMap(this.map.getWidth(), this.map.getHeight());
+    // Drain-on-read: coverage getters do NOT drain; traffic inverts this contract.
+    this.recomputeTrafficIfDirty();
+    return this.traffic;
+  }
+
+  /**
+   * Mark traffic as needing recomputation on the next recomputeTrafficIfDirty() or getTrafficMap() call.
+   * NO land-value/happiness cascade — traffic is DATA-ONLY and feeds nothing (unlike markServiceDirty).
+   */
+  markTrafficDirty(): void {
+    this.trafficDirty = true;
+  }
+
+  /** Recompute traffic only if dirty; clears the flag. */
+  recomputeTrafficIfDirty(): void {
+    if (!this.trafficDirty) return;
+    this.recomputeTraffic();
+  }
+
+  /**
+   * Unconditional force-recompute; also clears the dirty flag.
+   *
+   * IMPORTANT: must NOT call getTrafficMap() — that drains (calls recomputeTrafficIfDirty →
+   * recomputeTraffic) and would cause infinite recursion. Allocate the field directly here.
+   */
+  recomputeTraffic(): void {
+    // Allocate directly — never via getTrafficMap() to avoid re-entering recomputeTrafficIfDirty.
+    if (this.traffic === null) this.traffic = new TrafficMap(this.map.getWidth(), this.map.getHeight());
+    this.traffic.recompute(this.map, this.structures, this.map.getBuildings());
+    this.trafficDirty = false;
+  }
+
   markDemandDirty(): void {
     this.demandDirty = true;
   }
@@ -655,6 +703,8 @@ export class World {
     this.hospitalDirty = false;
     if (this.school !== null) this.school.clear();
     this.schoolDirty = false;
+    if (this.traffic !== null) this.traffic.clear();
+    this.trafficDirty = false;
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
@@ -775,6 +825,13 @@ export class World {
       this.recomputeSchool();
     } else {
       this.recomputeSchoolIfDirty();
+    }
+
+    // Traffic: recompute if dirty, or force on periodic cadence (defense-in-depth).
+    if (this.tickCount % TRAFFIC_INTERVAL === 0) {
+      this.recomputeTraffic();
+    } else {
+      this.recomputeTrafficIfDirty();
     }
 
     // Land value: recompute if dirty, or force on periodic cadence (defense-in-depth).
@@ -1001,7 +1058,10 @@ export class World {
         }
       }
 
-      if (changedBuildingIds.length > 0) this.markDemandDirty();
+      if (changedBuildingIds.length > 0) {
+        this.markDemandDirty();
+        this.markTrafficDirty();
+      }
     }
 
     // Mark happiness dirty at the END of the tick — after tax settlement (money changed) and
