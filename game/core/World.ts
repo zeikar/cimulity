@@ -609,6 +609,9 @@ export class World {
    */
   markLaborDirty(): void {
     this.laborDirty = true;
+    // Traffic consumes labor flows (recomputeTraffic calls getLaborMarket().getFlows()),
+    // so stale labor means stale traffic — cascade the invalidation down-dependency.
+    this.trafficDirty = true;
   }
 
   /** Recompute the labor market only if dirty; clears the flag. */

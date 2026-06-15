@@ -146,6 +146,32 @@ describe('World labor market wiring', () => {
     });
   });
 
+  describe('markLaborDirty() cascades to traffic', () => {
+    it('getTrafficMap() reflects new state after ONLY markLaborDirty() — no markTrafficDirty call', () => {
+      const world = makeWorldWithRoadRow([
+        { id: 1, type: 'residential', x: 0, level: 1 },
+        { id: 2, type: 'commercial', x: 5, level: 1 },
+      ]);
+      const map = world.getMap();
+
+      // Warm traffic so the instance is allocated and the baseline is non-zero.
+      world.markTrafficDirty();
+      const retained = world.getTrafficMap();
+      expect(retained.getCongestion(0, 2)).toBeGreaterThan(0);
+
+      // Remove the destination directly via BuildingMap — no dirty calls at all.
+      map.getBuildings().removeBuilding(2);
+
+      // Call ONLY markLaborDirty (NOT markTrafficDirty). The cascade must propagate.
+      world.markLaborDirty();
+
+      // getTrafficMap() drains trafficDirty → recomputeTraffic → recomputeLabor →
+      // fresh flows (empty, destination gone) → rewrite the retained instance → 0.
+      world.getTrafficMap();
+      expect(retained.getCongestion(0, 2)).toBe(0);
+    });
+  });
+
   describe('recomputeTraffic() force-refreshes labor', () => {
     it('reflects building changes made WITHOUT dirtying after the TRAFFIC_INTERVAL cadence', () => {
       const world = makeWorldWithRoadRow([
