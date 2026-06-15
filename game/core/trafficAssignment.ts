@@ -30,58 +30,14 @@
 
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
-import type { Building, BuildingMap } from './Building';
-import { TileType } from './Tile';
-import { lotBboxOf } from './buildingFootprint';
-
-const ORTHOGONAL = [
-  { dx: 0, dy: -1 },
-  { dx: 0, dy: 1 },
-  { dx: -1, dy: 0 },
-  { dx: 1, dy: 0 },
-];
+import type { BuildingMap } from './Building';
+import { ORTHOGONAL, accessNodeFor, buildStructureOwned, isRoadNode } from './roadGraph';
 
 /**
  * Trip volume (road-tile load) at which a road tile is considered fully
  * congested (normalized value 255). The single normalization knob.
  */
 export const TRAFFIC_CAPACITY = 64;
-
-/**
- * Lowest-cell-index ROAD cell on a building's frontage face, or -1 if the
- * frontage face has no road. Mirrors `countRoadsOnFace`'s per-frontage scan
- * (N → row above, S → row below, W → column left, E → column right), reading
- * `map.getTile` directly — never via `World`/`zoneGrowth`.
- */
-export function accessNodeFor(map: GameMap, b: Building): number {
-  const w = map.getWidth();
-  const rect = lotBboxOf(b.footprint);
-  let best = -1;
-
-  const consider = (x: number, y: number) => {
-    const t = map.getTile(x, y);
-    if (t === null || t.type !== TileType.ROAD) return;
-    const idx = y * w + x;
-    if (best === -1 || idx < best) best = idx;
-  };
-
-  switch (b.frontage) {
-    case 'N':
-      for (let x = rect.x; x < rect.x + rect.w; x++) consider(x, rect.y - 1);
-      break;
-    case 'S':
-      for (let x = rect.x; x < rect.x + rect.w; x++) consider(x, rect.y + rect.h);
-      break;
-    case 'W':
-      for (let y = rect.y; y < rect.y + rect.h; y++) consider(rect.x - 1, y);
-      break;
-    case 'E':
-      for (let y = rect.y; y < rect.y + rect.h; y++) consider(rect.x + rect.w, y);
-      break;
-  }
-
-  return best;
-}
 
 /**
  * Compute per-road-tile traffic congestion `0..255` via all-or-nothing
@@ -100,12 +56,7 @@ export function assignTraffic(
 
   // Mark every cell owned by ANY structure so the road graph never routes
   // through a placed structure footprint (mirrors the sibling propagators).
-  const structureOwned = new Uint8Array(w * h);
-  for (const s of structures.iterStructures()) {
-    for (const c of s.footprint) {
-      structureOwned[c.y * w + c.x] = 1;
-    }
-  }
+  const structureOwned = buildStructureOwned(map, structures);
 
   // Multi-source reverse BFS state: hop-distance to the nearest destination
   // access node, and the next-hop road cell toward it. -1 = unvisited.
@@ -143,9 +94,7 @@ export function assignTraffic(
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
       const nIdx = ny * w + nx;
       if (destDist[nIdx] !== -1) continue; // already visited
-      if (structureOwned[nIdx] === 1) continue;
-      const expandTile = map.getTile(nx, ny);
-      if (!expandTile || expandTile.type !== TileType.ROAD) continue;
+      if (!isRoadNode(map, structureOwned, nIdx)) continue;
       destDist[nIdx] = d + 1;
       nextHop[nIdx] = idx;
       queue.push(nIdx);

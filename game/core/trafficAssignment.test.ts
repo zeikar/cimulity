@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assignTraffic, accessNodeFor, TRAFFIC_CAPACITY } from './trafficAssignment';
+import { assignTraffic, TRAFFIC_CAPACITY } from './trafficAssignment';
 import { GameMap } from './Map';
 import { BuildingMap, type BuildingType } from './Building';
 import { StructureMap } from './StructureMap';
@@ -55,55 +55,6 @@ function roadRow(y: number, x0: number, x1: number): Array<{ x: number; y: numbe
   for (let x = x0; x <= x1; x++) cells.push({ x, y });
   return cells;
 }
-
-// ---------------------------------------------------------------------------
-// accessNodeFor
-// ---------------------------------------------------------------------------
-
-describe('accessNodeFor', () => {
-  it('returns the road cell on the S frontage face', () => {
-    const w = 10;
-    const map = makeMap(w, 10, [{ x: 3, y: 4 }]); // road directly south of (3,3)
-    const bm = new BuildingMap(w, 10);
-    const b = addBuilding(bm, 3, 3, 'residential', 'S')!;
-    expect(accessNodeFor(map, b)).toBe(idxOf(w, 3, 4));
-  });
-
-  it('returns -1 when the frontage face has no road', () => {
-    const w = 10;
-    // Road only to the EAST of the building, but frontage is S.
-    const map = makeMap(w, 10, [{ x: 4, y: 3 }]);
-    const bm = new BuildingMap(w, 10);
-    const b = addBuilding(bm, 3, 3, 'residential', 'S')!;
-    expect(accessNodeFor(map, b)).toBe(-1);
-  });
-
-  it('returns the LOWEST cell index when a multi-cell frontage face has two roads', () => {
-    const w = 10;
-    // 2-wide lot at (3,3)-(4,3), frontage S → S face is row y=4 across x∈[3,5).
-    // Roads on BOTH face cells (3,4) and (4,4); the lower index (3,4) must win.
-    const map = makeMap(w, 10, [
-      { x: 3, y: 4 },
-      { x: 4, y: 4 },
-    ]);
-    const bm = new BuildingMap(w, 10);
-    const b = bm.addBuilding({
-      type: 'commercial',
-      level: 1,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'S',
-      footprint: [
-        { x: 3, y: 3 },
-        { x: 4, y: 3 },
-      ],
-      anchor: { x: 3, y: 3 },
-      structureRect: { x: 3, y: 3, w: 2, h: 1 },
-    })!;
-    expect(accessNodeFor(map, b)).toBe(idxOf(w, 3, 4));
-  });
-});
 
 // ---------------------------------------------------------------------------
 // assignTraffic

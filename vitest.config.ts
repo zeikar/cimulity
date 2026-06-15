@@ -69,6 +69,7 @@ export default defineConfig({
         'game/core/FireCoverageMap.ts',
         'game/core/HospitalCoverageMap.ts',
         'game/core/SchoolCoverageMap.ts',
+        'game/core/roadGraph.ts',
         'game/core/trafficAssignment.ts',
         'game/core/TrafficMap.ts',
         'app/hooks/sampleStats.ts',
