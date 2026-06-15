@@ -51,8 +51,6 @@ function roadRow(y: number, x0: number, x1: number): Array<{ x: number; y: numbe
   return cells;
 }
 
-const idxOf = (w: number, x: number, y: number) => y * w + x;
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
