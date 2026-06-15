@@ -828,7 +828,9 @@ export class World {
     }
 
     // Traffic: recompute if dirty, or force on periodic cadence (defense-in-depth).
-    if (this.tickCount % TRAFFIC_INTERVAL === 0) {
+    // Guard: skip the periodic force-recompute when traffic has never been allocated —
+    // avoids pointless BFS allocation for an unread data-only view.
+    if (this.tickCount % TRAFFIC_INTERVAL === 0 && this.traffic !== null) {
       this.recomputeTraffic();
     } else {
       this.recomputeTrafficIfDirty();
