@@ -12,6 +12,7 @@ import { GameHUD } from './components/GameHUD';
 import { TileInfoPanel } from './components/TileInfoPanel';
 import { Toolbar } from './components/Toolbar';
 import { Tool } from '@/game/tools';
+import type { DataView } from '@/game/render/dataView';
 import { STARTING_FUNDS, EMPTY_CITY_HAPPINESS } from '@/game/core/World';
 import type { WorldDate } from '@/game/core/World';
 import type { DemandVector } from '@/game/core/Demand';
@@ -30,6 +31,9 @@ export default function Home() {
   const [resetNonce, setResetNonce] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3>(1);
   const [paused, setPaused] = useState(false);
+  // React state is the single source of truth for the active data-view overlay.
+  // useState's setter is already stable so no useCallback is needed.
+  const [dataView, setDataView] = useState<DataView>('none');
 
   const speedCommandRef = useRef<((m: 1 | 2 | 3) => void) | null>(null);
   const pauseCommandRef = useRef<(() => void) | null>(null);
@@ -129,6 +133,7 @@ export default function Home() {
         onCommandsReady={handleCommandsReady}
         onSpeedChange={handleSpeedSync}
         onPauseChange={handlePauseSync}
+        dataView={dataView}
       />
       <button
         onClick={handleNewCity}
@@ -166,6 +171,8 @@ export default function Home() {
         speedMultiplier={speedMultiplier}
         paused={paused}
         statsSamples={statsSamples}
+        dataView={dataView}
+        onDataViewChange={setDataView}
       />
       <TileInfoPanel
         info={inspect?.info ?? null}

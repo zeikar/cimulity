@@ -7,6 +7,7 @@
  */
 
 import { PixiApp } from '../render/PixiApp';
+import type { DataView } from '../render/dataView';
 import { getWorld, saveWorld, clearSave } from '../core/worldStore';
 import { PointerHandler } from '../input/PointerHandler';
 import { CameraController } from '../input/CameraController';
@@ -85,6 +86,8 @@ export class GameSession {
    */
   private pendingSpeedMultiplier: SpeedMultiplier | null = null;
   private pendingPauseToggleCount = 0;
+  // Buffers the requested view so setDataView() calls before pixiApp exists survive.
+  private pendingDataView: DataView = 'none';
   private disposed = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSyncedMoney: number | null = null;
@@ -98,6 +101,13 @@ export class GameSession {
     this.toolManager.setTool(tool);
     // Clear the stale hover ghost from the previous tool; next mouse-move repaints for the new tool.
     this.pixiApp?.getSelectionRenderer()?.clearDragPreview();
+  }
+
+  setDataView(view: DataView): void {
+    // Always record the latest request so start() can flush it once PixiApp is live.
+    this.pendingDataView = view;
+    // Apply live if PixiApp already exists (post-init subsequent changes).
+    this.pixiApp?.setDataView(view);
   }
 
   // Both are command entry points (Toolbar AND keyboard both reach the engine through here).
@@ -318,6 +328,10 @@ export class GameSession {
     // present — otherwise `setCameraTile` / `markDirty` would silently no-op.
     // No-op in production builds (see devApi.ts).
     installDevApi(world, pixiApp, { resetWorld: () => this.resetWorld(), saveNow: () => this.saveNow(), regenerateTerrain: (seed?: number) => this.regenerateTerrain(seed), resetFlat: () => this.resetFlat() });
+
+    // Flush data-view selection buffered before start() (e.g. mount effect ran
+    // before PixiApp was constructed). Mirrors the pending speed/pause flush below.
+    pixiApp.setDataView(this.pendingDataView);
 
     // Setup input handlers
     const refreshHover = (tile: TileCoord | null) => {

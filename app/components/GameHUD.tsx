@@ -10,8 +10,10 @@ import type { TileCoord } from '@/game/types/coordinates';
 import type { WorldDate } from '@/game/core/World';
 import type { DemandVector } from '@/game/core/Demand';
 import { Tool } from '@/game/tools';
+import type { DataView } from '@/game/render/dataView';
 import type { StatsSample } from '@/app/hooks/sampleStats';
 import { StatsPanel } from './StatsPanel';
+import { DataViewPanel } from './DataViewPanel';
 
 const TOOL_LABELS: Record<Tool, string> = {
   [Tool.SELECT]: 'Select',
@@ -49,6 +51,8 @@ export interface GameHUDProps {
   speedMultiplier: 1 | 2 | 3;
   paused: boolean;
   statsSamples: StatsSample[];
+  dataView: DataView;
+  onDataViewChange: (v: DataView) => void;
 }
 
 function BarBlocks({ value, color }: { value: number; color: string }) {
@@ -77,9 +81,14 @@ export function GameHUD({
   speedMultiplier,
   paused,
   statsSamples,
+  dataView,
+  onDataViewChange,
 }: GameHUDProps) {
   // Panel is hidden by default; toggled by the [Stats] button.
   const [statsOpen, setStatsOpen] = useState(false);
+  // Data panel visibility is independent of the active view — closing the panel
+  // does NOT reset to 'none'; only clicking a view button changes the overlay.
+  const [dataOpen, setDataOpen] = useState(false);
 
   // Debug section is inlined out of production builds via the same gate devApi uses.
   const isDev = process.env.NODE_ENV === 'development';
@@ -180,6 +189,32 @@ export function GameHUD({
       </button>
 
       {statsOpen && <StatsPanel samples={statsSamples} />}
+
+      {/* [Data] toggle button: placed left of [Stats] (right:'128px').
+          right:'232px' avoids overlap with [Stats] (~91px wide at right:128px → left edge ~219px).
+          Closing this panel does NOT reset the active overlay — toggle panel ≠ toggle overlay. */}
+      <button
+        onClick={() => setDataOpen((o) => !o)}
+        style={{
+          position: 'fixed',
+          top: '16px',
+          right: '232px',
+          padding: '8px 16px',
+          backgroundColor: dataOpen ? 'rgba(33, 150, 243, 0.8)' : 'rgba(60, 60, 60, 0.8)',
+          color: 'white',
+          border: dataOpen ? '2px solid rgba(33, 150, 243, 1)' : '2px solid transparent',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontFamily: 'monospace',
+          fontSize: '14px',
+          zIndex: 1000,
+          pointerEvents: 'auto',
+        }}
+      >
+        [Data]
+      </button>
+
+      {dataOpen && <DataViewPanel active={dataView} onSelect={onDataViewChange} />}
     </>
   );
 }

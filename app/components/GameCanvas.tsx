@@ -13,6 +13,7 @@ import { useEffect, useRef } from 'react';
 import { GameSession } from '@/game/engine';
 import type { TileInfo } from '@/game/engine';
 import { Tool } from '@/game/tools';
+import type { DataView } from '@/game/render/dataView';
 import type { TileCoord, ScreenCoord } from '@/game/types/coordinates';
 import type { WorldDate } from '@/game/core/World';
 import type { DemandVector } from '@/game/core/Demand';
@@ -39,6 +40,8 @@ export interface GameCanvasProps {
   commandPauseRef?: React.RefObject<(() => void) | null>;
   /** Fires AFTER commandSpeedRef/commandPauseRef are populated, so the page can drain any pre-mount Toolbar clicks. */
   onCommandsReady?: () => void;
+  /** Controlled overlay view; synced to the engine on mount and on every change. */
+  dataView?: DataView;
 }
 
 export function GameCanvas({
@@ -56,6 +59,7 @@ export function GameCanvas({
   commandSpeedRef,
   commandPauseRef,
   onCommandsReady,
+  dataView = 'none',
 }: GameCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<GameSession | null>(null);
@@ -93,6 +97,9 @@ export function GameCanvas({
   // Track current tool so the mount effect can read the initial tool without
   // closing over `currentTool` (avoids an exhaustive-deps warning).
   const currentToolRef = useRef(currentTool);
+  // Track current data view so the mount effect can read the initial view
+  // without closing over `dataView` (mirrors currentToolRef pattern).
+  const dataViewRef = useRef(dataView);
 
   // Refresh refs after every commit (no deps array). Declared before the
   // mount effect so refs are current when the mount effect first reads them.
@@ -109,6 +116,7 @@ export function GameCanvas({
       onPauseChange,
     };
     currentToolRef.current = currentTool;
+    dataViewRef.current = dataView;
   });
 
   // Sync external tool changes to the session (subsequent changes only;
@@ -116,6 +124,12 @@ export function GameCanvas({
   useEffect(() => {
     sessionRef.current?.setTool(currentTool);
   }, [currentTool]);
+
+  // Sync data-view changes to the session (subsequent changes only;
+  // the mount effect + start() flush cover the initial sync).
+  useEffect(() => {
+    sessionRef.current?.setDataView(dataView);
+  }, [dataView]);
 
   // "New City": run on bump only, never on the initial mount (which would
   // wipe the just-hydrated save).
@@ -141,6 +155,9 @@ export function GameCanvas({
     // Apply a non-default initial tool even if the [currentTool] effect's
     // first run preceded sessionRef.current being set.
     session.setTool(currentToolRef.current);
+    // Buffer the initial data-view so start() can flush it to PixiApp once
+    // init() resolves (pixiApp is null at this point in the mount sequence).
+    session.setDataView(dataViewRef.current);
     if (commandSpeedRef) {
       commandSpeedRef.current = (m) => sessionRef.current?.setSpeedMultiplier(m);
     }
