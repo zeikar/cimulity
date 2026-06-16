@@ -8,6 +8,8 @@ import { Camera, type CameraConstraints } from './Camera';
 import { TileRenderer, buildPixiAppRegistry } from './TileRenderer';
 import { SelectionRenderer } from './SelectionRenderer';
 import { UtilityStatusOverlay } from './overlays/UtilityStatusOverlay';
+import { DataViewOverlay } from './overlays/DataViewOverlay';
+import type { DataView } from './dataView';
 import { PowerPlantRenderer } from './PowerPlantRenderer';
 import { WaterTowerRenderer } from './WaterTowerRenderer';
 import { ServiceStructureRenderer } from './ServiceStructureRenderer';
@@ -36,10 +38,15 @@ export class PixiApp {
   private waterTowerRenderer: WaterTowerRenderer | null = null;
   private serviceStructureRenderer: ServiceStructureRenderer | null = null;
   private decorationRenderer: DecorationRenderer | null = null;
+  private dataViewOverlay: DataViewOverlay | null = null;
   private terrainContainer: Container | null = null;
   private buildingContainer: Container | null = null;
+  private dataViewContainer: Container | null = null;
   private overlayContainer: Container | null = null;
   private selectionContainer: Container | null = null;
+  // Stores the requested view so pre-init setDataView() calls survive until
+  // init() constructs the overlay.
+  private pendingDataView: DataView = 'none';
   private world: World;
   private callbacks: PixiAppCallbacks;
   private fpsUpdateInterval: number = 0;
@@ -103,6 +110,11 @@ export class PixiApp {
     this.buildingContainer = new Container();
     this.buildingContainer.sortableChildren = true; // buildings sort within their own layer
 
+    // Data-view colored-diamond layer sits above buildings but below the utility
+    // badge overlay so badges remain readable on top of the recolor.
+    this.dataViewContainer = new Container();
+    this.dataViewContainer.sortableChildren = false;
+
     this.overlayContainer = new Container();
     this.overlayContainer.sortableChildren = false;
 
@@ -111,6 +123,7 @@ export class PixiApp {
 
     this.app.stage.addChild(this.terrainContainer);
     this.app.stage.addChild(this.buildingContainer);
+    this.app.stage.addChild(this.dataViewContainer);
     this.app.stage.addChild(this.overlayContainer);
     this.app.stage.addChild(this.selectionContainer);
 
@@ -120,6 +133,9 @@ export class PixiApp {
     this.waterTowerRenderer = new WaterTowerRenderer(this.buildingContainer);
     this.serviceStructureRenderer = new ServiceStructureRenderer(this.buildingContainer);
     this.decorationRenderer = new DecorationRenderer(this.buildingContainer);
+    this.dataViewOverlay = new DataViewOverlay(this.dataViewContainer);
+    // Apply any view requested before init() completed.
+    this.dataViewOverlay.setActiveView(this.pendingDataView);
     this.utilityOverlay = new UtilityStatusOverlay(this.overlayContainer, registry);
     this.selectionRenderer = new SelectionRenderer(this.selectionContainer);
 
@@ -156,6 +172,9 @@ export class PixiApp {
       }
       if (this.decorationRenderer && this.world && visibleBounds) {
         this.decorationRenderer.render(this.world, visibleBounds);
+      }
+      if (this.dataViewOverlay && this.world) {
+        this.dataViewOverlay.render(this.world, visibleBounds);
       }
       if (this.utilityOverlay && this.world) {
         this.utilityOverlay.render(this.world, visibleBounds);
@@ -225,6 +244,17 @@ export class PixiApp {
   }
 
   /**
+   * Switch the active data-view overlay (traffic / jobs / none).
+   *
+   * Stores pendingDataView so calls before init() survive construction order;
+   * applies live when the overlay already exists.
+   */
+  setDataView(view: DataView): void {
+    this.pendingDataView = view;
+    this.dataViewOverlay?.setActiveView(view);
+  }
+
+  /**
    * Get the Pixi-owned canvas (for attaching input handlers)
    */
   getCanvas(): HTMLCanvasElement | null {
@@ -289,6 +319,7 @@ export class PixiApp {
     this.waterTowerRenderer?.destroy();
     this.serviceStructureRenderer?.destroy();
     this.decorationRenderer?.destroy();
+    this.dataViewOverlay?.destroy();
     this.utilityOverlay?.destroy();
     this.selectionRenderer?.destroy();
 
@@ -299,6 +330,7 @@ export class PixiApp {
     // deterministically, before the renderer context is torn down.
     this.terrainContainer?.destroy({ children: true });
     this.buildingContainer?.destroy({ children: true });
+    this.dataViewContainer?.destroy({ children: true });
     this.overlayContainer?.destroy({ children: true });
     this.selectionContainer?.destroy({ children: true });
     // Decoration sprite textures (tree/bench/flowerbed) are shared Assets.load
@@ -318,10 +350,12 @@ export class PixiApp {
     this.waterTowerRenderer = null;
     this.serviceStructureRenderer = null;
     this.decorationRenderer = null;
+    this.dataViewOverlay = null;
     this.utilityOverlay = null;
     this.selectionRenderer = null;
     this.terrainContainer = null;
     this.buildingContainer = null;
+    this.dataViewContainer = null;
     this.overlayContainer = null;
     this.selectionContainer = null;
   }
