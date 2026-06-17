@@ -51,6 +51,8 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
   return out;
 }
 
+const ZERO_LABOR = { employed: 0, unemployed: 0, reachableUnfilledJobs: 0 };
+
 describe('Demand', () => {
   it('DENSITY_DEMAND_THRESHOLD is exported', () => {
     expect(DENSITY_DEMAND_THRESHOLD).toBe(0.6);
@@ -58,7 +60,7 @@ describe('Demand', () => {
 
   it('empty BuildingMap returns baseline 0.25 for all three', () => {
     const demand = new Demand();
-    demand.recompute(makeBuildingMap());
+    demand.recompute(makeBuildingMap(), ZERO_LABOR);
     const v = demand.get();
     expect(v.residential).toBe(0.25);
     expect(v.commercial).toBe(0.25);
@@ -79,7 +81,7 @@ describe('Demand', () => {
       addBuilding(map, i, i, 0, 'residential', 1);
     }
     const demand = new Demand();
-    demand.recompute(map);
+    demand.recompute(map, ZERO_LABOR);
     const v = demand.get();
     // No jobs → residential demand should not exceed baseline
     expect(v.residential).toBeLessThanOrEqual(0.25);
@@ -95,7 +97,7 @@ describe('Demand', () => {
       addBuilding(map, i, i, 0, 'industrial', 1);
     }
     const demand = new Demand();
-    demand.recompute(map);
+    demand.recompute(map, ZERO_LABOR);
     const v = demand.get();
     // No residents → industrial demand should be at or below baseline
     expect(v.industrial).toBeLessThanOrEqual(0.25);
@@ -112,7 +114,7 @@ describe('Demand', () => {
       addBuilding(map, i, i, 0, 'industrial', 1);
     }
     const demand = new Demand();
-    demand.recompute(map);
+    demand.recompute(map, ZERO_LABOR);
     const v = demand.get();
     expect(v.residential).toBeCloseTo(0.25, 1);
     expect(v.industrial).toBeCloseTo(0.25, 1);
@@ -127,7 +129,7 @@ describe('Demand', () => {
       addBuilding(map, i, i % 20, Math.floor(i / 20), 'residential', 5);
     }
     const demand = new Demand();
-    demand.recompute(map);
+    demand.recompute(map, ZERO_LABOR);
     const v = demand.get();
     expect(v.residential).toBeGreaterThanOrEqual(0);
     expect(v.residential).toBeLessThanOrEqual(1);
@@ -169,7 +171,7 @@ describe('Demand', () => {
     });
 
     const demand = new Demand();
-    demand.recompute(map);
+    demand.recompute(map, ZERO_LABOR);
     const v = demand.get();
     // level-0 R buildings contribute 0 → effectively industrial-only city → residential high
     expect(v.residential).toBeGreaterThan(0.5);
@@ -197,9 +199,9 @@ describe('Demand', () => {
     addBuilding(withoutBuilding, 0, 0, 0, 'industrial', 4);
 
     const d1 = new Demand();
-    d1.recompute(withAbandoned);
+    d1.recompute(withAbandoned, ZERO_LABOR);
     const d2 = new Demand();
-    d2.recompute(withoutBuilding);
+    d2.recompute(withoutBuilding, ZERO_LABOR);
 
     expect(d1.get().residential).toBe(d2.get().residential);
     expect(d1.get().commercial).toBe(d2.get().commercial);
@@ -217,11 +219,11 @@ describe('Demand', () => {
     addBuilding(map, 2, 2, 0, 'industrial', 3);
 
     const d1 = new Demand();
-    d1.recompute(map);
+    d1.recompute(map, ZERO_LABOR);
     const r1 = d1.getRaw();
 
     const d2 = new Demand();
-    d2.recompute(map);
+    d2.recompute(map, ZERO_LABOR);
     const r2 = d2.getRaw();
 
     expect(r1.residential).toBe(r2.residential);
@@ -231,7 +233,7 @@ describe('Demand', () => {
 
   it('immutability: mutating get() result throws in strict mode', () => {
     const demand = new Demand();
-    demand.recompute(makeBuildingMap());
+    demand.recompute(makeBuildingMap(), ZERO_LABOR);
     const v = demand.get();
     expect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -241,7 +243,7 @@ describe('Demand', () => {
 
   it('get() and getRaw() return the same reference', () => {
     const demand = new Demand();
-    demand.recompute(makeBuildingMap());
+    demand.recompute(makeBuildingMap(), ZERO_LABOR);
     expect(demand.get()).toBe(demand.getRaw());
   });
 
@@ -264,7 +266,7 @@ describe('Demand', () => {
       addBuilding(refMap, s.id, s.x, s.y, s.type, s.level);
     }
     const ref = new Demand();
-    ref.recompute(refMap);
+    ref.recompute(refMap, ZERO_LABOR);
     const refV = ref.getRaw();
 
     for (let run = 0; run < 50; run++) {
@@ -274,7 +276,7 @@ describe('Demand', () => {
         addBuilding(map, s.id, s.x, s.y, s.type, s.level);
       }
       const demand = new Demand();
-      demand.recompute(map);
+      demand.recompute(map, ZERO_LABOR);
       const v = demand.getRaw();
       expect(v.residential).toBe(refV.residential);
       expect(v.commercial).toBe(refV.commercial);

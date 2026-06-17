@@ -604,14 +604,16 @@ export class World {
 
   /**
    * Mark the labor market as needing recomputation on the next recomputeLaborIfDirty()
-   * or getLaborMarket() call. NO land-value/happiness cascade — labor is DATA-ONLY and
-   * feeds nothing yet (mirrors markTrafficDirty).
+   * or getLaborMarket() call. Cascades to traffic (traffic consumes labor flows) and
+   * demand (demand blends labor-market feedback scalars).
    */
   markLaborDirty(): void {
     this.laborDirty = true;
     // Traffic consumes labor flows (recomputeTraffic calls getLaborMarket().getFlows()),
     // so stale labor means stale traffic — cascade the invalidation down-dependency.
     this.trafficDirty = true;
+    // Demand blends labor-market feedback — stale labor means stale demand.
+    this.markDemandDirty();
   }
 
   /** Recompute the labor market only if dirty; clears the flag. */
@@ -657,7 +659,15 @@ export class World {
       this.demand = new Demand();
     }
     if (this.demandDirty) {
-      this.demand.recompute(this.map.getBuildings());
+      // Force-refresh labor before reading scalars — mirrors recomputeTraffic's force-refresh
+      // pattern; no cycle since recomputeLabor never calls getDemand.
+      this.recomputeLabor();
+      const labor = this.getLaborMarket();
+      this.demand.recompute(this.map.getBuildings(), {
+        employed: labor.getEmployed(),
+        unemployed: labor.getUnemployed(),
+        reachableUnfilledJobs: labor.getReachableUnfilledJobs(),
+      });
       this.demandDirty = false;
     }
     return this.demand.get();

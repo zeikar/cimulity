@@ -11,6 +11,12 @@ function clamp01(x: number): number {
 
 const BASELINE: DemandVector = Object.freeze({ residential: 0.25, commercial: 0.25, industrial: 0.25 });
 
+// Bounded additive employment-feedback nudge: pushes zone demand toward labor market balance.
+const LABOR_FEEDBACK_WEIGHT = 0.15;
+
+// Plain scalars extracted from LaborMarketMap — no import of World or labor modules here.
+type LaborScalars = Readonly<{ employed: number; unemployed: number; reachableUnfilledJobs: number }>;
+
 export class Demand {
   private cached: DemandVector;
 
@@ -18,7 +24,7 @@ export class Demand {
     this.cached = BASELINE;
   }
 
-  recompute(buildings: BuildingMap): void {
+  recompute(buildings: BuildingMap, labor: LaborScalars): void {
     let levelSumR = 0;
     let levelSumC = 0;
     let levelSumI = 0;
@@ -32,9 +38,22 @@ export class Demand {
 
     const jobsLevels = levelSumC + levelSumI;
 
-    const residential = clamp01((jobsLevels - levelSumR) / Math.max(jobsLevels, 1) + 0.25);
-    const industrial = clamp01((levelSumR - jobsLevels) / Math.max(levelSumR, 1) + 0.25);
-    const commercial = clamp01((levelSumR - 2 * levelSumC) / Math.max(levelSumR, 1) + 0.25);
+    // Pre-clamp structural expressions (baseline folded in).
+    const structuralR = (jobsLevels - levelSumR) / Math.max(jobsLevels, 1) + 0.25;
+    const structuralI = (levelSumR - jobsLevels) / Math.max(levelSumR, 1) + 0.25;
+    const structuralC = (levelSumR - 2 * levelSumC) / Math.max(levelSumR, 1) + 0.25;
+
+    // Labor feedback signals — both zero-guarded so empty cities produce signals of 0.
+    const reachableSlots = labor.employed + labor.reachableUnfilledJobs;
+    const reachableVacancyRate = reachableSlots > 0 ? labor.reachableUnfilledJobs / reachableSlots : 0;
+    const workers = labor.employed + labor.unemployed;
+    const unemploymentRate = workers > 0 ? labor.unemployed / workers : 0;
+    const residentialSignal = reachableVacancyRate - unemploymentRate; // ∈ [-1,+1]
+    const jobsSignal = -residentialSignal;
+
+    const residential = clamp01(structuralR + LABOR_FEEDBACK_WEIGHT * residentialSignal);
+    const industrial = clamp01(structuralI + LABOR_FEEDBACK_WEIGHT * jobsSignal);
+    const commercial = clamp01(structuralC + LABOR_FEEDBACK_WEIGHT * jobsSignal);
 
     this.cached = Object.freeze({ residential, commercial, industrial });
   }
