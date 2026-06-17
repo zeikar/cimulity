@@ -320,8 +320,8 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
     world.markLandValueDirty();
   }
   if (removedBuildingIds.length > 0) {
-    world.markDemandDirty();
     // A removed building changed the OD set; fold into the single trafficInvalidated path below.
+    // markLaborDirty() in that block cascades to markDemandDirty() — no explicit call needed here.
     trafficInvalidated = true;
   }
   // Post-apply recompute: if any command dirtied power, mark + drain immediately so the

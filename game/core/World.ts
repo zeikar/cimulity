@@ -1139,8 +1139,7 @@ export class World {
       }
 
       if (changedBuildingIds.length > 0) {
-        this.markDemandDirty();
-        this.markTrafficDirty();
+        // markLaborDirty cascades to trafficDirty and markDemandDirty — single call is sufficient.
         this.markLaborDirty();
       }
     }

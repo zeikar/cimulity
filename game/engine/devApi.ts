@@ -198,7 +198,6 @@ export function installDevApi(world: World, pixiApp: PixiApp, hooks: DevApiHooks
         }
 
         pixiApp.getTileRenderer()?.markDirty();
-        world.markDemandDirty();
         world.markPowerDirty();
         world.recomputePowerIfDirty();
         world.markWaterDirty();

@@ -272,18 +272,19 @@ describe("World.tick() — merge (Branch B'')", () => {
     expect(steady.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('demand-dirty on merge tick: markDemandDirty is called at least twice (pre-pass + post-merge)', () => {
+  it('demand-dirty on merge tick: markDemandDirty is called exactly twice (pre-pass + post-merge)', () => {
     const { world } = setupMergeStrip(2);
 
     const spy = vi.spyOn(world, 'markDemandDirty');
 
     oneGrowthTick(world);
 
-    // At minimum: once at growth-pass start (pre demandVec), once post-merge
-    // (because changedBuildingIds.length > 0 after the merge). markLaborDirty()
-    // now cascades to markDemandDirty(), so the post-merge markLaborDirty fires
-    // it a third time — assert the lower bound, matching this test's intent.
-    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Exactly two calls per merge tick:
+    // 1. growth-pass start (pre demandVec computation)
+    // 2. post-merge markLaborDirty() cascade → markDemandDirty()
+    // (The redundant explicit markDemandDirty/markTrafficDirty before markLaborDirty
+    // were collapsed to a single markLaborDirty call, so the count is exactly 2.)
+    expect(spy).toHaveBeenCalledTimes(2);
 
     spy.mockRestore();
   });

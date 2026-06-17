@@ -493,9 +493,9 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   world.setMoney(data.m);
   world.setElapsedDays(data.d);
 
-  // Land value, demand, and service coverage are not persisted — mark dirty so the first tick after load recomputes.
+  // Land value and service coverage are not persisted — mark dirty so the first tick after load recomputes.
+  // Demand is dirtied via the markLaborDirty() cascade below.
   world.markLandValueDirty();
-  world.markDemandDirty();
   world.markPowerDirty();
   // Drain power dirty here so the first render frame after load never sees a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.
   world.recomputePowerIfDirty();

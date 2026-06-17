@@ -142,6 +142,10 @@ export function computeLaborMarket(
   const queue: number[] = [];
 
   for (const origin of origins) {
+    // Level-0 residential buildings have 0 workers. Skip them so they do not
+    // run the BFS and inflate reachableUnfilledJobs — consistent with Demand
+    // treating level-0 as contributing nothing to population/employment.
+    if (origin.workers <= 0) continue;
     let workersLeft = origin.workers;
 
     // Fresh BFS from the origin access node. The access node IS a road cell

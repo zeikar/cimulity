@@ -330,6 +330,29 @@ describe('computeLaborMarket — reachableUnfilledJobs', () => {
   });
 });
 
+describe('computeLaborMarket — level-0 residential (0 workers)', () => {
+  it('a level-0 residential must not inflate reachableUnfilledJobs', () => {
+    // Level-0 residential has 0 workers. Even though it has a road access node,
+    // it must not run the BFS and must not mark the adjacent commercial capacity
+    // as "reachable". Without the guard this phantom BFS would set
+    // reachableUnfilledJobs > 0 despite there being no workers.
+    const w = 10;
+    const map = makeMap(w, 8, roadRow(1, 1, 5));
+    const sm = new StructureMap(w, 8);
+    const bm = new BuildingMap(w, 8);
+    addBuilding(bm, 1, 0, 'residential', 'S', { level: 0 }); // 0 workers
+    addBuilding(bm, 5, 0, 'commercial', 'S', { level: 2 });  // reachable if BFS runs
+
+    const r = computeLaborMarket(map, sm, bm);
+
+    expect(r.employed).toBe(0);
+    expect(r.unemployed).toBe(0);
+    expect(r.reachableUnfilledJobs).toBe(0); // must NOT be inflated by a 0-worker BFS
+    expect(r.flows).toEqual([]);
+    expect(r.jobsCapacity).toBe(2); // C capacity still counts in total
+  });
+});
+
 describe('computeLaborMarket — conservation across fixtures', () => {
   it('employed + unemployed equals total residential workers in every fixture', () => {
     const w = 14;
