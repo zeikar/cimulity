@@ -280,8 +280,10 @@ describe("World.tick() — merge (Branch B'')", () => {
     oneGrowthTick(world);
 
     // At minimum: once at growth-pass start (pre demandVec), once post-merge
-    // (because changedBuildingIds.length > 0 after the merge).
-    expect(spy).toHaveBeenCalledTimes(2);
+    // (because changedBuildingIds.length > 0 after the merge). markLaborDirty()
+    // now cascades to markDemandDirty(), so the post-merge markLaborDirty fires
+    // it a third time — assert the lower bound, matching this test's intent.
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2);
 
     spy.mockRestore();
   });
