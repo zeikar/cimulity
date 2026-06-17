@@ -202,3 +202,112 @@ describe('World labor market wiring', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// World-level demand-feedback integration tests
+// ---------------------------------------------------------------------------
+// Shared fixture geometry (reuses makeWorldWithRoadRow above):
+//   road row at y=2; residential at (0,1) frontage S → access node (0,2);
+//   commercial at (5,1) frontage S → access node (5,2).
+//   Severing tile (3,2) breaks reachability while leaving building LEVELS intact.
+// ---------------------------------------------------------------------------
+
+describe('World demand-feedback integration', () => {
+  /** Build the shared connected fixture: R level 1 at x=0, C level 2 at x=5. */
+  function makeConnectedFixture(): World {
+    return makeWorldWithRoadRow([
+      { id: 1, type: 'residential', x: 0, level: 1 },
+      { id: 2, type: 'commercial',  x: 5, level: 2 },
+    ]);
+  }
+
+  it('markLaborDirty() cascades to demand', () => {
+    const world = makeConnectedFixture();
+
+    // Warm demand in the connected state (R=1, C level 2 ⇒ structural feedback present).
+    world.markLaborDirty();
+    const connectedResidential = world.getDemand().residential;
+
+    // Sever the road row — building LEVELS unchanged, only reachability changes.
+    const map = world.getMap();
+    map.setTile(3, 2, createTile(3, 2, TileType.GRASS));
+
+    // Call ONLY markLaborDirty (NOT markDemandDirty directly).
+    // The cascade inside markLaborDirty must also set demandDirty so the next
+    // getDemand() recomputes with the severed labor state.
+    world.markLaborDirty();
+
+    const severedResidential = world.getDemand().residential;
+
+    // Disconnected ⇒ unemploymentRate=1, reachableVacancyRate=0 ⇒ residentialSignal=-1
+    // ⇒ residential demand is lower than the connected value.
+    expect(severedResidential).toBeLessThan(connectedResidential);
+  });
+
+  it('getDemand() force-refreshes labor with R/C/I levels held fixed', () => {
+    const world = makeConnectedFixture();
+
+    // Warm demand in the connected state.
+    world.markLaborDirty();
+    const connectedResidential = world.getDemand().residential;
+
+    // Sever the road row — building LEVELS unchanged.
+    const map = world.getMap();
+    map.setTile(3, 2, createTile(3, 2, TileType.GRASS));
+
+    // Call ONLY markDemandDirty (NOT markLaborDirty).
+    // getDemand() must force-refresh labor internally to pick up the severed state.
+    world.markDemandDirty();
+
+    const severedResidential = world.getDemand().residential;
+
+    // The only changed input is labor reachability; the drop proves the force-refresh fired.
+    expect(severedResidential).toBeLessThan(connectedResidential);
+  });
+
+  it('empty-city bootstrap through World', () => {
+    const world = new World(8, 6, { regenerate: false });
+    // No buildings ⇒ all structural terms are 0.25 and labor signals are 0.
+    const demand = world.getDemand();
+    expect(demand.residential).toBeCloseTo(0.25);
+    expect(demand.commercial).toBeCloseTo(0.25);
+    expect(demand.industrial).toBeCloseTo(0.25);
+  });
+
+  it('road-less residents-only city keeps C/I demand at max', () => {
+    // No road row → no labor reachability → employed=0, reachableUnfilledJobs=0.
+    // With only residential buildings, jobsLevels=0 → structuralC and structuralI
+    // both saturate to ≥1 before clamping, and the positive jobsSignal pushes them
+    // further above 1 → clamped to 1.0.
+    const world = new World(8, 6, { regenerate: false });
+    const map = world.getMap();
+    // Add two residential buildings directly (no road, so no road access — building
+    // levels are non-zero so structural demand for jobs is real).
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 2, y: 2 }], anchor: { x: 2, y: 2 },
+      level: 2, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 1, h: 1 },
+    });
+
+    world.markLaborDirty();
+
+    expect(world.getDemand().commercial).toBe(1);
+    expect(world.getDemand().industrial).toBe(1);
+  });
+
+  it('reset zeroes the labor feedback', () => {
+    const world = makeConnectedFixture();
+    world.markLaborDirty();
+    // Confirm demand is non-baseline in the connected state.
+    const before = world.getDemand().residential;
+    expect(before).toBeGreaterThan(0.25);
+
+    world.reset({ regenerate: false });
+
+    const demand = world.getDemand();
+    expect(demand.residential).toBeCloseTo(0.25);
+    expect(demand.commercial).toBeCloseTo(0.25);
+    expect(demand.industrial).toBeCloseTo(0.25);
+  });
+});
