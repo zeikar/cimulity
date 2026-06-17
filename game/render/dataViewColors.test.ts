@@ -211,13 +211,14 @@ describe('buildingEmploymentShares', () => {
     expect(entry!.share).toBe(0);
   });
 
-  it('road-less building: share 0, hasData false', () => {
+  it('road-less building with workers: share 0, hasData true (fully unemployed, not "no data")', () => {
     const { map, bm, noRoad } = makeFixture();
     const flows: CommuteFlow[] = [];
     const result = buildingEmploymentShares(map, bm, flows);
     const entry = result.get(noRoad!.id);
     expect(entry).toBeDefined();
-    expect(entry!.hasData).toBe(false);
+    // Road-less but has workers → real failure data (red), not grey "no data".
+    expect(entry!.hasData).toBe(true);
     expect(entry!.share).toBe(0);
   });
 

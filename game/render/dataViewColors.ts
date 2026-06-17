@@ -22,7 +22,11 @@ import {
 export const RAMP_GREEN = 0x2ecc40;
 export const RAMP_YELLOW = 0xffdc00;
 export const RAMP_RED = 0xff4136;
-/** Color returned when a tile has no applicable data (e.g. no road access). */
+/**
+ * Color returned for buildings NOT participating in the labor market —
+ * i.e. abandoned, or zero workers/capacity (level 0). Road-less occupied
+ * buildings are NOT "no data"; they show red (share 0, hasData true).
+ */
 export const NO_DATA_COLOR = 0x777777;
 
 // ---------------------------------------------------------------------------
@@ -93,8 +97,11 @@ export interface BuildingEmploymentEntry {
   /** Employment share in [0, 1]: matched / total capacity. */
   share: number;
   /**
-   * True when the building has a road-access node AND a non-zero
-   * capacity/worker count, meaning the share is meaningful data.
+   * True for any OCCUPIED building — non-abandoned with non-zero
+   * workers/capacity — regardless of road access. A road-less occupied
+   * building is valid failure data (share 0 = fully unemployed/unfillable),
+   * not "no data". False only for abandoned or zero-worker/zero-capacity
+   * buildings.
    */
   hasData: boolean;
 }
@@ -107,8 +114,10 @@ export interface BuildingEmploymentEntry {
  * Commercial/industrial buildings show fill rate (matched dest workers /
  * total capacity).
  *
- * Abandoned buildings and road-less buildings always get `{ share: 0,
- * hasData: false }`.
+ * Abandoned buildings and zero-worker/zero-capacity buildings get
+ * `{ share: 0, hasData: false }` (rendered grey). Road-less OCCUPIED
+ * buildings get `{ share: 0, hasData: true }` (rendered red) — their
+ * workers are fully unemployed / capacity is unfillable per the labor model.
  *
  * Mirror iteration / abandon-skip from laborMarket.ts:103-123.
  */
@@ -165,25 +174,45 @@ export function buildingEmploymentShares(
     const node = accessNodeFor(map, b);
 
     if (b.type === 'residential') {
-      const totalWorkers = (node >= 0 ? totalWorkersByNode.get(node) : undefined) ?? 0;
-      const hasData = node >= 0 && totalWorkers > 0;
-      if (!hasData) {
+      // Use the building's own worker count (road-agnostic) to decide hasData.
+      // Road-less buildings with workers show red (share 0, hasData true) —
+      // their workers are fully unemployed per the labor model, not "no data".
+      const ownWorkers = b.level * WORKERS_PER_LEVEL;
+      if (ownWorkers === 0) {
         result.set(b.id, { share: 0, hasData: false });
+        continue;
+      }
+      if (node < 0) {
+        // Road-less: all workers unemployed → red, real failure data.
+        result.set(b.id, { share: 0, hasData: true });
       } else {
-        const matched = matchedOriginByNode.get(node) ?? 0;
-        result.set(b.id, { share: matched / totalWorkers, hasData: true });
+        const totalWorkers = totalWorkersByNode.get(node) ?? 0;
+        const matched = totalWorkers > 0 ? (matchedOriginByNode.get(node) ?? 0) : 0;
+        result.set(b.id, {
+          share: totalWorkers > 0 ? matched / totalWorkers : 0,
+          hasData: true,
+        });
       }
       continue;
     }
 
     if (b.type === 'commercial' || b.type === 'industrial') {
-      const totalCap = (node >= 0 ? totalCapByNode.get(node) : undefined) ?? 0;
-      const hasData = node >= 0 && totalCap > 0;
-      if (!hasData) {
+      // Same principle: road-less C/I with capacity shows red (unfillable jobs).
+      const ownCap = b.level * JOBS_PER_LEVEL;
+      if (ownCap === 0) {
         result.set(b.id, { share: 0, hasData: false });
+        continue;
+      }
+      if (node < 0) {
+        // Road-less: capacity unfillable → red, real failure data.
+        result.set(b.id, { share: 0, hasData: true });
       } else {
-        const matched = matchedDestByNode.get(node) ?? 0;
-        result.set(b.id, { share: matched / totalCap, hasData: true });
+        const totalCap = totalCapByNode.get(node) ?? 0;
+        const matched = totalCap > 0 ? (matchedDestByNode.get(node) ?? 0) : 0;
+        result.set(b.id, {
+          share: totalCap > 0 ? matched / totalCap : 0,
+          hasData: true,
+        });
       }
     }
   }

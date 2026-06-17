@@ -39,6 +39,11 @@ export class DataViewOverlay {
   // when the cache no longer holds the key (prevents blank-overlay bug).
   private colorByKey: Map<number, number> = new Map();
   private lastTerrainRev: number = -1;
+  // Jobs-view flow cache: avoid recomputing buildingEmploymentShares every frame.
+  // getFlows() returns a new array reference only when the labor market recomputes,
+  // so reference equality is a reliable dirty signal.
+  private lastFlows: ReadonlyArray<import('@/game/core/laborMarket').CommuteFlow> | null = null;
+  private cachedShares: Map<number, import('../dataViewColors').BuildingEmploymentEntry> | null = null;
 
   constructor(container: Container) {
     this.container = container;
@@ -57,6 +62,9 @@ export class DataViewOverlay {
     this.diamonds.clear();
     this.colorByKey.clear();
     this.lastTerrainRev = -1;
+    // Invalidate the Jobs-view share cache so the next render recomputes fresh.
+    this.lastFlows = null;
+    this.cachedShares = null;
   }
 
   setActiveView(view: DataView): void {
@@ -108,9 +116,16 @@ export class DataViewOverlay {
       }
     } else {
       // Jobs view: tint each building footprint cell by employment share.
+      // getFlows() returns a stable array reference until the labor market
+      // recomputes (new array on any dirty-trigger). Reference equality is
+      // sufficient to skip rebuilding all 4 Maps at frame rate.
       const flows = world.getLaborMarket().getFlows();
       const buildings = map.getBuildings();
-      const shares = buildingEmploymentShares(map, buildings, flows);
+      if (flows !== this.lastFlows || this.cachedShares === null) {
+        this.cachedShares = buildingEmploymentShares(map, buildings, flows);
+        this.lastFlows = flows;
+      }
+      const shares = this.cachedShares;
       const buildBounds = visibleBounds
         ? visibleBounds.buildings
         : { minX: 0, maxX: width, minY: 0, maxY: height };
