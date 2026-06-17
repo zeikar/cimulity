@@ -247,6 +247,125 @@ describe('Demand', () => {
     expect(demand.get()).toBe(demand.getRaw());
   });
 
+  // --- Labor-feedback blend tests (pure formula; bags need not be physically achievable) ---
+
+  it('unemployment↑ → residential demand↓', () => {
+    // 2R + 2C, level 1: structuralR = (2-2)/2 + 0.25 = 0.25
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+    addBuilding(map, 1, 1, 0, 'residential', 1);
+    addBuilding(map, 2, 2, 0, 'commercial', 1);
+    addBuilding(map, 3, 3, 0, 'commercial', 1);
+
+    const dZero = new Demand();
+    dZero.recompute(map, ZERO_LABOR);
+    const zeroResidential = dZero.get().residential; // 0.25 (signals=0)
+
+    // unemploymentRate=1, reachableVacancyRate=0, residentialSignal=-1 → residential = clamp01(0.25 - 0.15) = 0.10
+    const bag = { employed: 0, unemployed: 2, reachableUnfilledJobs: 0 };
+    const d = new Demand();
+    d.recompute(map, bag);
+    const v = d.get();
+
+    expect(v.residential).toBeCloseTo(0.10);
+    expect(v.residential).toBeLessThan(zeroResidential);
+  });
+
+  it('reachable unfilled jobs↑ → residential demand↑', () => {
+    // 2R + 2C, level 1: structuralR = 0.25
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+    addBuilding(map, 1, 1, 0, 'residential', 1);
+    addBuilding(map, 2, 2, 0, 'commercial', 1);
+    addBuilding(map, 3, 3, 0, 'commercial', 1);
+
+    const dZero = new Demand();
+    dZero.recompute(map, ZERO_LABOR);
+    const zeroResidential = dZero.get().residential; // 0.25
+
+    // reachableSlots=3, reachableVacancyRate=1/3, unemploymentRate=0, residentialSignal=+1/3
+    // residential = clamp01(0.25 + 0.15/3) = 0.30
+    const bag = { employed: 2, unemployed: 0, reachableUnfilledJobs: 1 };
+    const d = new Demand();
+    d.recompute(map, bag);
+    const v = d.get();
+
+    expect(v.residential).toBeCloseTo(0.30);
+    expect(v.residential).toBeGreaterThan(zeroResidential);
+  });
+
+  it('empty city identical with/without labor', () => {
+    // structuralR = structuralC = structuralI = 0.25; ZERO_LABOR signals = 0
+    const d = new Demand();
+    d.recompute(makeBuildingMap(), ZERO_LABOR);
+    const v = d.get();
+    expect(v.residential).toBe(0.25);
+    expect(v.commercial).toBe(0.25);
+    expect(v.industrial).toBe(0.25);
+  });
+
+  it('residents-only city: C/I attractor preserved', () => {
+    // Documents intended existing behavior, not a regression.
+    // 1R: structuralR=-0.75→0, structuralC=structuralI=1.25→1
+    // Bag: unemploymentRate=1, residentialSignal=-1, jobsSignal=+1
+    // residential=clamp01(0-0.15)=0, commercial=industrial=clamp01(1+0.15)=1
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+
+    const bag = { employed: 0, unemployed: 1, reachableUnfilledJobs: 0 };
+    const d = new Demand();
+    d.recompute(map, bag);
+    const v = d.get();
+
+    expect(v.residential).toBe(0);
+    expect(v.commercial).toBe(1);
+    expect(v.industrial).toBe(1);
+  });
+
+  it('C/I nudged up by idle labor', () => {
+    // 2R + 1C + 1I, level 1: structuralC = structuralI = 0.25
+    // Bag: unemploymentRate=1, jobsSignal=+1 → commercial = industrial = clamp01(0.25+0.15) = 0.40
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+    addBuilding(map, 1, 1, 0, 'residential', 1);
+    addBuilding(map, 2, 2, 0, 'commercial', 1);
+    addBuilding(map, 3, 3, 0, 'industrial', 1);
+
+    const dZero = new Demand();
+    dZero.recompute(map, ZERO_LABOR);
+    const zeroC = dZero.get().commercial; // 0.25
+    const zeroI = dZero.get().industrial; // 0.25
+
+    const bag = { employed: 0, unemployed: 2, reachableUnfilledJobs: 0 };
+    const d = new Demand();
+    d.recompute(map, bag);
+    const v = d.get();
+
+    expect(v.commercial).toBeCloseTo(0.40);
+    expect(v.industrial).toBeCloseTo(0.40);
+    expect(v.commercial).toBeGreaterThan(zeroC);
+    expect(v.industrial).toBeGreaterThan(zeroI);
+  });
+
+  it('outputs stay in [0,1] with an extreme labor bag', () => {
+    // 1R + 1C, employed=1, unemployed=2 — exercises negative structuralC clamping
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+    addBuilding(map, 1, 1, 0, 'commercial', 1);
+
+    const bag = { employed: 1, unemployed: 2, reachableUnfilledJobs: 0 };
+    const d = new Demand();
+    d.recompute(map, bag);
+    const v = d.get();
+
+    expect(v.residential).toBeGreaterThanOrEqual(0);
+    expect(v.residential).toBeLessThanOrEqual(1);
+    expect(v.commercial).toBeGreaterThanOrEqual(0);
+    expect(v.commercial).toBeLessThanOrEqual(1);
+    expect(v.industrial).toBeGreaterThanOrEqual(0);
+    expect(v.industrial).toBeLessThanOrEqual(1);
+  });
+
   it('determinism across shuffled building-add orderings', () => {
     const rng = makePRNG(0xc0ffee);
 
