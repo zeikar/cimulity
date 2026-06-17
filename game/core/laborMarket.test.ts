@@ -294,6 +294,42 @@ describe('computeLaborMarket — deterministic origin order', () => {
   });
 });
 
+describe('computeLaborMarket — reachableUnfilledJobs', () => {
+  it('counts leftover capacity at reached job nodes when connected', () => {
+    // R at (1,0) level-1 → 1 worker; C at (5,0) level-2 → 2 job slots.
+    // After matching: 1 worker fills 1 slot, 1 slot remains reachable+unfilled.
+    const w = 10;
+    const map = makeMap(w, 8, roadRow(1, 1, 5));
+    const sm = new StructureMap(w, 8);
+    const bm = new BuildingMap(w, 8);
+    addBuilding(bm, 1, 0, 'residential', 'S', { level: 1 });
+    addBuilding(bm, 5, 0, 'commercial', 'S', { level: 2 });
+
+    const r = computeLaborMarket(map, sm, bm);
+
+    expect(r.employed).toBe(1);
+    expect(r.reachableUnfilledJobs).toBe(1);
+  });
+
+  it('is zero when the job node is unreachable (disconnected road segments)', () => {
+    // R access isolated from C access — BFS never visits the C node.
+    const w = 12;
+    const map = makeMap(w, 8, [
+      { x: 1, y: 1 }, // R access only
+      { x: 9, y: 1 }, // C access only — separate segment
+    ]);
+    const sm = new StructureMap(w, 8);
+    const bm = new BuildingMap(w, 8);
+    addBuilding(bm, 1, 0, 'residential', 'S', { level: 1 });
+    addBuilding(bm, 9, 0, 'commercial', 'S', { level: 2 });
+
+    const r = computeLaborMarket(map, sm, bm);
+
+    expect(r.employed).toBe(0);
+    expect(r.reachableUnfilledJobs).toBe(0);
+  });
+});
+
 describe('computeLaborMarket — conservation across fixtures', () => {
   it('employed + unemployed equals total residential workers in every fixture', () => {
     const w = 14;

@@ -15,9 +15,9 @@
  * (origin access node → destination access node, worker count) plus the city
  * employment / job-capacity scalars.
  *
- * DATA-ONLY: reads the maps and mutates NOTHING. Not wired into render or
- * simulation feedback here, and not persisted. It must NOT import `World` or
- * `zoneGrowth` (both are World-coupled).
+ * DATA-ONLY: reads the maps and mutates NOTHING. Feeds the demand/growth
+ * simulation (via Demand) but has NO render and is not persisted. It must NOT
+ * import `World` or `zoneGrowth` (both are World-coupled).
  */
 
 import type { GameMap } from './Map';
@@ -65,6 +65,11 @@ export interface LaborResult {
   jobsCapacity: number;
   /** Jobs actually filled (== `employed`; jobs are never over-filled). */
   jobsFilled: number;
+  /**
+   * Leftover capacity at job nodes reachable by at least one origin BFS
+   * (fillable vacancies; excludes road-less / unreachable jobs).
+   */
+  reachableUnfilledJobs: number;
 }
 
 interface Origin {
@@ -128,6 +133,10 @@ export function computeLaborMarket(
   const flows: CommuteFlow[] = [];
   let employed = 0;
 
+  // Job nodes reached by at least one origin's BFS (recorded BEFORE capacity
+  // draining so fully-drained-but-reached nodes are still counted).
+  const reachedJobNodes = new Set<number>();
+
   // Per-origin forward BFS over road nodes; visited via -1 dist sentinel.
   const dist = new Int32Array(w * h);
   const queue: number[] = [];
@@ -150,7 +159,12 @@ export function computeLaborMarket(
       const idx = queue[qHead++];
       const d = dist[idx];
 
-      if ((capByNode.get(idx) ?? 0) > 0) reachable.push({ node: idx, dist: d });
+      if ((capByNode.get(idx) ?? 0) > 0) {
+        reachable.push({ node: idx, dist: d });
+        // Record reachability BEFORE draining so the node stays "reached"
+        // even after its capacity is later consumed.
+        reachedJobNodes.add(idx);
+      }
 
       const cx = idx % w;
       const cy = (idx - cx) / w;
@@ -184,11 +198,15 @@ export function computeLaborMarket(
     unemployed += workersLeft; // any workers with no reachable job
   }
 
+  let reachableUnfilledJobs = 0;
+  for (const node of reachedJobNodes) reachableUnfilledJobs += capByNode.get(node) ?? 0;
+
   return {
     flows,
     employed,
     unemployed,
     jobsCapacity,
     jobsFilled: employed, // jobs are never over-filled
+    reachableUnfilledJobs,
   };
 }

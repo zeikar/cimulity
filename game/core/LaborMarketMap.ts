@@ -1,7 +1,7 @@
 /**
  * Derived aggregate labor-market result holder. Recomputed via
  * `computeLaborMarket`; NOT persisted (transient, like the coverage maps).
- * DATA-ONLY — no render, no sim feedback.
+ * Feeds the demand/growth simulation (via Demand) but has NO render.
  *
  * Caches a single `LaborResult` (the matched commute flows + employment /
  * job-capacity scalars). Mirrors the coverage-map holder pattern, except the
@@ -21,6 +21,7 @@ const EMPTY_RESULT: LaborResult = {
   unemployed: 0,
   jobsCapacity: 0,
   jobsFilled: 0,
+  reachableUnfilledJobs: 0,
 };
 
 export class LaborMarketMap {
@@ -49,6 +50,11 @@ export class LaborMarketMap {
   /** Jobs actually filled (== employed). */
   getJobsFilled(): number {
     return this.result.jobsFilled;
+  }
+
+  /** Leftover capacity at job nodes reachable by at least one origin BFS (fillable vacancies). */
+  getReachableUnfilledJobs(): number {
+    return this.result.reachableUnfilledJobs;
   }
 
   /** Matched aggregate commute O-D flows (origin → destination, worker count). */

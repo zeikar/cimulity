@@ -64,6 +64,7 @@ describe('LaborMarketMap', () => {
       expect(lm.getUnemployed()).toBe(0);
       expect(lm.getJobsCapacity()).toBe(0);
       expect(lm.getJobsFilled()).toBe(0);
+      expect(lm.getReachableUnfilledJobs()).toBe(0);
       expect(lm.getFlows()).toEqual([]);
     });
   });
@@ -86,6 +87,7 @@ describe('LaborMarketMap', () => {
       expect(lm.getUnemployed()).toBe(0);
       expect(lm.getJobsCapacity()).toBe(1);
       expect(lm.getJobsFilled()).toBe(1);
+      expect(lm.getReachableUnfilledJobs()).toBe(0);
 
       const flows = lm.getFlows();
       expect(flows).toHaveLength(1);
@@ -115,6 +117,22 @@ describe('LaborMarketMap', () => {
       expect(lm.getJobsFilled()).toBe(1);
       expect(lm.getFlows()).toHaveLength(1);
     });
+
+    it('reports reachableUnfilledJobs === 1 for a connected 1R + level-2 C scenario', () => {
+      // 1 worker reaches a level-2 C (2 slots), fills 1 → 1 slot remains reachable+unfilled.
+      const w = 10;
+      const map = makeMap(w, 8, roadRow(1, 1, 5));
+      const sm = new StructureMap(w, 8);
+      const bm = new BuildingMap(w, 8);
+      addBuilding(bm, 1, 0, 'residential', 'S', { level: 1 });
+      addBuilding(bm, 5, 0, 'commercial', 'S', { level: 2 });
+
+      const lm = new LaborMarketMap();
+      lm.recompute(map, sm, bm);
+
+      expect(lm.getEmployed()).toBe(1);
+      expect(lm.getReachableUnfilledJobs()).toBe(1);
+    });
   });
 
   describe('clear()', () => {
@@ -136,6 +154,7 @@ describe('LaborMarketMap', () => {
       expect(lm.getUnemployed()).toBe(0);
       expect(lm.getJobsCapacity()).toBe(0);
       expect(lm.getJobsFilled()).toBe(0);
+      expect(lm.getReachableUnfilledJobs()).toBe(0);
       expect(lm.getFlows()).toEqual([]);
     });
   });
