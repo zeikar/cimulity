@@ -70,6 +70,7 @@ cimulity/
 │   ├── components/               # React components
 │   │   ├── GameCanvas.tsx        # PixiJS mount point
 │   │   ├── GameHUD.tsx           # HUD overlay
+│   │   ├── DataViewPanel.tsx     # Traffic/Jobs data-view toggle + legend
 │   │   └── Toolbar.tsx           # Tool selection UI
 │   ├── page.tsx                  # Main game page
 │   ├── layout.tsx                # Root layout
@@ -102,6 +103,11 @@ cimulity/
 │   │   ├── Map.ts                # 2D grid structure
 │   │   ├── World.ts              # World state + tick logic
 │   │   ├── LandValueMap.ts       # Derived land-value field
+│   │   ├── roadGraph.ts          # Shared road-graph primitives (BFS steps, access nodes)
+│   │   ├── laborMarket.ts        # Worker↔job matching over the road graph → commute O-D flows
+│   │   ├── LaborMarketMap.ts     # Dirty/lazy labor-market holder (mirrors coverage maps)
+│   │   ├── trafficAssignment.ts  # Loads commute flows onto road tiles → 0..255 congestion
+│   │   ├── TrafficMap.ts         # Dirty/lazy traffic-congestion holder
 │   │   ├── GameLoop.ts           # Fixed-timestep loop
 │   │   ├── worldStore.ts         # Process-wide singleton + localStorage
 │   │   └── mapSerialization.ts   # Versioned save format
@@ -114,6 +120,11 @@ cimulity/
 │   │   ├── viewportCulling.ts    # Visible-tile bounds
 │   │   ├── TileRenderer.ts       # Tile + building mounting
 │   │   ├── SelectionRenderer.ts  # Hover/selection highlights
+│   │   ├── dataView.ts           # DataView type ('none' | 'traffic' | 'jobs')
+│   │   ├── dataViewColors.ts     # Congestion/employment color ramps + per-building shares
+│   │   ├── overlays/             # Render-only data overlays (read core, never mutate)
+│   │   │   ├── UtilityStatusOverlay.ts
+│   │   │   └── DataViewOverlay.ts    # Traffic/Jobs diamonds over road tiles / footprint cells
 │   │   └── visuals/              # Per-tile visual implementations
 │   │       ├── TileVisual.ts        # Visual contract
 │   │       ├── visualRegistry.ts    # Type → registered visual instance
@@ -124,7 +135,11 @@ cimulity/
 │   │           ├── cubeGeometry.ts
 │   │           ├── cubeLift.ts
 │   │           ├── cubeTypeRatios.ts
-│   │           └── cubeDropShadow.ts
+│   │           ├── cubeDropShadow.ts
+│   │           ├── buildingMassing.ts   # Procedural massing plan (boxes/gables/props) per building
+│   │           ├── massingGeometry.ts   # Fractional-rect → screen-face geometry for massing boxes
+│   │           ├── windowGeometry.ts    # Window frame/glass inset-quad geometry (punched/curtain)
+│   │           └── heightContour.ts     # Height-contour triangle clip (coastal sand / highland rock)
 │   │
 │   └── types/                    # Shared TypeScript types
 │       ├── coordinates.ts        # Coordinate types
@@ -183,11 +198,13 @@ Canvas Click → Camera.screenToWorld() → IsoTransform.screenToTile() → Map.
 Each tick (`World.tick`, 1 tick = 1 day):
 
 1. Advances `tickCount` and `day` first (post-increment — so the first growth tick fires when `tickCount === ZONE_GROWTH_INTERVAL`, not at 0)
-2. Recomputes utility and coverage maps if dirty or on their own cadence: `PowerMap` (binary road-BFS reachability from power plants), `WaterMap` (same pattern for water towers), `ServiceCoverageMap` (police), `FireCoverageMap` (fire), `HospitalCoverageMap` (hospital), and `SchoolCoverageMap` (school) — all four coverage maps use `propagateServiceCoverage` + the same constants, each hard-coding its own source type, graded 0..255 intensity, MAX across stations via min-distance. These are not persisted.
+2. Recomputes utility and coverage maps if dirty or on their own cadence: `PowerMap` (binary road-BFS reachability from power plants), `WaterMap` (same pattern for water towers), `ServiceCoverageMap` (police), `FireCoverageMap` (fire), `HospitalCoverageMap` (hospital), and `SchoolCoverageMap` (school) — all four coverage maps use `propagateServiceCoverage` + the same constants, each hard-coding its own source type, graded 0..255 intensity, MAX across stations via min-distance. These are not persisted. In the same step, `TrafficMap` recomputes if dirty, or force-recomputes every `TRAFFIC_INTERVAL` (16) ticks — but only once something has already allocated it via `getTrafficMap()`, so an unread data-only view is never eagerly computed. A traffic recompute always force-refreshes `LaborMarketMap` first (see "Traffic & Labor Market" below), since traffic loads the labor market's matched commute flows.
 3. Recomputes land value if dirty, or unconditionally on `LAND_VALUE_INTERVAL` cadence (defense-in-depth). **Land value depends on coverage being fresh** (it reads the four coverage maps computed in step 2); a coverage change marks land value dirty, so the two are always in sync.
 4. Heals all `DIRT` tiles back to `GRASS`
 5. On a month-boundary day (`day % DAYS_PER_MONTH === 0`), settles a month of tax at the pre-growth population
-6. On growth ticks (`tickCount % ZONE_GROWTH_INTERVAL === 0`), walks zone tiles in two branches — **both require an orthogonal road neighbor**:
+6. On growth ticks (`tickCount % ZONE_GROWTH_INTERVAL === 0`), first runs an **abandonment sweep** over every building (added service-v8 / save v18 — `Building.abandoned: boolean`): if land value at the anchor no longer supports the building's level, it flips `abandoned = true`; if a previously-abandoned building's anchor land value now supports its level again, it flips back to `false`. Either flip freezes the building for the rest of this tick — recorded in a `frozenThisTick` set, not the live `abandoned` field, so a building that just re-occupied is still skipped by growth/merge below. Abandoned buildings are excluded from population, jobs, demand, and the labor market; the sweep runs before demand is (re)computed so this tick's growth pass already sees demand net of the buildings that just went derelict. The render layer shows a derelict tint with dark windows.
+
+   The pass then walks zone tiles in two branches — **both require an orthogonal road neighbor**, and both skip any building frozen this tick:
    - No building yet on this tile → create a level-0 building (road adjacency is the only gate)
    - Building already exists → level-up / density growth gated by land-value thresholds + per-building cooldown
 
@@ -204,6 +221,18 @@ Each tick (`World.tick`, 1 tick = 1 day):
    **Dual role of services:** the four coverage services hard-gate level-up at the building anchor in `World` (all four must cover the anchor — unchanged), AND contribute to land value via the combined service term. A coverage-map change marks land value dirty (dirty cascade).
 
    Gate summary: power → initial spawn at footprint; water → level-up at footprint (binary); four coverage services → level-up at anchor (AND-gate); land value (road + diversity + service + park) → level-up at anchor via `LEVEL_THRESHOLDS`.
+
+   Any building change in the growth pass (spawn, level-up, density bump, merge, or abandonment flip) calls `markLaborDirty()`, which cascades to `markTrafficDirty()` (traffic loads the labor market's commute flows) and `markDemandDirty()` (the labor market feeds an employment signal into `Demand` — see below) — a single call keeps all three in sync.
+
+### Traffic & Labor Market
+
+Two derived, non-persisted data layers — added after zoning/land-value/coverage were already in place — model commuting and its effect on road congestion. Neither has a dedicated `systems/` file yet; this is the interim summary per [README.md](README.md).
+
+- **Shared road graph** (`game/core/roadGraph.ts`): pure primitives used by both modules below — `ORTHOGONAL` step table, `accessNodeFor` (lowest-index ROAD cell on a building's frontage face), and `buildStructureOwned`/`isRoadNode` (the BFS must never route through a placed structure's footprint). Reads only `GameMap`/`StructureMap`/`Building`; must not import `World` or `zoneGrowth`.
+- **Labor market** (`game/core/laborMarket.ts` + `LaborMarketMap.ts`): every non-abandoned residential building is a worker origin (`level * WORKERS_PER_LEVEL`); every non-abandoned commercial/industrial building is a job destination with `level * JOBS_PER_LEVEL` capacity. Matching is greedy nearest-with-overflow — a forward BFS from each origin's access node ranks reachable job nodes by road-hop distance, filling the nearest node with remaining capacity first and spilling over to the next when it fills. Capacity is global and consumed in deterministic origin order (ascending access-node index, then building id). Produces `CommuteFlow[]` (origin node → destination node → worker count) plus `employed`/`unemployed`/`jobsCapacity`/`jobsFilled`/`reachableUnfilledJobs` scalars. `Demand.recompute` blends a bounded employment-feedback signal (reachable-vacancy rate minus unemployment rate) into residential demand.
+- **Traffic assignment** (`game/core/trafficAssignment.ts` + `TrafficMap.ts`): consumes the labor market's `CommuteFlow[]` and loads each flow's worker count onto every road tile along the *exact* shortest road path from its origin to its exact destination. Flows are grouped by destination and a single reverse BFS is run per distinct destination (not one shared multi-source BFS) — an overflow flow may have been matched to a farther job than the nearest one, so routing must stay per-destination-exact. Load is normalized against `TRAFFIC_CAPACITY` (64) into a `0..255` congestion value per road tile.
+- **Dirty/lazy pattern**: both holders mirror the coverage-map holders (`recompute(...)`/`clear()`), but `getTrafficMap()` and `getLaborMarket()` *drain* dirtiness on read (recompute-if-dirty before returning) — the coverage getters do not. `World.markLaborDirty()` cascades to `markTrafficDirty()` and `markDemandDirty()`. `CommandDispatcher` mark-only-dirties both traffic and labor (no eager drain — the getters already drain lazily) whenever a tool-driven edit invalidates power/water/service coverage, i.e. any structure or road change.
+- **Data-view overlay** (`game/render/dataView.ts`, `dataViewColors.ts`, `game/render/overlays/DataViewOverlay.ts`, `app/components/DataViewPanel.tsx`): render-only — reads `world.getTrafficMap()` and `world.getLaborMarket().getFlows()`, never mutates core, respecting the layer boundary. A HUD panel toggles None/Traffic/Jobs. Traffic draws a green→yellow→red diamond over each loaded (congestion > 0) road tile; Jobs draws a red→yellow→green employment-share diamond over each building's footprint cells (grey = "no data," i.e. abandoned or zero-worker/zero-capacity; a road-less but occupied building is red, not grey, since it represents real unemployment/unfillable capacity rather than missing data).
 
 ### Procedural terrain generation
 
