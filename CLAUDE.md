@@ -13,7 +13,7 @@ npm run lint         # eslint
 npm test             # vitest run (one-shot)
 npm run test:watch   # vitest watch
 npx vitest run game/tools/RoadTool.test.ts        # single test file
-npx vitest run -t "snaps to 45"                   # single test by name
+npx vitest run -t "snaps to a perfect 45"         # single test by name (substring match)
 ```
 
 `@` is a path alias to the repo root (configured in both `tsconfig.json` and `vitest.config.ts`).
@@ -49,4 +49,4 @@ If a plan-review (Codex or otherwise) flags "missing migration from vN-1 → vN"
 
 ## Testing
 
-Tests are `*.test.ts` colocated next to source under `game/`. The coverage gate (80% lines/statements/functions/branches) is **deliberately scoped** to the pure-logic files listed in [vitest.config.ts](vitest.config.ts) (core state, RoadTool, ToolActions, CommandDispatcher, IsoTransform). Pixi render glue, DOM input handlers, and `GameSession` are intentionally excluded — verify those by gameplay/manual testing, not headless mocks. New pure logic should land in (or alongside) the gated files and stay above threshold.
+Tests are `*.test.ts` colocated next to source under `game/` and `app/`. The coverage gate (80% lines/statements/functions/branches) is **deliberately scoped** to the pure-logic files listed in [vitest.config.ts](vitest.config.ts) (core simulation/save state, tools and CommandDispatcher, pure render-layer geometry/math, and the UI stats-sampling reducer). Pixi render glue, DOM input handlers, and `GameSession` are intentionally excluded — verify those by gameplay/manual testing, not headless mocks. New pure logic should land in (or alongside) the gated files and stay above threshold.
