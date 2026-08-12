@@ -22,10 +22,10 @@ MVP-1 is playable and in active development. The current build supports:
 - Display-only happiness KPI (0–1 scalar, land value/jobs/budget weighted) and a toggleable statistics panel with population/money/happiness sparklines
 - Dot-art textures replace placeholder colored geometry: buildings get dynamic window lights (punched/curtain facades) and seeded per-building lot coverage; roads autotile into smooth diagonal asphalt ribbons with junction hubs and sidewalk aprons; terrain adds park/street decorations plus coastal sand and highland rock bands
 - Buildings abandon (go derelict) when land value drops below their level's requirement, and re-occupy on recovery
-- Aggregate traffic congestion and labor market (job capacity, employment, commute routing) simulation layers drive road congestion weighting; a data-view overlay (None/Traffic/Jobs) visualizes both
+- Aggregate labor market (job capacity, worker matching, employment) routes commutes over the road graph; those commute flows load each road tile into a per-tile congestion value, and a data-view overlay (None/Traffic/Jobs) visualizes both
 - Labor market employment/unemployment now blends back into R/C/I demand
 
-Next focus: feed traffic congestion into happiness/demand (it currently only weights commute routing), add sound effects, and continue tightening tool feedback.
+Next focus: feed traffic congestion back into the simulation — it is currently an output only, derived from commute routes and displayed, affecting neither routing nor happiness/demand — plus sound effects and continued tool-feedback polish.
 
 ## Getting Started
 
@@ -47,13 +47,13 @@ Open [http://localhost:3000](http://localhost:3000) to play!
 - **Tools**: S select, T road, B bulldoze, Q/W/E residential/commercial/industrial zones, P power plant, A water tower, C police station, D fire station, H hospital, L school, K park
 - **Terrain**: R raise, F lower, G level/flatten
 - **Time**: Space pause/resume, 1/2/3 speed
-- **Panels**: Click the **[Stats]** or **[Data]** buttons (top-right) to toggle the statistics sparkline panel or the traffic/jobs data-view overlay
+- **Panels**: **[Stats]** (top-right) toggles the sparkline panel. **[Data]** opens the data-view selector; its None/Traffic/Jobs buttons switch the overlay, and closing the selector leaves the chosen overlay active
 
 ## Tech Stack
 
 - **Framework**: Next.js 16.1.1 (App Router)
 - **Language**: TypeScript (strict mode)
-- **Rendering**: PixiJS 8.15.0 (WebGL with Canvas fallback)
+- **Rendering**: PixiJS 8.15.0 (auto-detected renderer: WebGL, falling back to WebGPU)
 - **Styling**: Tailwind CSS 4
 - **Testing**: Vitest
 
