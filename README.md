@@ -92,7 +92,7 @@ This is a learning/demonstration project. Feel free to fork and experiment!
 
 ## License
 
-MIT (or your preferred license)
+MIT — see [LICENSE](LICENSE).
 
 ---
 
