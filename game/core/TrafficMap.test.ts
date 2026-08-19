@@ -116,6 +116,40 @@ describe('TrafficMap', () => {
     });
   });
 
+  describe('getCongestionIndex()', () => {
+    it('returns 0 for an empty (all-zero) map', () => {
+      const tm = new TrafficMap(6, 6);
+      expect(tm.getCongestionIndex()).toBe(0);
+    });
+
+    it('returns c/255 for a single non-zero tile at value c', () => {
+      const tm = new TrafficMap(6, 6);
+      const c = 100;
+      tm.getRaw()[idxOf(6, 2, 3)] = c;
+      expect(tm.getCongestionIndex()).toBeCloseTo(c / 255, 10);
+    });
+
+    it('returns v/255 when every tile holds the same value v', () => {
+      const tm = new TrafficMap(4, 4);
+      const v = 60;
+      tm.getRaw().fill(v);
+      expect(tm.getCongestionIndex()).toBeCloseTo(v / 255, 10);
+    });
+
+    it('weights a saturated hot tile above the plain mean of the nonzero tiles', () => {
+      const tm = new TrafficMap(4, 4);
+      const raw = tm.getRaw();
+      // Five tiles at moderate load, one tile at full capacity (255).
+      for (let i = 0; i < 5; i++) raw[i] = 10;
+      raw[5] = 255;
+
+      const nonZero = Array.from(raw).filter((v) => v > 0);
+      const plainMean = nonZero.reduce((a, b) => a + b, 0) / nonZero.length / 255;
+
+      expect(tm.getCongestionIndex()).toBeGreaterThan(plainMean);
+    });
+  });
+
   describe('getCongestion out-of-bounds', () => {
     it('returns 0 for negative coordinates', () => {
       const tm = new TrafficMap(5, 5);

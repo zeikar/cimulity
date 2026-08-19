@@ -1,7 +1,8 @@
 /**
  * Derived per-road-tile traffic congestion (0..255). Recomputed via
  * `assignTraffic`; NOT persisted (transient, like the coverage maps).
- * DATA-ONLY — no render, no sim feedback.
+ * Feeds land value (proximity-weighted penalty) and the happiness KPI
+ * (city-wide congestion index); also rendered by the data-view overlay.
  *
  * Mirrors the coverage-map holder pattern (`FireCoverageMap`, etc.) with one
  * extra argument on `recompute`: `flows` (precomputed commute O-D flows), which
@@ -45,6 +46,25 @@ export class TrafficMap {
   /** Normalized congestion at (x, y), range [0, 1]. Intended for the inspector UI. */
   getCongestionNormalized(x: number, y: number): number {
     return this.getCongestion(x, y) / 255;
+  }
+
+  /**
+   * City-wide congestion-intensity-weighted mean, range [0, 1]: `Σ(c_i²) / (255 · Σc_i)`,
+   * or 0 when every tile is at 0. This is a PROXY for the true flow-weighted mean, not
+   * an exact one — each tile's own stored congestion byte doubles as its weight, so it
+   * tracks trip load only up to rounding below `TRAFFIC_CAPACITY` and conservatively
+   * under-weights tiles already saturated at 255. O(width·height); intended to be
+   * called once per happiness recompute, not per frame.
+   */
+  getCongestionIndex(): number {
+    let sum = 0;
+    let sumSquares = 0;
+    for (let i = 0; i < this.congestion.length; i++) {
+      const c = this.congestion[i];
+      sum += c;
+      sumSquares += c * c;
+    }
+    return sum === 0 ? 0 : sumSquares / (255 * sum);
   }
 
   /** Returns the backing Uint8Array directly (by reference). */
