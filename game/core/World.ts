@@ -60,7 +60,14 @@ export const WATER_INTERVAL = 16;
  */
 export const SERVICE_INTERVAL = 16;
 /**
- * Defense-in-depth periodic force-recompute cadence for traffic, mirrors SERVICE_INTERVAL.
+ * Defense-in-depth periodic force-recompute cadence for traffic.
+ *
+ * MUST stay a multiple of LAND_VALUE_INTERVAL. Land value reads the traffic snapshot, and
+ * recomputeTraffic deliberately does NOT dirty land value (cascades fire on mark, never on
+ * recompute), so a cadence-forced congestion refresh only reaches land value on a tick where
+ * the land-value cadence also fires. At e.g. TRAFFIC_INTERVAL = 8 the refreshed congestion
+ * would sit unread for up to 8 ticks. This is the binding constraint — not SERVICE_INTERVAL,
+ * which traffic merely happens to equal.
  */
 export const TRAFFIC_INTERVAL = 16;
 /**
@@ -78,6 +85,15 @@ export const HAPPINESS_W_LAND = 0.5;
 export const HAPPINESS_W_JOBS = 0.3;
 /** Budget-health contribution weight for city happiness. */
 export const HAPPINESS_W_BUDGET = 0.2;
+/**
+ * Congestion penalty weight for city happiness — SUBTRACTED from the three positive terms,
+ * mirroring the additive-park / subtractive-congestion asymmetry in LandValueMap.
+ * The three positive weights still sum to 1.0, so congestion-free cities keep their
+ * pre-feedback scores. 0.15 is deliberately modest: congestion already reaches happiness
+ * indirectly through residential land value (HAPPINESS_W_LAND × the land-value penalty), and
+ * this direct term is the city-wide signal on top of that, not a double-count amplifier.
+ */
+export const HAPPINESS_W_TRAFFIC = 0.15;
 /** Initial/empty-city happiness value returned when no residential or jobs buildings exist. */
 export const EMPTY_CITY_HAPPINESS = 0.5;
 /** Tax revenue per population point per day. */
@@ -141,9 +157,12 @@ export const MONTHS_PER_YEAR = 12;
  * `changedBuildingIds` is an additional channel for building-keyed render lookup —
  * it is NEVER the sole signal of change.
  *
- * Power, water, and land value are all recomputed (if dirty or on their periodic
- * cadence) as frozen snapshots before the growth pass. The growth pass reads but
- * does not mutate any of those maps.
+ * Utilities (power, water), the four coverage maps, traffic (which force-refreshes the
+ * labor market inside `recomputeTraffic`), and land value are all recomputed — if dirty or
+ * on their periodic cadence — in that order, as frozen snapshots before the growth pass.
+ * The order matters: land value now reads traffic congestion, so traffic must resolve first.
+ * The growth pass reads but does not mutate any of those maps; the building changes it makes
+ * only call `markLaborDirty()` at the END of the tick, deferring re-resolution to the next tick.
  */
 export interface WorldTickResult {
   /** Canonical per-tile delta: one entry per tile mutated this tick (DIRT→GRASS heals + zone level-ups + density bumps + abandonment-state flips). */
@@ -362,9 +381,12 @@ export class World {
 
   /** Unconditional force-recompute; also clears the dirty flag. */
   recomputeLandValue(): void {
-    // B2 — freshness drain: land value now reads the four coverage maps, so drain
-    // each coverage's dirty flag FIRST. This guarantees land value always reads
-    // FRESH coverage regardless of caller.
+    // B2 — freshness drain: land value reads the four coverage maps AND traffic congestion,
+    // so drain every one of those inputs FIRST. This guarantees land value always reads
+    // FRESH inputs regardless of caller. getTrafficMap() is the traffic drain (it recomputes
+    // if dirty, which force-refreshes labor inside recomputeTraffic), so congestion is never
+    // a tick stale. The drain chain only points UPSTREAM (land value → traffic → labor);
+    // nothing in it reads or dirties land value, so there is no re-entrancy.
     this.recomputeServiceIfDirty();
     this.recomputeFireIfDirty();
     this.recomputeHospitalIfDirty();
@@ -375,7 +397,7 @@ export class World {
       fire: this.getFireCoverageMap(),
       hospital: this.getHospitalCoverageMap(),
       school: this.getSchoolCoverageMap(),
-    });
+    }, this.getTrafficMap());
     this.landValueDirty = false;
     // Happiness reads land value; refreshing land value invalidates the derived happiness cache.
     this.happinessDirty = true;
@@ -560,10 +582,16 @@ export class World {
 
   /**
    * Mark traffic as needing recomputation on the next recomputeTrafficIfDirty() or getTrafficMap() call.
-   * NO land-value/happiness cascade — traffic is DATA-ONLY and feeds nothing (unlike markServiceDirty).
+   *
+   * Traffic is a simulation INPUT: it feeds land value (the proximity-weighted congestion
+   * penalty) and happiness (the city-wide congestion index). Its dirtiness therefore cascades
+   * exactly like coverage dirtiness — see markServiceDirty. Cascading on MARK (never on
+   * recompute) is what keeps a drain-on-read frame — e.g. the data-view overlay calling
+   * getTrafficMap() between ticks — from silently clearing land value's need to refresh.
    */
   markTrafficDirty(): void {
     this.trafficDirty = true;
+    this.dirtyLandValueAndHappiness();
   }
 
   /** Recompute traffic only if dirty; clears the flag. */
@@ -604,14 +632,17 @@ export class World {
 
   /**
    * Mark the labor market as needing recomputation on the next recomputeLaborIfDirty()
-   * or getLaborMarket() call. Cascades to traffic (traffic consumes labor flows) and
-   * demand (demand blends labor-market feedback scalars).
+   * or getLaborMarket() call. Cascades to traffic (traffic consumes labor flows — and
+   * traffic in turn cascades to land value and happiness) and to demand (demand blends
+   * labor-market feedback scalars).
    */
   markLaborDirty(): void {
     this.laborDirty = true;
     // Traffic consumes labor flows (recomputeTraffic calls getLaborMarket().getFlows()),
     // so stale labor means stale traffic — cascade the invalidation down-dependency.
-    this.trafficDirty = true;
+    // Route through markTrafficDirty() rather than setting the flag: the onward
+    // traffic → land value → happiness cascade lives in ONE place.
+    this.markTrafficDirty();
     // Demand blends labor-market feedback — stale labor means stale demand.
     this.markDemandDirty();
   }
@@ -684,7 +715,8 @@ export class World {
 
   /**
    * City-wide happiness scalar in [0, 1]. Display-only KPI — never feeds growth/demand/level-up.
-   * Lazy: recomputes only when inputs (land value, money, buildings) have changed since last read.
+   * Lazy: recomputes only when inputs (land value, money, buildings, traffic) have changed
+   * since last read.
    */
   getHappiness(): number {
     this.recomputeHappinessIfDirty();
@@ -730,8 +762,11 @@ export class World {
     const landScore = residentialCount > 0 ? clamp01(residentialLandValueSum / residentialCount) : 0;
     const jobsBalance = clamp01(1 - Math.abs(jobsLevels - levelSumR) / Math.max(jobsLevels + levelSumR, 1));
     const budgetHealth = clamp01(this.money / STARTING_FUNDS);
+    // Traffic drains on read; the land-value drain above already refreshed it whenever traffic
+    // was dirty (markTrafficDirty dirties land value too), so this is a plain read in practice.
+    const congestionIndex = this.getTrafficMap().getCongestionIndex();
 
-    this.happiness = clamp01(HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * jobsBalance + HAPPINESS_W_BUDGET * budgetHealth);
+    this.happiness = clamp01(HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * jobsBalance + HAPPINESS_W_BUDGET * budgetHealth - HAPPINESS_W_TRAFFIC * congestionIndex);
     this.happinessDirty = false;
   }
 
@@ -845,7 +880,11 @@ export class World {
    * Rules:
    *   1. tickCount is incremented first (post-increment means first growth fires at tick === ZONE_GROWTH_INTERVAL, not 0).
    *   2. day is incremented too (1 tick = 1 day).
-   *   3. Land value is recomputed if dirty (or on LAND_VALUE_INTERVAL cadence) BEFORE growth.
+   *   3. Derived fields are resolved BEFORE growth, each if dirty or on its cadence, in
+   *      dependency order: utilities (power, water) → coverage (police, fire, hospital,
+   *      school) → traffic (which force-refreshes the labor market inside recomputeTraffic)
+   *      → land value (which reads the traffic snapshot). Every one of them is then a frozen
+   *      read-only snapshot for the rest of the tick.
    *   4. DIRT heals to GRASS; each heal contributes to `changed`.
    *   5. Monthly tax settlement: on a month-boundary day (day % DAYS_PER_MONTH === 0),
    *      tax is settled pre-growth, so a tick that is both a growth tick and a month
@@ -856,6 +895,10 @@ export class World {
    *      but NOT `landValue` or any influence input. If a future rule mutates influence
    *      inputs (roads/zones) MID-TICK, this invariant breaks — recompute or split into
    *      two passes.
+   *   7. The traffic → land value → growth/abandonment → buildings → labor → traffic loop is
+   *      therefore ACROSS ticks, never within one: the buildings growth changes only set dirty
+   *      flags (markLaborDirty at the end of this tick), which resolve at step 3 of the NEXT
+   *      tick. One-tick lag, bounded work per tick.
    */
   tick(): WorldTickResult {
     this.tickCount++;
@@ -906,9 +949,13 @@ export class World {
     }
 
     // Traffic: recompute if dirty, or force on periodic cadence (defense-in-depth).
-    // Guard: skip the periodic force-recompute when traffic has never been allocated —
-    // avoids pointless BFS allocation for an unread data-only view.
-    if (this.tickCount % TRAFFIC_INTERVAL === 0 && this.traffic !== null) {
+    // Runs BEFORE land value, which reads the congestion snapshot produced here. The
+    // cadence-forced branch only reaches land value because TRAFFIC_INTERVAL is a multiple
+    // of LAND_VALUE_INTERVAL — see TRAFFIC_INTERVAL for why that must stay true.
+    // recomputeTraffic force-refreshes the labor market first, so labor resolves here too.
+    // No "traffic has never been allocated" skip: traffic is a simulation input now, so an
+    // unread map is no longer a reason to skip the cadence force-recompute.
+    if (this.tickCount % TRAFFIC_INTERVAL === 0) {
       this.recomputeTraffic();
     } else {
       this.recomputeTrafficIfDirty();

@@ -2,15 +2,19 @@
  * Derived influence field: land value per tile.
  * NOT persisted — recomputed from the map on demand.
  *
- * FOUR inputs feed a sum-to-1.0 base, PLUS a park additive boost, all clamped to [0,1]:
+ * THREE weighted inputs sum to a 1.0 base, PLUS an additive park boost and a subtractive
+ * road-congestion penalty, all clamped to [0,1]:
  *   - road proximity    (weight 0.40, Chebyshev distance within radius 6, normalised).
  *   - zone-mix diversity (weight 0.10, distinct zone types in 3×3, divided by 3).
  *   - service coverage   (weight 0.50, the AVERAGE of the four services' normalized
  *                         coverage — police, fire, hospital, school).
  *   - park proximity     (additive +PARK_BOOST_MAX = 0.25, Chebyshev distance to nearest
  *                         park within radius 4, nearest-park strongest-wins).
- *   Final: clamp(0.40 * road + 0.10 * diversity + 0.50 * service + 0.25 * park, 0, 1).
- *   The park term is additive and ≥0.
+ *   - road congestion    (subtractive −CONGESTION_PENALTY_MAX = 0.20, the strongest
+ *                         distance-weighted congestion among ROAD tiles within radius 6).
+ *   Final: clamp(0.40 * road + 0.10 * diversity + 0.50 * service + 0.25 * park
+ *                − 0.20 * congestion, 0, 1).
+ *   The park term is additive and ≥0; the congestion term is subtractive and ≥0.
  *
  * DUAL ROLE OF SERVICES: the four coverage services hard-gate level-up at the building
  * anchor in World (all four must be covered), AND contribute to land value here via the
@@ -23,6 +27,7 @@ import type { ServiceCoverageMap } from './ServiceCoverageMap';
 import type { FireCoverageMap } from './FireCoverageMap';
 import type { HospitalCoverageMap } from './HospitalCoverageMap';
 import type { SchoolCoverageMap } from './SchoolCoverageMap';
+import type { TrafficMap } from './TrafficMap';
 import { TileType, isZoneType } from './Tile';
 
 const ROAD_RADIUS = 6;
@@ -31,6 +36,19 @@ const PARK_BOOST_MAX = 0.25; // tunable
 const ROAD_WEIGHT = 0.40;      // tunable
 const DIVERSITY_WEIGHT = 0.10; // tunable
 const SERVICE_WEIGHT = 0.50;   // tunable
+/**
+ * Coefficient of the congestion penalty — the loss when a fully congested road sits on the
+ * tile ITSELF. A building anchor is never a road tile, so the largest loss actually reachable
+ * at a level-up / abandonment gate is 0.20 * 6/7 ≈ 0.171 (nearest road at Chebyshev 1).
+ *
+ * 0.20 matches the WIDEST LEVEL_THRESHOLDS step gap (0.25→0.45→0.65→0.85), so within those
+ * bands full congestion pulls a marginal building down about one supported level — enough to
+ * gate level-up and trigger abandonment. The lower gaps are narrower (0.10 and 0.15), so at
+ * low land value the same penalty can cross two. Either way it stays below ROAD_WEIGHT (0.40):
+ * a congested road is still net-positive versus no road at all. That same inequality makes the
+ * clamp's 0-floor unreachable through this term, since congestionScore ≤ roadScore on every tile.
+ */
+const CONGESTION_PENALTY_MAX = 0.20; // tunable
 
 export class LandValueMap {
   private readonly width: number;
@@ -46,6 +64,8 @@ export class LandValueMap {
   /**
    * Recompute the entire influence field from the current map state.
    * Pure: no side-effects beyond writing to this.values.
+   *
+   * `traffic` must already be a fresh snapshot — this reads it, it never drains it.
    */
   recompute(
     map: GameMap,
@@ -56,6 +76,7 @@ export class LandValueMap {
       hospital: HospitalCoverageMap;
       school: SchoolCoverageMap;
     },
+    traffic: TrafficMap,
   ): void {
     const w = this.width;
     const h = this.height;
@@ -65,11 +86,18 @@ export class LandValueMap {
     // adjacent (dist=1) → score=1.0, radius edge (dist=6) → score ~0.167,
     // same tile (dist=0) → tile IS a road, score=1.0.
     // normalise: score = 1 - (dist / (ROAD_RADIUS + 1)); clamped to [0,1].
+    //
+    // The same scan also accumulates the congestion penalty score: each ROAD tile in the box
+    // contributes its normalized congestion times the SAME distance weight, and the STRONGEST
+    // contribution wins (max, not sum) — one jammed arterial two tiles away still hurts when
+    // the nearest road is quiet, but two jammed roads do not stack into a double penalty.
     const roadScores = new Float32Array(w * h);
+    const congestionScores = new Float32Array(w * h);
 
     for (let ty = 0; ty < h; ty++) {
       for (let tx = 0; tx < w; tx++) {
         let minDist = Infinity;
+        let maxCongestion = 0;
 
         const r0 = Math.max(0, ty - ROAD_RADIUS);
         const r1 = Math.min(h - 1, ty + ROAD_RADIUS);
@@ -82,6 +110,9 @@ export class LandValueMap {
             if (tile !== null && tile.type === TileType.ROAD) {
               const chebyshev = Math.max(Math.abs(nx - tx), Math.abs(ny - ty));
               if (chebyshev < minDist) minDist = chebyshev;
+              const weighted =
+                traffic.getCongestionNormalized(nx, ny) * (1 - chebyshev / (ROAD_RADIUS + 1));
+              if (weighted > maxCongestion) maxCongestion = weighted;
             }
           }
         }
@@ -93,6 +124,7 @@ export class LandValueMap {
           score = Math.max(0, 1 - minDist / (ROAD_RADIUS + 1));
         }
         roadScores[ty * w + tx] = score;
+        congestionScores[ty * w + tx] = maxCongestion;
       }
     }
 
@@ -126,6 +158,7 @@ export class LandValueMap {
 
         const diversityScore = Math.min(1, seen.size / 3);
         const roadScore = roadScores[ty * w + tx];
+        const congestionScore = congestionScores[ty * w + tx];
 
         // Stage 3: nearest-park Chebyshev boost (bounding-box scan per tile).
         let parkScore = 0;
@@ -154,7 +187,7 @@ export class LandValueMap {
             coverage.school.getCoverageNormalized(tx, ty)) /
           4;
 
-        const combined = Math.min(1, Math.max(0, ROAD_WEIGHT * roadScore + DIVERSITY_WEIGHT * diversityScore + SERVICE_WEIGHT * serviceScore + PARK_BOOST_MAX * parkScore));
+        const combined = Math.min(1, Math.max(0, ROAD_WEIGHT * roadScore + DIVERSITY_WEIGHT * diversityScore + SERVICE_WEIGHT * serviceScore + PARK_BOOST_MAX * parkScore - CONGESTION_PENALTY_MAX * congestionScore));
         this.values[ty * w + tx] = combined;
       }
     }

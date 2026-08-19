@@ -26,10 +26,12 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v18';
 
-// Bumped to 'service-v8' for building abandonment: Building schema gains `abandoned: boolean`
-// (v18 save). No new World method was added, so the method probe is unchanged — only the
-// save format and guard token need bumping.
-const WORLD_SINGLETON_GUARD = 'service-v8' as const;
+// Bumped to 'service-v9' for the traffic feedback loop: `TrafficMap` gains getCongestionIndex()
+// and `LandValueMap.recompute` gains a required traffic parameter, so a stale HMR singleton
+// would hold pre-feedback prototypes that accept-and-ignore the new argument. No new World
+// method was added, so the method probe is unchanged. Traffic is derived and never persisted,
+// so the save format (v18 / STORAGE_KEY) is untouched — only the guard token needs bumping.
+const WORLD_SINGLETON_GUARD = 'service-v9' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -59,7 +61,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v8 / v18 — building abandonment):
+ * Checked methods (as of service-v9 / v18 — traffic feedback into land value + happiness):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,
@@ -127,7 +129,7 @@ function hasCurrentWorldApi(world: World): boolean {
   ) {
     return false;
   }
-  // Happiness KPI (added service-v7, unchanged in service-v8): derives from land value but is its own public read surface.
+  // Happiness KPI (added service-v7): derives from land value but is its own public read surface.
   if (typeof world.getHappiness !== 'function') return false;
   // Terrain integration (added in Task 4): elevation r/w, install, revision, water/build predicates.
   if (

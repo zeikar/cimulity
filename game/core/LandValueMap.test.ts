@@ -7,6 +7,7 @@ import { ServiceCoverageMap } from './ServiceCoverageMap';
 import { FireCoverageMap } from './FireCoverageMap';
 import { HospitalCoverageMap } from './HospitalCoverageMap';
 import { SchoolCoverageMap } from './SchoolCoverageMap';
+import { TrafficMap } from './TrafficMap';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
@@ -35,6 +36,21 @@ function zeroCoverage(w: number, h: number) {
   };
 }
 
+/**
+ * Zero-congestion TrafficMap — the control for every pre-congestion expectation:
+ * with all bytes at 0 the congestion term contributes exactly 0.
+ */
+function noTraffic(w: number, h: number): TrafficMap {
+  return new TrafficMap(w, h);
+}
+
+/** TrafficMap with congestion bytes seeded directly — LandValueMap only READS traffic. */
+function congestedTraffic(w: number, h: number, cells: Array<{ x: number; y: number; c: number }>): TrafficMap {
+  const tm = new TrafficMap(w, h);
+  for (const { x, y, c } of cells) tm.getRaw()[y * w + x] = c;
+  return tm;
+}
+
 function fullCoverage(w: number, h: number) {
   const c = zeroCoverage(w, h);
   c.police.getRaw().fill(255);
@@ -56,7 +72,7 @@ describe('LandValueMap', () => {
     beforeEach(() => {
       map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
       lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
     });
 
     it('all values are in [0, 1]', () => {
@@ -76,7 +92,7 @@ describe('LandValueMap', () => {
 
     it('recompute is deterministic (same result twice)', () => {
       const firstPass = Float32Array.from(lv.getRaw());
-      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
       const secondPass = lv.getRaw();
       for (let i = 0; i < firstPass.length; i++) {
         expect(firstPass[i]).toBe(secondPass[i]);
@@ -93,7 +109,7 @@ describe('LandValueMap', () => {
         { x: 2, y: 0, type: TileType.ZONE_INDUSTRIAL },
       ]);
       const mixedLv = new LandValueMap(3, 3);
-      mixedLv.recompute(mixedMap, new StructureMap(3, 3), zeroCoverage(3, 3));
+      mixedLv.recompute(mixedMap, new StructureMap(3, 3), zeroCoverage(3, 3), noTraffic(3, 3));
 
       // Uniform: only residential across entire map
       const uniformMap = makeMap(3, 3, [
@@ -102,7 +118,7 @@ describe('LandValueMap', () => {
         { x: 2, y: 0, type: TileType.ZONE_RESIDENTIAL },
       ]);
       const uniformLv = new LandValueMap(3, 3);
-      uniformLv.recompute(uniformMap, new StructureMap(3, 3), zeroCoverage(3, 3));
+      uniformLv.recompute(uniformMap, new StructureMap(3, 3), zeroCoverage(3, 3), noTraffic(3, 3));
 
       // The centre tile (1,1) of the mixed map should see all 3 zone types
       // in its 3×3 neighbourhood; uniformMap centre only sees 1 type.
@@ -114,7 +130,7 @@ describe('LandValueMap', () => {
     it('every value is 0', () => {
       const map = new GameMap(4, 4);
       const lv = new LandValueMap(4, 4);
-      lv.recompute(map, new StructureMap(4, 4), zeroCoverage(4, 4));
+      lv.recompute(map, new StructureMap(4, 4), zeroCoverage(4, 4), noTraffic(4, 4));
       const raw = lv.getRaw();
       for (let i = 0; i < raw.length; i++) {
         expect(raw[i]).toBe(0);
@@ -132,7 +148,7 @@ describe('LandValueMap', () => {
         { x: 0, y: 0, type: TileType.ZONE_RESIDENTIAL },
       ]);
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
       // Adjacent tile (2,1) should be > 0 (road proximity), corner (4,4) lower.
       expect(lv.getValue(2, 1)).toBeGreaterThan(lv.getValue(4, 4));
     });
@@ -145,7 +161,7 @@ describe('LandValueMap', () => {
       const lv = new LandValueMap(10, 10);
 
       // Baseline: no park
-      lv.recompute(map, new StructureMap(10, 10), zeroCoverage(10, 10));
+      lv.recompute(map, new StructureMap(10, 10), zeroCoverage(10, 10), noTraffic(10, 10));
       const baseline = lv.getValue(5, 5);
 
       // Place a park at (5,5)
@@ -154,7 +170,7 @@ describe('LandValueMap', () => {
         anchor: { x: 5, y: 5 },
         footprint: [{ x: 5, y: 5 }],
       });
-      lv.recompute(map, world.getStructureMap(), zeroCoverage(10, 10));
+      lv.recompute(map, world.getStructureMap(), zeroCoverage(10, 10), noTraffic(10, 10));
       const withPark = lv.getValue(5, 5);
 
       expect(withPark).toBeGreaterThan(baseline);
@@ -171,11 +187,11 @@ describe('LandValueMap', () => {
         anchor: { x: 10, y: 10 },
         footprint: [{ x: 10, y: 10 }],
       });
-      lv.recompute(map, world.getStructureMap(), zeroCoverage(20, 20));
+      lv.recompute(map, world.getStructureMap(), zeroCoverage(20, 20), noTraffic(20, 20));
 
       // Baseline with no park for comparison at dist-5
       const lvBaseline = new LandValueMap(20, 20);
-      lvBaseline.recompute(map, new StructureMap(20, 20), zeroCoverage(20, 20));
+      lvBaseline.recompute(map, new StructureMap(20, 20), zeroCoverage(20, 20), noTraffic(20, 20));
 
       // Chebyshev dist=1: tile (11,10)
       const dist1 = lv.getValue(11, 10);
@@ -206,7 +222,7 @@ describe('LandValueMap', () => {
         anchor: { x: 15, y: 5 },
         footprint: [{ x: 15, y: 5 }],
       });
-      lv.recompute(map, world.getStructureMap(), zeroCoverage(20, 20));
+      lv.recompute(map, world.getStructureMap(), zeroCoverage(20, 20), noTraffic(20, 20));
 
       // Tile (6,5) is dist=1 from Park A and dist=9 from Park B → nearest is A.
       // If summed it would exceed PARK_BOOST_MAX; if strongest-wins it equals
@@ -218,7 +234,7 @@ describe('LandValueMap', () => {
         anchor: { x: 5, y: 5 },
         footprint: [{ x: 5, y: 5 }],
       });
-      lvSingle.recompute(map, singleStructures, zeroCoverage(20, 20));
+      lvSingle.recompute(map, singleStructures, zeroCoverage(20, 20), noTraffic(20, 20));
 
       // Boost must equal single-park result (nearest-wins, not summed).
       expect(lv.getValue(6, 5)).toBe(lvSingle.getValue(6, 5));
@@ -243,7 +259,7 @@ describe('LandValueMap', () => {
         footprint: [{ x: 2, y: 0 }],
       });
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, structures, fullCoverage(5, 5));
+      lv.recompute(map, structures, fullCoverage(5, 5), noTraffic(5, 5));
 
       // Tile (2,2): roadScore=1.0, diversity=1.0, service=1.0 → base 1.0; park boost
       // would push >1.0 without clamp; must stay at 1.0.
@@ -257,7 +273,7 @@ describe('LandValueMap', () => {
       // → land value = 0.50 * 1.0 = 0.50 exactly (base+0.50 < 1.0).
       const map = new GameMap(5, 5);
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5), fullCoverage(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), fullCoverage(5, 5), noTraffic(5, 5));
       expect(lv.getValue(0, 0)).toBeCloseTo(0.5, 5);
     });
 
@@ -269,7 +285,7 @@ describe('LandValueMap', () => {
       coverage.police.getRaw().fill(255);
       coverage.fire.getRaw().fill(255);
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5), coverage);
+      lv.recompute(map, new StructureMap(5, 5), coverage, noTraffic(5, 5));
       expect(lv.getValue(0, 0)).toBeCloseTo(0.25, 5);
     });
 
@@ -280,7 +296,7 @@ describe('LandValueMap', () => {
       // Cover only tile (1,1): raw index = ty*w + tx.
       coverage.police.getRaw()[1 * w + 1] = 255;
       const lv = new LandValueMap(w, 5);
-      lv.recompute(map, new StructureMap(w, 5), coverage);
+      lv.recompute(map, new StructureMap(w, 5), coverage, noTraffic(w, 5));
       expect(lv.getValue(1, 1)).toBeGreaterThan(lv.getValue(3, 3));
     });
 
@@ -289,8 +305,98 @@ describe('LandValueMap', () => {
       // diversity 0, service 0, park 0 → land value = 0.40 * 6/7 = 0.342857…
       const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
       const lv = new LandValueMap(5, 5);
-      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5));
+      lv.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
       expect(lv.getValue(2, 1)).toBeCloseTo(0.3429, 4);
+    });
+  });
+
+  describe('congestion-penalty term (unit)', () => {
+    it('(a) a tile adjacent to a fully congested road loses exactly 0.20 * 6/7', () => {
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+
+      const control = new LandValueMap(5, 5);
+      control.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
+
+      const congested = new LandValueMap(5, 5);
+      congested.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5),
+        congestedTraffic(5, 5, [{ x: 2, y: 2, c: 255 }]));
+
+      // Tile (2,1) is Chebyshev-distance 1 from the road → weight 1 - 1/7 = 6/7;
+      // congestion normalizes to 255/255 = 1 → penalty CONGESTION_PENALTY_MAX * 6/7.
+      const loss = control.getValue(2, 1) - congested.getValue(2, 1);
+      expect(loss).toBeCloseTo(0.20 * (6 / 7), 6);
+    });
+
+    it('(b) falloff: a tile 3 tiles from the congested road loses less than one 1 tile away', () => {
+      const map = makeMap(9, 9, [{ x: 4, y: 4, type: TileType.ROAD }]);
+
+      const control = new LandValueMap(9, 9);
+      control.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9), noTraffic(9, 9));
+
+      const congested = new LandValueMap(9, 9);
+      congested.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9),
+        congestedTraffic(9, 9, [{ x: 4, y: 4, c: 255 }]));
+
+      const lossNear = control.getValue(4, 3) - congested.getValue(4, 3); // dist 1 → 0.20 * 6/7
+      const lossFar = control.getValue(4, 1) - congested.getValue(4, 1);  // dist 3 → 0.20 * 4/7
+
+      expect(lossFar).toBeGreaterThan(0);
+      expect(lossFar).toBeLessThan(lossNear);
+      expect(lossNear).toBeCloseTo(0.20 * (6 / 7), 6);
+      expect(lossFar).toBeCloseTo(0.20 * (4 / 7), 6);
+    });
+
+    it('(c) max-over-radius: a quiet nearest road does not shield a congested road 2 tiles away', () => {
+      // Roads at (2,2) (quiet) and (4,2) (fully congested). Probe tile (2,1) is
+      // distance 1 from the quiet road and distance 2 from the congested one — a
+      // nearest-road-only rule would give it zero penalty.
+      const map = makeMap(9, 9, [
+        { x: 2, y: 2, type: TileType.ROAD },
+        { x: 4, y: 2, type: TileType.ROAD },
+      ]);
+
+      const control = new LandValueMap(9, 9);
+      control.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9), noTraffic(9, 9));
+
+      const congested = new LandValueMap(9, 9);
+      congested.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9),
+        congestedTraffic(9, 9, [{ x: 4, y: 2, c: 255 }]));
+
+      const loss = control.getValue(2, 1) - congested.getValue(2, 1);
+      expect(loss).toBeGreaterThan(0);
+      expect(loss).toBeCloseTo(0.20 * (5 / 7), 6); // dist 2 → weight 1 - 2/7
+      expect(loss).toBeLessThan(0.20 * (6 / 7));   // strictly weaker than an adjacent jam
+    });
+
+    it('(d) two congested roads do not stack: strongest-wins, not summed', () => {
+      // All three runs share ONE map, so roadScore/diversity/service/park are identical by
+      // construction and the congestion bytes are the only difference.
+      const map = makeMap(9, 9, [
+        { x: 2, y: 2, type: TileType.ROAD },
+        { x: 4, y: 2, type: TileType.ROAD },
+      ]);
+
+      const control = new LandValueMap(9, 9);
+      control.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9), noTraffic(9, 9));
+
+      // Only the nearer road is jammed.
+      const oneJam = new LandValueMap(9, 9);
+      oneJam.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9),
+        congestedTraffic(9, 9, [{ x: 2, y: 2, c: 255 }]));
+
+      // Both roads jammed — the farther one adds a second, weaker contribution.
+      const twoJams = new LandValueMap(9, 9);
+      twoJams.recompute(map, new StructureMap(9, 9), zeroCoverage(9, 9),
+        congestedTraffic(9, 9, [{ x: 2, y: 2, c: 255 }, { x: 4, y: 2, c: 255 }]));
+
+      // Probe (2,1): Chebyshev 1 from (2,2) → weight 6/7, Chebyshev 2 from (4,2) → weight 5/7.
+      // max keeps 6/7; a summing implementation would apply 6/7 + 5/7 = 11/7.
+      const lossOne = control.getValue(2, 1) - oneJam.getValue(2, 1);
+      const lossTwo = control.getValue(2, 1) - twoJams.getValue(2, 1);
+
+      expect(lossTwo).toBe(lossOne);
+      expect(lossTwo).toBeCloseTo(0.20 * (6 / 7), 6);
+      expect(lossTwo).toBeLessThan(0.20 * (6 / 7 + 5 / 7));
     });
   });
 

@@ -17,6 +17,7 @@ import {
   HAPPINESS_W_LAND,
   HAPPINESS_W_JOBS,
   HAPPINESS_W_BUDGET,
+  HAPPINESS_W_TRAFFIC,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
 import { TileType, createTile } from './Tile';
@@ -2795,5 +2796,133 @@ describe('World.reset() — traffic clear (common block)', () => {
     for (let i = 0; i < raw.length; i++) {
       expect(raw[i]).toBe(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Traffic feedback loop: congestion → land value → happiness
+// ---------------------------------------------------------------------------
+
+/**
+ * Corridor fixture shared by the traffic-feedback tests: 8×6 world, road row at y=2,
+ * a level-4 residential origin at (0,1) and — with `withJobs` — a level-4 commercial job
+ * destination at (5,1). Without the destination the labor matcher produces no commute
+ * flows, so the road row stays at zero congestion: the control for every penalty
+ * assertion. Both variants have identical tiles, structures and (zero) coverage, so
+ * congestion is the ONLY land-value input that differs between them.
+ */
+function makeCorridorWorld(opts: { withJobs: boolean }): World {
+  const world = new World(8, 6, { regenerate: false });
+  const map = world.getMap();
+  for (let x = 0; x < 8; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+  map.getBuildings().addExistingBuilding({
+    id: 1, type: 'residential',
+    footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+    level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+    structureRect: { x: 0, y: 1, w: 1, h: 1 },
+  });
+  if (opts.withJobs) {
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'commercial',
+      footprint: [{ x: 5, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 5, y: 1, w: 1, h: 1 },
+    });
+  }
+  // Mirrors what the growth pass and CommandDispatcher do after a building change.
+  world.markLaborDirty();
+  return world;
+}
+
+describe('World land value — congestion feedback', () => {
+  it('a loaded road lowers the land value beside it versus an identical no-flow city', () => {
+    const withFlows = makeCorridorWorld({ withJobs: true });
+    const noFlows = makeCorridorWorld({ withJobs: false });
+    withFlows.tick();
+    noFlows.tick();
+
+    // Guard: the corridor really is loaded in one world and empty in the other.
+    expect(withFlows.getTrafficMap().getCongestion(2, 2)).toBeGreaterThan(0);
+    expect(noFlows.getTrafficMap().getCongestion(2, 2)).toBe(0);
+
+    // Probe (2,1): Chebyshev distance 1 from the loaded road tile (2,2).
+    expect(withFlows.getLandValue().getValue(2, 1))
+      .toBeLessThan(noFlows.getLandValue().getValue(2, 1));
+  });
+
+  it('markTrafficDirty() alone refreshes land value (traffic → land value cascade)', () => {
+    const world = makeCorridorWorld({ withJobs: true });
+    world.tick();
+    const penalized = world.getLandValue().getValue(2, 1);
+
+    // Remove the job destination DIRECTLY via BuildingMap — this marks nothing dirty.
+    world.getMap().getBuildings().removeBuilding(2);
+    // ONLY traffic is marked (no markLandValueDirty). Without the cascade the tick below
+    // would refresh congestion but leave the stale penalty baked into the land-value field.
+    world.markTrafficDirty();
+    world.tick();
+    const recovered = world.getLandValue().getValue(2, 1);
+
+    const control = makeCorridorWorld({ withJobs: false });
+    control.tick();
+
+    expect(recovered).toBeGreaterThan(penalized);
+    expect(recovered).toBe(control.getLandValue().getValue(2, 1));
+  });
+});
+
+describe('World.getHappiness() — congestion term', () => {
+  it('matches the four-term formula (land, jobs, budget, congestion)', () => {
+    const world = makeCorridorWorld({ withJobs: true });
+
+    // Capture happiness FIRST: its internal drain order (land value, then traffic) is what
+    // refreshes every component. getLandValue() never drains and getTrafficMap() does not
+    // drain landValueDirty, so reading the components first could disagree with the result.
+    const happiness = world.getHappiness();
+
+    const congestionIndex = world.getTrafficMap().getCongestionIndex();
+    expect(congestionIndex).toBeGreaterThan(0);
+
+    let levelSumR = 0;
+    let jobsLevels = 0;
+    let residentialCount = 0;
+    let residentialLandValueSum = 0;
+    for (const b of world.getMap().getBuildings().iterBuildings()) {
+      if (b.abandoned) continue;
+      if (b.type === 'residential') {
+        levelSumR += b.level;
+        residentialCount++;
+        residentialLandValueSum += world.getLandValue().getValue(b.anchor.x, b.anchor.y);
+      } else {
+        jobsLevels += b.level;
+      }
+    }
+
+    const landScore = residentialLandValueSum / residentialCount;
+    const jobsBalance = 1 - Math.abs(jobsLevels - levelSumR) / Math.max(jobsLevels + levelSumR, 1);
+    const budgetHealth = world.getMoney() / STARTING_FUNDS;
+    const expected =
+      HAPPINESS_W_LAND * landScore +
+      HAPPINESS_W_JOBS * jobsBalance +
+      HAPPINESS_W_BUDGET * budgetHealth -
+      HAPPINESS_W_TRAFFIC * congestionIndex;
+
+    expect(happiness).toBeCloseTo(expected, 8);
+  });
+
+  it('congestion strictly lowers happiness below the three positive terms alone', () => {
+    const world = makeCorridorWorld({ withJobs: true });
+    const happiness = world.getHappiness();
+
+    const congestionIndex = world.getTrafficMap().getCongestionIndex();
+    expect(congestionIndex).toBeGreaterThan(0);
+
+    // Same city, three-term (pre-feedback) score: 1 R and 1 C building, both level 4, so
+    // jobsBalance = 1 and budgetHealth = 1 (no tick, so money is untouched).
+    const landScore = world.getLandValue().getValue(0, 1);
+    const threeTerm =
+      HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * 1 + HAPPINESS_W_BUDGET * 1;
+
+    expect(happiness).toBeLessThan(threeTerm);
   });
 });
