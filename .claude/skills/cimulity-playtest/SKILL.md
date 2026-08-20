@@ -20,7 +20,7 @@ description: Drive a Playwright browser to actually PLAY Cimulity through real i
 
 ## Hard constraints
 
-- **The Playwright MCP has ONE browser.** Never run two playtest agents concurrently — they fight over the same tab. Run personas **sequentially**, each starting with a world reset.
+- **The Playwright MCP has ONE browser.** Never run two playtest agents concurrently — they fight over the same tab. Run personas **sequentially**, and confirm the previous one is actually stopped (Step 5) before starting the next. Each persona resets the world at the **start** of its own session, never at the end.
 - The canvas has **no accessibility tree**: `browser_click` cannot target tiles. Use `browser_run_code_unsafe` → `page.mouse.click(x, y)`. The HUD (toolbar, panels, stat readouts) *is* real DOM and can be read with `innerText`.
 - `window.__cimulity.dev` exposes only `seedScene / setCameraTile / markDirty / resetWorld / saveNow / regenerateTerrain / resetFlat`. There is **no `executeClick`** — placement must go through real input, which is the point.
 
@@ -210,6 +210,27 @@ A playtest report is about **feel**, backed by numbers: what the player tried, w
 A blind playtester still captures screenshots — but as **artifacts for the critic, not input for itself**. Shoot at a few fixed checkpoints (e.g. first buildings, mid-game, final city), name them predictably, and hand the paths on. Do not open them.
 
 `browser_take_screenshot` writes to the **repo root**, not `.playwright-mcp/` — keep them out of commits.
+
+## Step 5 — End the session; leave the city standing
+
+**Do NOT reset the world when you finish.** Your final city is the measurement — whoever reads your report will want to re-derive numbers from it (peak load per road tile, the trip distribution, land value at specific anchors), and those questions only occur to them *after* reading what you wrote. A `resetWorld()` on the way out destroys the only copy. This has already cost one calibration pass.
+
+Leave the session in a quiet, inspectable state:
+
+1. `page.keyboard.press('Space')` — pause the simulation, so nothing drifts while someone inspects it.
+2. `page.mouse.move(centreX, centreY)` — park the pointer dead-centre so the 32 px edge-pan margin cannot fire.
+3. Do NOT call `resetWorld`, `resetFlat`, or `regenerateTerrain` at the end.
+4. Report the final tick and a one-line summary of what is on the map, so the reader knows what they are looking at.
+
+**Your final text is a report, not a resignation.** Emitting it does not end you — you stay live and will keep going if left alone. Stop after you deliver it: say the session is complete and take no further browser actions unless someone sends you new instructions.
+
+### For whoever dispatched the playtest
+
+A playtest agent is NOT finished when its report arrives, and a named background agent may not appear in `ListAgents`' subagent list at all — so an empty listing is **not** evidence that it stopped. Absence there plus a delivered report is exactly the state in which one of these has been observed to still be playing: it had already reset the world and laid 53 roads and 60 zone tiles into a fresh city while the dispatcher believed it was done.
+
+**End it explicitly:** `TaskStop` with the agent's name (`TaskStop({ task_id: "playtest-<persona>" })`). It is harmless if the agent really has stopped. Then confirm the world is static by snapshotting tile/structure/money counts twice a couple of seconds apart and comparing — a paused, unattended city is byte-identical between reads.
+
+Only after the world is confirmed static should you take measurements from it, or hand its screenshots to a visual critic.
 
 ## Gotchas
 
