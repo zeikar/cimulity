@@ -12,6 +12,7 @@ import {
   WATER_INTERVAL,
   SERVICE_INTERVAL,
   TRAFFIC_INTERVAL,
+  LAND_VALUE_INTERVAL,
   DENSITY_COOLDOWN_INTERVALS,
   EMPTY_CITY_HAPPINESS,
   HAPPINESS_W_LAND,
@@ -2659,6 +2660,18 @@ describe('World.getTrafficMap() — drain-on-read', () => {
 
     // Road tile (0,2) is the residential origin access node — it must carry load.
     expect(tm.getCongestion(0, 2)).toBeGreaterThan(0);
+  });
+});
+
+describe('traffic cadence constants', () => {
+  it('TRAFFIC_INTERVAL is a multiple of LAND_VALUE_INTERVAL', () => {
+    // Land value reads the traffic snapshot, and recomputeTraffic deliberately does NOT
+    // dirty land value (cascades fire on mark, never on recompute). So a cadence-forced
+    // congestion refresh only reaches land value on a tick where the land-value cadence
+    // fires too. If this divisibility ever breaks, the refreshed congestion sits unread and
+    // growth/abandonment decide on stale congestion for the rest of the traffic period.
+    // See the TRAFFIC_INTERVAL doc comment in World.ts.
+    expect(TRAFFIC_INTERVAL % LAND_VALUE_INTERVAL).toBe(0);
   });
 });
 

@@ -67,7 +67,8 @@ export const SERVICE_INTERVAL = 16;
  * recompute), so a cadence-forced congestion refresh only reaches land value on a tick where
  * the land-value cadence also fires. At e.g. TRAFFIC_INTERVAL = 8 the refreshed congestion
  * would sit unread for up to 8 ticks. This is the binding constraint — not SERVICE_INTERVAL,
- * which traffic merely happens to equal.
+ * which traffic merely happens to equal. Enforced by the "traffic cadence constants" guard
+ * test in World.test.ts, so editing this value cannot silently break the rule.
  */
 export const TRAFFIC_INTERVAL = 16;
 /**
