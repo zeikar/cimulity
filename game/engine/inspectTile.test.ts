@@ -205,6 +205,27 @@ describe('inspectTile', () => {
     expect(info!.landValue).toBeLessThanOrEqual(1);
   });
 
+  it('reports congestionPenalty 0 on a quiet map with no traffic', () => {
+    const world = makeWorld();
+    const info = inspectTile(world, { x: 1, y: 1 });
+    expect(info!.congestionPenalty).toBe(0);
+  });
+
+  it('reports a nonzero congestionPenalty matching getLandValue().getCongestionPenalty when a road is jammed', () => {
+    const size = 6;
+    const world = makeWorld(size);
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ROAD));
+
+    // Seed full congestion directly on the retained TrafficMap array — traffic is never
+    // marked dirty, so this byte survives until land value reads it.
+    world.getTrafficMap().getRaw()[2 * size + 2] = 255;
+    world.markLandValueDirty();
+
+    const info = inspectTile(world, { x: 2, y: 2 });
+    expect(info!.congestionPenalty).toBeGreaterThan(0);
+    expect(info!.congestionPenalty).toBe(world.getLandValue().getCongestionPenalty(2, 2));
+  });
+
   it('drains the dirty land-value cache so a fresh edit is not reported stale', () => {
     const world = makeWorld();
     // Establish a baseline cache (flat grass → 0) with the dirty flag cleared.

@@ -66,6 +66,8 @@ export interface TileInfo {
   readonly isSchoolSource: boolean;
   /** Land value in [0, 1]. */
   readonly landValue: number;
+  /** Applied land-value penalty from road congestion, in [0, 1] — same unit as `landValue`. */
+  readonly congestionPenalty: number;
   /** Grown building occupying this tile, if any. */
   readonly building: TileBuildingInfo | null;
   /** Player-placed structure (e.g. power plant) occupying this tile, if any. */
@@ -191,6 +193,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     schoolServiceCovered,
     isSchoolSource,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
+    congestionPenalty: world.getLandValue().getCongestionPenalty(coord.x, coord.y),
     building: building
       ? {
           type: building.type,

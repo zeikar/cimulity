@@ -15,7 +15,7 @@ import type { ScreenCoord } from '@/game/types/coordinates';
 // Cursor offset and rough panel extents used to keep the panel on-screen.
 const CURSOR_OFFSET = 14;
 const EST_WIDTH = 240;
-const EST_HEIGHT = 300;
+const EST_HEIGHT = 320;
 
 /**
  * Place the panel near the click, flipping to the opposite side of the cursor
@@ -176,6 +176,13 @@ export function TileInfoPanel({
           </span>
         </Row>
         <Row label="Land Value">{Math.round(info.landValue * 100)}%</Row>
+        <Row label="Congestion Loss">
+          {info.congestionPenalty > 0 ? (
+            <span style={{ color: '#ff6b6b' }}>-{Math.round(info.congestionPenalty * 100)}%</span>
+          ) : (
+            '0%'
+          )}
+        </Row>
 
         {info.building && (
           <>
