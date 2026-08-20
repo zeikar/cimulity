@@ -26,12 +26,12 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v18';
 
-// Bumped to 'service-v9' for the traffic feedback loop: `TrafficMap` gains getCongestionIndex()
-// and `LandValueMap.recompute` gains a required traffic parameter, so a stale HMR singleton
-// would hold pre-feedback prototypes that accept-and-ignore the new argument. No new World
-// method was added, so the method probe is unchanged. Traffic is derived and never persisted,
-// so the save format (v18 / STORAGE_KEY) is untouched — only the guard token needs bumping.
-const WORLD_SINGLETON_GUARD = 'service-v9' as const;
+// Bumped to 'service-v10': `LandValueMap` gains getCongestionPenalty(), which the tile
+// inspector calls to attribute land-value loss to congestion — a stale HMR singleton would
+// hold a pre-getter prototype and crash the inspector. No new World method was added, so the
+// method probe is unchanged. Traffic is derived and never persisted, so the save format
+// (v18 / STORAGE_KEY) is untouched — only the guard token needs bumping.
+const WORLD_SINGLETON_GUARD = 'service-v10' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -61,7 +61,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v9 / v18 — traffic feedback into land value + happiness):
+ * Checked methods (as of service-v10 / v18 — traffic feedback into land value + happiness):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,

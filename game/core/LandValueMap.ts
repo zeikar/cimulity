@@ -54,11 +54,13 @@ export class LandValueMap {
   private readonly width: number;
   private readonly height: number;
   private readonly values: Float32Array;
+  private readonly congestionPenalties: Float32Array;
 
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.values = new Float32Array(width * height);
+    this.congestionPenalties = new Float32Array(width * height);
   }
 
   /**
@@ -187,8 +189,14 @@ export class LandValueMap {
             coverage.school.getCoverageNormalized(tx, ty)) /
           4;
 
-        const combined = Math.min(1, Math.max(0, ROAD_WEIGHT * roadScore + DIVERSITY_WEIGHT * diversityScore + SERVICE_WEIGHT * serviceScore + PARK_BOOST_MAX * parkScore - CONGESTION_PENALTY_MAX * congestionScore));
+        const base = ROAD_WEIGHT * roadScore + DIVERSITY_WEIGHT * diversityScore + SERVICE_WEIGHT * serviceScore + PARK_BOOST_MAX * parkScore;
+        // Both clamps run over the SAME base so the reported penalty can never disagree
+        // with the stored value: on a tile whose base already exceeds 1 the upper clamp
+        // absorbs part (or all) of the nominal term, and only the remainder is a real loss.
+        const uncongested = Math.min(1, Math.max(0, base));
+        const combined = Math.min(1, Math.max(0, base - CONGESTION_PENALTY_MAX * congestionScore));
         this.values[ty * w + tx] = combined;
+        this.congestionPenalties[ty * w + tx] = uncongested - combined;
       }
     }
   }
@@ -200,6 +208,22 @@ export class LandValueMap {
   getValue(x: number, y: number): number {
     if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
     return this.values[y * this.width + x];
+  }
+
+  /**
+   * Returns the land-value points the congestion term ACTUALLY subtracted at (x, y) —
+   * `clamp01(sum without congestion) − clamp01(sum with congestion)`, in
+   * [0, CONGESTION_PENALTY_MAX].
+   *
+   * This is the applied loss, not the nominal term: on a high-value tile whose inputs
+   * already sum past 1 the upper clamp absorbs part of the penalty, so the result can be
+   * smaller than the nominal term — and 0 when the clamp swallows it whole.
+   *
+   * Returns 0 for out-of-bounds coordinates.
+   */
+  getCongestionPenalty(x: number, y: number): number {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
+    return this.congestionPenalties[y * this.width + x];
   }
 
   /**

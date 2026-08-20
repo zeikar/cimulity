@@ -400,6 +400,94 @@ describe('LandValueMap', () => {
     });
   });
 
+  describe('getCongestionPenalty: the points ACTUALLY subtracted', () => {
+    it('(a) un-clamped tile: the getter equals both the observed loss and the nominal term', () => {
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+
+      const control = new LandValueMap(5, 5);
+      control.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
+
+      const congested = new LandValueMap(5, 5);
+      congested.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5),
+        congestedTraffic(5, 5, [{ x: 2, y: 2, c: 255 }]));
+
+      // Tile (2,1): base = 0.40 * 6/7 ≈ 0.343, far below the upper clamp, so nothing is
+      // absorbed and applied == nominal.
+      const observed = control.getValue(2, 1) - congested.getValue(2, 1);
+      expect(congested.getCongestionPenalty(2, 1)).toBeCloseTo(observed, 6);
+      expect(congested.getCongestionPenalty(2, 1)).toBeCloseTo(0.20 * (6 / 7), 6);
+    });
+
+    it('(b) zero-traffic map reports no penalty anywhere', () => {
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(map, new StructureMap(5, 5), fullCoverage(5, 5), noTraffic(5, 5));
+
+      for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+          expect(lv.getCongestionPenalty(x, y)).toBe(0);
+        }
+      }
+    });
+
+    it('(c) out-of-bounds coordinates report 0', () => {
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(new GameMap(5, 5), new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
+
+      expect(lv.getCongestionPenalty(-1, 0)).toBe(0);
+      expect(lv.getCongestionPenalty(0, -1)).toBe(0);
+      expect(lv.getCongestionPenalty(5, 0)).toBe(0);
+      expect(lv.getCongestionPenalty(0, 5)).toBe(0);
+    });
+
+    it('(d) clamped tile: the getter reports the APPLIED loss, strictly below the nominal term', () => {
+      // Road at (2,2), full service coverage, park on (2,1) itself. At (2,1) the
+      // uncongested sum is 0.40 * 6/7 + 0.50 + 0.25 ≈ 1.093 → clamps to 1, leaving only
+      // ≈0.093 of headroom. A fully congested road subtracts a nominal 0.20 * 6/7 ≈ 0.171,
+      // but the clamp absorbs the headroom first, so only ≈0.078 is actually lost.
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const structures = new StructureMap(5, 5);
+      structures.addStructure({
+        type: 'park',
+        anchor: { x: 2, y: 1 },
+        footprint: [{ x: 2, y: 1 }],
+      });
+
+      const control = new LandValueMap(5, 5);
+      control.recompute(map, structures, fullCoverage(5, 5), noTraffic(5, 5));
+      expect(control.getValue(2, 1)).toBe(1);
+
+      const congested = new LandValueMap(5, 5);
+      congested.recompute(map, structures, fullCoverage(5, 5),
+        congestedTraffic(5, 5, [{ x: 2, y: 2, c: 255 }]));
+
+      const observed = control.getValue(2, 1) - congested.getValue(2, 1);
+      const nominal = 0.20 * (6 / 7);
+      expect(observed).toBeCloseTo(0.0786, 4);
+      expect(congested.getCongestionPenalty(2, 1)).toBeCloseTo(observed, 6);
+      expect(congested.getCongestionPenalty(2, 1)).toBeLessThan(nominal);
+    });
+
+    it('(e) clamped tile, mild congestion fully absorbed: penalty is exactly 0', () => {
+      // Same ≈0.093 headroom as (d), but byte 100 → nominal 0.20 * (100/255) * 6/7 ≈ 0.067,
+      // which the clamp swallows whole: land value stays 1 and nothing was actually lost.
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const structures = new StructureMap(5, 5);
+      structures.addStructure({
+        type: 'park',
+        anchor: { x: 2, y: 1 },
+        footprint: [{ x: 2, y: 1 }],
+      });
+
+      const congested = new LandValueMap(5, 5);
+      congested.recompute(map, structures, fullCoverage(5, 5),
+        congestedTraffic(5, 5, [{ x: 2, y: 2, c: 100 }]));
+
+      expect(congested.getValue(2, 1)).toBe(1);
+      expect(congested.getCongestionPenalty(2, 1)).toBe(0);
+    });
+  });
+
   describe('dirty-mark integration: observable behavior only', () => {
     it('value at road tile is 0 before placement, > 0 after tick', () => {
       const world = new World(8, 8, { regenerate: false });
