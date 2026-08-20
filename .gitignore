@@ -45,3 +45,6 @@ next-env.d.ts
 
 # autopilot scheduler runtime lock
 .claude/scheduled_tasks.lock
+
+# playwright MCP session output (snapshots, console logs)
+/.playwright-mcp/
