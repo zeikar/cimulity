@@ -31,9 +31,9 @@ import {
   isUnderSupported,
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
-import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './growthConstants';
 import { canMerge, mergedBuildingShape } from './mergePolicy';
-export { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
+export { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './growthConstants';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
 
@@ -76,8 +76,6 @@ export const TRAFFIC_INTERVAL = 16;
  * Unit: growth opportunities (same as GROWTH_COOLDOWN_INTERVALS).
  */
 export const DENSITY_COOLDOWN_INTERVALS = 24;
-/** Population contribution per zone level point. */
-export const POPULATION_PER_LEVEL = 10;
 /** Initial city treasury balance. */
 export const STARTING_FUNDS = 10000;
 /** Land-value contribution weight for city happiness (W_LAND + W_JOBS + W_BUDGET = 1.0). */

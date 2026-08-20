@@ -1,4 +1,6 @@
-// Shared pure constants for growth + merge policy; kept dep-free so mergePolicy.ts can import without circling through World.ts.
+// Shared pure constants for growth + merge policy; kept dep-free so mergePolicy.ts (and
+// other core modules that must not import World, e.g. laborMarket.ts) can import without
+// circling through World.ts. Also carries the population-unit basis (POPULATION_PER_LEVEL).
 
 export const GROWTH_COOLDOWN_INTERVALS = 8;
 
@@ -15,6 +17,9 @@ export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
 // up to this many cells deep. Wider lots (after merge) raise the cap to match
 // their width axis, so structures stay roughly square — see canExtendStructure.
 export const MIN_STRUCTURE_DEPTH_CAP = 2;
+
+/** Population contribution per zone level point. */
+export const POPULATION_PER_LEVEL = 10;
 
 export function stagger(id: number): number {
   return ((id ^ (id >>> 16)) * 2654435761 >>> 0) % 7;
