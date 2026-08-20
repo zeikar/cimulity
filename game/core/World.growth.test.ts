@@ -7,6 +7,8 @@ import {
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS } from './growthConstants';
 import { DENSITY_DEMAND_THRESHOLD } from './Demand';
+import { WORKERS_PER_LEVEL } from './laborMarket';
+import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
@@ -1331,15 +1333,19 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(2);
     expect(map.getBuildings().getBuilding(PROBE_ID)!.abandoned).toBe(false);
 
-    // Relief phase: re-resolve traffic from the REAL flows. The probe's 2 matched workers
-    // load road tiles x=5..15 of their commute → round(255·2/64) = 8, a residual penalty
-    // of 0.20·(8/255)·(6/7) ≈ 0.0054 at the anchor (frontage at Chebyshev distance 1).
+    // Relief phase: re-resolve traffic from the REAL flows. The L2 probe's whole matched
+    // workforce (2 · WORKERS_PER_LEVEL, absorbed by the L2 commercial) loads road tiles
+    // x=5..15 of its commute → byte 43 at capacity 120, a residual penalty of
+    // 0.20·(43/255)·(6/7) ≈ 0.0289 at the anchor (frontage at Chebyshev distance 1) —
+    // real congestion from an ordinary commute, but far short of the ~0.09 that would
+    // push the anchor back under LEVEL_THRESHOLDS[3].
+    const RELIEF_BYTE = Math.round((255 * 2 * WORKERS_PER_LEVEL) / TRAFFIC_CAPACITY);
     world.markTrafficDirty();
     world.tick(); // tick 9: traffic resolves before land value in the derived-field chain
 
-    expect(world.getTrafficMap().getCongestion(5, 2)).toBe(8);
+    expect(world.getTrafficMap().getCongestion(5, 2)).toBe(RELIEF_BYTE);
     const reliefLv = world.getLandValue().getValue(5, 1);
-    expect(reliefLv).toBeCloseTo(UNCONGESTED_LV - 0.20 * (8 / 255) * (6 / 7), 6); // ≈ 0.5375
+    expect(reliefLv).toBeCloseTo(UNCONGESTED_LV - 0.20 * (RELIEF_BYTE / 255) * (6 / 7), 6);
     expect(reliefLv).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[3]);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick(); // → tick 16, next growth tick

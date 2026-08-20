@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LaborMarketMap } from './LaborMarketMap';
+import { JOBS_PER_LEVEL, WORKERS_PER_LEVEL } from './laborMarket';
 import { GameMap } from './Map';
 import { BuildingMap, type BuildingType } from './Building';
 import { StructureMap } from './StructureMap';
@@ -83,10 +84,10 @@ describe('LaborMarketMap', () => {
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
 
-      expect(lm.getEmployed()).toBe(1);
+      expect(lm.getEmployed()).toBe(WORKERS_PER_LEVEL);
       expect(lm.getUnemployed()).toBe(0);
-      expect(lm.getJobsCapacity()).toBe(1);
-      expect(lm.getJobsFilled()).toBe(1);
+      expect(lm.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
+      expect(lm.getJobsFilled()).toBe(JOBS_PER_LEVEL);
       expect(lm.getReachableUnfilledJobs()).toBe(0);
 
       const flows = lm.getFlows();
@@ -94,12 +95,13 @@ describe('LaborMarketMap', () => {
       expect(flows[0]).toEqual({
         originNode: idxOf(w, 1, 1),
         destNode: idxOf(w, 5, 1),
-        count: 1,
+        count: WORKERS_PER_LEVEL,
       });
     });
 
     it('counts leftover workers as unemployed when jobs are scarce', () => {
-      // Two residential workers, one commercial job → one matched, one unemployed.
+      // Two level-1 residentials, one level-1 job node whose capacity is exactly one
+      // building's worth of workers → the first origin is matched, the second is not.
       const w = 12;
       const map = makeMap(w, 8, roadRow(1, 1, 7));
       const sm = new StructureMap(w, 8);
@@ -111,15 +113,16 @@ describe('LaborMarketMap', () => {
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
 
-      expect(lm.getEmployed()).toBe(1);
-      expect(lm.getUnemployed()).toBe(1);
-      expect(lm.getJobsCapacity()).toBe(1);
-      expect(lm.getJobsFilled()).toBe(1);
+      expect(lm.getEmployed()).toBe(JOBS_PER_LEVEL);
+      expect(lm.getUnemployed()).toBe(WORKERS_PER_LEVEL);
+      expect(lm.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
+      expect(lm.getJobsFilled()).toBe(JOBS_PER_LEVEL);
       expect(lm.getFlows()).toHaveLength(1);
     });
 
-    it('reports reachableUnfilledJobs === 1 for a connected 1R + level-2 C scenario', () => {
-      // 1 worker reaches a level-2 C (2 slots), fills 1 → 1 slot remains reachable+unfilled.
+    it('reports the leftover slots for a connected 1R + level-2 C scenario', () => {
+      // One level of workers reaches a level-2 C, filling one level's worth of slots →
+      // the remaining level's worth stays reachable+unfilled.
       const w = 10;
       const map = makeMap(w, 8, roadRow(1, 1, 5));
       const sm = new StructureMap(w, 8);
@@ -130,8 +133,8 @@ describe('LaborMarketMap', () => {
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
 
-      expect(lm.getEmployed()).toBe(1);
-      expect(lm.getReachableUnfilledJobs()).toBe(1);
+      expect(lm.getEmployed()).toBe(WORKERS_PER_LEVEL);
+      expect(lm.getReachableUnfilledJobs()).toBe(2 * JOBS_PER_LEVEL - WORKERS_PER_LEVEL);
     });
   });
 
@@ -146,7 +149,7 @@ describe('LaborMarketMap', () => {
 
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
-      expect(lm.getEmployed()).toBe(1);
+      expect(lm.getEmployed()).toBe(WORKERS_PER_LEVEL);
 
       lm.clear();
 

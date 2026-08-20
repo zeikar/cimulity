@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { World, TRAFFIC_INTERVAL } from './World';
+import { JOBS_PER_LEVEL, WORKERS_PER_LEVEL } from './laborMarket';
 import { TileType, createTile } from './Tile';
 
 // ---------------------------------------------------------------------------
@@ -58,9 +59,9 @@ describe('World labor market wiring', () => {
       ]);
       world.markLaborDirty();
 
-      expect(world.getEmployed()).toBe(1);
+      expect(world.getEmployed()).toBe(WORKERS_PER_LEVEL);
       expect(world.getUnemployed()).toBe(0);
-      expect(world.getJobsCapacity()).toBe(1);
+      expect(world.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
     });
 
     it('reports leftover workers as unemployed when jobs are scarce', () => {
@@ -70,10 +71,10 @@ describe('World labor market wiring', () => {
       ]);
       world.markLaborDirty();
 
-      // 2 workers, 1 job → 1 employed, 1 unemployed.
-      expect(world.getEmployed()).toBe(1);
-      expect(world.getUnemployed()).toBe(1);
-      expect(world.getJobsCapacity()).toBe(1);
+      // 2 levels of workers, 1 level of jobs → half matched, half unemployed.
+      expect(world.getEmployed()).toBe(JOBS_PER_LEVEL);
+      expect(world.getUnemployed()).toBe(2 * WORKERS_PER_LEVEL - JOBS_PER_LEVEL);
+      expect(world.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
     });
   });
 
@@ -91,7 +92,7 @@ describe('World labor market wiring', () => {
       // Mark dirty so the next read recomputes the matched scenario.
       world.markLaborDirty();
       const fresh = world.getLaborMarket();
-      expect(fresh.getEmployed()).toBe(1);
+      expect(fresh.getEmployed()).toBe(WORKERS_PER_LEVEL);
       expect(fresh.getFlows()).toHaveLength(1);
     });
   });
@@ -103,7 +104,7 @@ describe('World labor market wiring', () => {
         { id: 2, type: 'commercial', x: 5, level: 1 },
       ]);
       world.markLaborDirty();
-      expect(world.getEmployed()).toBe(1);
+      expect(world.getEmployed()).toBe(WORKERS_PER_LEVEL);
 
       world.reset({ regenerate: false });
 
@@ -125,7 +126,7 @@ describe('World labor market wiring', () => {
     });
 
     it('workers>jobs yields lower total congestion than jobs≥workers (capacity-limited through World)', () => {
-      // Scarce jobs: 3 residential workers, 1 job → only 1 commute → low total load.
+      // Scarce jobs: 3 levels of workers, 1 level of jobs → one partial commute → low load.
       const scarce = makeWorldWithRoadRow([
         { id: 1, type: 'residential', x: 0, level: 3 },
         { id: 2, type: 'commercial', x: 5, level: 1 },
@@ -133,7 +134,7 @@ describe('World labor market wiring', () => {
       scarce.markTrafficDirty();
       const scarceLoad = totalCongestion(scarce);
 
-      // Ample jobs: same 3 workers, 3 jobs → all 3 commute → higher total load.
+      // Ample jobs: same 3 levels of workers, 3 of jobs → all commute → higher load.
       const ample = makeWorldWithRoadRow([
         { id: 1, type: 'residential', x: 0, level: 3 },
         { id: 2, type: 'commercial', x: 5, level: 3 },

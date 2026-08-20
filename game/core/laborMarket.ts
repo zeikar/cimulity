@@ -23,19 +23,25 @@
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
 import type { BuildingMap } from './Building';
+import { POPULATION_PER_LEVEL } from './growthConstants';
 import { ORTHOGONAL, accessNodeFor, buildStructureOwned, isRoadNode } from './roadGraph';
 
 /**
- * Jobs provided per commercial/industrial building level. Tunable basis,
- * consistent with the `level`-sum jobs proxy used by `Demand` / `getPopulation`.
+ * Jobs provided per commercial/industrial building level. Derived from
+ * `POPULATION_PER_LEVEL` so a job slot is denominated in the SAME unit as the
+ * population the city displays: one level's worth of residents is one level's
+ * worth of job seekers.
  */
-export const JOBS_PER_LEVEL = 1;
+export const JOBS_PER_LEVEL = POPULATION_PER_LEVEL;
 
 /**
- * Workers supplied per residential building level. Tunable basis, consistent
- * with the `level`-sum workers proxy used by `Demand` / `getPopulation`.
+ * Workers supplied per residential building level. Derived from
+ * `POPULATION_PER_LEVEL` so simulated commuters are counted in the same unit as
+ * the displayed population — otherwise the city would route a small fraction of
+ * the residents it claims to have, and every volume-calibrated knob downstream
+ * (notably `TRAFFIC_CAPACITY`) would be measured against the wrong magnitude.
  */
-export const WORKERS_PER_LEVEL = 1;
+export const WORKERS_PER_LEVEL = POPULATION_PER_LEVEL;
 
 /** One aggregate commute: `count` workers route from `originNode` to `destNode`. */
 export interface CommuteFlow {

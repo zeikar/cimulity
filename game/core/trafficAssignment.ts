@@ -32,14 +32,39 @@
 
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
-import type { CommuteFlow } from './laborMarket';
+import { WORKERS_PER_LEVEL, type CommuteFlow } from './laborMarket';
 import { ORTHOGONAL, buildStructureOwned, isRoadNode } from './roadGraph';
 
 /**
  * Trip volume (road-tile load) at which a road tile is considered fully
- * congested (normalized value 255). The single normalization knob.
+ * congested (normalized value 255). The single normalization knob, expressed in
+ * `WORKERS_PER_LEVEL` units: a trip IS a commuting worker, so the knob CHAINS to
+ * the commuter unit (which itself derives from `POPULATION_PER_LEVEL`) instead of
+ * re-deriving from the display constant in parallel. If labor participation is
+ * ever modelled — `WORKERS_PER_LEVEL` becoming some fraction of
+ * `POPULATION_PER_LEVEL` — capacity follows the commuters automatically, which is
+ * exactly the drift this constant was recalibrated to end.
+ *
+ * Calibrated against a worst case observed in a playtest: a deliberately
+ * adversarial city (one road, no loops, all residential at one end and industry
+ * at the other) put byte 40 at the then-capacity of 64 on its busiest tile — ~10
+ * trips under the old 1-worker-per-level scale, i.e. ~100 trips once workers are
+ * counted per resident. The ~100 is therefore a linear projection of a measured
+ * byte, not itself a measurement; assignment is exactly linear in the worker
+ * unit, so it holds, but re-measure before retuning off it. At capacity 120 that
+ * tile reads `round(255 · 100 / 120) = 213` — about 83% of saturation, so the
+ * corridor is visibly near-jammed while still un-clamped, and a building fronting
+ * it takes a land-value penalty of `0.20 · (213/255) · 6/7 ≈ 0.14`: roughly one
+ * whole `LEVEL_THRESHOLDS` band, enough to gate level-ups and abandon marginal
+ * buildings. A capacity of 100 would pin that corridor at 255 with no headroom,
+ * flattening the byte field into an all-clamped plateau; 200 would leave it at
+ * 128 (penalty ≈ 0.086), under the narrowest threshold band, so even that layout
+ * would never bite. Ordinary spread-out cities load 20–40 trips per tile → bytes
+ * 43–85 (penalty ≤ ~0.06), a design concern rather than a constant tax.
+ *
+ * The multiplier is pending play-verification and may still be revised.
  */
-export const TRAFFIC_CAPACITY = 64;
+export const TRAFFIC_CAPACITY = 12 * WORKERS_PER_LEVEL;
 
 /**
  * Compute per-road-tile traffic congestion `0..255` by loading precomputed

@@ -12,7 +12,11 @@ import { GameMap } from '@/game/core/Map';
 import { BuildingMap, type BuildingType } from '@/game/core/Building';
 import { TileType, createTile } from '@/game/core/Tile';
 import type { Frontage } from '@/game/core/buildingFootprint';
-import type { CommuteFlow } from '@/game/core/laborMarket';
+import {
+  JOBS_PER_LEVEL,
+  WORKERS_PER_LEVEL,
+  type CommuteFlow,
+} from '@/game/core/laborMarket';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,7 +170,7 @@ describe('buildingEmploymentShares', () => {
     const bm = new BuildingMap(W, 6);
     // Residential at (1,0) → access (1,1)
     const res = addBuilding(bm, 1, 0, 'residential', 'S', { level: 2 });
-    // Commercial at (5,0) → access (5,1), level 2 → capacity 2
+    // Commercial at (5,0) → access (5,1), level 2 → 2 levels of capacity
     const com = addBuilding(bm, 5, 0, 'commercial', 'S', { level: 2 });
     // Abandoned residential at (3,0) → access (3,1), but abandoned
     const aband = addBuilding(bm, 3, 0, 'residential', 'S', { abandoned: true });
@@ -177,9 +181,9 @@ describe('buildingEmploymentShares', () => {
 
   it('fully employed residential: share 1, hasData true', () => {
     const { map, bm, res } = makeFixture();
-    // 2 workers from node (1,1), both matched.
+    // The level-2 R's whole workforce leaves node (1,1) matched.
     const flows: CommuteFlow[] = [
-      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: 2 },
+      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: 2 * WORKERS_PER_LEVEL },
     ];
     const result = buildingEmploymentShares(map, bm, flows);
     const entry = result.get(res!.id);
@@ -190,9 +194,9 @@ describe('buildingEmploymentShares', () => {
 
   it('half-filled C/I dest: share 0.5, hasData true', () => {
     const { map, bm, com } = makeFixture();
-    // Commercial has capacity 2; only 1 worker matched.
+    // Commercial is level 2; only one level's worth of its capacity is matched.
     const flows: CommuteFlow[] = [
-      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: 1 },
+      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: JOBS_PER_LEVEL },
     ];
     const result = buildingEmploymentShares(map, bm, flows);
     const entry = result.get(com!.id);

@@ -56,7 +56,7 @@ describe('assignTraffic — straight path', () => {
 
     const result = assignTraffic(map, sm, flows);
 
-    // count=1, capacity=64 → Math.round(255*1/64) = 4 on every path road tile.
+    // Every path road tile carries the single trip → Math.round(255*1/TRAFFIC_CAPACITY).
     const expected = Math.round((255 * 1) / TRAFFIC_CAPACITY);
     for (let x = 1; x <= 5; x++) {
       expect(result[idxOf(w, x, 1)]).toBe(expected);

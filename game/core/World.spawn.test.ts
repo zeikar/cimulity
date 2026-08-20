@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { World, ZONE_GROWTH_INTERVAL, ZONE_MAX_LEVEL } from './World';
-import { GROWTH_COOLDOWN_INTERVALS } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS } from './growthConstants';
 import { TileType, createTile } from './Tile';
 
 function setTileCorners(world: World, x: number, y: number, h: number): void {
@@ -81,6 +81,14 @@ function seedSchool(world: World, ax: number, ay: number): void {
   expect(added).not.toBeNull();
   world.markSchoolDirty();
   world.recomputeSchool();
+}
+
+/** 1×1 park at (px,py) — the additive land-value boost (PARK_BOOST_MAX = 0.25). */
+function seedPark(world: World, px: number, py: number): void {
+  expect(world.getMap().getTile(px, py)?.type).toBe(TileType.GRASS);
+  const added = world.getStructureMap().addStructure({ type: 'park', anchor: { x: px, y: py }, footprint: [{ x: px, y: py }] });
+  expect(added).not.toBeNull();
+  world.markLandValueDirty();
 }
 
 describe('World.tick() — heal rule', () => {
@@ -214,8 +222,15 @@ describe('World.tick() — zone growth', () => {
     // Plant at (4,3)-(5,4) powers road (4,2). Tower at (7,3)-(8,4) waters road (7,2).
     // Whole road row powered+watered → zone (0,1) both powered+watered.
     // Service coverage now ALSO feeds land value (weight 0.50); the four stations are
-    // reseeded close to road (0,2) so LV(0,1) ≈ 0.89 >= 0.85 (the level-5 gate). All four
-    // footprints are GRASS (the (2,1) industrial zone does not overlap any of them).
+    // reseeded close to road (0,2) so LV(0,1) ≈ 0.89 from road+diversity+service alone.
+    // All four footprints are GRASS (the (2,1) industrial zone does not overlap any of them).
+    // That 0.89 is NOT enough on its own: the R lot's own commuters jam its own frontage.
+    // At level 5 it sends 5 · WORKERS_PER_LEVEL trips over access node (0,2) → byte
+    // round(255 · 50 / TRAFFIC_CAPACITY) = 106, a land-value penalty of
+    // 0.20 · (106/255) · 6/7 ≈ 0.071 that would hold the anchor under the 0.85 level-5
+    // gate forever. A park two tiles away adds 0.25 · (1 − 2/(PARK_RADIUS+1)) = 0.15 of
+    // headroom, so the gate stays clear at every level and the cap — not the land-value
+    // gate — is what stops growth at ZONE_MAX_LEVEL.
     const world = new World(10, 8, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -237,14 +252,27 @@ describe('World.tick() — zone growth', () => {
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     // Authoritative land-value guard: the level-5 gate is LEVEL_THRESHOLDS[5] = 0.85.
+    // Asserted BEFORE the park, while road+diversity+service still sum to ≈0.89 with only
+    // ~0.04 of margin — the park's additive boost clamps the sum to 1.0 and would hide a
+    // station-placement regression behind the clamp.
     world.recomputeLandValue();
     expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(0.85);
+    // Chebyshev 2 from the anchor (0,1) → +0.15 land value. It also lifts the neighbouring
+    // C/I lots one level each (they front the same corridor); harmless — this test asserts
+    // only the R lot's cap.
+    seedPark(world, 2, 0);
 
     // GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14 growth-opportunity intervals per level.
     // 5 levels × 14 + 1 creation = 71 growth intervals × ZONE_GROWTH_INTERVAL ticks each.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 80; i++) world.tick();
 
     expect(map.getBuildings().getBuildingAt(0, 1)?.level).toBe(ZONE_MAX_LEVEL);
+    // Growth stopped at the CAP, not at the land-value gate: the anchor still clears the
+    // level-5 threshold even carrying the level-5 building's own commute congestion.
+    // Slack for a future retune: the congested anchor lands ≈0.97, about 0.12 above the
+    // gate — a TRAFFIC_CAPACITY cut deep enough to more than double this lot's penalty
+    // would need more park/service headroom here.
+    expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[5]);
   });
 
   it('at cap, zone no longer contributes to changed', () => {

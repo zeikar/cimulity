@@ -18,7 +18,12 @@ export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
 // their width axis, so structures stay roughly square — see canExtendStructure.
 export const MIN_STRUCTURE_DEPTH_CAP = 2;
 
-/** Population contribution per zone level point. */
+/**
+ * Population contribution per zone level point — and the unit basis for
+ * `WORKERS_PER_LEVEL` / `JOBS_PER_LEVEL` (laborMarket.ts) and, through them,
+ * `TRAFFIC_CAPACITY` (trafficAssignment.ts). Changing it rescales every commute
+ * volume in the sim, not just the number shown in the HUD.
+ */
 export const POPULATION_PER_LEVEL = 10;
 
 export function stagger(id: number): number {
