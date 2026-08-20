@@ -26,8 +26,7 @@
  * the set. A destination-agnostic multi-source BFS would route it to the wrong
  * destination, so each destination is solved independently.
  *
- * DATA-ONLY: this module reads the maps and mutates NOTHING. It is not wired
- * into render or simulation feedback here, and is not persisted. It must NOT
+ * Pure: reads the maps and mutates NOTHING, and is not persisted. Must not
  * import `World` or `zoneGrowth` (both are World-coupled).
  */
 
