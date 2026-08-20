@@ -251,14 +251,14 @@ describe('World.tick() — congestion-driven abandonment', () => {
     //     parks, and no zone tiles in the 3×3 → 0.40 · (1 − 1/(ROAD_RADIUS+1)) = 0.40 · 6/7
     //     ≈ 0.3429 (ROAD_WEIGHT / ROAD_RADIUS in LandValueMap.ts). That clears
     //     LEVEL_THRESHOLDS[2] = 0.25 with only 0.0929 of margin.
-    //   - 8 L1 residential feeders ⇄ 8 L1 commercial feeders, i.e. 8 · WORKERS_PER_LEVEL
+    //   - 40 L1 residential feeders ⇄ 40 L1 commercial feeders, i.e. 40 · WORKERS_PER_LEVEL
     //     workers against exactly as many jobs, and every matched flow crosses (24,2) →
-    //     that tile carries the full 8 · WORKERS_PER_LEVEL trips. With
-    //     TRAFFIC_CAPACITY = 12 · WORKERS_PER_LEVEL that quantizes to byte 170 — well
+    //     that tile carries the full 40 · WORKERS_PER_LEVEL trips. With
+    //     TRAFFIC_CAPACITY = 50 · WORKERS_PER_LEVEL that quantizes to byte 204 — well
     //     inside the 255 clamp, so the assertion below is a real measurement of the
     //     capacity magnitude rather than a saturated plateau.
-    //   - Penalty at the anchor = CONGESTION_PENALTY_MAX(0.20) · (170/255) · 6/7 ≈ 0.1143,
-    //     which is MORE than the 0.0929 margin → congested land value ≈ 0.2286 < 0.25 →
+    //   - Penalty at the anchor = CONGESTION_PENALTY_MAX(0.20) · (204/255) · 6/7 ≈ 0.1371,
+    //     which is MORE than the 0.0929 margin → congested land value ≈ 0.2057 < 0.25 →
     //     maxSupportedLevel = 1 → the L2 probe is under-supported → abandoned.
     //   - The feeders are all level 1, and maxSupportedLevel floors at 1 (zoneGrowth.ts), so
     //     the load SOURCE can never abandon itself: the jam cannot self-clear (phase B).
@@ -267,10 +267,11 @@ describe('World.tick() — congestion-driven abandonment', () => {
     //     side by side never merge away underneath the fixture.
     //   - Retune ceiling: the probe's margin is crossed only while the byte is ≥ 139
     //     (0.20 · (139/255) · 6/7 > 0.0929), i.e. while TRAFFIC_CAPACITY stays at or below
-    //     ~147. Raise capacity past that and this fixture stops abandoning — add feeder
-    //     columns (FEEDER_COLUMNS below) to restore the crossing load rather than relaxing
-    //     the assertions.
-    const FEEDER_COLUMNS = 4; // one x per column → 2 buildings each (y=1, y=3), 8 per side
+    //     ~733 at the current FEEDER_COLUMNS. Raise capacity past that and this fixture
+    //     stops abandoning — add feeder columns (FEEDER_COLUMNS below) to restore the
+    //     crossing load rather than relaxing the assertions. The 48-wide world bounds that
+    //     escape hatch: the feeders must fit in x ∈ [RES_X0, 23) and [COM_X0, 48).
+    const FEEDER_COLUMNS = 20; // one x per column → 2 buildings each (y=1, y=3), 40 per side
     const RES_X0 = 2;
     const COM_X0 = 27;
     const CROSSING_LOAD = 2 * FEEDER_COLUMNS * WORKERS_PER_LEVEL;

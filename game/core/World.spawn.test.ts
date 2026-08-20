@@ -224,11 +224,12 @@ describe('World.tick() — zone growth', () => {
     // Service coverage now ALSO feeds land value (weight 0.50); the four stations are
     // reseeded close to road (0,2) so LV(0,1) ≈ 0.89 from road+diversity+service alone.
     // All four footprints are GRASS (the (2,1) industrial zone does not overlap any of them).
-    // That 0.89 is NOT enough on its own: the R lot's own commuters jam its own frontage.
-    // At level 5 it sends 5 · WORKERS_PER_LEVEL trips over access node (0,2) → byte
-    // round(255 · 50 / TRAFFIC_CAPACITY) = 106, a land-value penalty of
-    // 0.20 · (106/255) · 6/7 ≈ 0.071 that would hold the anchor under the 0.85 level-5
-    // gate forever. A park two tiles away adds 0.25 · (1 − 2/(PARK_RADIUS+1)) = 0.15 of
+    // The R lot's own commuters jam its own frontage: at level 5 it sends
+    // 5 · WORKERS_PER_LEVEL trips over access node (0,2) → byte
+    // round(255 · 50 / TRAFFIC_CAPACITY) = 26, a land-value penalty of
+    // 0.20 · (26/255) · 6/7 ≈ 0.017. That alone leaves ≈ 0.87, still over the 0.85
+    // level-5 gate — but with only ~0.02 of slack, which any service-placement drift
+    // would eat. A park two tiles away adds 0.25 · (1 − 2/(PARK_RADIUS+1)) = 0.15 of
     // headroom, so the gate stays clear at every level and the cap — not the land-value
     // gate — is what stops growth at ZONE_MAX_LEVEL.
     const world = new World(10, 8, { regenerate: false });
@@ -269,9 +270,9 @@ describe('World.tick() — zone growth', () => {
     expect(map.getBuildings().getBuildingAt(0, 1)?.level).toBe(ZONE_MAX_LEVEL);
     // Growth stopped at the CAP, not at the land-value gate: the anchor still clears the
     // level-5 threshold even carrying the level-5 building's own commute congestion.
-    // Slack for a future retune: the congested anchor lands ≈0.97, about 0.12 above the
-    // gate — a TRAFFIC_CAPACITY cut deep enough to more than double this lot's penalty
-    // would need more park/service headroom here.
+    // Slack for a future retune: with the park the congested anchor clamps at 1.0, well
+    // above the gate — but a TRAFFIC_CAPACITY cut deep enough to push this one lot's own
+    // penalty past ~0.15 would eat the park's headroom and need more here.
     expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[5]);
   });
 

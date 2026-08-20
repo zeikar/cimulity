@@ -45,26 +45,45 @@ import { ORTHOGONAL, buildStructureOwned, isRoadNode } from './roadGraph';
  * `POPULATION_PER_LEVEL` — capacity follows the commuters automatically, which is
  * exactly the drift this constant was recalibrated to end.
  *
- * Calibrated against a worst case observed in a playtest: a deliberately
- * adversarial city (one road, no loops, all residential at one end and industry
- * at the other) put byte 40 at the then-capacity of 64 on its busiest tile — ~10
- * trips under the old 1-worker-per-level scale, i.e. ~100 trips once workers are
- * counted per resident. The ~100 is therefore a linear projection of a measured
- * byte, not itself a measurement; assignment is exactly linear in the worker
- * unit, so it holds, but re-measure before retuning off it. At capacity 120 that
- * tile reads `round(255 · 100 / 120) = 213` — about 83% of saturation, so the
- * corridor is visibly near-jammed while still un-clamped, and a building fronting
- * it takes a land-value penalty of `0.20 · (213/255) · 6/7 ≈ 0.14`: roughly one
- * whole `LEVEL_THRESHOLDS` band, enough to gate level-ups and abandon marginal
- * buildings. A capacity of 100 would pin that corridor at 255 with no headroom,
- * flattening the byte field into an all-clamped plateau; 200 would leave it at
- * 128 (penalty ≈ 0.086), under the narrowest threshold band, so even that layout
- * would never bite. Ordinary spread-out cities load 20–40 trips per tile → bytes
- * 43–85 (penalty ≤ ~0.06), a design concern rather than a constant tax.
+ * Calibrated against two cities MEASURED in a play-verification, by reading the
+ * un-normalized per-tile trip load straight off the matched commute flows (the
+ * byte alone cannot calibrate anything once it clamps):
+ *   - Adversarial: one straight 59-tile road, no loops, no alternate route,
+ *     housing at the west end and industry/commerce at the east, 91 zone tiles.
+ *     Every employed worker crosses the middle, so the mid-corridor tiles carry
+ *     the WHOLE employed population — 380 trips at the size the city stalled at,
+ *     and more as it grows. This load is GLOBAL: it scales with the city.
+ *   - Ordinary: an 8-block lattice with jobs interleaved among the homes, so
+ *     every matched commute is 0–5 tiles. Its busiest street still carried 130
+ *     trips, because a dozen SHORT commutes overlap on the same block face. This
+ *     load is LOCAL: it is set by how many lots share one street, and it grows
+ *     far more slowly than the city does.
  *
- * The multiplier is pending play-verification and may still be revised.
+ * The split between those two is what the constant has to sit in. At 500 the
+ * ordinary street reads `round(255 · 130 / 500) = 66` — a land-value penalty of
+ * `0.20 · (66/255) · 6/7 ≈ 0.044`, below the smallest margin any building there
+ * held over its `LEVEL_THRESHOLDS` gate (≈ 0.09), so an ordinary layout is nudged
+ * and never abandoned. The corridor city reads near-saturated but un-clamped at the
+ * sizes measured — `round(255 · 380 / 500) = 194` at the 380-trip stall, and a
+ * re-measured 360-trip corridor read 184 — for a penalty of `0.20 · (194/255) · 6/7
+ * ≈ 0.130`, roughly one whole `LEVEL_THRESHOLDS` band: enough to gate level-ups and
+ * to abandon marginal buildings, which is the intended bite. Because that load is
+ * GLOBAL it keeps climbing with the city and does clamp once the corridor's employed
+ * population passes 500; the band is deliberately entered before the byte flattens,
+ * so the gradient still carries information at the sizes a player actually reaches.
+ *
+ * Rejected by the same measurement: 12 · WORKERS_PER_LEVEL (= 120, the value this
+ * replaces) pinned the ORDINARY city's busiest street at a clamped 255 and drove
+ * it into a permanent boom/bust cycle — 21 of 36 buildings abandoned, recovering,
+ * abandoning again — i.e. exactly the "constant tax" this knob exists to avoid.
+ * Assignment is exactly linear in the worker unit, so the same measured loads
+ * project 16 · WORKERS_PER_LEVEL to byte 207 and 24 · WORKERS_PER_LEVEL to byte
+ * 138 on that ordinary street: both still far past a tolerable ordinary reading.
+ * Going the other way, capacity above ~1.4× the corridor load (≈ 530 at the
+ * 380-trip size measured) drops that corridor out of the near-saturated reading
+ * this knob targets. Re-measure BOTH loads before retuning.
  */
-export const TRAFFIC_CAPACITY = 12 * WORKERS_PER_LEVEL;
+export const TRAFFIC_CAPACITY = 50 * WORKERS_PER_LEVEL;
 
 /**
  * Compute per-road-tile traffic congestion `0..255` by loading precomputed

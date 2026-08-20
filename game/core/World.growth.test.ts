@@ -1335,8 +1335,8 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
 
     // Relief phase: re-resolve traffic from the REAL flows. The L2 probe's whole matched
     // workforce (2 · WORKERS_PER_LEVEL, absorbed by the L2 commercial) loads road tiles
-    // x=5..15 of its commute → byte 43 at capacity 120, a residual penalty of
-    // 0.20·(43/255)·(6/7) ≈ 0.0289 at the anchor (frontage at Chebyshev distance 1) —
+    // x=5..15 of its commute → byte 10 at capacity 500, a residual penalty of
+    // 0.20·(10/255)·(6/7) ≈ 0.0067 at the anchor (frontage at Chebyshev distance 1) —
     // real congestion from an ordinary commute, but far short of the ~0.09 that would
     // push the anchor back under LEVEL_THRESHOLDS[3].
     const RELIEF_BYTE = Math.round((255 * 2 * WORKERS_PER_LEVEL) / TRAFFIC_CAPACITY);
