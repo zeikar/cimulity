@@ -65,7 +65,8 @@ export class LandValueMap {
 
   /**
    * Recompute the entire influence field from the current map state.
-   * Pure: no side-effects beyond writing to this.values.
+   * Pure: no side-effects beyond writing to this map's backing arrays
+   * (`values` and `congestionPenalties`).
    *
    * `traffic` must already be a fresh snapshot — this reads it, it never drains it.
    */

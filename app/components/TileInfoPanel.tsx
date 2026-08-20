@@ -95,6 +95,9 @@ export function TileInfoPanel({
     info.type === TileType.ZONE_RESIDENTIAL ||
     info.type === TileType.ZONE_COMMERCIAL ||
     info.type === TileType.ZONE_INDUSTRIAL;
+  // Round once so the branch and the displayed digits always agree — a sub-0.5%
+  // penalty must fall back to plain '0%', never a red '-0%'.
+  const congestionPercent = Math.round(info.congestionPenalty * 100);
 
   return (
     <div
@@ -177,8 +180,8 @@ export function TileInfoPanel({
         </Row>
         <Row label="Land Value">{Math.round(info.landValue * 100)}%</Row>
         <Row label="Congestion Loss">
-          {info.congestionPenalty > 0 ? (
-            <span style={{ color: '#ff6b6b' }}>-{Math.round(info.congestionPenalty * 100)}%</span>
+          {congestionPercent > 0 ? (
+            <span style={{ color: '#ff6b6b' }}>-{congestionPercent}%</span>
           ) : (
             '0%'
           )}
