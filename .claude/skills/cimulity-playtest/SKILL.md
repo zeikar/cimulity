@@ -20,7 +20,7 @@ description: Drive a Playwright browser to actually PLAY Cimulity through real i
 
 ## Hard constraints
 
-- **The Playwright MCP has ONE browser.** Never run two playtest agents concurrently — they fight over the same tab. Run personas **sequentially**, and confirm the previous one is actually stopped (Step 5) before starting the next. Each persona resets the world at the **start** of its own session, never at the end.
+- **The Playwright MCP has ONE browser.** Never run two playtest agents concurrently — they fight over the same tab. Run personas **sequentially**, and confirm the previous one is actually stopped (Step 5) before starting the next. Each persona resets the world at the **start** of its own session, never at the end. `window.__kit` is a shared mutable global with no session ownership, so a genuine collision would corrupt coordinate maths silently, with no way to detect it afterwards — which is why the rule is "never concurrent", not "be careful".
 - The canvas has **no accessibility tree**: `browser_click` cannot target tiles. Use `browser_run_code_unsafe` → `page.mouse.click(x, y)`. The HUD (toolbar, panels, stat readouts) *is* real DOM and can be read with `innerText`.
 - `window.__cimulity.dev` exposes only `seedScene / setCameraTile / markDirty / resetWorld / saveNow / regenerateTerrain / resetFlat`. There is **no `executeClick`** — placement must go through real input, which is the point.
 
@@ -231,6 +231,12 @@ A playtest agent is NOT finished when its report arrives, and a named background
 **End it explicitly:** `TaskStop` with the agent's name (`TaskStop({ task_id: "playtest-<persona>" })`). It is harmless if the agent really has stopped. Then confirm the world is static by snapshotting tile/structure/money counts twice a couple of seconds apart and comparing — a paused, unattended city is byte-identical between reads.
 
 Only after the world is confirmed static should you take measurements from it, or hand its screenshots to a visual critic.
+
+**Say in the prompt that no other playtest is running.** Once you have stopped the previous session, tell the next one so explicitly. A run-3 agent saw a stale system reminder still listing the already-stopped run-2 agent, correctly applied the one-browser rule, and halted mid-session to ask — burning its budget on a collision that did not exist. One sentence ("you are the only agent on the browser; any earlier playtest has been stopped") prevents it.
+
+**Do NOT edit source or switch git branches while a playtest is in flight.** This is the most destructive mistake available to the dispatcher, and it is silent. Editing a component the running page has loaded makes Next.js Fast Refresh hot-swap it against a stale scope; the resulting `ReferenceError` cascades into a "performing full reload", and on reload `worldStore` re-hydrates from the **localStorage autosave** — so the agent's built city is replaced by whatever was last saved, while money and population keep ticking from that older state. Nothing appears on screen. The agent sees its roads and structures reverted to grass with a bank balance that kept growing, has no way to tell a game bug from a harness artifact, and its numbers are worthless from that point. Observed once, and it cost a whole session plus a false "the game corrupts saves" bug report. Land your edits first, or wait.
+
+**Findings that only reproduce on the dev server are not product findings.** Before recording any crash or corruption an agent reports, hard-reload a clean page and try to reproduce it. A `ReferenceError` naming a variable that demonstrably exists in the source, or a placement that fails only on a world that survived a Fast Refresh reload, is harness noise — file it as a harness hazard, never as a game bug, or the record fills with things no player can hit.
 
 ## Gotchas
 
