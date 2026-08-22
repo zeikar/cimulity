@@ -1,4 +1,4 @@
-// StatsPanel: fixed-position overlay showing three sparkline charts.
+// StatsPanel: fixed-position overlay showing four sparkline charts.
 // Rendered only when the [Stats] toggle is open, so it never blocks the canvas
 // when closed. pointerEvents: 'auto' is set here (the HUD root is 'none').
 
@@ -61,6 +61,17 @@ export function StatsPanel({ samples }: StatsPanelProps) {
         label="Happiness"
         color="#ff9800"
         values={samples.map((s) => s.happiness)}
+        format={(n) => n.toFixed(2)}
+      />
+      <StatChart
+        label="Congestion"
+        color="#f44336"
+        values={samples.map((s) => s.congestion)}
+        // Same 2-decimal [0, 1] notation as Happiness (not a percent) — congestion is the
+        // exact value happiness subtracts via HAPPINESS_W_TRAFFIC, so matching notation lets
+        // a reader compare magnitudes across the two charts. They do NOT share a drawn scale:
+        // StatChart normalizes every series to its own min/max, so what aligns a congestion
+        // spike with the happiness dip it caused is the shared X (time) axis, not the Y.
         format={(n) => n.toFixed(2)}
       />
     </div>

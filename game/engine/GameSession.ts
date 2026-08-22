@@ -44,6 +44,26 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
   [Tool.PARK]: TILE_COLORS['park'],
 };
 
+/**
+ * Snapshot passed to `onTickUpdate`. Bundled into one object rather than positional
+ * args: it is 8 fields fanned out across four engine-internal emit sites plus the
+ * hand-written `stableForwarders` wrapper in GameCanvas, and same-typed neighbors
+ * (happiness, congestion) would silently swap under a positional list with no compiler
+ * error. TypeScript also accepts a SHORTER-arity callback for a longer signature, so a
+ * forwarder left un-updated would have dropped the new field at runtime, unflagged.
+ */
+export interface TickUpdate {
+  tick: number;
+  dirt: number;
+  population: number;
+  money: number;
+  date: WorldDate;
+  demand: DemandVector;
+  happiness: number;
+  /** City-wide congestion index in [0, 1]; same value getHappiness() subtracts via HAPPINESS_W_TRAFFIC. */
+  congestion: number;
+}
+
 export interface GameSessionCallbacks {
   onTileHover?: (tile: TileCoord | null) => void;
   onTileClick: (tile: TileCoord) => void;
@@ -57,7 +77,7 @@ export interface GameSessionCallbacks {
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
   onToolChange?: (tool: Tool) => void;
-  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) => void;
+  onTickUpdate?: (update: TickUpdate) => void;
   /**
    * React-state mirror callbacks. Fire after the session has accepted/applied
    * the authoritative pause/speed value — either via the GameLoop on a
@@ -149,7 +169,19 @@ export class GameSession {
     this.scheduleSave();
     // Sync HUD immediately so Dirt: jumps on bulldoze without waiting for next tick.
     const money = this.world!.getMoney();
-    this.callbacks.onTickUpdate?.(this.world!.getTick(), this.world!.countDirt(), this.world!.getPopulation(), money, this.world!.getDate(), this.world!.getDemand(), this.world!.getHappiness());
+    // Read happiness before congestion: getHappiness() drains traffic dirtiness via its
+    // land-value cascade, so the getTrafficMap() read below never forces its own recompute.
+    const happiness = this.world!.getHappiness();
+    this.callbacks.onTickUpdate?.({
+      tick: this.world!.getTick(),
+      dirt: this.world!.countDirt(),
+      population: this.world!.getPopulation(),
+      money,
+      date: this.world!.getDate(),
+      demand: this.world!.getDemand(),
+      happiness,
+      congestion: this.world!.getTrafficMap().getCongestionIndex(),
+    });
     // Keep tracker in sync; tool mutation already scheduled a save via scheduleSave above.
     this.lastSyncedMoney = money;
     this.lastSyncedElapsedDays = this.world!.getElapsedDays();
@@ -199,7 +231,17 @@ export class GameSession {
     this.callbacks.onSpeedChange?.(DEFAULT_SPEED_MULTIPLIER);
     // Read post-reset money (reset already set STARTING_FUNDS; avoids ordering coupling).
     const m = this.world ? this.world.getMoney() : STARTING_FUNDS;
-    this.callbacks.onTickUpdate?.(0, 0, 0, m, this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 }, this.world ? this.world.getDemand() : { residential: 0.25, commercial: 0.25, industrial: 0.25 }, this.world ? this.world.getHappiness() : EMPTY_CITY_HAPPINESS);
+    this.callbacks.onTickUpdate?.({
+      tick: 0,
+      dirt: 0,
+      population: 0,
+      money: m,
+      date: this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 },
+      demand: this.world ? this.world.getDemand() : { residential: 0.25, commercial: 0.25, industrial: 0.25 },
+      happiness: this.world ? this.world.getHappiness() : EMPTY_CITY_HAPPINESS,
+      // reset() already sets trafficDirty = false and clears the map, so this is a plain read.
+      congestion: this.world ? this.world.getTrafficMap().getCongestionIndex() : 0,
+    });
     this.lastSyncedMoney = m;
     this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
     // Step 6: clear selected/hover.
@@ -411,14 +453,38 @@ export class GameSession {
       if (agg.changedTiles.length === 0 && (economyDirty || calendarDirty)) {
         this.scheduleSave();
       }
-      this.callbacks.onTickUpdate?.(agg.tick, world.countDirt(), world.getPopulation(), money, world.getDate(), world.getDemand(), world.getHappiness());
+      // Read happiness before congestion: getHappiness() drains traffic dirtiness via its
+      // land-value cascade, so the getTrafficMap() read below never forces its own recompute.
+      const happiness = world.getHappiness();
+      this.callbacks.onTickUpdate?.({
+        tick: agg.tick,
+        dirt: world.countDirt(),
+        population: world.getPopulation(),
+        money,
+        date: world.getDate(),
+        demand: world.getDemand(),
+        happiness,
+        congestion: world.getTrafficMap().getCongestionIndex(),
+      });
       this.lastSyncedMoney = money;
       this.lastSyncedElapsedDays = elapsedDays;
     });
     // Sync HUD to the world's current state before the first tick, so a
     // hydrated/reused world with persisted DIRT shows the real count instead
     // of staying at 0 until the first tick heals it away.
-    this.callbacks.onTickUpdate?.(world.getTick(), world.countDirt(), world.getPopulation(), world.getMoney(), world.getDate(), world.getDemand(), world.getHappiness());
+    // Read happiness before congestion: getHappiness() drains traffic dirtiness via its
+    // land-value cascade, so the getTrafficMap() read below never forces its own recompute.
+    const initialHappiness = world.getHappiness();
+    this.callbacks.onTickUpdate?.({
+      tick: world.getTick(),
+      dirt: world.countDirt(),
+      population: world.getPopulation(),
+      money: world.getMoney(),
+      date: world.getDate(),
+      demand: world.getDemand(),
+      happiness: initialHappiness,
+      congestion: world.getTrafficMap().getCongestionIndex(),
+    });
     this.lastSyncedMoney = world.getMoney();
     this.lastSyncedElapsedDays = world.getElapsedDays();
     // Closes the race window between `sessionRef.current = session` and `await session.start()`.

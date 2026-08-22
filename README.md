@@ -19,7 +19,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Water towers gate zone level-ups/density (power gates initial spawn)
 - Police, fire, hospital, and school stations provide road-network coverage; level-up now requires all four at the anchor
 - Land value gates level-up at the anchor: road proximity (weight 0.40), zone-mix diversity (0.10), service coverage (0.50 — avg of the four), plus additive park proximity (+0.25 max) and a subtractive road-congestion penalty (−0.20 max); park is a separate amenity, not a fifth coverage service
-- Display-only happiness KPI (0–1 scalar, land value/jobs/budget weighted minus a congestion penalty) and a toggleable statistics panel with population/money/happiness sparklines
+- Display-only happiness KPI (0–1 scalar, land value/jobs/budget weighted minus a congestion penalty) and a toggleable statistics panel with population/money/happiness/congestion sparklines
 - Dot-art textures replace placeholder colored geometry: buildings get dynamic window lights (punched/curtain facades) and seeded per-building lot coverage; roads autotile into smooth diagonal asphalt ribbons with junction hubs and sidewalk aprons; terrain adds park/street decorations plus coastal sand and highland rock bands
 - Buildings above level 1 abandon (go derelict) when land value drops below their level's requirement, and re-occupy on recovery; level 1 is the floor, so a level-1 building never goes derelict
 - Aggregate labor market (job capacity, worker matching, employment) routes commutes over the road graph; those commute flows load each road tile into a per-tile congestion value, and a data-view overlay (None/Traffic/Jobs) visualizes both
@@ -74,7 +74,7 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 
 - [x] **Services** - Police, fire, hospital, and school coverage all shipped (road-network + distance falloff); the coverage family has four members (police/fire/hospital emergency trio + school education); level-up gates on all four at the anchor
 - [x] **Parks** - Park tile shipped (forest-green, keyboard K, cost 100); raises nearby land value (Chebyshev radius 4, additive +0.25 max, nearest-park strongest-wins); park is a land-value amenity — it is NOT a fifth coverage service (the formula is road 0.40 + diversity 0.10 + service 0.50, plus the additive park +0.25 and a subtractive road-congestion penalty of −0.20 max)
-- [x] **Happiness/statistics** - Display-only happiness KPI (0..1) and a statistics panel with population/money/happiness sparklines; happiness does not yet feed simulation
+- [x] **Happiness/statistics** - Display-only happiness KPI (0..1) and a statistics panel with population/money/happiness/congestion sparklines; happiness does not yet feed simulation
 - [ ] **Sound effects** - Audio feedback
 - [x] **Land-value model** - Road weight rebalanced 0.7→0.40, diversity 0.3→0.10; the four coverage services now contribute a combined service term (weight 0.50, average of the four normalised coverages) atop the additive park bonus (+0.25) and a subtractive road-congestion penalty (−0.20 max). Services play a dual role: hard-gate level-up at the anchor AND feed land value.
 

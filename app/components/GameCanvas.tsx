@@ -11,12 +11,10 @@
 
 import { useEffect, useRef } from 'react';
 import { GameSession } from '@/game/engine';
-import type { TileInfo } from '@/game/engine';
+import type { TileInfo, TickUpdate } from '@/game/engine';
 import { Tool } from '@/game/tools';
 import type { DataView } from '@/game/render/dataView';
 import type { TileCoord, ScreenCoord } from '@/game/types/coordinates';
-import type { WorldDate } from '@/game/core/World';
-import type { DemandVector } from '@/game/core/Demand';
 
 export interface GameCanvasProps {
   onTileHover?: (tile: TileCoord | null) => void;
@@ -25,7 +23,7 @@ export interface GameCanvasProps {
   onTileInspect?: (info: TileInfo | null, screen: ScreenCoord) => void;
   onFpsUpdate: (fps: number) => void;
   onCameraUpdate: (x: number, y: number, zoom: number) => void;
-  onTickUpdate?: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) => void;
+  onTickUpdate?: (update: TickUpdate) => void;
   currentTool?: Tool;
   onToolChange?: (tool: Tool) => void;
   /** Bump to trigger a "New City" reset on the live session. */
@@ -87,8 +85,7 @@ export function GameCanvas({
     onFpsUpdate: (fps: number) => callbacksRef.current.onFpsUpdate(fps),
     onCameraUpdate: (x: number, y: number, zoom: number) =>
       callbacksRef.current.onCameraUpdate(x, y, zoom),
-    onTickUpdate: (tick: number, dirt: number, population: number, money: number, date: WorldDate, demand: DemandVector, happiness: number) =>
-      callbacksRef.current.onTickUpdate?.(tick, dirt, population, money, date, demand, happiness),
+    onTickUpdate: (update: TickUpdate) => callbacksRef.current.onTickUpdate?.(update),
     onToolChange: (tool: Tool) => callbacksRef.current.onToolChange?.(tool),
     onSpeedChange: (multiplier: 1 | 2 | 3) => callbacksRef.current.onSpeedChange?.(multiplier),
     onPauseChange: (paused: boolean) => callbacksRef.current.onPauseChange?.(paused),

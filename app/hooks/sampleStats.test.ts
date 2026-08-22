@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { STATS_HISTORY_CAPACITY, StatsSample, sampleStats } from './sampleStats';
 
-const s = (tick: number, population = 0, money = 0, happiness = 0): StatsSample => ({
+const s = (tick: number, population = 0, money = 0, happiness = 0, congestion = 0): StatsSample => ({
   tick,
   population,
   money,
   happiness,
+  congestion,
 });
 
 describe('sampleStats', () => {
@@ -25,8 +26,8 @@ describe('sampleStats', () => {
   it('same-tick call REPLACES last element (length unchanged, values updated)', () => {
     // Simulates the paused tool-spend scenario: money is spent and happiness
     // changes without the tick advancing.
-    const initial = s(5, 100, 1000, 0.6);
-    const updated = s(5, 100, 800, 0.55); // same tick, less money, slightly lower happiness
+    const initial = s(5, 100, 1000, 0.6, 0.1);
+    const updated = s(5, 100, 800, 0.55, 0.2); // same tick, less money, slightly lower happiness, higher congestion
     const prev = [s(1), s(3), initial];
     const result = sampleStats(prev, updated);
 
