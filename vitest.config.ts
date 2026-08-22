@@ -75,6 +75,7 @@ export default defineConfig({
         'game/core/TrafficMap.ts',
         'game/core/LaborMarketMap.ts',
         'app/hooks/sampleStats.ts',
+        'app/hooks/laborStatus.ts',
         'game/render/visuals/polygon/windowLights.ts',
         'game/render/visuals/polygon/windowGeometry.ts',
         'game/render/roadAutoTile.ts',
