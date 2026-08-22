@@ -102,8 +102,8 @@ export function GameHUD({
           position: 'fixed',
           top: 0,
           left: 0,
-          // Fixed so the wrapping warning line below cannot stretch the panel.
-          width: '332px',
+          // Fixed so the wrapping warning line below cannot stretch the panel; capped so it doesn't overflow narrower viewports.
+          width: 'min(332px, 100vw)',
           padding: '16px',
           backgroundColor: 'rgba(0, 0, 0, 0.7)',
           color: 'white',
