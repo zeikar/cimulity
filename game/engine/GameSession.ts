@@ -46,7 +46,7 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
 
 /**
  * Snapshot passed to `onTickUpdate`. Bundled into one object rather than positional
- * args: it is 8 fields fanned out across four engine-internal emit sites plus the
+ * args: it is 11 fields fanned out across four engine-internal emit sites plus the
  * hand-written `stableForwarders` wrapper in GameCanvas, and same-typed neighbors
  * (happiness, congestion) would silently swap under a positional list with no compiler
  * error. TypeScript also accepts a SHORTER-arity callback for a longer signature, so a
@@ -62,6 +62,10 @@ export interface TickUpdate {
   happiness: number;
   /** City-wide congestion index in [0, 1]; same value getHappiness() subtracts via HAPPINESS_W_TRAFFIC. */
   congestion: number;
+  employed: number;
+  unemployed: number;
+  /** Non-abandoned C/I capacity INCLUDING road-less buildings that can never fill (see `LaborResult` in laborMarket.ts). */
+  jobsCapacity: number;
 }
 
 export interface GameSessionCallbacks {
@@ -172,6 +176,8 @@ export class GameSession {
     // Read happiness before congestion: getHappiness() drains traffic dirtiness via its
     // land-value cascade, so the getTrafficMap() read below never forces its own recompute.
     const happiness = this.world!.getHappiness();
+    // demand: below force-refreshes labor when demandDirty (which markLaborDirty always sets
+    // alongside laborDirty), so employed/unemployed/jobsCapacity here are always plain reads.
     this.callbacks.onTickUpdate?.({
       tick: this.world!.getTick(),
       dirt: this.world!.countDirt(),
@@ -181,6 +187,9 @@ export class GameSession {
       demand: this.world!.getDemand(),
       happiness,
       congestion: this.world!.getTrafficMap().getCongestionIndex(),
+      employed: this.world!.getEmployed(),
+      unemployed: this.world!.getUnemployed(),
+      jobsCapacity: this.world!.getJobsCapacity(),
     });
     // Keep tracker in sync; tool mutation already scheduled a save via scheduleSave above.
     this.lastSyncedMoney = money;
@@ -241,6 +250,9 @@ export class GameSession {
       happiness: this.world ? this.world.getHappiness() : EMPTY_CITY_HAPPINESS,
       // reset() already sets trafficDirty = false and clears the map, so this is a plain read.
       congestion: this.world ? this.world.getTrafficMap().getCongestionIndex() : 0,
+      employed: this.world ? this.world.getEmployed() : 0,
+      unemployed: this.world ? this.world.getUnemployed() : 0,
+      jobsCapacity: this.world ? this.world.getJobsCapacity() : 0,
     });
     this.lastSyncedMoney = m;
     this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
@@ -465,6 +477,9 @@ export class GameSession {
         demand: world.getDemand(),
         happiness,
         congestion: world.getTrafficMap().getCongestionIndex(),
+        employed: world.getEmployed(),
+        unemployed: world.getUnemployed(),
+        jobsCapacity: world.getJobsCapacity(),
       });
       this.lastSyncedMoney = money;
       this.lastSyncedElapsedDays = elapsedDays;
@@ -484,6 +499,9 @@ export class GameSession {
       demand: world.getDemand(),
       happiness: initialHappiness,
       congestion: world.getTrafficMap().getCongestionIndex(),
+      employed: world.getEmployed(),
+      unemployed: world.getUnemployed(),
+      jobsCapacity: world.getJobsCapacity(),
     });
     this.lastSyncedMoney = world.getMoney();
     this.lastSyncedElapsedDays = world.getElapsedDays();

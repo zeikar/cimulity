@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { STATS_HISTORY_CAPACITY, StatsSample, sampleStats } from './sampleStats';
 
-const s = (tick: number, population = 0, money = 0, happiness = 0, congestion = 0): StatsSample => ({
+const s = (tick: number, population = 0, money = 0, happiness = 0, congestion = 0, unemploymentRate = 0): StatsSample => ({
   tick,
   population,
   money,
   happiness,
   congestion,
+  unemploymentRate,
 });
 
 describe('sampleStats', () => {
@@ -26,14 +27,15 @@ describe('sampleStats', () => {
   it('same-tick call REPLACES last element (length unchanged, values updated)', () => {
     // Simulates the paused tool-spend scenario: money is spent and happiness
     // changes without the tick advancing.
-    const initial = s(5, 100, 1000, 0.6, 0.1);
-    const updated = s(5, 100, 800, 0.55, 0.2); // same tick, less money, slightly lower happiness, higher congestion
+    const initial = s(5, 100, 1000, 0.6, 0.1, 0.10);
+    const updated = s(5, 100, 800, 0.55, 0.2, 0.30); // same tick, less money, slightly lower happiness, higher congestion, higher unemployment
     const prev = [s(1), s(3), initial];
     const result = sampleStats(prev, updated);
 
     expect(result.length).toBe(3);
     expect(result[result.length - 1]).toEqual(updated);
     expect(result[result.length - 1]).not.toEqual(initial);
+    expect(result[result.length - 1].unemploymentRate).toBe(0.30);
   });
 
   it('appending past capacity drops oldest and keeps newest capacity items', () => {

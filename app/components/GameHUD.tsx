@@ -12,6 +12,7 @@ import type { DemandVector } from '@/game/core/Demand';
 import { Tool } from '@/game/tools';
 import type { DataView } from '@/game/render/dataView';
 import type { StatsSample } from '@/app/hooks/sampleStats';
+import type { LaborStatus } from '@/app/hooks/laborStatus';
 import { StatsPanel } from './StatsPanel';
 import { DataViewPanel } from './DataViewPanel';
 
@@ -51,6 +52,7 @@ export interface GameHUDProps {
   speedMultiplier: 1 | 2 | 3;
   paused: boolean;
   statsSamples: StatsSample[];
+  labor: LaborStatus;
   dataView: DataView;
   onDataViewChange: (v: DataView) => void;
 }
@@ -81,6 +83,7 @@ export function GameHUD({
   speedMultiplier,
   paused,
   statsSamples,
+  labor,
   dataView,
   onDataViewChange,
 }: GameHUDProps) {
@@ -99,6 +102,8 @@ export function GameHUD({
           position: 'fixed',
           top: 0,
           left: 0,
+          // Fixed so the wrapping warning line below cannot stretch the panel.
+          width: '332px',
           padding: '16px',
           backgroundColor: 'rgba(0, 0, 0, 0.7)',
           color: 'white',
@@ -130,6 +135,21 @@ export function GameHUD({
         <div>
           <strong>Happiness:</strong> <BarBlocks value={happiness} color="#ff9800" /> {happiness.toFixed(2)}
         </div>
+
+        {/* Population counts C/I levels too (World.getPopulation), so population === workforce + jobsCapacity; workforce is the residential-only figure. */}
+        <div>
+          <strong>Workforce:</strong> {labor.workforce} · {labor.employed} employed
+        </div>
+        {/* jobsCapacity includes road-less capacity that can never fill, so open counts unfilled slots rather than hireable vacancies. */}
+        <div>
+          <strong>Jobs:</strong> {labor.jobsCapacity} · {labor.openings} open
+        </div>
+        <div>
+          <strong>Without jobs:</strong> {labor.withoutJobs} ({labor.ratePercent}%)
+        </div>
+        {labor.warning && (
+          <div style={{ color: '#ff5252', marginTop: '4px' }}>{labor.warning}</div>
+        )}
 
         {isDev && (
           <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.2)', opacity: 0.7, fontSize: '12px' }}>

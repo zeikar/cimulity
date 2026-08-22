@@ -18,6 +18,7 @@ export function useStatsHistory(
   money: number,
   happiness: number,
   congestion: number,
+  unemploymentRate: number,
 ): StatsSample[] {
   const [history, setHistory] = useState<StatsSample[]>([]);
 
@@ -32,12 +33,12 @@ export function useStatsHistory(
   // normally, not clear the series.
   useEffect(() => {
     setHistory((prev) => { // eslint-disable-line react-hooks/set-state-in-effect
-      const sample = { tick, population, money, happiness, congestion };
+      const sample = { tick, population, money, happiness, congestion, unemploymentRate };
       // Reset: tick went backward (New City / destructive reset → fresh world at tick 0).
       if (prev.length > 0 && tick < prev[prev.length - 1].tick) return [sample];
       return sampleStats(prev, sample);
     });
-  }, [tick, population, money, happiness, congestion]);
+  }, [tick, population, money, happiness, congestion, unemploymentRate]);
 
   return history;
 }

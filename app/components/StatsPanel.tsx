@@ -1,4 +1,4 @@
-// StatsPanel: fixed-position overlay showing four sparkline charts.
+// StatsPanel: fixed-position overlay showing five sparkline charts.
 // Rendered only when the [Stats] toggle is open, so it never blocks the canvas
 // when closed. pointerEvents: 'auto' is set here (the HUD root is 'none').
 
@@ -73,6 +73,13 @@ export function StatsPanel({ samples }: StatsPanelProps) {
         // StatChart normalizes every series to its own min/max, so what aligns a congestion
         // spike with the happiness dip it caused is the shared X (time) axis, not the Y.
         format={(n) => n.toFixed(2)}
+      />
+      <StatChart
+        label="Unemployment"
+        color="#ba68c8"
+        values={samples.map((s) => s.unemploymentRate)}
+        // Percent (not the 2-decimal notation above) matches the `Without jobs:` HUD row, which states the same quantity.
+        format={(n) => `${Math.round(n * 100)}%`}
       />
     </div>
   );

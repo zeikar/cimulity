@@ -19,6 +19,7 @@ export type StatsSample = {
   money: number;
   happiness: number;
   congestion: number;
+  unemploymentRate: number;
 };
 
 /**
