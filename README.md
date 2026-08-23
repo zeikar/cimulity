@@ -23,7 +23,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Dot-art textures replace placeholder colored geometry: buildings get dynamic window lights (punched/curtain facades) and seeded per-building lot coverage; roads autotile into smooth diagonal asphalt ribbons with junction hubs and sidewalk aprons; terrain adds park/street decorations plus coastal sand and highland rock bands
 - Buildings above level 1 abandon (go derelict) when land value drops below their level's requirement, and re-occupy on recovery; level 1 is the floor, so a level-1 building never goes derelict
 - Aggregate labor market (job capacity, worker matching, employment) routes commutes over the road graph; those commute flows load each road tile into a per-tile congestion value, and a data-view overlay (None/Traffic/Jobs) visualizes both
-- R/C/I demand is now derived from labor-market balance (jobs vs. workers), not blended in as a secondary signal
+- R/C/I demand is now derived from labor-market balance (jobs vs. workers), not blended in as a secondary signal, with a small damped floor (in-migration for R, an external-market pull for C/I) that keeps all three bars off exact zero at a fully employed balance, each still falling to zero past its own cutoff
 
 Next focus: sound effects and continued tool-feedback polish.
 
