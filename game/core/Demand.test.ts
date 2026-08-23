@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { Demand, DENSITY_DEMAND_THRESHOLD } from './Demand';
+import {
+  Demand,
+  DENSITY_DEMAND_THRESHOLD,
+  GROWTH_DEMAND_THRESHOLD,
+  MIN_MARKET,
+  MIGRATION_PRESSURE,
+  MIGRATION_UNEMPLOYMENT_CUTOFF,
+  DEADBAND_RATE,
+  SATURATION_RATE,
+  COMMERCIAL_JOB_SHARE,
+  EMPTY_CITY_DEMAND,
+} from './Demand';
+import type { DemandVector } from './Demand';
+import { POPULATION_PER_LEVEL } from './growthConstants';
 import { BuildingMap } from './Building';
 import type { Building } from './Building';
 
@@ -29,6 +42,62 @@ function addBuilding(
   });
 }
 
+/** Add `count` level-`level` buildings of `type`, laid out one per cell along successive rows. */
+function addRun(
+  map: BuildingMap,
+  startId: number,
+  row: number,
+  type: Building['type'],
+  count: number,
+  level: number,
+): void {
+  for (let i = 0; i < count; i++) addBuilding(map, startId + i, i, row, type, level);
+}
+
+type LaborBag = Readonly<{
+  employed: number;
+  unemployed: number;
+  reachableUnfilledJobs: number;
+  jobsCapacity: number;
+}>;
+
+function levelSums(map: BuildingMap): { r: number; c: number; i: number } {
+  let r = 0;
+  let c = 0;
+  let i = 0;
+  for (const b of map.iterBuildings()) {
+    if (b.abandoned) continue;
+    if (b.type === 'residential') r += b.level;
+    else if (b.type === 'commercial') c += b.level;
+    else i += b.level;
+  }
+  return { r, c, i };
+}
+
+/**
+ * Every labor bag must describe a state the simulation can actually produce — a bag that
+ * contradicts its own building map proves nothing about the formula. Called from every case that
+ * supplies a bag (via `demandFor`), so the fixture table cannot drift back into unreachable states.
+ */
+function expectProducibleBag(map: BuildingMap, bag: LaborBag): void {
+  const { r, c, i } = levelSums(map);
+  expect(bag.employed + bag.unemployed).toBe(r * POPULATION_PER_LEVEL);
+  expect(bag.jobsCapacity).toBe((c + i) * POPULATION_PER_LEVEL);
+  expect(bag.employed + bag.reachableUnfilledJobs).toBeLessThanOrEqual(bag.jobsCapacity);
+  for (const scalar of [bag.employed, bag.unemployed, bag.reachableUnfilledJobs, bag.jobsCapacity]) {
+    expect(scalar % POPULATION_PER_LEVEL).toBe(0);
+  }
+  // reachableUnfilledJobs is summed over job nodes reached by a residential BFS.
+  if (r === 0) expect(bag.reachableUnfilledJobs).toBe(0);
+}
+
+function demandFor(map: BuildingMap, bag: LaborBag): DemandVector {
+  expectProducibleBag(map, bag);
+  const demand = new Demand();
+  demand.recompute(map, bag);
+  return demand.get();
+}
+
 function makePRNG(seed: number): () => number {
   let s = seed;
   return () => {
@@ -51,319 +120,355 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
   return out;
 }
 
-const ZERO_LABOR = { employed: 0, unemployed: 0, reachableUnfilledJobs: 0 };
+const EMPTY_BAG: LaborBag = { employed: 0, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 0 };
 
-describe('Demand', () => {
-  it('DENSITY_DEMAND_THRESHOLD is exported', () => {
-    expect(DENSITY_DEMAND_THRESHOLD).toBe(0.6);
+describe('Demand — constants', () => {
+  it('DENSITY_DEMAND_THRESHOLD is 0.375 — the 20%-unemployment point of a jobs bar', () => {
+    expect(DENSITY_DEMAND_THRESHOLD).toBe(0.375);
+    // 0.5 × severity(0.20) = 0.5 × 0.75; a jobs bar caps at COMMERCIAL_JOB_SHARE, so it is reachable.
+    expect(DENSITY_DEMAND_THRESHOLD).toBeLessThan(COMMERCIAL_JOB_SHARE);
   });
 
-  it('empty BuildingMap returns baseline 0.25 for all three', () => {
-    const demand = new Demand();
-    demand.recompute(makeBuildingMap(), ZERO_LABOR);
-    const v = demand.get();
-    expect(v.residential).toBe(0.25);
-    expect(v.commercial).toBe(0.25);
-    expect(v.industrial).toBe(0.25);
+  it('GROWTH_DEMAND_THRESHOLD is 0 and MIGRATION_PRESSURE sits strictly between the two gates', () => {
+    expect(GROWTH_DEMAND_THRESHOLD).toBe(0);
+    expect(MIGRATION_PRESSURE).toBe(0.1);
+    expect(MIGRATION_PRESSURE).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
+    expect(MIGRATION_PRESSURE).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
   });
 
-  it('get() before recompute returns baseline 0.25', () => {
-    const demand = new Demand();
-    const v = demand.get();
-    expect(v.residential).toBe(0.25);
-    expect(v.commercial).toBe(0.25);
-    expect(v.industrial).toBe(0.25);
+  it('MIN_MARKET is 100 — ten building-levels of quantized labor', () => {
+    expect(MIN_MARKET).toBe(100);
+    expect(MIN_MARKET % POPULATION_PER_LEVEL).toBe(0);
   });
 
-  it('residential-only city: residential at baseline-or-below, industrial and commercial near max', () => {
+  it('EMPTY_CITY_DEMAND is {1, 0, 0} and is what get() returns before the first recompute', () => {
+    expect(EMPTY_CITY_DEMAND).toEqual({ residential: 1, commercial: 0, industrial: 0 });
+    expect(new Demand().get()).toBe(EMPTY_CITY_DEMAND);
+  });
+});
+
+describe('Demand — labor axis', () => {
+  it('bootstrap: an empty labor market reads {1, 0, 0} — build homes', () => {
+    const v = demandFor(makeBuildingMap(), EMPTY_BAG);
+    expect(v.residential).toBe(1);
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
+  });
+
+  it('balanced and fully employed: R is the migration trickle, C and I are fully cleared', () => {
+    // 4 R + 2 C + 2 I level 1: 40 workers against 40 jobs, all matched, no vacancies.
     const map = makeBuildingMap();
-    for (let i = 0; i < 5; i++) {
-      addBuilding(map, i, i, 0, 'residential', 1);
-    }
-    const demand = new Demand();
-    demand.recompute(map, ZERO_LABOR);
-    const v = demand.get();
-    // No jobs → residential demand should not exceed baseline
-    expect(v.residential).toBeLessThanOrEqual(0.25);
-    // Residents with no jobs → industrial demand high
-    expect(v.industrial).toBeGreaterThan(0.5);
-    // Residents with no commercial → commercial demand high
-    expect(v.commercial).toBeGreaterThan(0.5);
+    addRun(map, 0, 0, 'residential', 4, 1);
+    addRun(map, 10, 1, 'commercial', 2, 1);
+    addRun(map, 20, 2, 'industrial', 2, 1);
+
+    const v = demandFor(map, { employed: 40, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 40 });
+
+    // The labor axis reaches exactly zero at balance; only migration holds the R gate open.
+    expect(v.residential).toBe(MIGRATION_PRESSURE);
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
   });
 
-  it('industrial-only city: industrial at baseline-or-below, residential near max', () => {
+  it('deadband: a real 3.2% vacancy surplus still reads as balanced', () => {
+    // levelSumR 30, levelSumC 31 → market 310, net 10 = 3.2% < DEADBAND_RATE.
     const map = makeBuildingMap();
-    for (let i = 0; i < 5; i++) {
-      addBuilding(map, i, i, 0, 'industrial', 1);
-    }
-    const demand = new Demand();
-    demand.recompute(map, ZERO_LABOR);
-    const v = demand.get();
-    // No residents → industrial demand should be at or below baseline
-    expect(v.industrial).toBeLessThanOrEqual(0.25);
-    // Jobs exist with no homes → residential demand near max
-    expect(v.residential).toBeGreaterThan(0.5);
+    addRun(map, 0, 0, 'residential', 6, 5);
+    addRun(map, 10, 1, 'commercial', 6, 5);
+    addBuilding(map, 20, 0, 2, 'commercial', 1);
+
+    const v = demandFor(map, { employed: 300, unemployed: 0, reachableUnfilledJobs: 10, jobsCapacity: 310 });
+
+    expect(v.residential).toBe(MIGRATION_PRESSURE);
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
   });
 
-  it('balanced city (3R + 3I matched): R and I near baseline, C still pulls', () => {
+  it('mid-band: a 15% vacancy surplus reads half severity on residential', () => {
+    // levelSumR 17, levelSumC 20 → market 200, net 30 = 15% → (0.15 − 0.05) / 0.20.
     const map = makeBuildingMap();
-    for (let i = 0; i < 3; i++) {
-      addBuilding(map, i, i, 0, 'residential', 1);
-    }
-    for (let i = 3; i < 6; i++) {
-      addBuilding(map, i, i, 0, 'industrial', 1);
-    }
-    const demand = new Demand();
-    demand.recompute(map, ZERO_LABOR);
-    const v = demand.get();
-    expect(v.residential).toBeCloseTo(0.25, 1);
-    expect(v.industrial).toBeCloseTo(0.25, 1);
-    // No commercial buildings → commercial demand still pulls high
-    expect(v.commercial).toBeGreaterThan(0.5);
+    addRun(map, 0, 0, 'residential', 4, 4);
+    addBuilding(map, 10, 0, 1, 'residential', 1);
+    addRun(map, 20, 2, 'commercial', 4, 5);
+
+    const v = demandFor(map, { employed: 170, unemployed: 0, reachableUnfilledJobs: 30, jobsCapacity: 200 });
+
+    expect(v.residential).toBeCloseTo(0.5, 10);
   });
 
-  it('all values stay in [0, 1] with extreme building counts', () => {
+  it('saturation: a 40% vacancy surplus pins residential at exactly 1', () => {
+    // levelSumR 6, levelSumC 10 → market 100, net 40 = 40% > SATURATION_RATE.
     const map = makeBuildingMap();
-    // Fill with many residential buildings to push extremes
-    for (let i = 0; i < 10; i++) {
-      addBuilding(map, i, i % 20, Math.floor(i / 20), 'residential', 5);
-    }
-    const demand = new Demand();
-    demand.recompute(map, ZERO_LABOR);
-    const v = demand.get();
-    expect(v.residential).toBeGreaterThanOrEqual(0);
-    expect(v.residential).toBeLessThanOrEqual(1);
-    expect(v.commercial).toBeGreaterThanOrEqual(0);
-    expect(v.commercial).toBeLessThanOrEqual(1);
-    expect(v.industrial).toBeGreaterThanOrEqual(0);
-    expect(v.industrial).toBeLessThanOrEqual(1);
+    addRun(map, 0, 0, 'residential', 6, 1);
+    addRun(map, 10, 1, 'commercial', 2, 5);
+
+    const v = demandFor(map, { employed: 60, unemployed: 0, reachableUnfilledJobs: 40, jobsCapacity: 100 });
+
+    expect(v.residential).toBe(1);
   });
 
-  it('level-0 buildings contribute nothing: 100 level-0 R + 1 level-1 I → residential is high', () => {
+  it('MIN_MARKET floors the denominator: one stranded worker-level reads PARTIAL severity', () => {
+    // 1 R + 1 C level 1; the C is unreachable, so the single worker-level is unemployed.
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+    addBuilding(map, 1, 1, 0, 'commercial', 1);
+
+    const v = demandFor(map, { employed: 0, unemployed: 10, reachableUnfilledJobs: 0, jobsCapacity: 10 });
+
+    // market floored 10 → 100, so the ratio is 10/100 = 0.10 → severity 0.25, split evenly.
+    // Counterfactual: unfloored, market would be 10, ratio 1.0, and this single building would read
+    // a saturated 0.5 on each jobs bar.
+    expect(v.commercial).toBeCloseTo(0.125, 10);
+    expect(v.industrial).toBeCloseTo(0.125, 10);
+    expect(v.residential).toBe(0); // 100% unemployment kills migration
+  });
+
+  it('allocation happens AFTER the curve: C and I split one aggregate severity, never spend it twice', () => {
+    // 2 R + 2 C level 1, all 20 workers unemployed → market 100, ratio 0.20 → severity 0.75.
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 2, 1);
+    addRun(map, 10, 1, 'commercial', 2, 1);
+
+    const v = demandFor(map, { employed: 0, unemployed: 20, reachableUnfilledJobs: 0, jobsCapacity: 20 });
+
+    const workplaceSeverity = (20 / MIN_MARKET - DEADBAND_RATE) / (SATURATION_RATE - DEADBAND_RATE);
+    expect(v.commercial).toBeCloseTo(0.375, 10);
+    expect(v.industrial).toBeCloseTo(0.375, 10);
+    // Halving is exact in binary, so the two halves re-sum to the aggregate with no drift.
+    expect(v.commercial + v.industrial).toBe(workplaceSeverity);
+    // Retail contributes nothing here — C is already over its 25% share.
+    expect(v.commercial).toBe(v.industrial);
+  });
+
+  it('access mismatch: stranded workers and stranded vacancies cancel — all three bars read 0', () => {
+    // 10 R + 5 C + 5 I levels. One road component holds 5 R levels against every job; a second
+    // holds 5 stranded R levels. C sits exactly at its 25% share.
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 10, 1);
+    addRun(map, 20, 1, 'commercial', 5, 1);
+    addRun(map, 30, 2, 'industrial', 5, 1);
+
+    const v = demandFor(map, { employed: 50, unemployed: 50, reachableUnfilledJobs: 50, jobsCapacity: 100 });
+
+    // net 0, migration damped to 0 by the 50% rate — a legitimate reading, not a stall: the fix is
+    // a road, and laborStatus.ts is the channel that says so.
+    expect(v.residential).toBe(0);
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
+  });
+
+  it('zero-workforce fallback: an all-jobs city counts its whole capacity as vacancies', () => {
+    // No residential origins → reachableUnfilledJobs is structurally 0, so jobsCapacity is used.
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'commercial', 4, 3);
+
+    const v = demandFor(map, { employed: 0, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 120 });
+
+    expect(v.residential).toBe(1);
+    expect(v.commercial).toBe(0); // staffing collapses the retail axis
+    expect(v.industrial).toBe(0);
+  });
+});
+
+describe('Demand — migration', () => {
+  it('(a) 100% unemployment stops in-migration entirely: residential exactly 0', () => {
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 10, 1);
+
+    const v = demandFor(map, { employed: 0, unemployed: 100, reachableUnfilledJobs: 0, jobsCapacity: 0 });
+
+    expect(v.residential).toBe(0);
+  });
+
+  it('(b) at exactly MIGRATION_UNEMPLOYMENT_CUTOFF migration is already 0', () => {
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 10, 1);
+    addRun(map, 20, 1, 'commercial', 8, 1);
+
+    const v = demandFor(map, { employed: 80, unemployed: 20, reachableUnfilledJobs: 0, jobsCapacity: 80 });
+
+    expect(20 / 100).toBe(MIGRATION_UNEMPLOYMENT_CUTOFF);
+    expect(v.residential).toBe(0);
+  });
+
+  it('(c) 10% unemployment halves the trickle: residential exactly 0.05', () => {
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 10, 1);
+    addRun(map, 20, 1, 'commercial', 9, 1);
+
+    const v = demandFor(map, { employed: 90, unemployed: 10, reachableUnfilledJobs: 0, jobsCapacity: 90 });
+
+    expect(v.residential).toBe(MIGRATION_PRESSURE / 2);
+  });
+});
+
+describe('Demand — retail axis', () => {
+  it('commercial below its 25% share pulls on the retail axis alone', () => {
+    // 3 R + 1 C + 2 I level 1 → totalLevels 6, targetC 1.5, levelSumC 1 → 0.5 / 1.5.
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 3, 1);
+    addBuilding(map, 10, 0, 1, 'commercial', 1);
+    addRun(map, 20, 2, 'industrial', 2, 1);
+
+    const v = demandFor(map, { employed: 30, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 30 });
+
+    expect(v.residential).toBe(MIGRATION_PRESSURE);
+    expect(v.commercial).toBeCloseTo(1 / 3, 10);
+    expect(v.industrial).toBe(0);
+  });
+
+  it('commercial OVER its share clamps to 0 rather than going negative', () => {
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 4, 1);
+    addRun(map, 10, 1, 'commercial', 4, 1);
+
+    const v = demandFor(map, { employed: 40, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 40 });
+
+    expect(v.commercial).toBe(0);
+  });
+
+  it('staffing collapses the retail axis when the city already has more jobs than workers', () => {
+    // 1 R + 4 I level 1 and no commercial at all → retail gap 1.0, but resSeverity is 1.
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'residential', 1);
+    addRun(map, 10, 1, 'industrial', 4, 1);
+
+    const v = demandFor(map, { employed: 10, unemployed: 0, reachableUnfilledJobs: 30, jobsCapacity: 40 });
+
+    expect(v.residential).toBe(1);
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
+  });
+});
+
+describe('Demand — regression readings', () => {
+  it('playtest #1: a jobless city reads R 0.00 / C ≈ 0.68 (retail) / I 0.50', () => {
+    // levelSumR 126, levelSumC 12, levelSumI 11; 230 employed, 1030 unemployed, no vacancies.
     const map = new BuildingMap(200, 200);
-    // Add 100 level-0 residential buildings
-    for (let i = 0; i < 100; i++) {
-      map.addExistingBuilding({
-        id: i,
-        type: 'residential',
-        footprint: [{ x: i % 200, y: Math.floor(i / 200) }],
-        anchor: { x: i % 200, y: Math.floor(i / 200) },
-        level: 0,
-        density: 0,
-        age: 0,
-        abandoned: false,
-        frontage: 'S',
-        structureRect: { x: i % 200, y: Math.floor(i / 200), w: 1, h: 1 },
-      });
-    }
-    // Add 1 level-1 industrial building
-    map.addExistingBuilding({
-      id: 100,
-      type: 'industrial',
-      footprint: [{ x: 100, y: 0 }],
-      anchor: { x: 100, y: 0 },
-      level: 1,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 100, y: 0, w: 1, h: 1 },
-    });
+    addRun(map, 0, 0, 'residential', 42, 3);
+    addRun(map, 100, 1, 'commercial', 12, 1);
+    addRun(map, 200, 2, 'industrial', 11, 1);
 
-    const demand = new Demand();
-    demand.recompute(map, ZERO_LABOR);
-    const v = demand.get();
-    // level-0 R buildings contribute 0 → effectively industrial-only city → residential high
-    expect(v.residential).toBeGreaterThan(0.5);
+    const v = demandFor(map, { employed: 230, unemployed: 1030, reachableUnfilledJobs: 0, jobsCapacity: 230 });
+
+    expect(v.residential).toBe(0);
+    expect(v.industrial).toBe(0.5); // a jobs bar caps at COMMERCIAL_JOB_SHARE
+    expect(v.commercial).toBeCloseTo(25.25 / 37.25, 10);
   });
 
-  it('abandoned buildings do not contribute to per-type demand sums', () => {
-    // Two industrial buildings; marking one abandoned should yield the same demand
-    // as if that building were absent entirely.
+  it('the same city, cleared — a reading the old structural model could never produce', () => {
+    // levelSumR 126, levelSumC 63, levelSumI 63: every worker employed, C exactly at its share.
+    const map = new BuildingMap(200, 200);
+    addRun(map, 0, 0, 'residential', 42, 3);
+    addRun(map, 100, 1, 'commercial', 21, 3);
+    addRun(map, 200, 2, 'industrial', 21, 3);
+
+    const v = demandFor(map, { employed: 1260, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 1260 });
+
+    expect(v.residential).toBe(MIGRATION_PRESSURE);
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
+  });
+
+  it('outputs stay in [0, 1] with a large, fully severed but producible city', () => {
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 20, 5);
+    addRun(map, 100, 1, 'commercial', 10, 5);
+    addRun(map, 200, 2, 'industrial', 10, 5);
+
+    const v = demandFor(map, { employed: 0, unemployed: 1000, reachableUnfilledJobs: 0, jobsCapacity: 1000 });
+
+    for (const value of [v.residential, v.commercial, v.industrial]) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
+    // A jobs bar can never exceed its share of a saturated workplace severity.
+    expect(v.industrial).toBe(COMMERCIAL_JOB_SHARE);
+  });
+
+  it('level-0 buildings contribute nothing to the level sums', () => {
+    const map = new BuildingMap(200, 200);
+    for (let i = 0; i < 100; i++) addBuilding(map, i, i, 0, 'residential', 0);
+    addBuilding(map, 100, 0, 1, 'industrial', 1);
+
+    const v = demandFor(map, { employed: 0, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 10 });
+
+    // No workforce → the 10 jobs are all vacancies against the 100-unit floor → severity 0.25.
+    expect(v.residential).toBeCloseTo(0.25, 10);
+    // totalLevels is 1, not 101: targetC 0.25 → retail 0.25, damped by staffing 0.75. Were the
+    // level-0 residents counted, targetC would be 25.25 and the retail axis would read a full 1.
+    expect(v.commercial).toBeCloseTo(0.1875, 10);
+  });
+
+  it('abandoned buildings are excluded from the level sums', () => {
+    // 8 R + 1 C level 1 active, plus one abandoned level-1 C. Retail binds at (2.25 − 1) / 2.25;
+    // counting the derelict would move targetC to 2.5 and drop the reading to the jobs half-share.
     const withAbandoned = makeBuildingMap();
-    addBuilding(withAbandoned, 0, 0, 0, 'industrial', 4);
+    addRun(withAbandoned, 0, 0, 'residential', 8, 1);
+    addBuilding(withAbandoned, 10, 0, 1, 'commercial', 1);
     withAbandoned.addExistingBuilding({
-      id: 1,
-      type: 'industrial',
-      footprint: [{ x: 1, y: 0 }],
-      anchor: { x: 1, y: 0 },
-      level: 4,
+      id: 11,
+      type: 'commercial',
+      footprint: [{ x: 1, y: 1 }],
+      anchor: { x: 1, y: 1 },
+      level: 1,
       density: 0,
       age: 0,
       abandoned: true,
       frontage: 'S',
-      structureRect: { x: 1, y: 0, w: 1, h: 1 },
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
 
     const withoutBuilding = makeBuildingMap();
-    addBuilding(withoutBuilding, 0, 0, 0, 'industrial', 4);
+    addRun(withoutBuilding, 0, 0, 'residential', 8, 1);
+    addBuilding(withoutBuilding, 10, 0, 1, 'commercial', 1);
 
-    const d1 = new Demand();
-    d1.recompute(withAbandoned, ZERO_LABOR);
-    const d2 = new Demand();
-    d2.recompute(withoutBuilding, ZERO_LABOR);
+    const bag: LaborBag = { employed: 10, unemployed: 70, reachableUnfilledJobs: 0, jobsCapacity: 10 };
+    const v1 = demandFor(withAbandoned, bag);
+    const v2 = demandFor(withoutBuilding, bag);
 
-    expect(d1.get().residential).toBe(d2.get().residential);
-    expect(d1.get().commercial).toBe(d2.get().commercial);
-    expect(d1.get().industrial).toBe(d2.get().industrial);
+    expect(v1.residential).toBe(v2.residential);
+    expect(v1.commercial).toBe(v2.commercial);
+    expect(v1.industrial).toBe(v2.industrial);
+    // The pinned value IS the discriminator: 5/9 is the retail gap over the NON-abandoned sums,
+    // and it beats the 0.5 jobs half-share. Counting the derelict would give retail 0.2 → 0.5.
+    expect(v1.commercial).toBeCloseTo(5 / 9, 10);
+  });
+});
 
-    // Sanity: the active building DOES move demand off baseline (so the equality
-    // above is not a trivial both-at-baseline coincidence).
-    expect(d1.get().residential).toBeGreaterThan(0.25);
+describe('Demand — purity', () => {
+  it('idempotence: recomputing twice on the same input leaves the same values', () => {
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 3, 1);
+    addBuilding(map, 10, 0, 1, 'commercial', 1);
+    addBuilding(map, 11, 1, 1, 'industrial', 2);
+    const bag: LaborBag = { employed: 30, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 30 };
+    expectProducibleBag(map, bag);
+
+    const demand = new Demand();
+    demand.recompute(map, bag);
+    const first = { ...demand.get() };
+    demand.recompute(map, bag);
+    const second = demand.get();
+
+    expect(second.residential).toBe(first.residential);
+    expect(second.commercial).toBe(first.commercial);
+    expect(second.industrial).toBe(first.industrial);
   });
 
-  it('determinism: two recompute calls on identical input yield byte-identical output', () => {
+  it('determinism: two instances on identical input yield byte-identical output', () => {
     const map = makeBuildingMap();
-    addBuilding(map, 0, 0, 0, 'residential', 2);
-    addBuilding(map, 1, 1, 0, 'commercial', 1);
-    addBuilding(map, 2, 2, 0, 'industrial', 3);
+    addRun(map, 0, 0, 'residential', 3, 1);
+    addBuilding(map, 10, 0, 1, 'commercial', 1);
+    addBuilding(map, 11, 1, 1, 'industrial', 2);
+    const bag: LaborBag = { employed: 30, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 30 };
 
-    const d1 = new Demand();
-    d1.recompute(map, ZERO_LABOR);
-    const r1 = d1.getRaw();
-
-    const d2 = new Demand();
-    d2.recompute(map, ZERO_LABOR);
-    const r2 = d2.getRaw();
+    const r1 = demandFor(map, bag);
+    const r2 = demandFor(map, bag);
 
     expect(r1.residential).toBe(r2.residential);
     expect(r1.commercial).toBe(r2.commercial);
     expect(r1.industrial).toBe(r2.industrial);
-  });
-
-  it('immutability: mutating get() result throws in strict mode', () => {
-    const demand = new Demand();
-    demand.recompute(makeBuildingMap(), ZERO_LABOR);
-    const v = demand.get();
-    expect(() => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (v as any).residential = 999;
-    }).toThrow();
-  });
-
-  it('get() and getRaw() return the same reference', () => {
-    const demand = new Demand();
-    demand.recompute(makeBuildingMap(), ZERO_LABOR);
-    expect(demand.get()).toBe(demand.getRaw());
-  });
-
-  // --- Labor-feedback blend tests (pure formula; bags need not be physically achievable) ---
-
-  it('unemployment↑ → residential demand↓', () => {
-    // 2R + 2C, level 1: structuralR = (2-2)/2 + 0.25 = 0.25
-    const map = makeBuildingMap();
-    addBuilding(map, 0, 0, 0, 'residential', 1);
-    addBuilding(map, 1, 1, 0, 'residential', 1);
-    addBuilding(map, 2, 2, 0, 'commercial', 1);
-    addBuilding(map, 3, 3, 0, 'commercial', 1);
-
-    const dZero = new Demand();
-    dZero.recompute(map, ZERO_LABOR);
-    const zeroResidential = dZero.get().residential; // 0.25 (signals=0)
-
-    // unemploymentRate=1, reachableVacancyRate=0, residentialSignal=-1 → residential = clamp01(0.25 - 0.15) = 0.10
-    const bag = { employed: 0, unemployed: 2, reachableUnfilledJobs: 0 };
-    const d = new Demand();
-    d.recompute(map, bag);
-    const v = d.get();
-
-    expect(v.residential).toBeCloseTo(0.10);
-    expect(v.residential).toBeLessThan(zeroResidential);
-  });
-
-  it('reachable unfilled jobs↑ → residential demand↑', () => {
-    // 2R + 2C, level 1: structuralR = 0.25
-    const map = makeBuildingMap();
-    addBuilding(map, 0, 0, 0, 'residential', 1);
-    addBuilding(map, 1, 1, 0, 'residential', 1);
-    addBuilding(map, 2, 2, 0, 'commercial', 1);
-    addBuilding(map, 3, 3, 0, 'commercial', 1);
-
-    const dZero = new Demand();
-    dZero.recompute(map, ZERO_LABOR);
-    const zeroResidential = dZero.get().residential; // 0.25
-
-    // reachableSlots=3, reachableVacancyRate=1/3, unemploymentRate=0, residentialSignal=+1/3
-    // residential = clamp01(0.25 + 0.15/3) = 0.30
-    const bag = { employed: 2, unemployed: 0, reachableUnfilledJobs: 1 };
-    const d = new Demand();
-    d.recompute(map, bag);
-    const v = d.get();
-
-    expect(v.residential).toBeCloseTo(0.30);
-    expect(v.residential).toBeGreaterThan(zeroResidential);
-  });
-
-  it('empty city identical with/without labor', () => {
-    // structuralR = structuralC = structuralI = 0.25; ZERO_LABOR signals = 0
-    const d = new Demand();
-    d.recompute(makeBuildingMap(), ZERO_LABOR);
-    const v = d.get();
-    expect(v.residential).toBe(0.25);
-    expect(v.commercial).toBe(0.25);
-    expect(v.industrial).toBe(0.25);
-  });
-
-  it('residents-only city: C/I attractor preserved', () => {
-    // Documents intended existing behavior, not a regression.
-    // 1R: structuralR=-0.75→0, structuralC=structuralI=1.25→1
-    // Bag: unemploymentRate=1, residentialSignal=-1, jobsSignal=+1
-    // residential=clamp01(0-0.15)=0, commercial=industrial=clamp01(1+0.15)=1
-    const map = makeBuildingMap();
-    addBuilding(map, 0, 0, 0, 'residential', 1);
-
-    const bag = { employed: 0, unemployed: 1, reachableUnfilledJobs: 0 };
-    const d = new Demand();
-    d.recompute(map, bag);
-    const v = d.get();
-
-    expect(v.residential).toBe(0);
-    expect(v.commercial).toBe(1);
-    expect(v.industrial).toBe(1);
-  });
-
-  it('C/I nudged up by idle labor', () => {
-    // 2R + 1C + 1I, level 1: structuralC = structuralI = 0.25
-    // Bag: unemploymentRate=1, jobsSignal=+1 → commercial = industrial = clamp01(0.25+0.15) = 0.40
-    const map = makeBuildingMap();
-    addBuilding(map, 0, 0, 0, 'residential', 1);
-    addBuilding(map, 1, 1, 0, 'residential', 1);
-    addBuilding(map, 2, 2, 0, 'commercial', 1);
-    addBuilding(map, 3, 3, 0, 'industrial', 1);
-
-    const dZero = new Demand();
-    dZero.recompute(map, ZERO_LABOR);
-    const zeroC = dZero.get().commercial; // 0.25
-    const zeroI = dZero.get().industrial; // 0.25
-
-    const bag = { employed: 0, unemployed: 2, reachableUnfilledJobs: 0 };
-    const d = new Demand();
-    d.recompute(map, bag);
-    const v = d.get();
-
-    expect(v.commercial).toBeCloseTo(0.40);
-    expect(v.industrial).toBeCloseTo(0.40);
-    expect(v.commercial).toBeGreaterThan(zeroC);
-    expect(v.industrial).toBeGreaterThan(zeroI);
-  });
-
-  it('outputs stay in [0,1] with an extreme labor bag', () => {
-    // 1R + 1C, employed=1, unemployed=2 — exercises negative structuralC clamping
-    const map = makeBuildingMap();
-    addBuilding(map, 0, 0, 0, 'residential', 1);
-    addBuilding(map, 1, 1, 0, 'commercial', 1);
-
-    const bag = { employed: 1, unemployed: 2, reachableUnfilledJobs: 0 };
-    const d = new Demand();
-    d.recompute(map, bag);
-    const v = d.get();
-
-    expect(v.residential).toBeGreaterThanOrEqual(0);
-    expect(v.residential).toBeLessThanOrEqual(1);
-    expect(v.commercial).toBeGreaterThanOrEqual(0);
-    expect(v.commercial).toBeLessThanOrEqual(1);
-    expect(v.industrial).toBeGreaterThanOrEqual(0);
-    expect(v.industrial).toBeLessThanOrEqual(1);
   });
 
   it('determinism across shuffled building-add orderings', () => {
@@ -378,28 +483,37 @@ describe('Demand', () => {
       { id: 4, x: 4, y: 0, type: 'industrial', level: 3 },
       { id: 5, x: 5, y: 0, type: 'industrial', level: 1 },
     ];
+    // levelSumR 3 → 30 workers; levelSumC + levelSumI = 7 → 70 jobs.
+    const bag: LaborBag = { employed: 30, unemployed: 0, reachableUnfilledJobs: 40, jobsCapacity: 70 };
 
-    // Get reference values from one ordered run
     const refMap = makeBuildingMap();
-    for (const s of specs) {
-      addBuilding(refMap, s.id, s.x, s.y, s.type, s.level);
-    }
-    const ref = new Demand();
-    ref.recompute(refMap, ZERO_LABOR);
-    const refV = ref.getRaw();
+    for (const s of specs) addBuilding(refMap, s.id, s.x, s.y, s.type, s.level);
+    const refV = demandFor(refMap, bag);
 
     for (let run = 0; run < 50; run++) {
       const shuffled = shuffle(specs, rng);
       const map = makeBuildingMap();
-      for (const s of shuffled) {
-        addBuilding(map, s.id, s.x, s.y, s.type, s.level);
-      }
-      const demand = new Demand();
-      demand.recompute(map, ZERO_LABOR);
-      const v = demand.getRaw();
+      for (const s of shuffled) addBuilding(map, s.id, s.x, s.y, s.type, s.level);
+      const v = demandFor(map, bag);
       expect(v.residential).toBe(refV.residential);
       expect(v.commercial).toBe(refV.commercial);
       expect(v.industrial).toBe(refV.industrial);
     }
+  });
+
+  it('immutability: mutating get() result throws in strict mode', () => {
+    const demand = new Demand();
+    demand.recompute(makeBuildingMap(), EMPTY_BAG);
+    const v = demand.get();
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (v as any).residential = 999;
+    }).toThrow();
+  });
+
+  it('get() and getRaw() return the same reference', () => {
+    const demand = new Demand();
+    demand.recompute(makeBuildingMap(), EMPTY_BAG);
+    expect(demand.get()).toBe(demand.getRaw());
   });
 });

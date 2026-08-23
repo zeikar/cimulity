@@ -36,14 +36,16 @@ describe('demand freshness on hydrate', () => {
     src.getMap().getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     src.getMap().getBuildings().addExistingBuilding({ id: 3, type: 'industrial', footprint: [{ x: 4, y: 1 }], anchor: { x: 4, y: 1 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 4, y: 1, w: 1, h: 1 } });
     src.markDemandDirty();
-    expect(src.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+    // No residents at all, so the zero-workforce fallback counts every one of the 120 jobs as a
+    // vacancy against the 120-unit market: a saturated, exactly-1 residential reading.
+    expect(src.getDemand().residential).toBe(1);
 
     const savedJSON = serializeWorld(src);
 
     const dst = new World(8, 8, { regenerate: false });
     expect(deserializeWorldInto(dst, savedJSON)).toBe(true);
 
-    expect(dst.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+    expect(dst.getDemand().residential).toBe(1);
   });
 });
 

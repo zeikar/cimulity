@@ -21,6 +21,7 @@ import { GameLoop, DEFAULT_SPEED_MULTIPLIER } from '../core/GameLoop';
 import type { World, WorldDate } from '../core/World';
 import type { DemandVector } from '../core/Demand';
 import { STARTING_FUNDS, EMPTY_CITY_HAPPINESS } from '../core/World';
+import { EMPTY_CITY_DEMAND } from '../core/Demand';
 import type { TileCoord, ScreenCoord } from '../types/coordinates';
 import type { ToolResult, ToolPreview } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
@@ -246,7 +247,7 @@ export class GameSession {
       population: 0,
       money: m,
       date: this.world ? this.world.getDate() : { year: 1, month: 1, day: 1 },
-      demand: this.world ? this.world.getDemand() : { residential: 0.25, commercial: 0.25, industrial: 0.25 },
+      demand: this.world ? this.world.getDemand() : EMPTY_CITY_DEMAND,
       happiness: this.world ? this.world.getHappiness() : EMPTY_CITY_HAPPINESS,
       // reset() already sets trafficDirty = false and clears the map, so this is a plain read.
       congestion: this.world ? this.world.getTrafficMap().getCongestionIndex() : 0,

@@ -36,6 +36,32 @@ function seedWater(world: World, ax: number, ay: number): void {
   world.recomputeWater();
 }
 
+/** 2×2 service station at (ax,ay); recomputes the matching coverage map. */
+function seedStation(
+  world: World,
+  type: 'police_station' | 'fire_station' | 'hospital' | 'school',
+  ax: number,
+  ay: number,
+): void {
+  const added = world.getStructureMap().addStructure({
+    type,
+    anchor: { x: ax, y: ay },
+    footprint: [
+      { x: ax, y: ay }, { x: ax + 1, y: ay },
+      { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
+    ],
+  });
+  expect(added).not.toBeNull();
+  world.markServiceDirty();
+  world.markFireDirty();
+  world.markHospitalDirty();
+  world.markSchoolDirty();
+  world.recomputeService();
+  world.recomputeFire();
+  world.recomputeHospital();
+  world.recomputeSchool();
+}
+
 /**
  * We use two separate controls per test:
  *   - fakeNow: a counter advanced manually that the GameLoop's injected clock reads.
@@ -381,16 +407,24 @@ describe('GameLoop', () => {
 
   // (w) catch-up ≥2 ticks including a density bump: aggregated changedTiles + changedBuildingIds
   it('(w) catch-up drain with density bump: aggregated changedTiles contains footprint coord and changedBuildingIds contains building id', () => {
-    // Decision-A: (0,1) changed from ZONE_COMMERCIAL to ROAD for water routing. Demand driven by
-    // seeded buildings (addBuilding calls below), not tile type. No LV check for density gate.
-    const bigWorld = new World(6, 6, { regenerate: false });
+    // The probe must survive the abandonment sweep: a ZONE_MAX_LEVEL building needs
+    // LEVEL_THRESHOLDS[5] = 0.85 at its anchor, or the sweep flips it to derelict and
+    // changedBuildingIds contains its id because of THAT, not the density bump. So the anchor
+    // gets all four coverages plus a park, and the jobs come from a bank on the same road
+    // component (the plant and tower footprints block the road BFS, so the bank is laid on the
+    // open y=0 row instead).
+    const bigWorld = new World(16, 10, { regenerate: false });
     const bigMap = bigWorld.getMap();
     bigMap.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
-    bigMap.setTile(1, 0, createTile(1, 0, TileType.ROAD));
-    bigMap.setTile(0, 1, createTile(0, 1, TileType.ROAD)); // was ZONE_COMMERCIAL; changed for water routing
-    bigMap.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    seedPower(bigWorld, 2, 0); // plant at (2,0)–(3,1) powers road (1,0)
-    seedWater(bigWorld, 0, 2); // tower at (0,2) (1×1); adj road (0,1) → waters (0,1); zone (0,0) adj → watered
+    bigMap.setTile(1, 0, createTile(1, 0, TileType.ROAD)); // probe frontage 'E' → access node
+    for (let x = 1; x < 16; x++) bigMap.setTile(x, 1, createTile(x, 1, TileType.ROAD));
+    seedPower(bigWorld, 5, 2);  // plant (5,2)-(6,3); (5,2) adj road (5,1)
+    seedWater(bigWorld, 3, 2);  // tower (3,2); adj road (3,1) → waters the network → (0,0)
+    seedStation(bigWorld, 'police_station', 7, 2);
+    seedStation(bigWorld, 'fire_station', 9, 2);
+    seedStation(bigWorld, 'hospital', 11, 2);
+    seedStation(bigWorld, 'school', 13, 2);
+    expect(bigWorld.getStructureMap().addStructure({ type: 'park', anchor: { x: 0, y: 1 }, footprint: [{ x: 0, y: 1 }] })).not.toBeNull();
 
     // DENSITY_COOLDOWN_INTERVALS=24, ZONE_GROWTH_INTERVAL=8.
     // Seed a ZONE_MAX_LEVEL building with age DENSITY_COOLDOWN_INTERVALS-1
@@ -406,35 +440,35 @@ describe('GameLoop', () => {
       frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     })!;
-    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
-    bigMap.getBuildings().addBuilding({
-      type: 'commercial',
-      footprint: [{ x: 0, y: 1 }],
-      anchor: { x: 0, y: 1 },
-      level: 4,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 0, y: 1, w: 1, h: 1 },
-    });
-    bigMap.getBuildings().addBuilding({
-      type: 'industrial',
-      footprint: [{ x: 1, y: 1 }],
-      anchor: { x: 1, y: 1 },
-      level: 4,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 1, y: 1, w: 1, h: 1 },
-    });
+    // Job bank on the y=0 row, each fronting 'S' onto the road row at y=1: 6 × 20 = 120 jobs
+    // against the probe's 50 workers → 70 reachable vacancies on a market of 120, which
+    // saturates the residential bar. Level 2 is supported by road frontage alone, so the bank
+    // itself can never abandon and quietly remove the demand.
+    for (let x = 2; x <= 7; x++) {
+      expect(bigMap.getBuildings().addExistingBuilding({
+        id: 900 + x,
+        type: 'commercial',
+        footprint: [{ x, y: 0 }],
+        anchor: { x, y: 0 },
+        level: 2,
+        density: 0,
+        age: 0,
+        abandoned: false,
+        frontage: 'S',
+        structureRect: { x, y: 0, w: 1, h: 1 },
+      })).toBe(true);
+    }
     bigWorld.markDemandDirty();
+    bigWorld.markLandValueDirty();
+    bigWorld.recomputeLandValue();
+    bigWorld.recomputeLabor();
+    expect(bigWorld.getLandValue().getValue(0, 0)).toBeGreaterThanOrEqual(0.85);
+    expect(bigWorld.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+    expect(bigWorld.getDemand().residential).toBeGreaterThan(0);
 
     // Advance the world to just before the next growth tick.
     // Current tick is 0; next growth tick = ZONE_GROWTH_INTERVAL (8).
     // Pre-advance to 7 ticks so the next tick is 8 (a growth tick).
-    bigWorld.markLandValueDirty();
     for (let i = 0; i < 7; i++) bigWorld.tick();
 
     // Create the loop with bigWorld
@@ -455,5 +489,9 @@ describe('GameLoop', () => {
     expect(agg.changedBuildingIds).toContain(b.id);
     expect(agg.changedTiles).toContainEqual({ x: 0, y: 0 });
     expect(agg.changed).toBeGreaterThanOrEqual(1);
+    // The id is in there because the DENSITY BUMP fired, not because the abandonment sweep
+    // flipped the probe to derelict.
+    expect(bigMap.getBuildings().getBuilding(b.id)!.abandoned).toBe(false);
+    expect(bigMap.getBuildings().getBuilding(b.id)!.density).toBe(1);
   });
 });

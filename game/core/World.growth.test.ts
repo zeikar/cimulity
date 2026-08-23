@@ -10,6 +10,7 @@ import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { WORKERS_PER_LEVEL } from './laborMarket';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
+import type { Frontage } from './buildingFootprint';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { MERGE_LEVEL_THRESHOLD } from './mergePolicy';
@@ -245,7 +246,8 @@ describe('World.tick() — density tier', () => {
       frontage: 'S',
       structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
-    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    // 80 reachable jobs against the max-level R's 50 workers → net 30 on a market of 100 →
+    // ratio 0.30, a saturated residential bar, well clear of DENSITY_DEMAND_THRESHOLD.
     map.getBuildings().addBuilding({
       type: 'commercial',
       footprint: [SERVED_C],
@@ -303,7 +305,8 @@ describe('World.tick() — density tier', () => {
       frontage: 'S',
       structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     })!;
-    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    // 80 reachable jobs against the max-level R's 50 workers → net 30 on a market of 100 →
+    // ratio 0.30, a saturated residential bar, well clear of DENSITY_DEMAND_THRESHOLD.
     map.getBuildings().addBuilding({
       type: 'commercial',
       footprint: [SERVED_C],
@@ -465,7 +468,8 @@ describe('World.tick() — Branch B road-access gate', () => {
       frontage: 'S',
       structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
-    // Seed C+I level-points >=8 so residentialDemand >= 0.6.
+    // 80 reachable jobs against the max-level R's 50 workers → net 30 on a market of 100 →
+    // ratio 0.30, a saturated residential bar, well clear of DENSITY_DEMAND_THRESHOLD.
     map.getBuildings().addBuilding({
       type: 'commercial',
       footprint: [SERVED_C],
@@ -570,7 +574,7 @@ describe('World.tick() — T3 density-bump E2E', () => {
     map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [SERVED_I], anchor: SERVED_I, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 } });
 
     world.markDemandDirty();
-    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
 
@@ -581,38 +585,52 @@ describe('World.tick() — T3 density-bump E2E', () => {
 });
 
 describe('World.getDemand() — freshness', () => {
-  it('reset({ regenerate: false }) drops demand back to baseline 0.25', () => {
+  it('reset({ regenerate: false }) drops demand back to the empty-city reading', () => {
+    // Three road-less level-4 R buildings: 120 workers, no jobs, market 120, ratio -1.0 →
+    // saturated workplace severity, and 100% unemployment damps migration to zero.
+    // (Residential, not industrial: an industrial-only fixture reads residential 1.00 on BOTH
+    // sides of the reset through the zero-workforce fallback, discriminating nothing.)
     const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
-    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'residential', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'residential', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     world.markDemandDirty();
-    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+    expect(world.getDemand().residential).toBe(0);
+    expect(world.getDemand().industrial).toBe(0.5);
 
     world.reset({ regenerate: false });
 
-    expect(world.getDemand().residential).toBe(0.25);
+    // Empty labor market → the bootstrap reading.
+    expect(world.getDemand().residential).toBe(1);
+    expect(world.getDemand().industrial).toBe(0);
   });
 
-  it('reset({ regenerate: true }) drops demand back to baseline 0.25', () => {
+  it('reset({ regenerate: true }) drops demand back to the empty-city reading', () => {
+    // Three road-less level-4 R buildings: 120 workers, no jobs, market 120, ratio -1.0 →
+    // saturated workplace severity, and 100% unemployment damps migration to zero.
+    // (Residential, not industrial: an industrial-only fixture reads residential 1.00 on BOTH
+    // sides of the reset through the zero-workforce fallback, discriminating nothing.)
     const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
-    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_INDUSTRIAL));
-    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
-    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_INDUSTRIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'industrial', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
-    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_RESIDENTIAL));
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'residential', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 1, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'residential', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 1, w: 1, h: 1 } });
     world.markDemandDirty();
-    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+    expect(world.getDemand().residential).toBe(0);
+    expect(world.getDemand().industrial).toBe(0.5);
 
     world.reset({ regenerate: true });
 
-    expect(world.getDemand().residential).toBe(0.25);
+    // Empty labor market → the bootstrap reading.
+    expect(world.getDemand().residential).toBe(1);
+    expect(world.getDemand().industrial).toBe(0);
   });
 
   it('CommandDispatcher bulldoze of a non-zero-level R building refreshes demand', () => {
@@ -622,13 +640,15 @@ describe('World.getDemand() — freshness', () => {
     map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 3, w: 1, h: 1 } });
 
     world.markDemandDirty();
-    const demandBefore = world.getDemand().industrial;
-    expect(demandBefore).toBeGreaterThan(0.25);
+    // Road-less level-4 R: 40 workers against the 100-unit MIN_MARKET floor → ratio 0.40 →
+    // saturated workplace severity, halved onto the industrial bar.
+    expect(world.getDemand().industrial).toBe(0.5);
 
     const result = executeClick(Tool.BULLDOZE, { x: 3, y: 3 }, world);
     expect(result.removedBuildingIds).toContain(0);
 
-    expect(world.getDemand().industrial).toBe(0.25);
+    // The last R/C/I building is gone → the labor market is empty again.
+    expect(world.getDemand().industrial).toBe(0);
   });
 });
 
@@ -675,7 +695,9 @@ describe('World.tick() — density gating (demand-driven)', () => {
       frontage: 'S',
       structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
-    // C+I level-points = 8 → jobsLevels=8, levelSumR=5 → residential=(8-5)/8+0.25=0.625 >= 0.6
+    // C+I level 4 each = 80 reachable jobs against the max-level R's 50 workers → 30 vacancies
+    // on a market floored to MIN_MARKET → ratio 0.30, at SATURATION_RATE, so residential reads
+    // exactly 1.0 — well clear of DENSITY_DEMAND_THRESHOLD.
     map.getBuildings().addBuilding({
       type: 'commercial',
       footprint: [SERVED_C],
@@ -800,22 +822,36 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     return world.tick();
   }
 
-  // Keep residential demand positive — without a job source, demand for R goes
-  // to 0 (jobsLevels < levelSumR in Demand.recompute) and the level-up gate
-  // refuses to fire. Seed a single commercial building far from the test focus.
-  function seedJobSource(world: World, x: number, y: number): void {
-    world.getMap().getBuildings().addExistingBuilding({
+  // Keep residential demand positive: the probe's workers must see a reachable vacancy surplus.
+  // The jobs only count if the source's FRONTAGE face lands on the probe's own road network —
+  // reachableUnfilledJobs is summed over job nodes a residential BFS actually reaches. Pure
+  // placement: the labor/demand preconditions belong at the END of each fixture, once every
+  // building exists.
+  function seedJobSource(world: World, x: number, y: number, frontage: Frontage, level: number): void {
+    expect(world.getMap().getBuildings().addExistingBuilding({
       id: 999,
       type: 'commercial',
       footprint: [{ x, y }],
       anchor: { x, y },
-      level: 1,
+      level,
       density: 0,
       age: 0,
       abandoned: false,
-      frontage: 'N',
+      frontage,
       structureRect: { x, y, w: 1, h: 1 },
-    });
+    })).toBe(true);
+  }
+
+  /**
+   * Assert the fixture actually supplies reachable jobs and an open residential gate.
+   * Buildings seeded straight into the BuildingMap never mark the world dirty, so force the
+   * same labor/demand refresh the growth pass performs before reading the snapshot it acts on.
+   */
+  function expectGrowthPreconditions(world: World): void {
+    world.recomputeLabor();
+    world.markDemandDirty();
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+    expect(world.getDemand().residential).toBeGreaterThan(0);
   }
 
   it('structure-grow happens before level-up on a multi-cell lot', () => {
@@ -851,7 +887,10 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       structureRect: { x: 1, y: 3, w: 1, h: 1 },
     });
     expect(building).toBe(true);
-    seedJobSource(world, 5, 5);
+    // (0,3) fronts the road at (0,4): level 2 is supported by road frontage alone (lv ≈ 0.34 >
+    // LEVEL_THRESHOLDS[2]) so the sweep never abandons it, and its 20 jobs against the level-1
+    // probe's 10 workers give net 10 on a market floored to MIN_MARKET → residential 0.25.
+    seedJobSource(world, 0, 3, 'S', 2);
     world.markLandValueDirty();
     seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
     seedWater(world, 0, 5); // tower at (0,5)–(1,6); (0,5) adj road (0,4) → waters (0,4)→(1,4); zone (1,3) adj (1,4) → watered
@@ -870,6 +909,10 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(world.getFireCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
+
+    // Asserted LAST, once every road, structure and building is in place — an assertion inside a
+    // seeding helper would read a labor market with no residential origins yet.
+    expectGrowthPreconditions(world);
 
     const result = tickOneGrowthInterval(world);
 
@@ -920,7 +963,8 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       frontage: 'S',
       structureRect: { x: 1, y: 3, w: 1, h: 1 },
     });
-    seedJobSource(world, 5, 5);
+    // Same reachable level-2 source as the fixture above (see there for the arithmetic).
+    seedJobSource(world, 0, 3, 'S', 2);
     world.markLandValueDirty();
     seedPower(world, 2, 4); // plant at (2,4)–(3,5) powers road (1,4)
     seedWater(world, 0, 5); // tower at (0,5)–(1,6); (0,5) adj road (0,4) → waters (0,4)→(1,4) → zone (1,3) watered
@@ -938,6 +982,10 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(world.getFireCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(1, 0)).toBeGreaterThan(0);
+
+    // Asserted LAST, once every road, structure and building is in place — an assertion inside a
+    // seeding helper would read a labor market with no residential origins yet.
+    expectGrowthPreconditions(world);
 
     // Grow 1 (age 7 → 8, fires): 1×1 → 1×2 (cap)
     tickOneGrowthInterval(world);
@@ -978,7 +1026,9 @@ describe("World.tick() — structure-grow (Branch B')", () => {
       frontage: 'S',
       structureRect: { x: 1, y: 1, w: 1, h: 1 },
     });
-    seedJobSource(world, 5, 5);
+    // (2,1) fronts the served road row at (2,2), whose land value (road + all four coverages,
+    // lv ≈ 0.8) supports level 4; its 40 jobs saturate the bar against the probe's 10 workers.
+    seedJobSource(world, 2, 1, 'S', 4);
     world.markLandValueDirty();
     seedPower(world, 2, 3); // plant at (2,3)-(3,4); (2,3) adj road (2,2) → powers road row
     seedWater(world, 4, 3); // tower at (4,3); (4,3) adj road (4,2) → waters road row → zone (1,1) watered
@@ -993,6 +1043,10 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(world.getFireCoverageMap().getCoverage(1, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(1, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(1, 1)).toBeGreaterThan(0);
+
+    // Asserted LAST, once every road, structure and building is in place — an assertion inside a
+    // seeding helper would read a labor market with no residential origins yet.
+    expectGrowthPreconditions(world);
 
     const result = tickOneGrowthInterval(world);
 
@@ -1176,8 +1230,11 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       frontage: 'S',
       structureRect: { x: 1, y: 0, w: 1, h: 4 },
     });
-    // Level-4 industrials (lv ≈ 0.73 supports level 4) → jobsLevels=8, levelSumR=4 →
-    // residential demand = (8-4)/8 + 0.25 = 0.75 ≥ DENSITY_DEMAND_THRESHOLD.
+    // Level-4 industrials (lv ≈ 0.73 supports level 4), fronting the y=6 road that the (13,5)
+    // link joins to the R lots' own road row, so their 80 jobs are reachable: the two
+    // MERGE_LEVEL_THRESHOLD R lots' 40 workers are all employed and 40 vacancies remain, giving
+    // ratio 0.40 on a market floored to MIN_MARKET → residential saturates at 1.0, above
+    // DENSITY_DEMAND_THRESHOLD for the whole run.
     map.getBuildings().addExistingBuilding({
       id: 2, type: 'industrial', footprint: [{ x: 0, y: 5 }], anchor: { x: 0, y: 5 },
       level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
@@ -1268,15 +1325,17 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
       frontage: 'S',
       structureRect: { x: 5, y: 1, w: 1, h: 1 },
     })).toBe(true);
-    // Commercial L2 job source: levelSumC = levelSumR = 2 → structuralR = (2−2)/2 + 0.25
-    // = 0.25, and the job is road-reachable so the labor feedback signal is 0. Without it
-    // residential demand clamps to 0 and the level-up gate never fires at all.
+    // Commercial L4 job source, road-reachable from the probe's frontage: 40 jobs keep a
+    // reachable-vacancy surplus in BOTH phases — net 20 against the L2 probe's 20 workers and
+    // net 10 against the L3 probe's 30 — so the labor axis never closes the gate on its own.
+    // Level 5 would exceed maxSupportedLevel at this anchor (lv ≈ 0.72) and abandon on the
+    // first sweep, which would silently make the whole test vacuous.
     expect(map.getBuildings().addExistingBuilding({
       id: 1,
       type: 'commercial',
       footprint: [{ x: 15, y: 1 }],
       anchor: { x: 15, y: 1 },
-      level: 2,
+      level: 4,
       density: 0,
       age: 0,
       abandoned: false,
@@ -1306,7 +1365,8 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     expect(world.getFireCoverageMap().getCoverage(5, 1)).toBe(96);
     expect(world.getHospitalCoverageMap().getCoverage(5, 1)).toBe(74);
     expect(world.getSchoolCoverageMap().getCoverage(5, 1)).toBe(74);
-    expect(world.getDemand().residential).toBeCloseTo(0.25, 6);
+    // 20 workers, 40 reachable jobs → net 20 on a market floored to MIN_MARKET → ratio 0.20.
+    expect(world.getDemand().residential).toBeCloseTo(0.75, 10);
     // Uncongested anchor land value: road 0.40·(1 − 1/7) + diversity 0.10·(1/3) (only the
     // probe's own R tile is zoned in the 3×3) + service 0.50·(96+96+74+74)/1020 ≈ 0.5429.
     // The recompute drains traffic, which is NOT dirty, so the still-zero congestion map
@@ -1332,6 +1392,9 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     expect(blockedLv).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[2]); // 0.25 → L2 still supported
     expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(2);
     expect(map.getBuildings().getBuilding(PROBE_ID)!.abandoned).toBe(false);
+    // The job source survives the sweep too — otherwise the jobs vanish and demand, not land
+    // value, would be what blocked the level-up.
+    expect(map.getBuildings().getBuilding(1)!.abandoned).toBe(false);
 
     // Relief phase: re-resolve traffic from the REAL flows. The L2 probe's whole matched
     // workforce (2 · WORKERS_PER_LEVEL, absorbed by the L2 commercial) loads road tiles

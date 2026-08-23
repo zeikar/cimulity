@@ -1,27 +1,99 @@
 import type { BuildingMap } from './Building';
-
-export const DENSITY_DEMAND_THRESHOLD = 0.6;
+import { POPULATION_PER_LEVEL } from './growthConstants';
 
 // Readonly<...> is a compile-time guard only — the module returns an Object.freeze'd snapshot to enforce immutability at runtime.
 export type DemandVector = Readonly<{ residential: number; commercial: number; industrial: number }>;
+
+/*
+ * Unit quantization — the basis every constant below is calibrated against.
+ * `WORKERS_PER_LEVEL` and `JOBS_PER_LEVEL` both equal `POPULATION_PER_LEVEL`, and the matcher only
+ * ever moves `Math.min()` of two multiples of ten, so every labor scalar — employed, unemployed,
+ * jobsCapacity, reachableUnfilledJobs, and therefore `net` — is a multiple of 10. The smallest
+ * reachable imbalance is one building-level: 10 units.
+ */
+
+// Below a 5% imbalance the city reads as balanced and the labor term contributes nothing — the only
+// continuous damping a stateless design has. Matches the ~5% Cities: Skylines treats as balance.
+export const DEADBAND_RATE = 0.05;
+
+// A quarter of the market on the wrong side of the ledger is a full crisis; severity saturates there
+// so a runaway imbalance cannot ask for more than "everything".
+export const SATURATION_RATE = 0.25;
+
+// Floors the severity denominator against the ten-unit quantization above: one building-level of
+// imbalance then reads 10/100 = 0.10, i.e. PARTIAL severity between deadband and saturation. A floor
+// of 40 — or no floor at all — would make that same single building an instant full-crisis reading.
+// Written as a multiple of POPULATION_PER_LEVEL so it cannot drift out of the unit it measures.
+export const MIN_MARKET = 10 * POPULATION_PER_LEVEL;
+
+// laborMarket.ts pools C and I into one job type, so they are interchangeable providers and an even
+// split is the only allocation that invents no economic distinction. Named so it can move when C and
+// I get distinct roles.
+export const COMMERCIAL_JOB_SHARE = 0.5;
+
+// The labor axis pins C+I ≈ R, so a 25% commercial share puts the city at R:C:I = 2:1:1. Both axes
+// share that one fixed point, so unlike the deleted structural terms it is actually reachable.
+export const COMMERCIAL_LEVEL_SHARE = 0.25;
+
+// The residential demand a city with work for everyone shows from in-migration alone: the external
+// growth driver, without which the all-zero state would be absorbing (no zone tile supplies workers,
+// jobs or levels, so nothing the player painted could change the ratio). Must stay strictly between
+// GROWTH_DEMAND_THRESHOLD (so the R gates stay open when balanced) and DENSITY_DEMAND_THRESHOLD (so
+// migration alone can never densify or merge); set at the low end, where it fills exactly one of the
+// HUD's ten blocks.
+export const MIGRATION_PRESSURE = 0.1;
+
+// The unemployment rate at which in-migration stops entirely — Micropolis's
+// `migration = pop × (employment − 1)` in a bounded form. Shares its rate with
+// UNEMPLOYMENT_WARNING_RATE in app/hooks/laborStatus.ts, duplicated here because the layer boundary
+// runs core → app and never app → core; the HUD warning additionally needs WARNING_MIN_WORKFORCE, so
+// a hamlet can have migration damped to zero with no warning shown.
+export const MIGRATION_UNEMPLOYMENT_CUTOFF = 0.2;
+
+// Applied whenever the labor market is empty: there is nothing to be proportional to in that state
+// and "build homes" is the only correct instruction. A gate opener, not a pacing knob.
+export const BOOTSTRAP_RESIDENTIAL_DEMAND = 1;
+
+// Gate for spawn and level-up. Zero is the anchor, not the absence of one: the deadband already
+// encodes "balanced", so a strictly positive reading is either an imbalance beyond DEADBAND_RATE or
+// live in-migration.
+export const GROWTH_DEMAND_THRESHOLD = 0;
+
+// The one gate where magnitude matters. A jobs bar reaches 0.375 exactly when citywide unemployment
+// hits 20% with no reachable vacancies (0.5 × 0.75); the residential bar reaches it at a 12.5%
+// reachable-vacancy surplus. A jobs bar caps at COMMERCIAL_JOB_SHARE, so the previous 0.6 would have
+// made industrial density bumps and merges unreachable in every city.
+export const DENSITY_DEMAND_THRESHOLD = 0.375;
+
+/** Reading of a city whose labor market is empty; also Demand's value before the first recompute. */
+export const EMPTY_CITY_DEMAND: DemandVector = Object.freeze({
+  residential: BOOTSTRAP_RESIDENTIAL_DEMAND,
+  commercial: 0,
+  industrial: 0,
+});
 
 function clamp01(x: number): number {
   return Math.min(1, Math.max(0, x));
 }
 
-const BASELINE: DemandVector = Object.freeze({ residential: 0.25, commercial: 0.25, industrial: 0.25 });
-
-// Bounded additive employment-feedback nudge: pushes zone demand toward labor market balance.
-const LABOR_FEEDBACK_WEIGHT = 0.15;
+/** Deadbanded, saturating severity of a shortfall against the market. MIN_MARKET > 0 floors `market`, so this never divides by zero. */
+function severity(shortfall: number, market: number): number {
+  return clamp01((shortfall / market - DEADBAND_RATE) / (SATURATION_RATE - DEADBAND_RATE));
+}
 
 // Plain scalars extracted from LaborMarketMap — no import of World or labor modules here.
-type LaborScalars = Readonly<{ employed: number; unemployed: number; reachableUnfilledJobs: number }>;
+type LaborScalars = Readonly<{
+  employed: number;
+  unemployed: number;
+  reachableUnfilledJobs: number;
+  jobsCapacity: number;
+}>;
 
 export class Demand {
   private cached: DemandVector;
 
   constructor() {
-    this.cached = BASELINE;
+    this.cached = EMPTY_CITY_DEMAND;
   }
 
   recompute(buildings: BuildingMap, labor: LaborScalars): void {
@@ -36,24 +108,48 @@ export class Demand {
       else if (b.type === 'industrial') levelSumI += b.level;
     }
 
-    const jobsLevels = levelSumC + levelSumI;
+    // --- labor axis ---
+    const workforce = labor.employed + labor.unemployed;
+    // reachableUnfilledJobs is summed over job nodes reached by at least one residential BFS, so with
+    // no residential origins it is structurally 0 and an all-jobs city would read "balanced". With no
+    // workforce every job IS a vacancy and reachability is vacuous, so jobsCapacity is honest there.
+    const vacancies = workforce === 0 ? labor.jobsCapacity : labor.reachableUnfilledJobs;
+    // A state, not a one-time transition: a city that bulldozes (or abandons) every R/C/I building
+    // re-enters it and correctly reads "build homes" again.
+    const marketEmpty = workforce === 0 && vacancies === 0;
+    const market = Math.max(workforce + vacancies, MIN_MARKET);
+    // Only the residual sign survives — stranded workers and stranded reachable vacancies cancel, and
+    // a net of 0 is a legitimate all-zero reading (the fix there is a road, not a zone; laborStatus.ts
+    // already carries that message).
+    const net = vacancies - labor.unemployed;
+    const resSeverity = net > 0 ? severity(net, market) : 0;
+    // ONE aggregate figure: the whole shortage against the whole market, so the deadband and the
+    // saturation point stay citywide. Curving each half separately would double both and spend the
+    // same shortage twice.
+    const workplaceSeverity = net < 0 ? severity(-net, market) : 0;
 
-    // Pre-clamp structural expressions (baseline folded in).
-    const structuralR = (jobsLevels - levelSumR) / Math.max(jobsLevels, 1) + 0.25;
-    const structuralI = (levelSumR - jobsLevels) / Math.max(levelSumR, 1) + 0.25;
-    const structuralC = (levelSumR - 2 * levelSumC) / Math.max(levelSumR, 1) + 0.25;
+    // --- migration (residential only) ---
+    // Combined by `max` OUTSIDE the severity, so it cannot move the balance point; folding it in is
+    // exactly the offset-inside-the-formula defect the deleted structural terms had. C and I get no
+    // driver of their own: the jobs axis already answers migration-driven workers within one growth
+    // interval, so a second one would manufacture pressure with no cause.
+    const unemploymentRate = workforce > 0 ? labor.unemployed / workforce : 0;
+    const migration = MIGRATION_PRESSURE * clamp01(1 - unemploymentRate / MIGRATION_UNEMPLOYMENT_CUTOFF);
 
-    // Labor feedback signals — both zero-guarded so empty cities produce signals of 0.
-    const reachableSlots = labor.employed + labor.reachableUnfilledJobs;
-    const reachableVacancyRate = reachableSlots > 0 ? labor.reachableUnfilledJobs / reachableSlots : 0;
-    const workers = labor.employed + labor.unemployed;
-    const unemploymentRate = workers > 0 ? labor.unemployed / workers : 0;
-    const residentialSignal = reachableVacancyRate - unemploymentRate; // ∈ [-1,+1]
-    const jobsSignal = -residentialSignal;
+    // --- retail axis (commercial only) ---
+    const totalLevels = levelSumR + levelSumC + levelSumI;
+    const targetC = COMMERCIAL_LEVEL_SHARE * totalLevels;
+    const retail = clamp01((targetC - levelSumC) / Math.max(targetC, levelSumC, 1));
+    // Micropolis's laborBase: with more open jobs than workers already, another shop has nobody to
+    // staff it, so the retail axis collapses.
+    const staffing = 1 - resSeverity;
 
-    const residential = clamp01(structuralR + LABOR_FEEDBACK_WEIGHT * residentialSignal);
-    const industrial = clamp01(structuralI + LABOR_FEEDBACK_WEIGHT * jobsSignal);
-    const commercial = clamp01(structuralC + LABOR_FEEDBACK_WEIGHT * jobsSignal);
+    const residential = marketEmpty ? BOOTSTRAP_RESIDENTIAL_DEMAND : Math.max(resSeverity, migration);
+    // `max`, not `+`: the two axes are alternative reasons to build the same building, and summing
+    // would push the bar past what the worse of the two shortages justifies.
+    const commercial = Math.max(workplaceSeverity * COMMERCIAL_JOB_SHARE, retail * staffing);
+    // The split happens AFTER the severity curve — see workplaceSeverity above.
+    const industrial = workplaceSeverity * (1 - COMMERCIAL_JOB_SHARE);
 
     this.cached = Object.freeze({ residential, commercial, industrial });
   }

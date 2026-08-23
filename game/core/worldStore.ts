@@ -26,12 +26,13 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v18';
 
-// Bumped to 'service-v10': `LandValueMap` gains getCongestionPenalty(), which the tile
-// inspector calls to attribute land-value loss to congestion — a stale HMR singleton would
-// hold a pre-getter prototype and crash the inspector. No new World method was added, so the
-// method probe is unchanged. Traffic is derived and never persisted, so the save format
-// (v18 / STORAGE_KEY) is untouched — only the guard token needs bumping.
-const WORLD_SINGLETON_GUARD = 'service-v10' as const;
+// Bumped to 'service-v11': R/C/I demand is now DERIVED from the labor market (deadbanded
+// severity + migration + retail axis) instead of blended into structural level ratios. A
+// retained HMR singleton holds the old `Demand` and `World` prototypes AND a cached `Demand`
+// instance — with no change to the World method surface the probe below would happily reuse it
+// and keep running the previous formula after a Fast Refresh. Demand is derived and never
+// persisted, so the save format (v18 / STORAGE_KEY) is untouched — only the guard token bumps.
+const WORLD_SINGLETON_GUARD = 'service-v11' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -61,7 +62,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v10 / v18 — traffic feedback into land value + happiness):
+ * Checked methods (as of service-v11 / v18 — labor-derived R/C/I demand):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,

@@ -7,7 +7,7 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
-import { Demand, DENSITY_DEMAND_THRESHOLD } from './Demand';
+import { Demand, DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
@@ -632,8 +632,8 @@ export class World {
   /**
    * Mark the labor market as needing recomputation on the next recomputeLaborIfDirty()
    * or getLaborMarket() call. Cascades to traffic (traffic consumes labor flows — and
-   * traffic in turn cascades to land value and happiness) and to demand (demand blends
-   * labor-market feedback scalars).
+   * traffic in turn cascades to land value and happiness) and to demand (demand is derived
+   * from the labor-market scalars).
    */
   markLaborDirty(): void {
     this.laborDirty = true;
@@ -642,7 +642,7 @@ export class World {
     // Route through markTrafficDirty() rather than setting the flag: the onward
     // traffic → land value → happiness cascade lives in ONE place.
     this.markTrafficDirty();
-    // Demand blends labor-market feedback — stale labor means stale demand.
+    // Demand is derived from the labor market — stale labor means stale demand.
     this.markDemandDirty();
   }
 
@@ -697,6 +697,7 @@ export class World {
         employed: labor.getEmployed(),
         unemployed: labor.getUnemployed(),
         reachableUnfilledJobs: labor.getReachableUnfilledJobs(),
+        jobsCapacity: labor.getJobsCapacity(),
       });
       this.demandDirty = false;
     }
@@ -1041,9 +1042,10 @@ export class World {
         if (existing === null) {
           // Branch A: spawn — frontage-first greedy-depth lot selection.
           const bType = tile.type.replace('zone_', '') as BuildingType;
-          // No demand for this type → no spawn. Demand at 0 means the city is
-          // fully saturated for this type; let zones sit empty until pressure returns.
-          if (demandVec[bType] <= 0) continue;
+          // No demand for this type → no spawn. At GROWTH_DEMAND_THRESHOLD the labor
+          // imbalance is inside the deadband and no in-migration is pulling; let zones sit
+          // empty until pressure returns.
+          if (demandVec[bType] <= GROWTH_DEMAND_THRESHOLD) continue;
           // Spawn uses the seed tile directly — lot/footprint do not exist yet.
           if (!pw.isPowered(x, y)) continue;
           const frontage = pickSeedFrontage({ x, y }, this);
@@ -1092,7 +1094,8 @@ export class World {
 
         if (existing.level < ZONE_MAX_LEVEL) {
           // Level-up branch: gated on demand, land value threshold, and age cooldown.
-          // Demand at 0 → saturated for this type → no structure-grow, no level-up.
+          // At GROWTH_DEMAND_THRESHOLD there is no imbalance beyond the deadband and no
+          // in-migration for this type → no structure-grow, no level-up.
           const threshold = LEVEL_THRESHOLDS[existing.level + 1];
           const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
           // Power gates spawn AND existing-building aging/growth (the isBuildingPowered check above
@@ -1103,7 +1106,7 @@ export class World {
           // structure-grow); not spawn, density, or merge.
           // Graded fields (land value, coverage) gate at the ANCHOR; binary fields (power, water)
           // scan the FOOTPRINT — any powered/watered cell satisfies the gate. This is the intended split.
-          if (demandVec[existing.type] > 0 && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc) && isHospitalAnchorCovered(existing.anchor, hospitalSvc) && isSchoolAnchorCovered(existing.anchor, schoolSvc)) {
+          if (demandVec[existing.type] > GROWTH_DEMAND_THRESHOLD && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc) && isHospitalAnchorCovered(existing.anchor, hospitalSvc) && isSchoolAnchorCovered(existing.anchor, schoolSvc)) {
             const lot = lotBboxOf(existing.footprint);
             if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
               // Branch B' — structure-grow before level-up.

@@ -20,8 +20,10 @@ import {
   HAPPINESS_W_BUDGET,
   HAPPINESS_W_TRAFFIC,
 } from './World';
-import { GROWTH_COOLDOWN_INTERVALS, stagger } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, stagger } from './growthConstants';
+import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
+import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 function seedPower(world: World, ax: number, ay: number): void {
@@ -83,6 +85,51 @@ function seedSchool(world: World, ax: number, ay: number): void {
   expect(added).not.toBeNull();
   world.markSchoolDirty();
   world.recomputeSchool();
+}
+
+/**
+ * Two reachable level-2 commercial job sources for the shared 10×8 coverage/water fixture
+ * layout: road row at y=2, residential probe at (0,1). Both front 'S' onto that road row, so
+ * their 40 jobs are road-reachable from the probe's access node — jobs the probe cannot reach
+ * are invisible to the labor market and would leave residential demand at 0.00.
+ * Level 2 is supported by bare road frontage (lv ≈ 0.34 > LEVEL_THRESHOLDS[2]) whatever the
+ * fixture's coverage looks like, so the abandonment sweep can never quietly delete the demand.
+ */
+function seedRoadRowJobs(world: World): void {
+  for (const [id, x] of [[998, 3], [999, 4]] as const) {
+    expect(world.getMap().getBuildings().addExistingBuilding({
+      id, type: 'commercial',
+      footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+      level: 2, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x, y: 1, w: 1, h: 1 },
+    })).toBe(true);
+  }
+}
+
+/**
+ * Symmetric post-run guard for seedRoadRowJobs: the seeders must still be live at the END of the
+ * run too. Had the sweep abandoned them their jobs would vanish mid-run, demand rather than the
+ * gate under test would become the blocker, and a "does NOT level up" fixture would go green for
+ * the wrong reason. Level 2 on road frontage cannot abandon today — this is the guard that would
+ * catch a future land-value retune quietly hollowing these fixtures out.
+ */
+function expectRoadRowJobsAlive(world: World): void {
+  for (const id of [998, 999]) {
+    expect(world.getMap().getBuildings().getBuilding(id)!.abandoned).toBe(false);
+  }
+}
+
+/**
+ * Assert the fixture really supplies reachable jobs and an open residential gate. Call it once
+ * every building exists — a job source is often seeded before the residential probe, and a
+ * labor market with no origins reports zero reachable jobs. Buildings added straight to the
+ * BuildingMap never mark the world dirty, so force the refresh the growth pass would do.
+ */
+function expectJobsReachable(world: World): void {
+  world.recomputeLabor();
+  world.markDemandDirty();
+  expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+  expect(world.getDemand().residential).toBeGreaterThan(0);
 }
 
 function seedPolice(world: World, ax: number, ay: number): void {
@@ -441,23 +488,29 @@ describe('World.tick() — monthly tax settlement', () => {
       frontage: 'S', // road is south at (0,2)
       structureRect: { x: 0, y: 1, w: 1, h: 1 },
     });
-    // Jobs source so residential demand stays positive. Placed at (9,1) — a covered,
-    // road-adjacent cell with lv ≈ 0.73 — at level 4 (its supportable max) so the
-    // abandonment sweep (Task 4) does NOT exclude it from the demand model. (It is on
-    // a GRASS tile, so the growth loop never visits it; only the sweep reads its anchor.)
-    // jobsLevels=4, levelSumR=4 → residential demand = (4-4)/4 + 0.25 = 0.25 > 0 → level-up fires.
-    mapF.getBuildings().addExistingBuilding({
-      id: 999,
-      type: 'commercial',
-      footprint: [{ x: 9, y: 1 }],
-      anchor: { x: 9, y: 1 },
-      level: 4,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'N',
-      structureRect: { x: 9, y: 1, w: 1, h: 1 },
-    });
+    // Jobs sources so residential demand stays positive. Two level-4 commercials at (8,1) and
+    // (9,1) — covered, road-adjacent cells with lv ≈ 0.73, so level 4 (their supportable max)
+    // survives the abandonment sweep. Frontage 'S': the access node is the road row at y=2, so
+    // the probe's BFS actually reaches them; fronting 'N' onto grass would make the jobs
+    // invisible and residential demand 0. 80 jobs against the level-4 probe's 40 workers gives
+    // net 40 on a market of 100 → residential saturates. (Both sit on GRASS tiles, so the
+    // growth loop never visits them; only the sweep reads their anchors.)
+    for (const x of [8, 9]) {
+      expect(mapF.getBuildings().addExistingBuilding({
+        id: 990 + x,
+        type: 'commercial',
+        footprint: [{ x, y: 1 }],
+        anchor: { x, y: 1 },
+        level: 4,
+        density: 0,
+        age: 0,
+        abandoned: false,
+        frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
+    }
+
+    expectJobsReachable(world);
 
     const moneyBefore = world.getMoney();
     const level4Pop = world.getPopulation();
@@ -592,7 +645,6 @@ describe('stagger() — deterministic per-building jitter', () => {
     // level-up (to level=2) is gated by GROWTH_COOLDOWN_INTERVALS + stagger(id),
     // which is what differentiates the per-building first-level-2 ticks.
     // Widened to 18 so free 2×2 fire, hospital, AND school stations fit adjacent to the extended road row at the right end.
-    // Taller (height 12) so an ISOLATED served commercial cluster fits at the bottom.
     const world = new World(18, 12, { regenerate: false });
     const map = world.getMap();
     // Road along the top row
@@ -607,35 +659,27 @@ describe('stagger() — deterministic per-building jitter', () => {
     for (let x = 0; x < 5; x++) {
       map.setTile(x, 2, createTile(x, 2, TileType.ZONE_COMMERCIAL));
     }
-    // Job source: an ISOLATED served commercial cluster on its own road at y=9 —
-    // four level-5 commercials (lv ≈ 0.9, so the abandonment sweep keeps them, and
-    // their 20 job-points keep residential demand positive as the R buildings level
-    // up). Isolating the road keeps its coverage/power from touching the R anchors.
-    for (let x = 0; x < 18; x++) map.setTile(x, 9, createTile(x, 9, TileType.ROAD));
-    for (let k = 0; k < 4; k++) {
-      map.setTile(k, 8, createTile(k, 8, TileType.ZONE_COMMERCIAL));
-      map.getBuildings().addExistingBuilding({
-        id: 999 + k,
+    // Job bank on the SAME road row the five R lots front (x=6..17, ids 999–1010), each
+    // frontage 'W' so its access node is the road cell to its west — jobs on an isolated road
+    // are unreachable and would leave residential demand at 0.00. Sitting on ROAD tiles keeps
+    // them out of the zone-growth loop, and a road cell's land value (0.40, distance 0)
+    // supports level 2 forever, so the sweep never abandons them. 12 × 20 = 240 jobs against
+    // at most 150 workers (five lots reach level 3 within the 20 growth intervals below), i.e.
+    // always well over the 30-unit surplus that saturates the residential bar.
+    for (let x = 6; x < 18; x++) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: 993 + x,
         type: 'commercial',
-        footprint: [{ x: k, y: 8 }],
-        anchor: { x: k, y: 8 },
-        level: 5,
+        footprint: [{ x, y: 0 }],
+        anchor: { x, y: 0 },
+        level: 2,
         density: 0,
         age: 0,
         abandoned: false,
-        frontage: 'S',
-        structureRect: { x: k, y: 8, w: 1, h: 1 },
-      });
+        frontage: 'W',
+        structureRect: { x, y: 0, w: 1, h: 1 },
+      })).toBe(true);
     }
-    const clusterStation = (ax: number, ay: number) => [
-      { x: ax, y: ay }, { x: ax + 1, y: ay }, { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
-    ];
-    world.getStructureMap().addStructure({ type: 'police_station', anchor: { x: 6, y: 10 }, footprint: clusterStation(6, 10) });
-    world.getStructureMap().addStructure({ type: 'fire_station', anchor: { x: 8, y: 10 }, footprint: clusterStation(8, 10) });
-    world.getStructureMap().addStructure({ type: 'hospital', anchor: { x: 10, y: 10 }, footprint: clusterStation(10, 10) });
-    world.getStructureMap().addStructure({ type: 'school', anchor: { x: 12, y: 10 }, footprint: clusterStation(12, 10) });
-    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 0, y: 7 }, footprint: [{ x: 0, y: 7 }] });
-    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 2, y: 7 }, footprint: [{ x: 2, y: 7 }] });
     seedPower(world, 8, 1); // plant at (8,1)–(9,2); cell (8,1) adj to road (8,0) → all road y=0 powered
     // Decision-A: water gates level-up. Add tower adj to road y=0 so all 5 buildings can level up.
     seedWater(world, 6, 1); // tower at (6,1)–(7,2); cell (6,1) adj to road (6,0) → waters road y=0
@@ -658,6 +702,11 @@ describe('stagger() — deterministic per-building jitter', () => {
     expect(world.getHospitalCoverageMap().getCoverage(4, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(4, 1)).toBeGreaterThan(0);
+    // The five lots are still empty here, so the bank's jobs are not yet reachable from any
+    // origin; assert the open gate the first growth pass will actually see.
+    world.recomputeLabor();
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThan(0);
 
     const firstLevelTwoTick = new Map<number, number>();
 
@@ -1142,19 +1191,7 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // School coverage ALSO gates level-up — station at (8,0)–(9,1); cell (8,1) adj to road (8,2).
     seedSchool(world, 8, 0);
 
-    // Jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999,
-      type: 'commercial',
-      footprint: [{ x: 9, y: 7 }],
-      anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1180,7 +1217,12 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
     // Run growth ticks — with water and coverage present, building should level up.
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expectRoadRowJobsAlive(world);
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
   });
 
@@ -1194,19 +1236,9 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 2, 0);
-    // Add jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999,
-      type: 'commercial',
-      footprint: [{ x: 9, y: 9 }],
-      anchor: { x: 9, y: 9 },
-      level: ZONE_MAX_LEVEL,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'N',
-      structureRect: { x: 9, y: 9, w: 1, h: 1 },
-    });
+    // No job source: with no buildings at all the labor market is empty and residential demand
+    // is the bootstrap 1.0, which is exactly what a pure spawn fixture needs. A source could not
+    // help anyway — with no residential origin, reachableUnfilledJobs is structurally 0.
 
     // Confirm NOT watered.
     expect(world.getWaterMap().isWatered(0, 1)).toBe(false);
@@ -1220,8 +1252,10 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
   });
 
   // Two separate it-blocks for the merge water gate (no if-guards around assertions).
+  // (d-neg) carries its own layout — see the coordinate list in that test. The sketch below
+  // is (d-pos)'s.
   //
-  // Layout (12×6 map):
+  // Layout:
   //   Building A: 2-wide 1-deep lot at (5,2),(6,2), frontage 'S'. South face road: (5,3),(6,3).
   //   Building B: 2-wide 1-deep lot at (7,2),(8,2), frontage 'S'. South face road: (7,3),(8,3) BUT
   //     (7,3)=GRASS in the negative scenario — only (8,3) is road for B, giving ≥1 road on face ✓.
@@ -1234,58 +1268,100 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
   //   Water (positive): (7,3) is ROAD (gap filled); same tower waters full (5,3)→(8,3) row.
 
   it('(d-neg) merge water gate — one unwatered candidate: no merge (asserts unconditionally)', () => {
-    // NEGATIVE: building B has an isolated road (8,3); tower only waters A's network → B NOT watered.
-    const world = new World(12, 6, { regenerate: false });
+    // NEGATIVE: two merge-eligible ZONE_MAX_LEVEL lots sit on two road components that share no
+    // orthogonal ROAD chain, and only the western one has a water source — water is the sole
+    // variable. Everything else (power, all four coverages, land value ≥ LEVEL_THRESHOLDS[5],
+    // reachable jobs) is satisfied on BOTH sides, so neither probe can be frozen by the
+    // abandonment sweep and make "no merge" true for the wrong reason.
+    //
+    // ROAD tiles — these and no others: (0,5)…(11,5) = component A, (12,5) GRASS (the gap),
+    // (13,5)…(23,5) = component B. Row 5 holds every road on the map, so no orthogonal chain
+    // joins A to B; structures are excluded from the water/power BFS and only SEED it from an
+    // adjacent road cell, so none of the placements below can bridge them either.
+    const world = new World(24, 12, { regenerate: false });
     const map = world.getMap();
+    for (let x = 0; x <= 11; x++) map.setTile(x, 5, createTile(x, 5, TileType.ROAD));
+    for (let x = 13; x <= 23; x++) map.setTile(x, 5, createTile(x, 5, TileType.ROAD));
 
-    // Zone row y=2.
-    map.setTile(5, 2, createTile(5, 2, TileType.ZONE_RESIDENTIAL));
-    map.setTile(6, 2, createTile(6, 2, TileType.ZONE_RESIDENTIAL));
-    map.setTile(7, 2, createTile(7, 2, TileType.ZONE_RESIDENTIAL));
-    map.setTile(8, 2, createTile(8, 2, TileType.ZONE_RESIDENTIAL));
-    // Road A at (5,3),(6,3). GRASS GAP at (7,3). Road B at (8,3) — isolated from A.
-    map.setTile(5, 3, createTile(5, 3, TileType.ROAD));
-    map.setTile(6, 3, createTile(6, 3, TileType.ROAD));
-    // (7,3) intentionally GRASS — road-to-road BFS cannot reach (8,3) from A's network.
-    map.setTile(8, 3, createTile(8, 3, TileType.ROAD));
-    // Power A: plant (3,3)–(4,4); (4,3) adj (5,3)=ROAD A.
-    seedPower(world, 3, 3);
-    // Power B: plant (9,2)–(10,3); (9,3) adj (8,3)=ROAD B.
-    seedPower(world, 9, 2);
-    // Water A only: tower (5,4) (1×1); (5,4) adj (5,3)=ROAD A; A network = (5,3)→(6,3); BFS stops at GRASS (7,3).
-    seedWater(world, 5, 4);
+    // Probes: A on component A, B on component B, geometrically merge-eligible
+    // (11+2 === 13, equal depth, shared frontage edge at y+h = 5, merged width 4).
+    for (const x of [11, 12, 13, 14]) map.setTile(x, 4, createTile(x, 4, TileType.ZONE_RESIDENTIAL));
 
-    // Unconditional precondition pins — test fails loudly if water wiring regresses.
-    expect(world.getWaterMap().isWatered(5, 3)).toBe(true);  // A road watered
-    expect(world.getWaterMap().isWatered(6, 3)).toBe(true);  // A road watered
-    expect(world.getWaterMap().isWatered(8, 3)).toBe(false); // B road NOT watered (isolated by gap)
-    expect(world.getWaterMap().isWatered(5, 2)).toBe(true);  // A footprint cell watered
-    expect(world.getWaterMap().isWatered(8, 2)).toBe(false); // B footprint cell NOT watered
+    // Component A: power plant seeding (0,5), the four stations, a 1×1 water tower whose only
+    // ROAD neighbour is (10,5) ∈ A, and a park north of anchor A.
+    seedPower(world, 0, 6);
+    seedPolice(world, 2, 6);
+    seedFire(world, 4, 6);
+    seedHospital(world, 6, 6);
+    seedSchool(world, 8, 6);
+    seedWater(world, 10, 6);
+    expect(world.getStructureMap().addStructure({ type: 'park', anchor: { x: 11, y: 3 }, footprint: [{ x: 11, y: 3 }] })).not.toBeNull();
+
+    // Component B: its own power and its own four stations — no 2×2 footprint can touch a road
+    // cell of both components across the (12,5) gap, and coverage is not water, so the second
+    // set bridges nothing. NO water source on B: that omission is the test's sole variable.
+    seedPolice(world, 13, 6);
+    seedFire(world, 15, 6);
+    seedHospital(world, 17, 6);
+    seedSchool(world, 19, 6);
+    seedPower(world, 21, 6);
+    expect(world.getStructureMap().addStructure({ type: 'park', anchor: { x: 13, y: 3 }, footprint: [{ x: 13, y: 3 }] })).not.toBeNull();
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
-    // Jobs source: level 20 so residential demand stays well above DENSITY_DEMAND_THRESHOLD.
-    // Total R levels = 2×ZONE_MAX_LEVEL = 10; commercial level 20 → demand = (20-10)/20+0.25 = 0.75 ≥ 0.6.
-    map.getBuildings().addExistingBuilding({
-      id: 900, type: 'commercial',
-      footprint: [{ x: 11, y: 5 }], anchor: { x: 11, y: 5 },
-      level: 20, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 11, y: 5, w: 1, h: 1 },
-    });
+    // Jobs bank: four level-4 commercials on GRASS at y=4, each fronting the A road directly
+    // below it. Level 4, not 5: those anchors reach lv ≈ 0.78 (road + service, no park in
+    // range), which clears LEVEL_THRESHOLDS[4] = 0.65 but not [5] = 0.85, so a level-5 bank
+    // would abandon on the first sweep. Grass tiles keep the bank out of the zone loop, so it
+    // never ages, levels or merges. 160 jobs is the size: with 100 workers and every job on A,
+    // employed = 50, unemployed = 50, reachable = J − 50, market = J + 50 and net = J − 100,
+    // so (J−100)/(J+50) ≥ 0.125 needs J ≥ 130; 160 saturates the bar instead of sitting just
+    // over the line.
+    for (const [i, x] of [2, 4, 6, 8].entries()) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: 900 + i, type: 'commercial',
+        footprint: [{ x, y: 4 }], anchor: { x, y: 4 },
+        level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 4, w: 1, h: 1 },
+      })).toBe(true);
+    }
+
     const okA = map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential',
-      footprint: [{ x: 5, y: 2 }, { x: 6, y: 2 }], anchor: { x: 5, y: 2 },
+      footprint: [{ x: 11, y: 4 }, { x: 12, y: 4 }], anchor: { x: 11, y: 4 },
       level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
-      structureRect: { x: 5, y: 2, w: 2, h: 1 },
+      structureRect: { x: 11, y: 4, w: 2, h: 1 },
     });
     const okB = map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
-      footprint: [{ x: 7, y: 2 }, { x: 8, y: 2 }], anchor: { x: 7, y: 2 },
+      footprint: [{ x: 13, y: 4 }, { x: 14, y: 4 }], anchor: { x: 13, y: 4 },
       level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
-      structureRect: { x: 7, y: 2, w: 2, h: 1 },
+      structureRect: { x: 13, y: 4, w: 2, h: 1 },
     });
     expect(okA).toBe(true);
     expect(okB).toBe(true);
+    world.markLandValueDirty();
+    world.recomputeLandValue();
     world.markDemandDirty();
+    world.recomputeLabor();
+
+    // Water: the disconnect, and the only difference between the two components.
+    expect(world.getWaterMap().isWatered(11, 5)).toBe(true);
+    expect(world.getWaterMap().isWatered(11, 4)).toBe(true);
+    expect(world.getWaterMap().isWatered(13, 5)).toBe(false);
+    expect(world.getWaterMap().isWatered(13, 4)).toBe(false);
+    // Everything else the sweep and the merge pass read is satisfied on BOTH anchors.
+    expect(world.getPowerMap().isPowered(11, 4)).toBe(true);
+    expect(world.getPowerMap().isPowered(13, 4)).toBe(true);
+    for (const a of [{ x: 11, y: 4 }, { x: 13, y: 4 }]) {
+      expect(world.getServiceCoverageMap().getCoverage(a.x, a.y)).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+      expect(world.getFireCoverageMap().getCoverage(a.x, a.y)).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+      expect(world.getHospitalCoverageMap().getCoverage(a.x, a.y)).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+      expect(world.getSchoolCoverageMap().getCoverage(a.x, a.y)).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+      expect(world.getLandValue().getValue(a.x, a.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[5]);
+    }
+    // 160 jobs on A, 50 of them filled by probe A's workers; probe B's 50 reach none.
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBe(110);
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
 
     // One growth tick. B unwatered → merge water gate blocks → both buildings survive.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
@@ -1294,13 +1370,19 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // Unconditional — no if-guard.
     expect(map.getBuildings().getBuilding(0)).not.toBeNull();
     expect(map.getBuildings().getBuilding(1)).not.toBeNull();
+    // Neither probe was frozen by the abandonment sweep, and neither density bump reset an age
+    // (age 19 < DENSITY_COOLDOWN_INTERVALS), so "no merge" can only be the water gate.
+    expect(map.getBuildings().getBuilding(0)!.abandoned).toBe(false);
+    expect(map.getBuildings().getBuilding(1)!.abandoned).toBe(false);
+    expect(map.getBuildings().getBuilding(0)!.density).toBe(0);
+    expect(map.getBuildings().getBuilding(1)!.density).toBe(0);
   });
 
   it('(d-pos) merge water gate — both candidates watered: merge succeeds (asserts unconditionally)', () => {
     // POSITIVE: (7,3) is now ROAD (gap filled) → A+B connected → tower waters both → merge fires.
     // Taller/wider (16×12) so the max-level merge candidates can be fully served (lv ≈ 0.93 →
-    // not abandoned) via stations hung off a full-width frontage road, with jobs from an
-    // isolated served commercial cluster — leaving water the sole merge variable.
+    // not abandoned) via stations hung off a full-width frontage road, with jobs from a bank
+    // that fronts that SAME road — leaving water the sole merge variable.
     const world = new World(16, 12, { regenerate: false });
     const map = world.getMap();
 
@@ -1328,24 +1410,21 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(world.getWaterMap().isWatered(5, 2)).toBe(true);  // A footprint cell watered
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
-    // Jobs source: isolated served commercial cluster (own road y=9) of four level-5
-    // commercials (lv ≈ 1.0, not abandoned) → jobsLevels=20, levelSumR=10 → demand=0.75 ≥ 0.6.
-    for (let x = 0; x < 16; x++) map.setTile(x, 9, createTile(x, 9, TileType.ROAD));
-    for (let k = 0; k < 4; k++) {
-      map.setTile(k, 8, createTile(k, 8, TileType.ZONE_COMMERCIAL));
-      map.getBuildings().addExistingBuilding({
-        id: 900 + k, type: 'commercial',
-        footprint: [{ x: k, y: 8 }], anchor: { x: k, y: 8 },
-        level: 5, density: 0, age: 0, abandoned: false, frontage: 'S',
-        structureRect: { x: k, y: 8, w: 1, h: 1 },
-      });
+    // Jobs bank: three level-4 commercials on GRASS at y=4, frontage 'N' onto the shared y=3
+    // road, so their jobs are reachable from both probes' access nodes. The two level-5 probes
+    // supply 100 workers and every job is reachable, so market = J and clearing
+    // DENSITY_DEMAND_THRESHOLD needs (J−100)/J ≥ 0.125 → J ≥ 120: three level-4 buildings
+    // exactly, giving ratio 0.167 and residential ≈ 0.583. Level 4 (not 5) because those
+    // anchors reach lv ≈ 0.74 — over LEVEL_THRESHOLDS[4] but under [5], so a level-5 bank
+    // would abandon on the first sweep and take the demand with it.
+    for (const x of [4, 6, 8]) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: 900 + x, type: 'commercial',
+        footprint: [{ x, y: 4 }], anchor: { x, y: 4 },
+        level: 4, density: 0, age: 0, abandoned: false, frontage: 'N',
+        structureRect: { x, y: 4, w: 1, h: 1 },
+      })).toBe(true);
     }
-    seedPolice(world, 4, 10);
-    seedFire(world, 6, 10);
-    seedHospital(world, 8, 10);
-    seedSchool(world, 10, 10);
-    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 0, y: 7 }, footprint: [{ x: 0, y: 7 }] });
-    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 2, y: 7 }, footprint: [{ x: 2, y: 7 }] });
 
     const okA = map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential',
@@ -1364,6 +1443,9 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     world.markLandValueDirty();
     world.recomputeLandValue();
     world.markDemandDirty();
+    world.recomputeLabor();
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
 
     // One growth tick. Both watered → merge fires.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
@@ -1380,13 +1462,13 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
   it('(e) density-bump requires water: unwatered building does NOT get density bump; watered does', () => {
     // Two-phase test mirroring test (b). Water is the SOLE variable: demand is satisfied throughout.
     // Layout (10×8, road row at y=2): building at (0,1) frontage 'S' adj to road (0,2).
-    // Demand sources: commercial buildings at level 20 → residentialDemand = (20-5)/20+0.25 ≈ 1.0 >> 0.6.
+    // Demand source: two level-4 commercials fronting the same road row as the probe (below).
     // Power: plant at (4,3)–(5,4) adj to road (4,2). No tower initially → not watered.
     // Phase 1: run ticks WITHOUT water → density stays 0, age increases (not water-gated).
     // Phase 2: add tower (7,3) (1×1) adj road (7,2) → building watered → density bumps to 1.
     // Taller/wider (12×12) so the residential anchor can be fully served (lv ≈ 0.97 → not
-    // abandoned) AND an isolated served commercial cluster can supply jobs, leaving WATER
-    // as the sole variable for the density bump.
+    // abandoned) AND a reachable jobs bank fits on the same road row, leaving WATER as the
+    // sole variable for the density bump.
     const world = new World(12, 12, { regenerate: false });
     const map = world.getMap();
     for (let x = 0; x < 12; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
@@ -1399,24 +1481,20 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     seedSchool(world, 8, 3);
     world.getStructureMap().addStructure({ type: 'park', anchor: { x: 0, y: 0 }, footprint: [{ x: 0, y: 0 }] });
 
-    // Demand sources: an ISOLATED served commercial cluster (own road at y=9) of four
-    // level-5 commercials (lv ≈ 1.0, not abandoned) → jobsLevels=20, levelSumR=5 → demand≈1.0.
-    for (let x = 0; x < 12; x++) map.setTile(x, 9, createTile(x, 9, TileType.ROAD));
-    for (let k = 0; k < 4; k++) {
-      map.setTile(k, 8, createTile(k, 8, TileType.ZONE_COMMERCIAL));
-      map.getBuildings().addExistingBuilding({
-        id: 800 + k, type: 'commercial',
-        footprint: [{ x: k, y: 8 }], anchor: { x: k, y: 8 },
-        level: 5, density: 0, age: 0, abandoned: false, frontage: 'S',
-        structureRect: { x: k, y: 8, w: 1, h: 1 },
-      });
+    // Jobs bank: two level-4 commercials on GRASS at (3,1) and (5,1), frontage 'S' onto the
+    // y=2 road the probe fronts, so their jobs are reachable from its access node. The level-5
+    // probe supplies 50 workers, so for J ≤ 100 the MIN_MARKET floor sets market = 100 and the
+    // ratio is (J−50)/100: clearing DENSITY_DEMAND_THRESHOLD needs J ≥ 70 (60 jobs read 0.25,
+    // BELOW the gate) and saturating needs J ≥ 80. Two level-4 buildings are exactly 80 — the
+    // smallest bank that saturates, so no third seeder is provisioned.
+    for (const x of [3, 5]) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: 800 + x, type: 'commercial',
+        footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
     }
-    seedPolice(world, 2, 10);
-    seedFire(world, 4, 10);
-    seedHospital(world, 6, 10);
-    seedSchool(world, 8, 10);
-    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 0, y: 7 }, footprint: [{ x: 0, y: 7 }] });
-    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 2, y: 7 }, footprint: [{ x: 2, y: 7 }] });
 
     const b = map.getBuildings().addBuilding({
       type: 'residential',
@@ -1436,7 +1514,9 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     world.recomputeLandValue();
     // Assert demand precondition so the test fails loudly if demand (not water) ever becomes the blocker.
     world.markDemandDirty();
-    expect(world.getDemand().residential).toBeGreaterThanOrEqual(0.6);
+    world.recomputeLabor();
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
 
     // Phase 1: NOT watered → density must NOT advance.
     expect(world.getWaterMap().isWatered(0, 1)).toBe(false);
@@ -1483,13 +1563,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     // School covers the anchor so police stays the SOLE blocker. Station (8,0)–(9,1); cell (8,1) adj road (8,2).
     seedSchool(world, 8, 0);
 
-    // Jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1514,7 +1588,12 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBe(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+    expectRoadRowJobsAlive(world);
 
     const after = map.getBuildings().getBuilding(bid)!;
     // Level must NOT have increased (police-coverage gate blocked it).
@@ -1542,12 +1621,7 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     // School coverage ALSO gates level-up — station at (8,0)–(9,1); cell (8,1) adj to road (8,2).
     seedSchool(world, 8, 0);
 
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1572,7 +1646,12 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expectRoadRowJobsAlive(world);
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
   });
 
@@ -1585,13 +1664,8 @@ describe('World.tick() service-coverage gate — level-up gated at the anchor; s
     map.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
     map.setTile(2, 1, createTile(2, 1, TileType.ZONE_INDUSTRIAL));
     seedPower(world, 2, 0);
-    // Jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 9 }], anchor: { x: 9, y: 9 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 9, w: 1, h: 1 },
-    });
+    // No job source — see the water-gate spawn fixture: an empty labor market bootstraps
+    // residential demand to 1.0, and an unreachable source would contribute nothing.
 
     // No station anywhere — coverage is zero at the seed tile.
     expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBe(0);
@@ -1631,13 +1705,7 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     // School covers the anchor so fire stays the SOLE blocker. Station (8,0)–(9,1); cell (8,1) adj road (8,2).
     seedSchool(world, 8, 0);
 
-    // Jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1662,7 +1730,12 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getFireCoverageMap().getCoverage(0, 1)).toBe(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+    expectRoadRowJobsAlive(world);
 
     const after = map.getBuildings().getBuilding(bid)!;
     // Level must NOT have increased (fire-coverage gate blocked it).
@@ -1688,12 +1761,7 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     // School ALSO gates level-up — station (8,0)–(9,1); cell (8,1) adj road (8,2).
     seedSchool(world, 8, 0);
 
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1718,7 +1786,12 @@ describe('World.tick() fire-coverage gate — level-up needs police AND fire AND
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expectRoadRowJobsAlive(world);
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
   });
 });
@@ -1750,13 +1823,7 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     // School covers the anchor so hospital stays the SOLE blocker. Station (8,0)–(9,1); cell (8,1) adj road (8,2).
     seedSchool(world, 8, 0);
 
-    // Jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1781,7 +1848,12 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBe(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+    expectRoadRowJobsAlive(world);
 
     const after = map.getBuildings().getBuilding(bid)!;
     // Level must NOT have increased (hospital-coverage gate blocked it).
@@ -1807,12 +1879,7 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     // School ALSO gates level-up — station (8,0)–(9,1); cell (8,1) adj road (8,2).
     seedSchool(world, 8, 0);
 
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1837,7 +1904,12 @@ describe('World.tick() hospital-coverage gate — level-up needs police AND fire
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expectRoadRowJobsAlive(world);
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
   });
 });
@@ -1868,13 +1940,7 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
     seedFire(world, 8, 3);
     seedHospital(world, 5, 0);
 
-    // Jobs source for residential demand.
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1899,7 +1965,12 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBe(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 5; i++) world.tick();
+    expectRoadRowJobsAlive(world);
 
     const after = map.getBuildings().getBuilding(bid)!;
     // Level must NOT have increased (school-coverage gate blocked it).
@@ -1924,12 +1995,7 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
     seedHospital(world, 5, 0);
     seedSchool(world, 8, 0);
 
-    map.getBuildings().addExistingBuilding({
-      id: 999, type: 'commercial',
-      footprint: [{ x: 9, y: 7 }], anchor: { x: 9, y: 7 },
-      level: ZONE_MAX_LEVEL, density: 0, age: 0, abandoned: false, frontage: 'N',
-      structureRect: { x: 9, y: 7, w: 1, h: 1 },
-    });
+    seedRoadRowJobs(world);
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
     const b = map.getBuildings().addBuilding({
@@ -1954,7 +2020,12 @@ describe('World.tick() school-coverage gate — level-up needs police AND fire A
     expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
     expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
 
+    // Asserted last, once every building exists: the fixture really does supply reachable
+    // jobs and an open residential gate, so the gate under test is the only blocker.
+    expectJobsReachable(world);
+
     for (let i = 0; i < ZONE_GROWTH_INTERVAL * 3; i++) world.tick();
+    expectRoadRowJobsAlive(world);
     expect(map.getBuildings().getBuilding(bid)?.level).toBeGreaterThan(1);
   });
 });

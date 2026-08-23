@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { World, ZONE_GROWTH_INTERVAL } from './World';
 import { GROWTH_COOLDOWN_INTERVALS } from './growthConstants';
 import { MERGE_LEVEL_THRESHOLD } from './mergePolicy';
+import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
@@ -36,9 +37,8 @@ describe("World.tick() — merge (Branch B'')", () => {
   // road at y=4, all merge-eligible. Returns { world, map, ids } where ids[i]
   // is the BuildingMap id of the i-th building (x=i).
   //
-  // Demand is driven high (residential >= 0.6) by two industrial buildings
-  // placed at x=N and x=N+1 on the road row (y=4) — they are on ROAD tiles so
-  // the zone-growth loop ignores them, but they still count in the demand model.
+  // Demand is driven high by a bank of industrial buildings whose frontage faces the SAME
+  // road row the R lots front, so their jobs are road-reachable from the R access nodes.
   //
   // Buildings start at level=MERGE_LEVEL_THRESHOLD, full structureRect (1×4),
   // age = GROWTH_COOLDOWN_INTERVALS - 1 so that after Branch B's age++ they
@@ -56,12 +56,15 @@ describe("World.tick() — merge (Branch B'')", () => {
     // also AND-gated off regardless of land value.) The merge pass (Branch B'')
     // is not abandonment-gated, so the merge fires.
     //
-    // Residential demand is driven by an ISOLATED industrial cluster on its own
-    // road network at the bottom of the map: four level-5 industrials on land
-    // served by all four services + parks (lv ≈ 0.9, so they are not abandoned).
-    // Isolating their road keeps their coverage/power from ever reaching the R
-    // anchors. jobsLevels = 4×5 = 20 ≥ 3.08·(n·2) for n ≤ 5, so residential demand
-    // stays ≥ DENSITY_DEMAND_THRESHOLD across the strip sizes used here.
+    // Residential demand is driven by a bank of level-2 industrials on the row SOUTH of the
+    // R road row, frontage 'N' — their access node IS that road row, so the R buildings' BFS
+    // reaches every one of them. Reachability is now the requirement an isolated cluster could
+    // never satisfy: unreachable jobs are invisible to the labor market, every resident would
+    // be unemployed, and residential demand would read 0.00. Level 2 needs only
+    // LEVEL_THRESHOLDS[2] = 0.25, which bare road frontage (lv ≈ 0.34) clears, so the
+    // abandonment sweep never touches them; and they add NO road, so the R anchors' land value
+    // is untouched. At n = 5 the bank is 14 × 20 = 280 jobs against 100 workers → net 180 on a
+    // market of 280 → residential saturates at 1.0.
     const W = Math.max(n + 2, 16);
     const H = 16;
     const world = new World(W, H, { regenerate: false });
@@ -105,30 +108,23 @@ describe("World.tick() — merge (Branch B'')", () => {
       ids.push(id);
     }
 
-    // Isolated industrial demand cluster: own road row at y=12, four level-5
-    // industrials at y=11, all four services at y=13, parks at (0,10)/(2,10).
-    for (let x = 0; x < W; x++) map.setTile(x, 12, createTile(x, 12, TileType.ROAD));
-    for (let k = 0; k < 4; k++) {
-      map.setTile(k, 11, createTile(k, 11, TileType.ZONE_INDUSTRIAL));
-      map.getBuildings().addExistingBuilding({
-        id: n + k,
+    // Reachable job bank at y=6: one level-2 industrial per column the power plant does not
+    // own, each fronting 'N' onto the R road row at y=5.
+    for (let x = 0; x < W - 2; x++) {
+      map.setTile(x, 6, createTile(x, 6, TileType.ZONE_INDUSTRIAL));
+      expect(map.getBuildings().addExistingBuilding({
+        id: n + x,
         type: 'industrial',
-        footprint: [{ x: k, y: 11 }],
-        anchor: { x: k, y: 11 },
-        level: 5,
+        footprint: [{ x, y: 6 }],
+        anchor: { x, y: 6 },
+        level: 2,
         density: 0,
         age: 0,
         abandoned: false,
-        frontage: 'S',
-        structureRect: { x: k, y: 11, w: 1, h: 1 },
-      });
+        frontage: 'N',
+        structureRect: { x, y: 6, w: 1, h: 1 },
+      })).toBe(true);
     }
-    expect(sm.addStructure({ type: 'police_station', anchor: { x: 6, y: 13 }, footprint: [{ x: 6, y: 13 }, { x: 7, y: 13 }, { x: 6, y: 14 }, { x: 7, y: 14 }] })).not.toBeNull();
-    expect(sm.addStructure({ type: 'fire_station', anchor: { x: 8, y: 13 }, footprint: [{ x: 8, y: 13 }, { x: 9, y: 13 }, { x: 8, y: 14 }, { x: 9, y: 14 }] })).not.toBeNull();
-    expect(sm.addStructure({ type: 'hospital', anchor: { x: 10, y: 13 }, footprint: [{ x: 10, y: 13 }, { x: 11, y: 13 }, { x: 10, y: 14 }, { x: 11, y: 14 }] })).not.toBeNull();
-    expect(sm.addStructure({ type: 'school', anchor: { x: 12, y: 13 }, footprint: [{ x: 12, y: 13 }, { x: 13, y: 13 }, { x: 12, y: 14 }, { x: 13, y: 14 }] })).not.toBeNull();
-    expect(sm.addStructure({ type: 'park', anchor: { x: 0, y: 10 }, footprint: [{ x: 0, y: 10 }] })).not.toBeNull();
-    expect(sm.addStructure({ type: 'park', anchor: { x: 2, y: 10 }, footprint: [{ x: 2, y: 10 }] })).not.toBeNull();
 
     // R power: plant at (W-2,6)-(W-1,7); cell (W-2,6) adj road (W-2,5) → powers the
     // R road row, powering the y=4 R footprint cells via adjacency.
@@ -148,6 +144,13 @@ describe("World.tick() — merge (Branch B'')", () => {
     world.recomputeSchool();
     world.recomputeLandValue();
     world.markDemandDirty();
+
+    // Preconditions, asserted only now that every road, structure and building exists. Placed
+    // mid-helper they would read a labor market that is still missing origins or destinations —
+    // reachable jobs are counted from the residential BFS, so both ends must already be in.
+    world.recomputeLabor();
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
     return { world, ids };
   }
 
