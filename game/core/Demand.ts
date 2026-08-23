@@ -50,6 +50,15 @@ export const MIGRATION_PRESSURE = 0.1;
 // a hamlet can have migration damped to zero with no warning shown.
 export const MIGRATION_UNEMPLOYMENT_CUTOFF = 0.2;
 
+// The C/I demand a city with a worker for every job shows from outside investment alone — the
+// external-market pull that keeps the workplace gates open at balance, MIGRATION_PRESSURE's
+// counterpart for commercial and industrial. Must stay strictly between GROWTH_DEMAND_THRESHOLD
+// (so the C/I spawn/level-up gates stay open when balanced) and DENSITY_DEMAND_THRESHOLD (so the
+// floor alone can never densify or merge); set at the low end, like MIGRATION_PRESSURE. Shared
+// unsplit by C and I: laborMarket.ts pools their jobs as interchangeable, so there is no shared
+// quantity to divide between them.
+export const WORKPLACE_PRESSURE = 0.1;
+
 // Applied whenever the labor market is empty: there is nothing to be proportional to in that state
 // and "build homes" is the only correct instruction. A gate opener, not a pacing knob.
 export const BOOTSTRAP_RESIDENTIAL_DEMAND = 1;
@@ -130,9 +139,9 @@ export class Demand {
 
     // --- migration (residential only) ---
     // Combined by `max` OUTSIDE the severity, so it cannot move the balance point; folding it in is
-    // exactly the offset-inside-the-formula defect the deleted structural terms had. C and I get no
-    // driver of their own: the jobs axis already answers migration-driven workers within one growth
-    // interval, so a second one would manufacture pressure with no cause.
+    // exactly the offset-inside-the-formula defect the deleted structural terms had. Migration stays
+    // residential-only, but C and I carry their own external driver in `workplaceFloor` below,
+    // combined the same way.
     const unemploymentRate = workforce > 0 ? labor.unemployed / workforce : 0;
     const migration = MIGRATION_PRESSURE * clamp01(1 - unemploymentRate / MIGRATION_UNEMPLOYMENT_CUTOFF);
 
@@ -144,12 +153,20 @@ export class Demand {
     // staff it, so the retail axis collapses.
     const staffing = 1 - resSeverity;
 
+    // --- workplace floor (commercial AND industrial) ---
+    // Reuses `staffing`, so the floor decays through the severity band and reaches exactly 0 once
+    // the vacancy surplus saturates — nobody left to staff another workplace. Gated to 0 with no
+    // workforce: nothing is staffable, and without the gate a small all-jobs hamlet would leak a
+    // partial floor even though every worker slot is already vacant.
+    const workplaceFloor = workforce === 0 ? 0 : WORKPLACE_PRESSURE * staffing;
+
     const residential = marketEmpty ? BOOTSTRAP_RESIDENTIAL_DEMAND : Math.max(resSeverity, migration);
-    // `max`, not `+`: the two axes are alternative reasons to build the same building, and summing
-    // would push the bar past what the worse of the two shortages justifies.
-    const commercial = Math.max(workplaceSeverity * COMMERCIAL_JOB_SHARE, retail * staffing);
+    // `max`, not `+`: each arm is an alternative reason to build the same building, and summing
+    // would push the bar past what the worse of them justifies. `workplaceFloor` is a third such
+    // arm on commercial, second on industrial.
+    const commercial = Math.max(workplaceSeverity * COMMERCIAL_JOB_SHARE, retail * staffing, workplaceFloor);
     // The split happens AFTER the severity curve — see workplaceSeverity above.
-    const industrial = workplaceSeverity * (1 - COMMERCIAL_JOB_SHARE);
+    const industrial = Math.max(workplaceSeverity * (1 - COMMERCIAL_JOB_SHARE), workplaceFloor);
 
     this.cached = Object.freeze({ residential, commercial, industrial });
   }

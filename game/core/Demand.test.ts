@@ -6,6 +6,7 @@ import {
   MIN_MARKET,
   MIGRATION_PRESSURE,
   MIGRATION_UNEMPLOYMENT_CUTOFF,
+  WORKPLACE_PRESSURE,
   DEADBAND_RATE,
   SATURATION_RATE,
   COMMERCIAL_JOB_SHARE,
@@ -136,6 +137,14 @@ describe('Demand — constants', () => {
     expect(MIGRATION_PRESSURE).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
   });
 
+  it('WORKPLACE_PRESSURE sits strictly between the two gates, like MIGRATION_PRESSURE', () => {
+    expect(WORKPLACE_PRESSURE).toBe(0.1);
+    // The hard constraint: the floor alone can never drive a density bump or merge, only open the
+    // spawn/level-up gates.
+    expect(WORKPLACE_PRESSURE).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
+    expect(WORKPLACE_PRESSURE).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
+  });
+
   it('MIN_MARKET is 100 — ten building-levels of quantized labor', () => {
     expect(MIN_MARKET).toBe(100);
     expect(MIN_MARKET % POPULATION_PER_LEVEL).toBe(0);
@@ -155,7 +164,7 @@ describe('Demand — labor axis', () => {
     expect(v.industrial).toBe(0);
   });
 
-  it('balanced and fully employed: R is the migration trickle, C and I are fully cleared', () => {
+  it('balanced and fully employed: all three bars rest on their own damped floor', () => {
     // 4 R + 2 C + 2 I level 1: 40 workers against 40 jobs, all matched, no vacancies.
     const map = makeBuildingMap();
     addRun(map, 0, 0, 'residential', 4, 1);
@@ -164,10 +173,11 @@ describe('Demand — labor axis', () => {
 
     const v = demandFor(map, { employed: 40, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 40 });
 
-    // The labor axis reaches exactly zero at balance; only migration holds the R gate open.
+    // The labor axis reaches exactly zero at balance; each bar then reads its own external driver,
+    // which is what keeps all three growth gates open in a city that has nothing left to correct.
     expect(v.residential).toBe(MIGRATION_PRESSURE);
-    expect(v.commercial).toBe(0);
-    expect(v.industrial).toBe(0);
+    expect(v.commercial).toBe(WORKPLACE_PRESSURE);
+    expect(v.industrial).toBe(WORKPLACE_PRESSURE);
   });
 
   it('deadband: a real 3.2% vacancy surplus still reads as balanced', () => {
@@ -179,9 +189,10 @@ describe('Demand — labor axis', () => {
 
     const v = demandFor(map, { employed: 300, unemployed: 0, reachableUnfilledJobs: 10, jobsCapacity: 310 });
 
+    // A 3.2% surplus is inside the deadband, so `staffing` stays exactly 1 and the floor undamped.
     expect(v.residential).toBe(MIGRATION_PRESSURE);
-    expect(v.commercial).toBe(0);
-    expect(v.industrial).toBe(0);
+    expect(v.commercial).toBe(WORKPLACE_PRESSURE);
+    expect(v.industrial).toBe(WORKPLACE_PRESSURE);
   });
 
   it('mid-band: a 15% vacancy surplus reads half severity on residential', () => {
@@ -194,6 +205,9 @@ describe('Demand — labor axis', () => {
     const v = demandFor(map, { employed: 170, unemployed: 0, reachableUnfilledJobs: 30, jobsCapacity: 200 });
 
     expect(v.residential).toBeCloseTo(0.5, 10);
+    // staffing = 1 - 0.5 = 0.5 halves the floor; retail is 0 (levelSumC 20 over targetC 9.25).
+    expect(v.commercial).toBeCloseTo(0.05, 10);
+    expect(v.industrial).toBeCloseTo(0.05, 10);
   });
 
   it('saturation: a 40% vacancy surplus pins residential at exactly 1', () => {
@@ -205,6 +219,9 @@ describe('Demand — labor axis', () => {
     const v = demandFor(map, { employed: 60, unemployed: 0, reachableUnfilledJobs: 40, jobsCapacity: 100 });
 
     expect(v.residential).toBe(1);
+    // staffing saturates to exactly 0, so the floor damps to exactly 0 — clamp01 saturates exact.
+    expect(v.commercial).toBe(0);
+    expect(v.industrial).toBe(0);
   });
 
   it('MIN_MARKET floors the denominator: one stranded worker-level reads PARTIAL severity', () => {
@@ -240,7 +257,7 @@ describe('Demand — labor axis', () => {
     expect(v.commercial).toBe(v.industrial);
   });
 
-  it('access mismatch: stranded workers and stranded vacancies cancel — all three bars read 0', () => {
+  it('access mismatch: stranded workers cancel stranded vacancies, but the floor stays up', () => {
     // 10 R + 5 C + 5 I levels. One road component holds 5 R levels against every job; a second
     // holds 5 stranded R levels. C sits exactly at its 25% share.
     const map = makeBuildingMap();
@@ -251,10 +268,12 @@ describe('Demand — labor axis', () => {
     const v = demandFor(map, { employed: 50, unemployed: 50, reachableUnfilledJobs: 50, jobsCapacity: 100 });
 
     // net 0, migration damped to 0 by the 50% rate — a legitimate reading, not a stall: the fix is
-    // a road, and laborStatus.ts is the channel that says so.
+    // a road, and laborStatus.ts is the channel that says so. C and I differ: there is no vacancy
+    // surplus here to damp the floor (net is 0, not positive), and the 50 stranded workers could
+    // staff a NEW local workplace, so the fix there is a road OR a local workplace.
     expect(v.residential).toBe(0);
-    expect(v.commercial).toBe(0);
-    expect(v.industrial).toBe(0);
+    expect(v.commercial).toBe(WORKPLACE_PRESSURE);
+    expect(v.industrial).toBe(WORKPLACE_PRESSURE);
   });
 
   it('zero-workforce fallback: an all-jobs city counts its whole capacity as vacancies', () => {
@@ -267,6 +286,22 @@ describe('Demand — labor axis', () => {
     expect(v.residential).toBe(1);
     expect(v.commercial).toBe(0); // staffing collapses the retail axis
     expect(v.industrial).toBe(0);
+  });
+
+  it('zero-workforce hamlet: the workplace floor is gated to exactly 0 with nobody to staff it', () => {
+    // 1 I level 1, no residential at all.
+    const map = makeBuildingMap();
+    addBuilding(map, 0, 0, 0, 'industrial', 1);
+
+    const v = demandFor(map, { employed: 0, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 10 });
+
+    // Ungated, the floored 100-unit market would leave staffing at 0.75 and leak a partial floor of
+    // 0.1 × 0.75 = 0.075; the workforce === 0 gate zeroes it outright.
+    expect(v.industrial).toBe(0);
+    // C reads via the retail axis alone (0.25 × 0.75), the same reading the level-0 test already
+    // pins for this labor state; R via migration.
+    expect(v.commercial).toBeCloseTo(0.1875, 10);
+    expect(v.residential).toBeCloseTo(0.25, 10);
   });
 });
 
@@ -313,22 +348,24 @@ describe('Demand — retail axis', () => {
     const v = demandFor(map, { employed: 30, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 30 });
 
     expect(v.residential).toBe(MIGRATION_PRESSURE);
-    expect(v.commercial).toBeCloseTo(1 / 3, 10);
-    expect(v.industrial).toBe(0);
+    expect(v.commercial).toBeCloseTo(1 / 3, 10); // retail beats the floor
+    expect(v.industrial).toBe(WORKPLACE_PRESSURE);
   });
 
-  it('commercial OVER its share clamps to 0 rather than going negative', () => {
+  it('commercial OVER its share rests on the workplace floor rather than going negative', () => {
     const map = makeBuildingMap();
     addRun(map, 0, 0, 'residential', 4, 1);
     addRun(map, 10, 1, 'commercial', 4, 1);
 
     const v = demandFor(map, { employed: 40, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 40 });
 
-    expect(v.commercial).toBe(0);
+    expect(v.commercial).toBe(WORKPLACE_PRESSURE);
   });
 
   it('staffing collapses the retail axis when the city already has more jobs than workers', () => {
-    // 1 R + 4 I level 1 and no commercial at all → retail gap 1.0, but resSeverity is 1.
+    // 1 R + 4 I level 1 and no commercial at all → retail gap 1.0, but resSeverity is 1, so
+    // staffing is 0 and the workplace floor is also damped to exactly 0 (its existing toBe(0)
+    // assertions below are the pin).
     const map = makeBuildingMap();
     addBuilding(map, 0, 0, 0, 'residential', 1);
     addRun(map, 10, 1, 'industrial', 4, 1);
@@ -365,9 +402,11 @@ describe('Demand — regression readings', () => {
 
     const v = demandFor(map, { employed: 1260, unemployed: 0, reachableUnfilledJobs: 0, jobsCapacity: 1260 });
 
+    // The recorded 850-tick inert-C state from the previous playtest: the C gate now stays open in
+    // exactly the city where the tester's paid tiles sat dead.
     expect(v.residential).toBe(MIGRATION_PRESSURE);
-    expect(v.commercial).toBe(0);
-    expect(v.industrial).toBe(0);
+    expect(v.commercial).toBe(WORKPLACE_PRESSURE);
+    expect(v.industrial).toBe(WORKPLACE_PRESSURE);
   });
 
   it('outputs stay in [0, 1] with a large, fully severed but producible city', () => {
