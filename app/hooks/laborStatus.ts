@@ -34,6 +34,21 @@ export function laborStatus(input: LaborInput): LaborStatus {
   // Not clamped: employed <= jobsCapacity by construction (see laborMarket.ts), so this is never negative.
   const openings = jobsCapacity - employed;
 
+  let warning: string | null = null;
+  if (workforce >= WARNING_MIN_WORKFORCE && rate >= UNEMPLOYMENT_WARNING_RATE) {
+    // WHY "Unemployment", never "job shortage": the openings branch fires in cities with a job surplus too.
+    const prefix = `⚠ Unemployment ${ratePercent}% — `;
+    if (jobsCapacity === 0) {
+      warning = `${prefix}the city has no jobs at all.`;
+    } else if (openings === 0) {
+      warning = `${prefix}every job in the city is taken.`;
+    } else {
+      // WHY "cannot reach them", not "unreachable jobs": a road-less residence yields the same numbers with fully road-connected jobs.
+      const openingWord = openings === 1 ? 'opening exists' : 'openings exist';
+      warning = `${prefix}${openings} ${openingWord}, but the unemployed cannot reach them.`;
+    }
+  }
+
   return {
     workforce,
     employed,
@@ -42,33 +57,6 @@ export function laborStatus(input: LaborInput): LaborStatus {
     openings,
     rate,
     ratePercent,
-    warning: buildWarning(workforce, rate, ratePercent, jobsCapacity, openings),
+    warning,
   };
-}
-
-function buildWarning(
-  workforce: number,
-  rate: number,
-  ratePercent: number,
-  jobsCapacity: number,
-  openings: number,
-): string | null {
-  if (workforce < WARNING_MIN_WORKFORCE || rate < UNEMPLOYMENT_WARNING_RATE) {
-    return null;
-  }
-
-  // WHY "Unemployment", never "job shortage": the openings branch below fires in cities with a job surplus.
-  const prefix = `⚠ Unemployment ${ratePercent}% — `;
-
-  if (jobsCapacity === 0) {
-    return `${prefix}the city has no jobs at all.`;
-  }
-
-  if (openings === 0) {
-    return `${prefix}every job in the city is taken.`;
-  }
-
-  // WHY "cannot reach them", not "unreachable jobs": a road-less residence yields the same numbers with fully road-connected jobs.
-  const openingWord = openings === 1 ? 'opening exists' : 'openings exist';
-  return `${prefix}${openings} ${openingWord}, but the unemployed cannot reach them.`;
 }
