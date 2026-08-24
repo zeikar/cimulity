@@ -8,6 +8,11 @@ import { footprintCells } from './zoneGrowth';
 
 export const MERGE_LEVEL_THRESHOLD = 2;
 
+// No `abandoned` gate here by design: capacity is occupancy-independent (buildingCapacity
+// never reads the flag), so the merge caller is what has to keep a derelict building out of
+// the pool — and it already does. World.ts's abandonment sweep adds every building abandoned
+// at sweep entry to `frozenThisTick`, and the merge loop skips frozen buildings before ever
+// calling canMerge. A derelict pair therefore never reaches this function.
 export function canMerge(
   a: Building,
   b: Building,
@@ -34,7 +39,29 @@ export function canMerge(
     b.age < GROWTH_COOLDOWN_INTERVALS + stagger(b.id)
   ) return false;
 
-  // 7. Geometry checks
+  // 7. Equal level — also closes the NW-anchor defect: the merged building's anchor is
+  // always one of the two original anchors (union NW = the NW-most lot's anchor), which
+  // the abandonment sweep already verified supports THIS level this same tick, so a merge
+  // can no longer hand the next sweep a building it abandons despite its fresh age = 0.
+  if (a.level !== b.level) return false;
+
+  // 8. Equal density tier.
+  if (a.density !== b.density) return false;
+
+  // 9. Equal structureRect dimensions (both w and h). isStructureRectInLot pins every
+  // stored Building's structureRect to the frontage edge and forces it to span the lot's
+  // full width axis, so the depth-equal, edge-aligned, width-adjacent lots checked below
+  // already give the two structureRects a shared depth-axis origin — no separate
+  // depth-origin or sr-adjacency check is needed here. Equal dimensions closes the only
+  // remaining degree of freedom (depth mismatch), which is what turns
+  // buildingCapacity(merged) === buildingCapacity(a) + buildingCapacity(b) into an exact
+  // integer invariant instead of a case analysis.
+  if (
+    a.structureRect.w !== b.structureRect.w ||
+    a.structureRect.h !== b.structureRect.h
+  ) return false;
+
+  // 10. Geometry checks
   const aLot = lotBboxOf(a.footprint);
   const bLot = lotBboxOf(b.footprint);
   const frontage = a.frontage;
@@ -110,6 +137,9 @@ export function mergedBuildingShape(a: Building, b: Building): Omit<Building, 'i
     type: a.type,
     footprint: footprintCells(mergedLot),
     anchor: { x: mergedLot.x, y: mergedLot.y },
+    // canMerge now guarantees a.level === b.level and a.density === b.density, so both
+    // Math.max calls are degenerate; kept as-is for shape stability rather than picking
+    // a side arbitrarily.
     level: Math.max(a.level, b.level),
     density: Math.max(a.density, b.density) as 0 | 1 | 2,
     age: 0,

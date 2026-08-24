@@ -171,7 +171,22 @@ describe("World.tick() — merge (Branch B'')", () => {
     const map = world.getMap();
     const [idA, idB] = ids;
 
+    // Population-conservation precondition: this growth tick must admit no OTHER capacity
+    // event alongside the merge, or an unrelated event could make the population-equality
+    // assertion below pass or fail for the wrong reason. Both R anchors sit at lv ≈ 0.405
+    // (see setupMergeStrip's comment) — above LEVEL_THRESHOLDS[2]=0.25, so the abandonment
+    // sweep leaves them alone, but below LEVEL_THRESHOLDS[3]=0.45, so Branch B's level-up
+    // never fires. Every R and I zone tile in the fixture is already owned by a seeded
+    // building, so Branch A (spawn) never fires either. The industrial job bank is seeded at
+    // age 0 and only ages to 1 this tick, far short of any cooldown, so it can neither level
+    // up nor merge. The only capacity-changing event left this tick is the R merge itself,
+    // which conserves capacity by construction, so population must be byte-identical across
+    // the tick.
+    const popBefore = world.getPopulation();
+
     const result = oneGrowthTick(world);
+
+    expect(world.getPopulation()).toBe(popBefore);
 
     // Both original buildings are gone
     expect(map.getBuildings().getBuilding(idA)).toBeNull();

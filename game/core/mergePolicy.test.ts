@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { canMerge, mergedBuildingShape, MERGE_LEVEL_THRESHOLD } from './mergePolicy';
 import type { Building } from './Building';
-import type { Frontage } from './buildingFootprint';
+import type { Frontage, Rect } from './buildingFootprint';
+import { isStructureRectInLot, lotBboxOf } from './buildingFootprint';
+import { buildingCapacity } from './buildingCapacity';
 
 function makeBuilding(opts: {
   id: number;
@@ -121,6 +123,49 @@ describe('canMerge', () => {
     const b = makeBuilding({ id: 1, lot: { x: 0, y: 2, w: 4, h: 3 }, frontage: 'W', level: 2, age: 100 });
     expect(canMerge(a, b, HIGH_DEMAND)).toBe(false);
   });
+
+  // Each of the next three cases starts from an accepted baseline pair and mutates only the
+  // property the new gate checks, asserting the baseline itself still accepts alongside the
+  // mutated reject — so the rejection is attributable to the new gate and not some other one.
+
+  it('reject: unequal level (2 vs 3)', () => {
+    const a = makeBuilding({ id: 0, lot: { x: 0, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, age: 100 });
+    const b = makeBuilding({ id: 1, lot: { x: 1, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, age: 100 });
+    expect(canMerge(a, b, HIGH_DEMAND)).toBe(true); // baseline: equal level accepts
+
+    const bUnequalLevel = makeBuilding({ id: 1, lot: { x: 1, y: 0, w: 1, h: 4 }, frontage: 'S', level: 3, age: 100 });
+    expect(canMerge(a, bUnequalLevel, HIGH_DEMAND)).toBe(false);
+  });
+
+  it('reject: unequal density (0 vs 1)', () => {
+    const a = makeBuilding({ id: 0, lot: { x: 0, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, density: 0, age: 100 });
+    const b = makeBuilding({ id: 1, lot: { x: 1, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, density: 0, age: 100 });
+    expect(canMerge(a, b, HIGH_DEMAND)).toBe(true); // baseline: equal density accepts
+
+    const bUnequalDensity = makeBuilding({ id: 1, lot: { x: 1, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, density: 1, age: 100 });
+    expect(canMerge(a, bUnequalDensity, HIGH_DEMAND)).toBe(false);
+  });
+
+  it('reject: unequal structureRect depth (1x2 vs 1x3 on equal 1x4 lots, both frontage-pinned)', () => {
+    // Both srs are south-pinned (sr.y + sr.h === lot.y + lot.h) and full-width — states
+    // isStructureRectInLot accepts — so this exercises the new dimension-equality gate alone,
+    // not an unreachable structureRect.
+    const a = makeBuilding({
+      id: 0, lot: { x: 0, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, age: 100,
+      structureRect: { x: 0, y: 2, w: 1, h: 2 },
+    });
+    const b = makeBuilding({
+      id: 1, lot: { x: 1, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, age: 100,
+      structureRect: { x: 1, y: 2, w: 1, h: 2 },
+    });
+    expect(canMerge(a, b, HIGH_DEMAND)).toBe(true); // baseline: equal sr dims accepts
+
+    const bUnequalSrDepth = makeBuilding({
+      id: 1, lot: { x: 1, y: 0, w: 1, h: 4 }, frontage: 'S', level: 2, age: 100,
+      structureRect: { x: 1, y: 1, w: 1, h: 3 },
+    });
+    expect(canMerge(a, bUnequalSrDepth, HIGH_DEMAND)).toBe(false);
+  });
 });
 
 describe('mergedBuildingShape', () => {
@@ -152,6 +197,9 @@ describe('mergedBuildingShape', () => {
   });
 
   it('unequal structures, equal lot depth: merged structureRect uses union of rects', () => {
+    // Pins mergedBuildingShape's union geometry in isolation. canMerge no longer admits an
+    // unequal-sr pair (gate 9), so this input cannot arise through the merge branch — the
+    // union rule still has to be right for the equal-sr pairs that do.
     // A: 1x4 lot, structureRect = {x:0, y:2, w:1, h:2} (south end, 2 deep)
     // B: 1x4 lot at x=1, structureRect = {x:1, y:1, w:1, h:3} (south end, 3 deep)
     // Union: {x:0, y:1, w:2, h:3}
@@ -199,5 +247,95 @@ describe('mergedBuildingShape', () => {
     expect(result.footprint).toHaveLength(2); // 2x1
     expect(result.structureRect).toEqual({ x: 0, y: 0, w: 2, h: 1 });
     expect(result.level).toBe(2);
+  });
+});
+
+describe('canMerge — merge conservation invariant', () => {
+  // Builds an accepted pair for one matrix entry. Lot depth is fixed at 4 (large enough to
+  // host either sr depth) so the sr-depth variable is genuinely independent of lot depth,
+  // not a restatement of the pre-existing equal-lot-depth geometry gate. Widths are equal
+  // between a and b (the only way to satisfy the new equal-sr-dimensions gate, since
+  // isStructureRectInLot forces sr's width-axis span to equal the lot's), and lots sit
+  // side-by-side along the width axis with matching frontage edges — states the pre-existing
+  // geometry gates already require.
+  const LOT_DEPTH = 4;
+
+  function buildPair(
+    frontage: Frontage,
+    width: 1 | 2,
+    srDepth: 2 | 4,
+    level: number,
+    density: 0 | 1 | 2,
+    idBase: number,
+  ): { a: Building; b: Building } {
+    const isNS = frontage === 'N' || frontage === 'S';
+
+    // Lot A at the origin, lot B immediately adjacent along the width axis.
+    const lotA: Rect = isNS
+      ? { x: 0, y: 0, w: width, h: LOT_DEPTH }
+      : { x: 0, y: 0, w: LOT_DEPTH, h: width };
+    const lotB: Rect = isNS
+      ? { x: width, y: 0, w: width, h: LOT_DEPTH }
+      : { x: 0, y: width, w: LOT_DEPTH, h: width };
+
+    // structureRect pinned to the frontage edge, spanning the lot's full width axis, at the
+    // requested depth on the depth axis.
+    function srFor(lot: Rect): Rect {
+      switch (frontage) {
+        case 'N': return { x: lot.x, y: lot.y, w: lot.w, h: srDepth };
+        case 'S': return { x: lot.x, y: lot.y + lot.h - srDepth, w: lot.w, h: srDepth };
+        case 'W': return { x: lot.x, y: lot.y, w: srDepth, h: lot.h };
+        case 'E': return { x: lot.x + lot.w - srDepth, y: lot.y, w: srDepth, h: lot.h };
+      }
+    }
+
+    const a = makeBuilding({
+      id: idBase, lot: lotA, frontage, level, density, age: 100, structureRect: srFor(lotA),
+    });
+    const b = makeBuilding({
+      id: idBase + 1, lot: lotB, frontage, level, density, age: 100, structureRect: srFor(lotB),
+    });
+    return { a, b };
+  }
+
+  it('conserves capacity across every accepted pair in the matrix', () => {
+    const frontages: Frontage[] = ['N', 'S', 'W', 'E'];
+    const widths: Array<1 | 2> = [1, 2];
+    const srDepths: Array<2 | 4> = [2, 4];
+    const levels = [2, 3, 4, 5];
+    const densities: Array<0 | 1 | 2> = [0, 1, 2];
+
+    let entryCount = 0;
+    let idBase = 0;
+    for (const frontage of frontages) {
+      for (const width of widths) {
+        for (const srDepth of srDepths) {
+          for (const level of levels) {
+            for (const density of densities) {
+              const label = `frontage=${frontage} width=${width} srDepth=${srDepth} level=${level} density=${density}`;
+              const { a, b } = buildPair(frontage, width, srDepth, level, density, idBase);
+              idBase += 2;
+              entryCount += 1;
+
+              // The matrix must only contain states isStructureRectInLot actually accepts —
+              // otherwise a rejection here could masquerade as passing the invariant below.
+              expect(isStructureRectInLot(a.structureRect, lotBboxOf(a.footprint), a.frontage), label).toBe(true);
+              expect(isStructureRectInLot(b.structureRect, lotBboxOf(b.footprint), b.frontage), label).toBe(true);
+
+              // Acceptance first: an entry rejected by an unrelated gate must fail loudly here
+              // rather than skip the arithmetic assertion and pass vacuously.
+              expect(canMerge(a, b, HIGH_DEMAND), label).toBe(true);
+
+              const merged: Building = { ...mergedBuildingShape(a, b), id: idBase };
+              idBase += 1;
+              expect(buildingCapacity(merged), label).toBe(buildingCapacity(a) + buildingCapacity(b));
+            }
+          }
+        }
+      }
+    }
+
+    // 4 frontages * 2 widths * 2 sr depths * 4 levels * 3 densities.
+    expect(entryCount).toBe(4 * 2 * 2 * 4 * 3);
   });
 });
