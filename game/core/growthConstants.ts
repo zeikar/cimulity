@@ -26,6 +26,18 @@ export const MIN_STRUCTURE_DEPTH_CAP = 2;
  */
 export const POPULATION_PER_LEVEL = 10;
 
+/**
+ * Population/workforce contribution per structure TILE per level — the unit
+ * `buildingCapacity` (buildingCapacity.ts) multiplies by structure-rect area
+ * and level. Half of `POPULATION_PER_LEVEL` because the modal unmerged
+ * building's `structureRect` is exactly 2 tiles (`greedyDepthLot` only walks
+ * the depth axis, so every unmerged lot is 1 wide; the depth cap floors at
+ * `MIN_STRUCTURE_DEPTH_CAP = 2`): `2 tiles * level * 5 == level * 10`, so the
+ * modal SETTLED building's capacity is numerically unchanged from the old
+ * `level * POPULATION_PER_LEVEL` formula.
+ */
+export const POPULATION_PER_TILE_LEVEL = POPULATION_PER_LEVEL / 2;
+
 export function stagger(id: number): number {
   return ((id ^ (id >>> 16)) * 2654435761 >>> 0) % 7;
 }
