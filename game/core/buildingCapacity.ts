@@ -17,20 +17,21 @@
  */
 
 import type { Building } from './Building';
-import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
 
 /**
  * Population/workforce units per structure tile per level, indexed by
- * density tier. All three entries equal `POPULATION_PER_TILE_LEVEL` for now —
- * density is capacity-neutral until a later task activates real per-tier
- * multipliers, so landing this module changes nothing except the
- * area-weighting itself.
+ * density tier: ~1x / 1.4x / 2x. Entries are integer literals, not a
+ * computed `unit * multiplier`, because odd structure areas are reachable —
+ * a depth-1 ribbon lot (structureRect 1x1, can never extend) would read a
+ * fractional capacity under a 1.5x tier (37.5 at level 5), and flooring per
+ * building would break exact merge conservation
+ * (floor(22.5) + floor(22.5) = 44 !== floor(45)). Integer units make every
+ * capacity an integer by construction. Entry 0 equals
+ * POPULATION_PER_TILE_LEVEL and entry 2 equals POPULATION_PER_LEVEL
+ * (pinned in buildingCapacity.test.ts, not re-derived here to avoid float
+ * arithmetic in the exported constant).
  */
-export const DENSITY_CAPACITY_UNITS: readonly [number, number, number] = [
-  POPULATION_PER_TILE_LEVEL,
-  POPULATION_PER_TILE_LEVEL,
-  POPULATION_PER_TILE_LEVEL,
-];
+export const DENSITY_CAPACITY_UNITS: readonly [number, number, number] = [5, 7, 10];
 
 export function buildingCapacity(b: Building): number {
   return b.structureRect.w * b.structureRect.h * b.level * DENSITY_CAPACITY_UNITS[b.density];

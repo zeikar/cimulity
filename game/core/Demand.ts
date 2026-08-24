@@ -9,11 +9,12 @@ export type DemandVector = Readonly<{ residential: number; commercial: number; i
  * Unit quantization — the basis every constant below is calibrated against.
  * Every labor scalar — employed, unemployed, jobsCapacity, reachableUnfilledJobs, and therefore
  * `net` — is a sum of `buildingCapacity()` over residential or commercial/industrial buildings. At
- * density 0 (the only active tier for now) that is a multiple of `POPULATION_PER_TILE_LEVEL` (5),
- * not 10 — once the higher density tiers carry real capacity it becomes an arbitrary integer. The
- * calibration anchor moves from "one building-level" to "one MODAL building-level" (structureRect
- * area 2): still 10 units, so the smallest reachable imbalance a modal building can cause is
- * unchanged.
+ * density 0 that is a multiple of `POPULATION_PER_TILE_LEVEL` (5), not 10 — and now that the 7-
+ * and 10-unit density tiers carry real capacity (`DENSITY_CAPACITY_UNITS`), a densified building's
+ * contribution is an arbitrary integer, no longer any fixed multiple. The calibration anchor stays
+ * the modal DENSITY-0 building-level (structureRect area 2): still 10 units, reading 10/100 = 0.10
+ * partial severity (see MIN_MARKET below), so the smallest reachable imbalance a modal building can
+ * cause is unchanged regardless of what higher-density buildings elsewhere add to the sums.
  */
 
 // Below a 5% imbalance the city reads as balanced and the labor term contributes nothing — the only

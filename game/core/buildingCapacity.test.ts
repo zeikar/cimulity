@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildingCapacity, DENSITY_CAPACITY_UNITS } from './buildingCapacity';
-import { POPULATION_PER_LEVEL } from './growthConstants';
+import { POPULATION_PER_LEVEL, POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import type { Building } from './Building';
 
 function makeBuilding(opts: {
@@ -47,12 +47,26 @@ describe('buildingCapacity', () => {
     expect(buildingCapacity(abandoned)).toBe(buildingCapacity(occupied));
   });
 
-  it('density tiers are currently neutral: density 0/1/2 read identically at fixed area/level', () => {
+  it('density tiers are real multipliers: modal (1x2 sr) level-5 reads 50 / 70 / 100', () => {
     const d0 = buildingCapacity(makeBuilding({ level: 5, density: 0, structureRect: { w: 1, h: 2 } }));
     const d1 = buildingCapacity(makeBuilding({ level: 5, density: 1, structureRect: { w: 1, h: 2 } }));
     const d2 = buildingCapacity(makeBuilding({ level: 5, density: 2, structureRect: { w: 1, h: 2 } }));
-    expect(d0).toBe(d1);
-    expect(d1).toBe(d2);
-    expect(DENSITY_CAPACITY_UNITS).toEqual([POPULATION_PER_LEVEL / 2, POPULATION_PER_LEVEL / 2, POPULATION_PER_LEVEL / 2]);
+    expect(d0).toBe(50); // 1*2*5*5
+    expect(d1).toBe(70); // 1*2*5*7
+    expect(d2).toBe(100); // 1*2*5*10
+  });
+
+  it('density tiers are real multipliers: ribbon (1x1 sr) level-5 reads 25 / 35 / 50', () => {
+    const d0 = buildingCapacity(makeBuilding({ level: 5, density: 0, structureRect: { w: 1, h: 1 } }));
+    const d1 = buildingCapacity(makeBuilding({ level: 5, density: 1, structureRect: { w: 1, h: 1 } }));
+    const d2 = buildingCapacity(makeBuilding({ level: 5, density: 2, structureRect: { w: 1, h: 1 } }));
+    expect(d0).toBe(25); // 1*1*5*5
+    expect(d1).toBe(35); // 1*1*5*7
+    expect(d2).toBe(50); // 1*1*5*10
+  });
+
+  it('tier 0 and tier 2 relate to the population-unit basis constants', () => {
+    expect(DENSITY_CAPACITY_UNITS[0]).toBe(POPULATION_PER_TILE_LEVEL);
+    expect(DENSITY_CAPACITY_UNITS[2]).toBe(POPULATION_PER_LEVEL);
   });
 });

@@ -14,6 +14,10 @@ import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { MERGE_LEVEL_THRESHOLD } from './mergePolicy';
 import { buildingCapacity } from './buildingCapacity';
+import { isAnchorCovered } from './ServiceCoverageMap';
+import { isFireAnchorCovered } from './FireCoverageMap';
+import { isHospitalAnchorCovered } from './HospitalCoverageMap';
+import { isSchoolAnchorCovered } from './SchoolCoverageMap';
 
 function seedPower(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
@@ -345,6 +349,194 @@ describe('World.tick() — density tier', () => {
     expect(densityTickResult!.changedBuildingIds).toContain(building.id);
     expect(densityTickResult!.changedTiles).toContainEqual({ x: SERVED_R.x, y: SERVED_R.y });
     expect(densityTickResult!.changedTiles.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('missing school coverage blocks density even though every other gate stays open (not a land-value confound)', () => {
+    // Identical setup to the served-cluster bump test above (its positive control) minus the
+    // school station, which is the ONE variable that differs. `LandValueMap`'s service term
+    // averages all four coverages, so dropping the school also lowers anchor land value — a
+    // level-5 target below LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] would be abandoned by the sweep and
+    // never reach the density branch at all, passing "density stays 0" without ever exercising
+    // isSchoolAnchorCovered. So the indirect (land-value) path is pinned CLOSED below, and the
+    // direct (coverage) path is pinned OPEN, before crediting the missing-density result to the
+    // coverage gate specifically.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+
+    // Remove the school seeded by seedServedCluster at (7,0)-(8,1).
+    const school = world.getStructureMap().getStructureAt(7, 0);
+    expect(school?.type).toBe('school');
+    expect(world.getStructureMap().removeStructure(school!.id)).toBe(true);
+    world.markSchoolDirty();
+    world.recomputeSchool();
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+
+    // Close the indirect path: anchor land value must still clear the density threshold
+    // (independent of services — a park feeds the additive park term) or the abandonment
+    // sweep would freeze the target for an unrelated reason.
+    if (world.getLandValue().getValue(SERVED_R.x, SERVED_R.y) < LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]) {
+      seedPark(world, SERVED_R.x, 1);
+      world.markLandValueDirty();
+      world.recomputeLandValue();
+    }
+    expect(world.getLandValue().getValue(SERVED_R.x, SERVED_R.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+
+    // Open the direct path: school coverage is gone, the other three anchors still hold, and
+    // the target is watered (all pre-existing gates stay satisfied so only school discriminates).
+    expect(world.getSchoolCoverageMap().getCoverage(SERVED_R.x, SERVED_R.y)).toBeLessThan(1);
+    expect(isSchoolAnchorCovered(SERVED_R, world.getSchoolCoverageMap())).toBe(false);
+    expect(isAnchorCovered(SERVED_R, world.getServiceCoverageMap())).toBe(true);
+    expect(isFireAnchorCovered(SERVED_R, world.getFireCoverageMap())).toBe(true);
+    expect(isHospitalAnchorCovered(SERVED_R, world.getHospitalCoverageMap())).toBe(true);
+
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [SERVED_R],
+      anchor: SERVED_R,
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      age: DENSITY_COOLDOWN_INTERVALS,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
+    });
+    // Same C/I demand seeders as the positive control: 80 reachable jobs against the
+    // max-level R's 50 workers keeps residential demand well clear of the threshold.
+    map.getBuildings().addBuilding({
+      type: 'commercial',
+      footprint: [SERVED_C],
+      anchor: SERVED_C,
+      level: 4,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 },
+    });
+    map.getBuildings().addBuilding({
+      type: 'industrial',
+      footprint: [SERVED_I],
+      anchor: SERVED_I,
+      level: 4,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
+    });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 10; i++) {
+      world.tick();
+      const b = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
+      // Pin the indirect path closed on every sample, not just at the end: the target must
+      // never be swept into abandonment (which would silently starve the density branch too).
+      expect(b.abandoned).toBe(false);
+      expect(b.density).toBe(0);
+    }
+  });
+
+  it('density bump is a real capacity actuator (ribbon, 1x1 sr): target steps 25 -> 35, and the citywide population step matches once C/I are pinned unchanged', () => {
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+
+    map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [SERVED_R], anchor: SERVED_R,
+      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
+    });
+    // Level-4, age-0 C/I seeders: same fixture as the served-cluster bump test above, tuned so
+    // residential demand clears DENSITY_DEMAND_THRESHOLD while the seeders themselves stay too
+    // young this pass to reach their own DENSITY_COOLDOWN_INTERVALS or level up further.
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'commercial', footprint: [SERVED_C], anchor: SERVED_C, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [SERVED_I], anchor: SERVED_I, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 } });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    expect(buildingCapacity(map.getBuildings().getBuilding(0)!)).toBe(25); // 1*1*5*5
+    const cBefore = map.getBuildings().getBuilding(1)!;
+    const iBefore = map.getBuildings().getBuilding(2)!;
+    const popBefore = world.getPopulation();
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const target = map.getBuildings().getBuilding(0)!;
+    expect(target.density).toBe(1);
+    expect(buildingCapacity(target)).toBe(35); // 1*1*5*7
+
+    // Grade the target above; only credit the citywide delta to it once the C/I seeders are
+    // pinned identical (level/density/structureRect) — they legitimately could have grown too.
+    const cAfter = map.getBuildings().getBuilding(1)!;
+    const iAfter = map.getBuildings().getBuilding(2)!;
+    expect(cAfter.level).toBe(cBefore.level);
+    expect(cAfter.density).toBe(cBefore.density);
+    expect(cAfter.structureRect).toEqual(cBefore.structureRect);
+    expect(iAfter.level).toBe(iBefore.level);
+    expect(iAfter.density).toBe(iBefore.density);
+    expect(iAfter.structureRect).toEqual(iBefore.structureRect);
+
+    expect(world.getPopulation()).toBe(popBefore + 10);
+  });
+
+  it('density bump is a real capacity actuator (modal, area-2 sr): target steps 50 -> 70, and the citywide population step matches once C/I are pinned unchanged', () => {
+    // Structure AREA drives capacity, not the w x h split, so a 2-wide x 1-deep sr is the same
+    // "modal area-2" case as a 1-wide x 2-deep one. This orientation is chosen deliberately: a
+    // depth-2 (1x2) lot's anchor is the far corner from the frontage edge, one row farther from
+    // the road, which costs enough road-proximity land value in this synthetic cluster to drop
+    // the anchor below LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] and get the level-5 target swept into
+    // abandonment before density is ever reached (verified while building this fixture). A
+    // 2-wide x 1-deep lot keeps both cells on the road-adjacent row, so land value is unaffected
+    // — same area, same buildingCapacity arithmetic.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(6, 1, createTile(6, 1, TileType.ZONE_INDUSTRIAL));
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+
+    map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [{ x: 2, y: 1 }, { x: 3, y: 1 }], anchor: { x: 2, y: 1 },
+      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
+      structureRect: { x: 2, y: 1, w: 2, h: 1 },
+    });
+    // A doubled residential worker count (area 2, not 1) needs a doubled job surplus to clear
+    // DENSITY_DEMAND_THRESHOLD: level 5 C at the known-served SERVED_C anchor plus a 2-wide I lot
+    // reusing the already-served (6,1) tile, both aged 0 so neither reaches its own density
+    // cooldown or abandons in this single pass.
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'commercial', footprint: [SERVED_C], anchor: SERVED_C, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'industrial', footprint: [{ x: 5, y: 1 }, { x: 6, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 5, y: 1, w: 2, h: 1 },
+    });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    expect(buildingCapacity(map.getBuildings().getBuilding(0)!)).toBe(50); // 2*1*5*5
+    const cBefore = map.getBuildings().getBuilding(1)!;
+    const iBefore = map.getBuildings().getBuilding(2)!;
+    const popBefore = world.getPopulation();
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const target = map.getBuildings().getBuilding(0)!;
+    expect(target.density).toBe(1);
+    expect(buildingCapacity(target)).toBe(70); // 2*1*5*7
+
+    const cAfter = map.getBuildings().getBuilding(1)!;
+    const iAfter = map.getBuildings().getBuilding(2)!;
+    expect(cAfter.level).toBe(cBefore.level);
+    expect(cAfter.density).toBe(cBefore.density);
+    expect(cAfter.structureRect).toEqual(cBefore.structureRect);
+    expect(iAfter.level).toBe(iBefore.level);
+    expect(iAfter.density).toBe(iBefore.density);
+    expect(iAfter.structureRect).toEqual(iBefore.structureRect);
+
+    expect(world.getPopulation()).toBe(popBefore + 20);
   });
 });
 

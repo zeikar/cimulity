@@ -1146,11 +1146,22 @@ export class World {
         } else {
           // Density-bump branch: building is at max level and its structure already fills its
           // depth cap (the canExtendStructure check above was false); advance density tier.
+          // Gains the same four service-coverage anchors as growthGate above, but deliberately
+          // NOT a land-value gate: the abandonment sweep runs before this loop each tick and
+          // already froze any level-5 building whose anchor land value is below
+          // LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] against this same frozen snapshot, so every building
+          // that reaches this branch already clears that threshold — an explicit check here would
+          // be dead code. That same sweep is what claws density-created capacity back: if land
+          // value later drops below the threshold, the whole building abandons.
           if (
             demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
             existing.density < 2 &&
-            isBuildingWatered(existing, wm)
+            isBuildingWatered(existing, wm) &&
+            isAnchorCovered(existing.anchor, svc) &&
+            isFireAnchorCovered(existing.anchor, fireSvc) &&
+            isHospitalAnchorCovered(existing.anchor, hospitalSvc) &&
+            isSchoolAnchorCovered(existing.anchor, schoolSvc)
           ) {
             existing.density += 1 as 0 | 1 | 2;
             existing.age = 0;
