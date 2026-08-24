@@ -13,6 +13,7 @@ import type { Frontage } from './buildingFootprint';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { MERGE_LEVEL_THRESHOLD } from './mergePolicy';
+import { buildingCapacity } from './buildingCapacity';
 
 function seedPower(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
@@ -1062,6 +1063,152 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(result.changedBuildingIds).toContain(0);
     // changedTiles contains the footprint cell.
     expect(result.changedTiles).toContainEqual({ x: 1, y: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 4: reorder the growth branch so max-level structures can still grow
+// ---------------------------------------------------------------------------
+
+describe('World.tick() — max-level structure-grow reaches a merged lot\'s raised depth cap (Task 4)', () => {
+  it('level-5 building on a 4-wide, 4-deep lot extends structureRect 4×2 → 4×3 → 4×4 across growth passes, never density-bumping in between', () => {
+    // A second-generation (4-wide) merged lot: 4 wide (x=1..4), 4 deep (y=3..6), frontage
+    // 'S'. Its depth cap is max(MIN_STRUCTURE_DEPTH_CAP=2, lot.w=4) = 4 — only reachable at
+    // max level through Task 4's reorder (a first-generation 2-wide lot's cap would still be
+    // max(2,2)=2, no gain).
+    const world = new World(25, 13, { regenerate: false });
+    const map = world.getMap();
+    const sm = world.getStructureMap();
+
+    for (let x = 1; x <= 4; x++) {
+      for (let y = 3; y <= 6; y++) map.setTile(x, y, createTile(x, y, TileType.ZONE_RESIDENTIAL));
+    }
+    // Frontage road immediately south of the lot.
+    for (let x = 0; x < 25; x++) map.setTile(x, 7, createTile(x, 7, TileType.ROAD));
+    // A SEPARATE coverage-only road row directly above the anchor's row (y=2), disconnected
+    // from the frontage road. Off-road decay is Chebyshev/hop distance, not frontage-bound, so
+    // this alone gives the anchor a road tile at distance 1 and lets stations hung above it
+    // reach the anchor at offDist 1 — needed because the anchor sits 4 rows from the frontage
+    // road, well outside OFF_ROAD_RADIUS_TILES=2.
+    for (let x = 0; x < 25; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+
+    // Park directly above the anchor (Chebyshev distance 1): LEVEL_THRESHOLDS[5]=0.85 is far
+    // above what road + service alone reliably clears once commute congestion trims a little
+    // back off, so the additive park boost supplies the margin.
+    expect(sm.addStructure({ type: 'park', anchor: { x: 1, y: 1 }, footprint: [{ x: 1, y: 1 }] })).not.toBeNull();
+
+    // Four stations hung above the coverage road row, close to the anchor's column.
+    seedPolice(world, 3, 0);
+    seedFire(world, 5, 0);
+    seedHospital(world, 7, 0);
+    seedSchool(world, 9, 0);
+
+    // Power + water: any footprint cell suffices (footprint scan), so powering/watering the
+    // frontage road row (adjacent to the lot's south row, y=6) is enough.
+    seedPower(world, 0, 8); // plant (0,8)-(1,9); (0,8) adj road (0,7) → powers the road row
+    seedWater(world, 3, 8); // tower (3,8); adj road (3,7) → waters the road row
+
+    world.markServiceDirty();
+    world.markFireDirty();
+    world.markHospitalDirty();
+    world.markSchoolDirty();
+    world.markLandValueDirty();
+    world.recomputeService();
+    world.recomputeFire();
+    world.recomputeHospital();
+    world.recomputeSchool();
+    world.recomputeLandValue();
+
+    const ANCHOR = { x: 1, y: 3 };
+    expect(world.getLandValue().getValue(ANCHOR.x, ANCHOR.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+
+    // The building under test: level 5 (max), sr 4×2 (the southern half of the 4×4 lot),
+    // frontage 'S'. Capacity = 4·2·5(level)·5(unit) = 200.
+    const building = map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [
+        { x: 1, y: 3 }, { x: 2, y: 3 }, { x: 3, y: 3 }, { x: 4, y: 3 },
+        { x: 1, y: 4 }, { x: 2, y: 4 }, { x: 3, y: 4 }, { x: 4, y: 4 },
+        { x: 1, y: 5 }, { x: 2, y: 5 }, { x: 3, y: 5 }, { x: 4, y: 5 },
+        { x: 1, y: 6 }, { x: 2, y: 6 }, { x: 3, y: 6 }, { x: 4, y: 6 },
+      ],
+      anchor: ANCHOR,
+      level: ZONE_MAX_LEVEL,
+      density: 0,
+      // Past cooldown for ANY stagger (max stagger 6): GROWTH_COOLDOWN_INTERVALS(8)+6=14; after
+      // the first age++ below this clears the cooldown regardless of this building's own id.
+      age: GROWTH_COOLDOWN_INTERVALS + 6 - 1,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: 1, y: 5, w: 4, h: 2 },
+    })!;
+    expect(building).not.toBeNull();
+    expect(buildingCapacity(building)).toBe(200);
+
+    // A reachable job bank south of the frontage road, sized well above the R building's
+    // largest possible workforce (400 at 4×4), so residential demand stays positive and the
+    // R building's residents stay employed across the whole test. Four level-2 industrial
+    // lots, sr 4×4 (area 16, the max lot size) each: 16·2(level)·5(unit) = 160, 640 total.
+    for (let k = 0; k < 4; k++) {
+      const jx = 5 + k * 5;
+      const footprint = [];
+      for (let dx = 0; dx < 4; dx++) {
+        for (let dy = 0; dy < 4; dy++) footprint.push({ x: jx + dx, y: 8 + dy });
+      }
+      expect(map.getBuildings().addExistingBuilding({
+        id: 100 + k,
+        type: 'industrial',
+        footprint,
+        anchor: { x: jx, y: 8 },
+        level: 2,
+        density: 0,
+        age: 0,
+        abandoned: false,
+        frontage: 'N',
+        structureRect: { x: jx, y: 8, w: 4, h: 4 },
+      })).toBe(true);
+    }
+
+    // Asserted last, once every road, structure and building exists.
+    world.recomputeLabor();
+    world.markDemandDirty();
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
+    expect(world.getDemand().residential).toBeGreaterThan(0);
+
+    function tickOneGrowthInterval(): ReturnType<typeof world.tick> {
+      for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+      return world.tick();
+    }
+
+    // Extend 1: 4×2 → 4×3 (8 → 12 tiles, capacity 200 → 300). Age resets after firing, so the
+    // second extend below needs up to GROWTH_COOLDOWN_INTERVALS+6=14 more growth passes; poll
+    // rather than compute the exact stagger.
+    let grown = false;
+    for (let g = 0; g < 20 && !grown; g++) {
+      tickOneGrowthInterval();
+      grown = map.getBuildings().getBuilding(building.id)!.structureRect.h === 3;
+    }
+    expect(grown).toBe(true);
+    let b = map.getBuildings().getBuilding(building.id)!;
+    expect(b.structureRect).toEqual({ x: 1, y: 4, w: 4, h: 3 });
+    expect(b.level).toBe(ZONE_MAX_LEVEL);
+    expect(b.density).toBe(0);
+    expect(buildingCapacity(b)).toBe(300);
+
+    // Extend 2: 4×3 → 4×4 (12 → 16 tiles, capacity 300 → 400) — fills the lot's depth cap,
+    // matching lot.h exactly, so canExtendStructure goes false and further growth passes fall
+    // through to the (untouched) density branch instead.
+    grown = false;
+    for (let g = 0; g < 20 && !grown; g++) {
+      tickOneGrowthInterval();
+      grown = map.getBuildings().getBuilding(building.id)!.structureRect.h === 4;
+    }
+    expect(grown).toBe(true);
+    b = map.getBuildings().getBuilding(building.id)!;
+    expect(b.structureRect).toEqual({ x: 1, y: 3, w: 4, h: 4 });
+    expect(b.level).toBe(ZONE_MAX_LEVEL);
+    expect(buildingCapacity(b)).toBe(400);
+    expect(b.abandoned).toBe(false);
   });
 });
 

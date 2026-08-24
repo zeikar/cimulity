@@ -1092,37 +1092,40 @@ export class World {
         existing.age += 1;
 
         const anchorLandValue = lv.getValue(existing.anchor.x, existing.anchor.y);
+        const lot = lotBboxOf(existing.footprint);
 
-        if (existing.level < ZONE_MAX_LEVEL) {
-          // Level-up branch: gated on demand, land value threshold, and age cooldown.
-          // At GROWTH_DEMAND_THRESHOLD there is no imbalance beyond the deadband and no
-          // in-migration for this type → no structure-grow, no level-up.
-          const threshold = LEVEL_THRESHOLDS[existing.level + 1];
-          const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
-          // Power gates spawn AND existing-building aging/growth (the isBuildingPowered check above
-          // runs before age++). Water gates the level-up / structure-grow / density / merge
-          // MUTATIONS — an unwatered but powered building still ages, it just can't grow
-          // (SimCity 2000/4 'city starts, density limited'). Police AND fire AND hospital AND school
-          // coverage gate this gated branch's mutations ONLY (the level-up bump AND the nested Branch B'
-          // structure-grow); not spawn, density, or merge.
-          // Graded fields (land value, coverage) gate at the ANCHOR; binary fields (power, water)
-          // scan the FOOTPRINT — any powered/watered cell satisfies the gate. This is the intended split.
-          if (demandVec[existing.type] > GROWTH_DEMAND_THRESHOLD && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc) && isHospitalAnchorCovered(existing.anchor, hospitalSvc) && isSchoolAnchorCovered(existing.anchor, schoolSvc)) {
-            const lot = lotBboxOf(existing.footprint);
-            if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
-              // Branch B' — structure-grow before level-up.
-              const grown = extendStructureToward(existing.structureRect, lot, existing.frontage);
-              if (grown !== null) {
-                existing.structureRect = grown;
-                existing.age = 0;
-                changedBuildingIds.push(existing.id);
-                for (const coord of existing.footprint) {
-                  changedTiles.push({ x: coord.x, y: coord.y });
-                }
-              }
-            } else {
-              // Branch B — structure cannot grow further (lot filled or cap hit); level up.
-              existing.level += 1;
+        // Shared growth gate: demand, land value threshold, age cooldown, water, and the four
+        // service-coverage anchors — feeds BOTH structure-grow and level-up below, at any level.
+        // At GROWTH_DEMAND_THRESHOLD there is no imbalance beyond the deadband and no
+        // in-migration for this type → no structure-grow, no level-up.
+        // The lookahead level is clamped to ZONE_MAX_LEVEL: LEVEL_THRESHOLDS only has indices
+        // 0..ZONE_MAX_LEVEL, so an unclamped `existing.level + 1` reads undefined at max level —
+        // `landValue >= undefined` is always false, which would silently make max-level
+        // structure-grow dead code below (the trap this reorder exists to avoid).
+        const threshold = LEVEL_THRESHOLDS[Math.min(existing.level + 1, ZONE_MAX_LEVEL)];
+        const cooldown = GROWTH_COOLDOWN_INTERVALS + stagger(existing.id);
+        // Power gates spawn AND existing-building aging/growth (the isBuildingPowered check above
+        // runs before age++). Water gates the level-up / structure-grow / density / merge
+        // MUTATIONS — an unwatered but powered building still ages, it just can't grow
+        // (SimCity 2000/4 'city starts, density limited'). Police AND fire AND hospital AND school
+        // coverage gate this gated branch's mutations ONLY (the level-up bump AND the structure-grow
+        // below, at any level); not spawn, density, or merge.
+        // Graded fields (land value, coverage) gate at the ANCHOR; binary fields (power, water)
+        // scan the FOOTPRINT — any powered/watered cell satisfies the gate. This is the intended split.
+        const growthGate = demandVec[existing.type] > GROWTH_DEMAND_THRESHOLD && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc) && isHospitalAnchorCovered(existing.anchor, hospitalSvc) && isSchoolAnchorCovered(existing.anchor, schoolSvc);
+
+        if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
+          // Branch B' — structure-grow, reachable at ANY level now, not just below max.
+          // Below max this already preceded level-up (bit-identical behaviour there). At max
+          // level this is the one new path: it makes a second-generation (4-wide) merged lot's
+          // raised depth cap (max(2, 4) = 4) reachable, which the old level-gated routing could
+          // never reach. A first-generation (2-wide) merged lot's cap is still max(2, 2) = 2 —
+          // no gain — because the equal-shape merge gate doubles widths (1 → 2 → 4), so only
+          // 4-wide-and-up lots benefit.
+          if (growthGate) {
+            const grown = extendStructureToward(existing.structureRect, lot, existing.frontage);
+            if (grown !== null) {
+              existing.structureRect = grown;
               existing.age = 0;
               changedBuildingIds.push(existing.id);
               for (const coord of existing.footprint) {
@@ -1130,8 +1133,19 @@ export class World {
               }
             }
           }
+        } else if (existing.level < ZONE_MAX_LEVEL) {
+          // Branch B — structure cannot grow further (lot filled or cap hit); level up.
+          if (growthGate) {
+            existing.level += 1;
+            existing.age = 0;
+            changedBuildingIds.push(existing.id);
+            for (const coord of existing.footprint) {
+              changedTiles.push({ x: coord.x, y: coord.y });
+            }
+          }
         } else {
-          // Density-bump branch: building is at max level; advance density tier.
+          // Density-bump branch: building is at max level and its structure already fills its
+          // depth cap (the canExtendStructure check above was false); advance density tier.
           if (
             demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
