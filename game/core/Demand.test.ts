@@ -308,12 +308,11 @@ describe('Demand — labor axis', () => {
     // Ungated, the floored 100-unit market would leave staffing at 0.75 and leak a partial floor of
     // 0.1 × 0.75 = 0.075; the workforce === 0 gate zeroes it outright.
     expect(v.industrial).toBe(0);
-    // C reads via the retail axis alone: buildingCapacity(level 1) = 10 already clears the
-    // retail axis's `max(targetC, capacitySumC, 1)` floor on its own (targetC = 0.25*10 = 2.5),
-    // so retail saturates to 1 — unlike the retired raw-level axis, where a single level-1
-    // building (targetC = 0.25) sat well under that floor. Scaled by staffing (0.75) it reads
-    // 0.75, the same reading the level-0 test below pins for this labor state; R via migration.
-    expect(v.commercial).toBeCloseTo(0.75, 10);
+    // C reads via the retail axis alone: buildingCapacity(level 1) = 10 is exactly the retail
+    // axis's `max(targetC, capacitySumC, POPULATION_PER_LEVEL)` floor (targetC = 0.25*10 = 2.5),
+    // so retail reads 2.5/10 = 0.25, scaled by staffing (0.75) to 0.1875 — the same reading the
+    // level-0 test below pins for this labor state; R via migration.
+    expect(v.commercial).toBeCloseTo(0.1875, 10);
     expect(v.residential).toBeCloseTo(0.25, 10);
   });
 });
@@ -451,9 +450,9 @@ describe('Demand — regression readings', () => {
     // totalCapacity is 10 (the single level-1 I's buildingCapacity), not 1010: the 100 level-0
     // residents each contribute buildingCapacity 0, exactly like they contributed raw level 0
     // under the retired formula — this is the same single-I fixture as the test above, so
-    // retail saturates to 1 (targetC = 0.25*10 = 2.5 already clears the axis's floor) and,
-    // damped by staffing 0.75, commercial reads 0.75.
-    expect(v.commercial).toBeCloseTo(0.75, 10);
+    // targetC = 0.25*10 = 2.5 sits at the axis's POPULATION_PER_LEVEL floor, reading 2.5/10 =
+    // 0.25, damped by staffing 0.75 to 0.1875.
+    expect(v.commercial).toBeCloseTo(0.1875, 10);
   });
 
   it('abandoned buildings are excluded from the level sums', () => {

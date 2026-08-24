@@ -1,5 +1,5 @@
 import type { BuildingMap } from './Building';
-import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
+import { POPULATION_PER_LEVEL, POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import { buildingCapacity } from './buildingCapacity';
 
 // Readonly<...> is a compile-time guard only — the module returns an Object.freeze'd snapshot to enforce immutability at runtime.
@@ -40,9 +40,10 @@ export const MIN_MARKET = 20 * POPULATION_PER_TILE_LEVEL;
 // I get distinct roles.
 export const COMMERCIAL_JOB_SHARE = 0.5;
 
-// The labor axis pins C+I ≈ R, so a 25% commercial share puts the city at R:C:I = 2:1:1. Both axes
-// share that one fixed point, so unlike the deleted structural terms it is actually reachable.
-export const COMMERCIAL_LEVEL_SHARE = 0.25;
+// The labor axis pins C+I ≈ R, so a 25% commercial share of total building capacity puts the city
+// at R:C:I = 2:1:1. Both axes share that one fixed point, so unlike the deleted structural terms it
+// is actually reachable.
+export const COMMERCIAL_CAPACITY_SHARE = 0.25;
 
 // The residential demand a city with work for everyone shows from in-migration alone: the external
 // growth driver, without which the all-zero state would be absorbing (no zone tile supplies workers,
@@ -156,8 +157,11 @@ export class Demand {
 
     // --- retail axis (commercial only) ---
     const totalCapacity = capacitySumR + capacitySumC + capacitySumI;
-    const targetC = COMMERCIAL_LEVEL_SHARE * totalCapacity;
-    const retail = clamp01((targetC - capacitySumC) / Math.max(targetC, capacitySumC, 1));
+    const targetC = COMMERCIAL_CAPACITY_SHARE * totalCapacity;
+    // Floored at one MODAL building-level (POPULATION_PER_LEVEL), the same anchor MIN_MARKET uses
+    // above — not the bare `1` left over from the old raw-level formula, which would read a near-
+    // saturated retail gap out of a single small building's capacity units instead of a damped one.
+    const retail = clamp01((targetC - capacitySumC) / Math.max(targetC, capacitySumC, POPULATION_PER_LEVEL));
     // Micropolis's laborBase: with more open jobs than workers already, another shop has nobody to
     // staff it, so the retail axis collapses.
     const staffing = 1 - resSeverity;

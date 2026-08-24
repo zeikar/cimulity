@@ -326,10 +326,12 @@ describe('World demand-feedback integration', () => {
     // No road row → no labor reachability → employed=0, reachableUnfilledJobs=0.
     // buildingCapacity(level 2, 1×1 sr, density 0) = 10 road-less workers against the
     // 100-unit MIN_MARKET floor → ratio 0.10 → workplaceSeverity 0.25, halved onto each jobs
-    // bar (industrial 0.125). The retail axis now sums buildingCapacity (10) instead of raw
-    // level (2): targetC = COMMERCIAL_LEVEL_SHARE · 10 = 2.5, which clears the retail axis's
-    // own `max(targetC, capacitySumC, 1)` floor, so retail saturates to 1 and commercial reads
-    // 1 (a jobs bar's ceiling) — dominating its own workplaceSeverity half-share.
+    // bar (industrial 0.125). The retail axis sums buildingCapacity (10): targetC =
+    // COMMERCIAL_CAPACITY_SHARE · 10 = 2.5, over the retail axis's own
+    // `max(targetC, capacitySumC, POPULATION_PER_LEVEL)` floor (10), so retail reads 2.5/10 =
+    // 0.25; staffing is undamped (resSeverity 0, since the shortfall is a vacancy surplus, not a
+    // worker surplus), so commercial reads max(workplaceSeverity·0.5=0.125, retail=0.25,
+    // workplaceFloor=0.1) = 0.25 — the retail axis dominates its own jobs half-share.
     const world = new World(8, 6, { regenerate: false });
     const map = world.getMap();
     // Add a residential building directly (no road, so no road access — its workers are
@@ -343,7 +345,7 @@ describe('World demand-feedback integration', () => {
 
     world.markLaborDirty();
 
-    expect(world.getDemand().commercial).toBe(1);
+    expect(world.getDemand().commercial).toBe(0.25);
     expect(world.getDemand().industrial).toBeCloseTo(0.125, 10);
   });
 
