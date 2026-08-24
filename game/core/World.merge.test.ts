@@ -109,20 +109,26 @@ describe("World.tick() — merge (Branch B'')", () => {
     }
 
     // Reachable job bank at y=6: one level-2 industrial per column the power plant does not
-    // own, each fronting 'N' onto the R road row at y=5.
+    // own, each fronting 'N' onto the R road row at y=5. Modal 1x2 structureRect (extended
+    // SOUTH into the free row y=7, away from the frontage — the power plant only owns
+    // (W-2,7)/(W-1,7), outside this x range) so buildingCapacity(level 2) = 1*2*2*5 = 20 each,
+    // matching this fixture's pre-buildingCapacity arithmetic (14 * 20 = 280 total jobs). The R
+    // lots keep their full 1×4 sr (needed for the structureRect-union assertions below), so
+    // buildingCapacity(level MERGE_LEVEL_THRESHOLD=2) = 1*4*2*5 = 40 each — bigger than before,
+    // but the bank's fixed 280-job total still comfortably exceeds even 5 R lots' 200 workers.
     for (let x = 0; x < W - 2; x++) {
       map.setTile(x, 6, createTile(x, 6, TileType.ZONE_INDUSTRIAL));
       expect(map.getBuildings().addExistingBuilding({
         id: n + x,
         type: 'industrial',
-        footprint: [{ x, y: 6 }],
+        footprint: [{ x, y: 6 }, { x, y: 7 }],
         anchor: { x, y: 6 },
         level: 2,
         density: 0,
         age: 0,
         abandoned: false,
         frontage: 'N',
-        structureRect: { x, y: 6, w: 1, h: 1 },
+        structureRect: { x, y: 6, w: 1, h: 2 },
       })).toBe(true);
     }
 

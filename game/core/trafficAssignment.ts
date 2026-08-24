@@ -32,18 +32,23 @@
 
 import type { GameMap } from './Map';
 import type { StructureMap } from './StructureMap';
-import { WORKERS_PER_LEVEL, type CommuteFlow } from './laborMarket';
+import type { CommuteFlow } from './laborMarket';
+import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import { ORTHOGONAL, buildStructureOwned, isRoadNode } from './roadGraph';
 
 /**
  * Trip volume (road-tile load) at which a road tile is considered fully
  * congested (normalized value 255). The single normalization knob, expressed in
- * `WORKERS_PER_LEVEL` units: a trip IS a commuting worker, so the knob CHAINS to
- * the commuter unit (which itself derives from `POPULATION_PER_LEVEL`) instead of
- * re-deriving from the display constant in parallel. If labor participation is
- * ever modelled — `WORKERS_PER_LEVEL` becoming some fraction of
- * `POPULATION_PER_LEVEL` — capacity follows the commuters automatically, which is
- * exactly the drift this constant was recalibrated to end.
+ * `POPULATION_PER_TILE_LEVEL` units: a trip IS a commuting worker, so the knob
+ * CHAINS to the same per-structure-tile-per-level commuter unit `buildingCapacity`
+ * (buildingCapacity.ts) multiplies for every residential/job building, instead of
+ * re-deriving from the display constant in parallel. The number stays exactly
+ * 500 — `buildingCapacity` was calibrated so a modal building's commuter count is
+ * numerically unchanged from before that module existed, so this knob needs no
+ * retuning. If labor participation is ever modelled — the density-0 commuter unit
+ * becoming some fraction of `POPULATION_PER_TILE_LEVEL` — capacity follows the
+ * commuters automatically, which is exactly the drift this constant was
+ * recalibrated to end.
  *
  * Calibrated against two cities MEASURED in a play-verification, by reading the
  * un-normalized per-tile trip load straight off the matched commute flows (the
@@ -72,18 +77,18 @@ import { ORTHOGONAL, buildStructureOwned, isRoadNode } from './roadGraph';
  * population passes 500; the band is deliberately entered before the byte flattens,
  * so the gradient still carries information at the sizes a player actually reaches.
  *
- * Rejected by the same measurement: 12 · WORKERS_PER_LEVEL (= 120, the value this
- * replaces) pinned the ORDINARY city's busiest street at a clamped 255 and drove
- * it into a permanent boom/bust cycle — 21 of 36 buildings abandoned, recovering,
- * abandoning again — i.e. exactly the "constant tax" this knob exists to avoid.
- * Assignment is exactly linear in the worker unit, so the same measured loads
- * project 16 · WORKERS_PER_LEVEL to byte 207 and 24 · WORKERS_PER_LEVEL to byte
- * 138 on that ordinary street: both still far past a tolerable ordinary reading.
- * Going the other way, capacity above ~1.4× the corridor load (≈ 530 at the
- * 380-trip size measured) drops that corridor out of the near-saturated reading
- * this knob targets. Re-measure BOTH loads before retuning.
+ * Rejected by the same measurement: 120 (the value this replaces) pinned the
+ * ORDINARY city's busiest street at a clamped 255 and drove it into a permanent
+ * boom/bust cycle — 21 of 36 buildings abandoned, recovering, abandoning again —
+ * i.e. exactly the "constant tax" this knob exists to avoid. Assignment is
+ * exactly linear in the worker unit, so the same measured loads project 160 to
+ * byte 207 and 240 to byte 138 on that ordinary street: both still far past a
+ * tolerable ordinary reading. Going the other way, capacity above ~1.4× the
+ * corridor load (≈ 530 at the 380-trip size measured) drops that corridor out of
+ * the near-saturated reading this knob targets. Re-measure BOTH loads before
+ * retuning.
  */
-export const TRAFFIC_CAPACITY = 50 * WORKERS_PER_LEVEL;
+export const TRAFFIC_CAPACITY = 100 * POPULATION_PER_TILE_LEVEL;
 
 /**
  * Compute per-road-tile traffic congestion `0..255` by loading precomputed

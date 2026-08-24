@@ -9,11 +9,8 @@
 import type { GameMap } from '@/game/core/Map';
 import type { BuildingMap } from '@/game/core/Building';
 import { accessNodeFor } from '@/game/core/roadGraph';
-import {
-  JOBS_PER_LEVEL,
-  WORKERS_PER_LEVEL,
-  type CommuteFlow,
-} from '@/game/core/laborMarket';
+import type { CommuteFlow } from '@/game/core/laborMarket';
+import { buildingCapacity } from '@/game/core/buildingCapacity';
 
 // ---------------------------------------------------------------------------
 // Ramp palette — exported so legend components can reference the same stops.
@@ -135,14 +132,14 @@ export function buildingEmploymentShares(
     if (b.abandoned) continue;
 
     if (b.type === 'commercial' || b.type === 'industrial') {
-      const cap = b.level * JOBS_PER_LEVEL;
+      const cap = buildingCapacity(b);
       const node = accessNodeFor(map, b);
       if (node >= 0) totalCapByNode.set(node, (totalCapByNode.get(node) ?? 0) + cap);
       continue;
     }
 
     if (b.type === 'residential') {
-      const workers = b.level * WORKERS_PER_LEVEL;
+      const workers = buildingCapacity(b);
       const node = accessNodeFor(map, b);
       if (node >= 0) totalWorkersByNode.set(node, (totalWorkersByNode.get(node) ?? 0) + workers);
     }
@@ -177,7 +174,7 @@ export function buildingEmploymentShares(
       // Use the building's own worker count (road-agnostic) to decide hasData.
       // Road-less buildings with workers show red (share 0, hasData true) —
       // their workers are fully unemployed per the labor model, not "no data".
-      const ownWorkers = b.level * WORKERS_PER_LEVEL;
+      const ownWorkers = buildingCapacity(b);
       if (ownWorkers === 0) {
         result.set(b.id, { share: 0, hasData: false });
         continue;
@@ -198,7 +195,7 @@ export function buildingEmploymentShares(
 
     if (b.type === 'commercial' || b.type === 'industrial') {
       // Same principle: road-less C/I with capacity shows red (unfillable jobs).
-      const ownCap = b.level * JOBS_PER_LEVEL;
+      const ownCap = buildingCapacity(b);
       if (ownCap === 0) {
         result.set(b.id, { share: 0, hasData: false });
         continue;

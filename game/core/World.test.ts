@@ -21,6 +21,7 @@ import {
   HAPPINESS_W_TRAFFIC,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, stagger } from './growthConstants';
+import { buildingCapacity } from './buildingCapacity';
 import { DENSITY_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
@@ -492,9 +493,10 @@ describe('World.tick() — monthly tax settlement', () => {
     // (9,1) — covered, road-adjacent cells with lv ≈ 0.73, so level 4 (their supportable max)
     // survives the abandonment sweep. Frontage 'S': the access node is the road row at y=2, so
     // the probe's BFS actually reaches them; fronting 'N' onto grass would make the jobs
-    // invisible and residential demand 0. 80 jobs against the level-4 probe's 40 workers gives
-    // net 40 on a market of 100 → residential saturates. (Both sit on GRASS tiles, so the
-    // growth loop never visits them; only the sweep reads their anchors.)
+    // invisible and residential demand 0. buildingCapacity(level 4, 1x1 sr) = 20, so two C
+    // give 40 jobs against the level-4 probe's 20 workers → net 20 on a market of 100 →
+    // resSeverity 0.75, comfortably above GROWTH_DEMAND_THRESHOLD. (Both sit on GRASS tiles,
+    // so the growth loop never visits them; only the sweep reads their anchors.)
     for (const x of [8, 9]) {
       expect(mapF.getBuildings().addExistingBuilding({
         id: 990 + x,
@@ -557,16 +559,18 @@ describe('World.getPopulation()', () => {
     expect(world.getPopulation()).toBe(0);
   });
 
-  it('sums building levels and multiplies by POPULATION_PER_LEVEL', () => {
+  it('sums buildingCapacity() across levels (modal 1x2 sr, so it equals level × POPULATION_PER_LEVEL)', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
     map.setTile(2, 0, createTile(2, 0, TileType.ZONE_INDUSTRIAL));
-    // Seed buildings with levels 3, 2, 1 respectively; sum = 6
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 1 } });
+    // Seed buildings with levels 3, 2, 1 respectively; sum = 6. Modal 1x2 structureRect
+    // (full 2-deep lot) so buildingCapacity = 1*2*level*5 = 10*level, matching
+    // level * POPULATION_PER_LEVEL exactly (see growthConstants.ts POPULATION_PER_TILE_LEVEL).
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }, { x: 0, y: 1 }], anchor: { x: 0, y: 0 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 2 } });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }, { x: 1, y: 1 }], anchor: { x: 1, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 2 } });
+    map.getBuildings().addBuilding({ type: 'industrial', footprint: [{ x: 2, y: 0 }, { x: 2, y: 1 }], anchor: { x: 2, y: 0 }, level: 1, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 2, y: 0, w: 1, h: 2 } });
     // sum = 3+2+1 = 6; population = 6 * POPULATION_PER_LEVEL
     expect(world.getPopulation()).toBe(6 * POPULATION_PER_LEVEL);
   });
@@ -578,8 +582,8 @@ describe('World.getPopulation()', () => {
     // (1, 0) stays GRASS — water is elevation-derived; type identity is fine here.
     map.setTile(2, 0, createTile(2, 0, TileType.DIRT));
     map.setTile(3, 0, createTile(3, 0, TileType.ZONE_RESIDENTIAL));
-    // Only the zone at (3,0) has a building
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 0, w: 1, h: 1 } });
+    // Only the zone at (3,0) has a building. Modal 1x2 structureRect, as above.
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 3, y: 0 }, { x: 3, y: 1 }], anchor: { x: 3, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 0, w: 1, h: 2 } });
     expect(world.getPopulation()).toBe(2 * POPULATION_PER_LEVEL);
   });
 
@@ -604,13 +608,14 @@ describe('World.getPopulation() — building-based formula', () => {
     expect(world.getPopulation()).toBe(0);
   });
 
-  it('sum(building.level) × POPULATION_PER_LEVEL formula across multiple buildings', () => {
+  it('sums buildingCapacity() across multiple buildings (all modal 1x2 sr)', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
     map.setTile(1, 0, createTile(1, 0, TileType.ZONE_COMMERCIAL));
-    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 1 } });
-    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 1 } });
+    // Modal 1x2 structureRect (full 2-deep lot), as in the getPopulation() suite above.
+    map.getBuildings().addBuilding({ type: 'residential', footprint: [{ x: 0, y: 0 }, { x: 0, y: 1 }], anchor: { x: 0, y: 0 }, level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 0, y: 0, w: 1, h: 2 } });
+    map.getBuildings().addBuilding({ type: 'commercial', footprint: [{ x: 1, y: 0 }, { x: 1, y: 1 }], anchor: { x: 1, y: 0 }, level: 3, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 1, y: 0, w: 1, h: 2 } });
     // sum = 2+3 = 5
     expect(world.getPopulation()).toBe(5 * POPULATION_PER_LEVEL);
   });
@@ -1316,12 +1321,16 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // employed = 50, unemployed = 50, reachable = J − 50, market = J + 50 and net = J − 100,
     // so (J−100)/(J+50) ≥ 0.125 needs J ≥ 130; 160 saturates the bar instead of sitting just
     // over the line.
+    // Each bank is a 2-wide 1-deep lot (modal sr area 2) so buildingCapacity(level 4) = 40,
+    // matching the level * POPULATION_PER_LEVEL figure this fixture's arithmetic was written
+    // against — widening keeps the anchor's road distance (and land value) unchanged, unlike
+    // deepening the lot northward would.
     for (const [i, x] of [2, 4, 6, 8].entries()) {
       expect(map.getBuildings().addExistingBuilding({
         id: 900 + i, type: 'commercial',
-        footprint: [{ x, y: 4 }], anchor: { x, y: 4 },
+        footprint: [{ x, y: 4 }, { x: x + 1, y: 4 }], anchor: { x, y: 4 },
         level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
-        structureRect: { x, y: 4, w: 1, h: 1 },
+        structureRect: { x, y: 4, w: 2, h: 1 },
       })).toBe(true);
     }
 
@@ -1417,12 +1426,16 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // exactly, giving ratio 0.167 and residential ≈ 0.583. Level 4 (not 5) because those
     // anchors reach lv ≈ 0.74 — over LEVEL_THRESHOLDS[4] but under [5], so a level-5 bank
     // would abandon on the first sweep and take the demand with it.
+    // Each bank is a 1-wide 2-deep lot (modal sr area 2, extending SOUTH into the free row
+    // y=5) so buildingCapacity(level 4) = 40, matching the level * POPULATION_PER_LEVEL figure
+    // this fixture's arithmetic was written against. Extending south (not north) keeps the lot's
+    // top row — and therefore the frontage-N anchor's distance to the y=3 road — unchanged.
     for (const x of [4, 6, 8]) {
       expect(map.getBuildings().addExistingBuilding({
         id: 900 + x, type: 'commercial',
-        footprint: [{ x, y: 4 }], anchor: { x, y: 4 },
+        footprint: [{ x, y: 4 }, { x, y: 5 }], anchor: { x, y: 4 },
         level: 4, density: 0, age: 0, abandoned: false, frontage: 'N',
-        structureRect: { x, y: 4, w: 1, h: 1 },
+        structureRect: { x, y: 4, w: 1, h: 2 },
       })).toBe(true);
     }
 
@@ -2336,7 +2349,7 @@ describe('World.getHappiness() — range and empty-city default', () => {
 describe('World.getHappiness() — budget sensitivity', () => {
   it('higher money produces higher or equal happiness (budgetHealth term)', () => {
     // Two worlds identical except treasury; both have only a commercial building (jobs only,
-    // residentialCount=0, jobsLevels>0) so the empty-city path is NOT taken.
+    // residentialCount=0, jobsCapacitySum>0) so the empty-city path is NOT taken.
     // Dirty path: setMoney triggers markHappinessDirty.
     const worldRich = new World(4, 4, { regenerate: false });
     const worldPoor = new World(4, 4, { regenerate: false });
@@ -2620,9 +2633,9 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
 
   it('formula sanity: pure-budget world matches HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*0 + HAPPINESS_W_BUDGET*1', () => {
     // World with only commercial buildings (no residential, has jobs) → NOT empty-city.
-    // residentialCount=0, jobsLevels=1, levelSumR=0:
+    // residentialCount=0, jobsCapacitySum=buildingCapacity(level 1, 1x1 sr)=5, capacitySumR=0:
     //   landScore    = 0  (no residential buildings)
-    //   jobsBalance  = clamp01(1 - |1-0| / max(1+0,1)) = 0
+    //   jobsBalance  = clamp01(1 - |5-0| / max(5+0,1)) = 0
     //   budgetHealth = clamp01(STARTING_FUNDS / STARTING_FUNDS) = 1
     // expected = HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*0 + HAPPINESS_W_BUDGET*1
     const world = new World(4, 4, { regenerate: false });
@@ -2967,23 +2980,23 @@ describe('World.getHappiness() — congestion term', () => {
     const congestionIndex = world.getTrafficMap().getCongestionIndex();
     expect(congestionIndex).toBeGreaterThan(0);
 
-    let levelSumR = 0;
-    let jobsLevels = 0;
+    let capacitySumR = 0;
+    let jobsCapacitySum = 0;
     let residentialCount = 0;
     let residentialLandValueSum = 0;
     for (const b of world.getMap().getBuildings().iterBuildings()) {
       if (b.abandoned) continue;
       if (b.type === 'residential') {
-        levelSumR += b.level;
+        capacitySumR += buildingCapacity(b);
         residentialCount++;
         residentialLandValueSum += world.getLandValue().getValue(b.anchor.x, b.anchor.y);
       } else {
-        jobsLevels += b.level;
+        jobsCapacitySum += buildingCapacity(b);
       }
     }
 
     const landScore = residentialLandValueSum / residentialCount;
-    const jobsBalance = 1 - Math.abs(jobsLevels - levelSumR) / Math.max(jobsLevels + levelSumR, 1);
+    const jobsBalance = 1 - Math.abs(jobsCapacitySum - capacitySumR) / Math.max(jobsCapacitySum + capacitySumR, 1);
     const budgetHealth = world.getMoney() / STARTING_FUNDS;
     const expected =
       HAPPINESS_W_LAND * landScore +

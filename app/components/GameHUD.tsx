@@ -136,7 +136,7 @@ export function GameHUD({
           <strong>Happiness:</strong> <BarBlocks value={happiness} color="#ff9800" /> {happiness.toFixed(2)}
         </div>
 
-        {/* Population counts C/I levels too (World.getPopulation), so population === workforce + jobsCapacity; workforce is the residential-only figure. */}
+        {/* Population, workforce, and jobsCapacity all sum buildingCapacity() over disjoint building sets (World.getPopulation over all buildings; labor over R vs. C/I), so population === workforce + jobsCapacity by construction; workforce is the residential-only figure. */}
         <div>
           <strong>Workforce:</strong> {labor.workforce} · {labor.employed} employed
         </div>

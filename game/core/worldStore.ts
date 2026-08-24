@@ -26,13 +26,14 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v18';
 
-// Bumped to 'service-v12': commercial and industrial demand now carry a WORKPLACE_PRESSURE floor
-// (the C/I counterpart of MIGRATION_PRESSURE) alongside the labor-derived severity. A retained HMR
-// singleton holds the old, floor-less `Demand` prototype AND a cached `Demand` instance — with no
-// change to the World method surface the probe below would happily reuse it and keep running the
-// previous formula after a Fast Refresh. Demand is derived and never persisted, so the save format
-// (v18 / STORAGE_KEY) is untouched — only the guard token bumps.
-const WORLD_SINGLETON_GUARD = 'service-v12' as const;
+// Bumped to 'service-v13': population, labor, demand's retail axis, and the data-view overlay now
+// all derive capacity from `buildingCapacity` (structure-rect area × level × density unit) instead
+// of `building.level` alone. A retained HMR singleton holds the old level-only `getPopulation` /
+// `computeLaborMarket` / `Demand.recompute` prototypes — with no change to the World method surface
+// the probe below would happily reuse it and keep running the previous formulas after a Fast
+// Refresh. Capacity is derived and never persisted, so the save format (v18 / STORAGE_KEY) is
+// untouched — only the guard token bumps.
+const WORLD_SINGLETON_GUARD = 'service-v13' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -62,7 +63,8 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v12 / v18 — labor-derived R/C/I demand with a C/I workplace floor):
+ * Checked methods (as of service-v13 / v18 — structure-area `buildingCapacity` drives population,
+ * labor, demand's retail axis, and the data-view overlay):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { World, ZONE_GROWTH_INTERVAL } from './World';
-import { LEVEL_THRESHOLDS } from './growthConstants';
-import { WORKERS_PER_LEVEL } from './laborMarket';
+import { LEVEL_THRESHOLDS, POPULATION_PER_LEVEL, POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
 
@@ -45,7 +44,7 @@ describe('World.tick() — abandonment / dilapidation', () => {
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.markLandValueDirty();
-    expect(world.getPopulation()).toBe(2 * 10);
+    expect(world.getPopulation()).toBe(2 * POPULATION_PER_TILE_LEVEL);
 
     tickOneGrowthInterval(world);
 
@@ -87,7 +86,7 @@ describe('World.tick() — abandonment / dilapidation', () => {
     const b = map.getBuildings().getBuilding(0)!;
     expect(b.abandoned).toBe(false);
     expect(b.level).toBe(2); // remembered, never reset
-    expect(world.getPopulation()).toBe(2 * 10); // restored
+    expect(world.getPopulation()).toBe(2 * POPULATION_PER_TILE_LEVEL); // restored
   });
 
   it('same-tick re-occupation freeze: a recovering building does not age or level-up on the recovery tick, but resumes the next growth tick', () => {
@@ -226,17 +225,22 @@ describe('World.tick() — congestion-driven abandonment', () => {
     level: number,
     frontage: 'N' | 'S',
   ): void {
+    // Modal 1x2 structureRect, extended AWAY from the road (opposite the frontage edge) so
+    // the south/north access-node distance is unchanged: buildingCapacity = 1*2*level*5 =
+    // 10*level, preserving this fixture's pre-buildingCapacity (level * POPULATION_PER_LEVEL)
+    // arithmetic (CROSSING_LOAD, CROSSING_BYTE, margins below) exactly.
+    const lotY = frontage === 'S' ? y - 1 : y;
     const added = world.getMap().getBuildings().addExistingBuilding({
       id,
       type,
-      footprint: [{ x, y }],
-      anchor: { x, y },
+      footprint: [{ x, y: lotY }, { x, y: lotY + 1 }],
+      anchor: { x, y: lotY },
       level,
       density: 0,
       age: 0,
       abandoned: false,
       frontage,
-      structureRect: { x, y, w: 1, h: 1 },
+      structureRect: { x, y: lotY, w: 1, h: 2 },
     });
     expect(added).toBe(true);
   }
@@ -247,34 +251,38 @@ describe('World.tick() — congestion-driven abandonment', () => {
     // commute is forced across the probe's own frontage tile (24,2).
     //
     // Arithmetic, all derived from source:
-    //   - Land value at the probe anchor (24,1) is ROAD proximity ONLY: no stations, no
-    //     parks, and no zone tiles in the 3×3 → 0.40 · (1 − 1/(ROAD_RADIUS+1)) = 0.40 · 6/7
-    //     ≈ 0.3429 (ROAD_WEIGHT / ROAD_RADIUS in LandValueMap.ts). That clears
-    //     LEVEL_THRESHOLDS[2] = 0.25 with only 0.0929 of margin.
-    //   - 40 L1 residential feeders ⇄ 40 L1 commercial feeders, i.e. 40 · WORKERS_PER_LEVEL
+    //   - Land value at the probe ANCHOR is ROAD proximity ONLY: no stations, no parks, and
+    //     no zone tiles in the 3×3. A south-fronted modal lot spans y ∈ {0,1} with its anchor
+    //     at (24,0) — the far corner from the road at y=2 — so the anchor sits at Chebyshev
+    //     distance 2, NOT at the frontage cell (24,1)'s distance 1. Hence
+    //     0.40 · (1 − 2/(ROAD_RADIUS+1)) = 0.40 · 5/7 ≈ 0.2857 (ROAD_WEIGHT / ROAD_RADIUS in
+    //     LandValueMap.ts), clearing LEVEL_THRESHOLDS[2] = 0.25 with only 0.0357 of margin.
+    //     The assertions below read `PROBE_ANCHOR` for exactly this reason: the sweep gates on
+    //     the anchor (World.ts, isUnderSupported(b.level, lv.getValue(b.anchor…))).
+    //   - 40 L1 residential feeders ⇄ 40 L1 commercial feeders, each a modal 1x2 sr so
+    //     buildingCapacity = 1*2*1*5 = 10 = POPULATION_PER_LEVEL, i.e. 40 · POPULATION_PER_LEVEL
     //     workers against exactly as many jobs, and every matched flow crosses (24,2) →
-    //     that tile carries the full 40 · WORKERS_PER_LEVEL trips. With
-    //     TRAFFIC_CAPACITY = 50 · WORKERS_PER_LEVEL that quantizes to byte 204 — well
+    //     that tile carries the full 40 · POPULATION_PER_LEVEL trips. With
+    //     TRAFFIC_CAPACITY = 100 · POPULATION_PER_TILE_LEVEL that quantizes to byte 204 — well
     //     inside the 255 clamp, so the assertion below is a real measurement of the
     //     capacity magnitude rather than a saturated plateau.
-    //   - Penalty at the anchor = CONGESTION_PENALTY_MAX(0.20) · (204/255) · 6/7 ≈ 0.1371,
-    //     which is MORE than the 0.0929 margin → congested land value ≈ 0.2057 < 0.25 →
+    //   - Penalty at the anchor = CONGESTION_PENALTY_MAX(0.20) · (204/255) · 5/7 ≈ 0.1143,
+    //     which is MORE than the 0.0357 margin → congested land value ≈ 0.1714 < 0.25 →
     //     maxSupportedLevel = 1 → the L2 probe is under-supported → abandoned.
     //   - The feeders are all level 1, and maxSupportedLevel floors at 1 (zoneGrowth.ts), so
     //     the load SOURCE can never abandon itself: the jam cannot self-clear (phase B).
     //   - No power plant is seeded: the abandonment sweep needs none, and the merge pass is
     //     fully blocked by its isBuildingPowered gate, so the contiguous L1 feeders that sit
     //     side by side never merge away underneath the fixture.
-    //   - Retune ceiling: the probe's margin is crossed only while the byte is ≥ 139
-    //     (0.20 · (139/255) · 6/7 > 0.0929), i.e. while TRAFFIC_CAPACITY stays at or below
-    //     ~733 at the current FEEDER_COLUMNS. Raise capacity past that and this fixture
+    //   - Retune ceiling: the probe's margin is crossed only while the byte is ≥ 64
+    //     (0.20 · (b/255) · 5/7 > 0.0357 ⟺ b/255 > 0.25). Raise capacity past that and this fixture
     //     stops abandoning — add feeder columns (FEEDER_COLUMNS below) to restore the
     //     crossing load rather than relaxing the assertions. The 48-wide world bounds that
     //     escape hatch: the feeders must fit in x ∈ [RES_X0, 23) and [COM_X0, 48).
     const FEEDER_COLUMNS = 20; // one x per column → 2 buildings each (y=1, y=3), 40 per side
     const RES_X0 = 2;
     const COM_X0 = 27;
-    const CROSSING_LOAD = 2 * FEEDER_COLUMNS * WORKERS_PER_LEVEL;
+    const CROSSING_LOAD = 2 * FEEDER_COLUMNS * POPULATION_PER_LEVEL;
     const CROSSING_BYTE = Math.round((255 * CROSSING_LOAD) / TRAFFIC_CAPACITY);
 
     const world = new World(48, 6, { regenerate: false });
@@ -302,6 +310,10 @@ describe('World.tick() — congestion-driven abandonment', () => {
     }
     const PROBE_ID = nextId;
     addUnitBuilding(world, PROBE_ID, 24, 1, 'residential', 2, 'S');
+    // The sweep reads land value at the ANCHOR, and a south-fronted modal lot puts its
+    // anchor on the far side from the road — so every land-value assertion below reads
+    // this coordinate, never the frontage cell (24,1), which is a different distance.
+    const PROBE_ANCHOR = buildings.getBuilding(PROBE_ID)!.anchor;
 
     // Phase A — congestion abandons the probe.
     world.markLaborDirty(); // labor → traffic → land value cascade
@@ -313,20 +325,21 @@ describe('World.tick() — congestion-driven abandonment', () => {
     // load, so abandoning it cannot change a single flow.
     expect(world.getTrafficMap().getCongestion(24, 2)).toBe(CROSSING_BYTE);
     expect(CROSSING_BYTE).toBeLessThan(255); // un-clamped: the byte still measures the load
-    expect(world.getLandValue().getValue(24, 1)).toBeLessThan(LEVEL_THRESHOLDS[2]);
+    expect(world.getLandValue().getValue(PROBE_ANCHOR.x, PROBE_ANCHOR.y)).toBeLessThan(LEVEL_THRESHOLDS[2]);
     expect(buildings.getBuilding(PROBE_ID)!.abandoned).toBe(true);
     // The easternmost feeder fronts the same fully loaded stretch of corridor — every
     // commute passes it — so its land value is suppressed below LEVEL_THRESHOLDS[2] exactly
     // like the probe's, yet it stays occupied, because maxSupportedLevel floors at 1.
     const EASTERNMOST_FEEDER_X = RES_X0 + FEEDER_COLUMNS - 1;
-    expect(world.getLandValue().getValue(EASTERNMOST_FEEDER_X, 1)).toBeLessThan(LEVEL_THRESHOLDS[2]);
+    const feederAnchor = buildings.getBuildingAt(EASTERNMOST_FEEDER_X, 1)!.anchor;
+    expect(world.getLandValue().getValue(feederAnchor.x, feederAnchor.y)).toBeLessThan(LEVEL_THRESHOLDS[2]);
     expect(buildings.getBuildingAt(EASTERNMOST_FEEDER_X, 1)!.abandoned).toBe(false);
 
     // Phase B — nothing changes, so the jam persists and the probe stays derelict.
     tickOneGrowthInterval(world);
 
     expect(world.getTrafficMap().getCongestion(24, 2)).toBe(CROSSING_BYTE); // still jammed
-    expect(world.getLandValue().getValue(24, 1)).toBeLessThan(LEVEL_THRESHOLDS[2]);
+    expect(world.getLandValue().getValue(PROBE_ANCHOR.x, PROBE_ANCHOR.y)).toBeLessThan(LEVEL_THRESHOLDS[2]);
     expect(buildings.getBuilding(PROBE_ID)!.abandoned).toBe(true);
 
     // Phase C — remove the job destinations: no jobs → no commutes → no congestion.
@@ -335,7 +348,7 @@ describe('World.tick() — congestion-driven abandonment', () => {
     tickOneGrowthInterval(world);
 
     expect(world.getTrafficMap().getCongestion(24, 2)).toBe(0);
-    expect(world.getLandValue().getValue(24, 1)).toBeCloseTo(0.40 * (6 / 7), 6);
+    expect(world.getLandValue().getValue(PROBE_ANCHOR.x, PROBE_ANCHOR.y)).toBeCloseTo(0.40 * (5 / 7), 6);
     expect(buildings.getBuilding(PROBE_ID)!.abandoned).toBe(false);
   });
 });

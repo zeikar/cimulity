@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import {
-  computeLaborMarket,
-  JOBS_PER_LEVEL,
-  WORKERS_PER_LEVEL,
-} from './laborMarket';
-import { POPULATION_PER_LEVEL } from './growthConstants';
+import { computeLaborMarket } from './laborMarket';
+import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
+import { buildingCapacity } from './buildingCapacity';
 import { GameMap } from './Map';
 import { BuildingMap, type BuildingType } from './Building';
 import { StructureMap } from './StructureMap';
@@ -63,7 +60,7 @@ function totalResidentialWorkers(bm: BuildingMap): number {
   for (const b of bm.iterBuildings()) {
     if (b.abandoned) continue;
     if (b.type !== 'residential') continue;
-    sum += b.level * WORKERS_PER_LEVEL;
+    sum += buildingCapacity(b);
   }
   return sum;
 }
@@ -71,15 +68,6 @@ function totalResidentialWorkers(bm: BuildingMap): number {
 // ---------------------------------------------------------------------------
 // computeLaborMarket
 // ---------------------------------------------------------------------------
-
-describe('computeLaborMarket — basis constants', () => {
-  it('denominates workers and jobs in the displayed-population unit', () => {
-    // The relationship, not the magnitude, is what matters: simulated commuters
-    // must be counted in the same unit as the population the city displays.
-    expect(WORKERS_PER_LEVEL).toBe(POPULATION_PER_LEVEL);
-    expect(JOBS_PER_LEVEL).toBe(POPULATION_PER_LEVEL);
-  });
-});
 
 describe('computeLaborMarket — empty world', () => {
   it('yields an all-zero result with no buildings or roads', () => {
@@ -108,15 +96,15 @@ describe('computeLaborMarket — single R → single C', () => {
 
     const r = computeLaborMarket(map, sm, bm);
 
-    expect(r.employed).toBe(2 * WORKERS_PER_LEVEL);
+    expect(r.employed).toBe(2 * POPULATION_PER_TILE_LEVEL);
     expect(r.unemployed).toBe(0);
-    expect(r.jobsCapacity).toBe(3 * JOBS_PER_LEVEL);
-    expect(r.jobsFilled).toBe(2 * WORKERS_PER_LEVEL);
+    expect(r.jobsCapacity).toBe(3 * POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsFilled).toBe(2 * POPULATION_PER_TILE_LEVEL);
     expect(r.flows).toHaveLength(1);
     expect(r.flows[0]).toEqual({
       originNode: idxOf(w, 1, 1),
       destNode: idxOf(w, 5, 1),
-      count: 2 * WORKERS_PER_LEVEL,
+      count: 2 * POPULATION_PER_TILE_LEVEL,
     });
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
   });
@@ -133,12 +121,12 @@ describe('computeLaborMarket — workers exceed total capacity', () => {
 
     const r = computeLaborMarket(map, sm, bm);
 
-    expect(r.employed).toBe(2 * JOBS_PER_LEVEL);
-    expect(r.unemployed).toBe(5 * WORKERS_PER_LEVEL - 2 * JOBS_PER_LEVEL);
-    expect(r.jobsCapacity).toBe(2 * JOBS_PER_LEVEL);
-    expect(r.jobsFilled).toBe(2 * JOBS_PER_LEVEL);
+    expect(r.employed).toBe(2 * POPULATION_PER_TILE_LEVEL);
+    expect(r.unemployed).toBe(5 * POPULATION_PER_TILE_LEVEL - 2 * POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsCapacity).toBe(2 * POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsFilled).toBe(2 * POPULATION_PER_TILE_LEVEL);
     expect(r.flows).toHaveLength(1);
-    expect(r.flows[0].count).toBe(2 * JOBS_PER_LEVEL);
+    expect(r.flows[0].count).toBe(2 * POPULATION_PER_TILE_LEVEL);
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
   });
 });
@@ -158,19 +146,19 @@ describe('computeLaborMarket — overflow spills to the farther job', () => {
 
     const r = computeLaborMarket(map, sm, bm);
 
-    expect(r.employed).toBe(4 * WORKERS_PER_LEVEL);
+    expect(r.employed).toBe(4 * POPULATION_PER_TILE_LEVEL);
     expect(r.unemployed).toBe(0);
-    expect(r.jobsCapacity).toBe(6 * JOBS_PER_LEVEL);
-    expect(r.jobsFilled).toBe(4 * WORKERS_PER_LEVEL);
+    expect(r.jobsCapacity).toBe(6 * POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsFilled).toBe(4 * POPULATION_PER_TILE_LEVEL);
     expect(r.flows).toHaveLength(2);
 
     const near = r.flows.find((f) => f.destNode === idxOf(w, 3, 1));
     const far = r.flows.find((f) => f.destNode === idxOf(w, 9, 1));
     expect(near).toBeDefined();
     expect(far).toBeDefined();
-    expect(near!.count).toBe(JOBS_PER_LEVEL); // nearer job filled to its capacity
+    expect(near!.count).toBe(POPULATION_PER_TILE_LEVEL); // nearer job filled to its capacity
     // remainder spills to the farther job
-    expect(far!.count).toBe(4 * WORKERS_PER_LEVEL - JOBS_PER_LEVEL);
+    expect(far!.count).toBe(4 * POPULATION_PER_TILE_LEVEL - POPULATION_PER_TILE_LEVEL);
     expect(near!.destNode).not.toBe(far!.destNode);
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
   });
@@ -212,10 +200,10 @@ describe('computeLaborMarket — no-road-access residential', () => {
     const r = computeLaborMarket(map, sm, bm);
 
     expect(r.employed).toBe(0);
-    expect(r.unemployed).toBe(2 * WORKERS_PER_LEVEL);
+    expect(r.unemployed).toBe(2 * POPULATION_PER_TILE_LEVEL);
     expect(r.flows).toEqual([]);
     // The commercial also has no access → not in capByNode but still counted.
-    expect(r.jobsCapacity).toBe(4 * JOBS_PER_LEVEL);
+    expect(r.jobsCapacity).toBe(4 * POPULATION_PER_TILE_LEVEL);
     expect(r.jobsFilled).toBe(0);
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
   });
@@ -237,10 +225,10 @@ describe('computeLaborMarket — no-road-access commercial', () => {
 
     const r = computeLaborMarket(map, sm, bm);
 
-    expect(r.jobsCapacity).toBe(4 * JOBS_PER_LEVEL); // includes the no-access C
+    expect(r.jobsCapacity).toBe(4 * POPULATION_PER_TILE_LEVEL); // includes the no-access C
     expect(r.jobsFilled).toBe(0); // never matched
     expect(r.employed).toBe(0);
-    expect(r.unemployed).toBe(2 * WORKERS_PER_LEVEL); // no reachable job
+    expect(r.unemployed).toBe(2 * POPULATION_PER_TILE_LEVEL); // no reachable job
     expect(r.flows).toEqual([]);
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
   });
@@ -262,8 +250,8 @@ describe('computeLaborMarket — no reachable job', () => {
     const r = computeLaborMarket(map, sm, bm);
 
     expect(r.employed).toBe(0);
-    expect(r.unemployed).toBe(3 * WORKERS_PER_LEVEL);
-    expect(r.jobsCapacity).toBe(5 * JOBS_PER_LEVEL);
+    expect(r.unemployed).toBe(3 * POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsCapacity).toBe(5 * POPULATION_PER_TILE_LEVEL);
     expect(r.jobsFilled).toBe(0);
     expect(r.flows).toEqual([]);
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
@@ -286,15 +274,15 @@ describe('computeLaborMarket — deterministic origin order', () => {
 
     const r = computeLaborMarket(map, sm, bm);
 
-    expect(r.employed).toBe(JOBS_PER_LEVEL);
-    expect(r.unemployed).toBe(WORKERS_PER_LEVEL);
-    expect(r.jobsCapacity).toBe(JOBS_PER_LEVEL);
-    expect(r.jobsFilled).toBe(JOBS_PER_LEVEL);
+    expect(r.employed).toBe(POPULATION_PER_TILE_LEVEL);
+    expect(r.unemployed).toBe(POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsCapacity).toBe(POPULATION_PER_TILE_LEVEL);
+    expect(r.jobsFilled).toBe(POPULATION_PER_TILE_LEVEL);
     expect(r.flows).toHaveLength(1);
     // Lower access-node origin (1,1) wins.
     expect(r.flows[0].originNode).toBe(idxOf(w, 1, 1));
     expect(r.flows[0].destNode).toBe(idxOf(w, 3, 1));
-    expect(r.flows[0].count).toBe(JOBS_PER_LEVEL);
+    expect(r.flows[0].count).toBe(POPULATION_PER_TILE_LEVEL);
     expect(r.employed + r.unemployed).toBe(totalResidentialWorkers(bm));
   });
 });
@@ -312,8 +300,8 @@ describe('computeLaborMarket — reachableUnfilledJobs', () => {
 
     const r = computeLaborMarket(map, sm, bm);
 
-    expect(r.employed).toBe(WORKERS_PER_LEVEL);
-    expect(r.reachableUnfilledJobs).toBe(2 * JOBS_PER_LEVEL - WORKERS_PER_LEVEL);
+    expect(r.employed).toBe(POPULATION_PER_TILE_LEVEL);
+    expect(r.reachableUnfilledJobs).toBe(2 * POPULATION_PER_TILE_LEVEL - POPULATION_PER_TILE_LEVEL);
   });
 
   it('is zero when the job node is unreachable (disconnected road segments)', () => {
@@ -354,7 +342,7 @@ describe('computeLaborMarket — level-0 residential (0 workers)', () => {
     expect(r.unemployed).toBe(0);
     expect(r.reachableUnfilledJobs).toBe(0); // must NOT be inflated by a 0-worker BFS
     expect(r.flows).toEqual([]);
-    expect(r.jobsCapacity).toBe(2 * JOBS_PER_LEVEL); // C capacity still counts in total
+    expect(r.jobsCapacity).toBe(2 * POPULATION_PER_TILE_LEVEL); // C capacity still counts in total
   });
 });
 

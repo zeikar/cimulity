@@ -12,11 +12,8 @@ import { GameMap } from '@/game/core/Map';
 import { BuildingMap, type BuildingType } from '@/game/core/Building';
 import { TileType, createTile } from '@/game/core/Tile';
 import type { Frontage } from '@/game/core/buildingFootprint';
-import {
-  JOBS_PER_LEVEL,
-  WORKERS_PER_LEVEL,
-  type CommuteFlow,
-} from '@/game/core/laborMarket';
+import type { CommuteFlow } from '@/game/core/laborMarket';
+import { POPULATION_PER_TILE_LEVEL } from '@/game/core/growthConstants';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -183,7 +180,7 @@ describe('buildingEmploymentShares', () => {
     const { map, bm, res } = makeFixture();
     // The level-2 R's whole workforce leaves node (1,1) matched.
     const flows: CommuteFlow[] = [
-      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: 2 * WORKERS_PER_LEVEL },
+      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: 2 * POPULATION_PER_TILE_LEVEL },
     ];
     const result = buildingEmploymentShares(map, bm, flows);
     const entry = result.get(res!.id);
@@ -196,7 +193,7 @@ describe('buildingEmploymentShares', () => {
     const { map, bm, com } = makeFixture();
     // Commercial is level 2; only one level's worth of its capacity is matched.
     const flows: CommuteFlow[] = [
-      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: JOBS_PER_LEVEL },
+      { originNode: idxOf(W, 1, 1), destNode: idxOf(W, 5, 1), count: POPULATION_PER_TILE_LEVEL },
     ];
     const result = buildingEmploymentShares(map, bm, flows);
     const entry = result.get(com!.id);

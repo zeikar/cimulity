@@ -1,6 +1,7 @@
 // Shared pure constants for growth + merge policy; kept dep-free so mergePolicy.ts (and
 // other core modules that must not import World, e.g. laborMarket.ts) can import without
-// circling through World.ts. Also carries the population-unit basis (POPULATION_PER_LEVEL).
+// circling through World.ts. Also carries the population-unit basis: POPULATION_PER_LEVEL (the
+// display/economy figure) and POPULATION_PER_TILE_LEVEL (what buildingCapacity actually multiplies).
 
 export const GROWTH_COOLDOWN_INTERVALS = 8;
 
@@ -19,10 +20,13 @@ export const LEVEL_THRESHOLDS = [0, 0.1, 0.25, 0.45, 0.65, 0.85] as const;
 export const MIN_STRUCTURE_DEPTH_CAP = 2;
 
 /**
- * Population contribution per zone level point — and the unit basis for
- * `WORKERS_PER_LEVEL` / `JOBS_PER_LEVEL` (laborMarket.ts) and, through them,
- * `TRAFFIC_CAPACITY` (trafficAssignment.ts). Changing it rescales every commute
- * volume in the sim, not just the number shown in the HUD.
+ * Population contribution per zone level point — the display/economy basis
+ * `POPULATION_PER_TILE_LEVEL` derives from. The chain now runs
+ * `POPULATION_PER_TILE_LEVEL` → `buildingCapacity` (buildingCapacity.ts) →
+ * every labor/traffic consumer (`laborMarket.ts`, `trafficAssignment.ts`,
+ * `World.ts`, `Demand.ts`, `dataViewColors.ts`); the retired per-level labor
+ * constants no longer exist. Changing it rescales every commute volume in the
+ * sim, not just the number shown in the HUD.
  */
 export const POPULATION_PER_LEVEL = 10;
 

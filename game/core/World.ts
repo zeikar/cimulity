@@ -31,8 +31,9 @@ import {
   isUnderSupported,
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
-import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
 import { canMerge, mergedBuildingShape } from './mergePolicy';
+import { buildingCapacity } from './buildingCapacity';
 export { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './growthConstants';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
@@ -732,35 +733,35 @@ export class World {
     // Drain land value FIRST so anchor reads are fresh — mirrors recomputeLandValue draining coverage.
     this.recomputeLandValueIfDirty();
 
-    let levelSumR = 0;
-    let levelSumC = 0;
-    let levelSumI = 0;
+    let capacitySumR = 0;
+    let capacitySumC = 0;
+    let capacitySumI = 0;
     let residentialCount = 0;
     let residentialLandValueSum = 0;
 
     for (const b of this.map.getBuildings().iterBuildings()) {
       if (b.abandoned) continue;
       if (b.type === 'residential') {
-        levelSumR += b.level;
+        capacitySumR += buildingCapacity(b);
         residentialCount++;
         residentialLandValueSum += this.getLandValue().getValue(b.anchor.x, b.anchor.y);
       } else if (b.type === 'commercial') {
-        levelSumC += b.level;
+        capacitySumC += buildingCapacity(b);
       } else {
-        levelSumI += b.level;
+        capacitySumI += buildingCapacity(b);
       }
     }
 
-    const jobsLevels = levelSumC + levelSumI;
+    const jobsCapacitySum = capacitySumC + capacitySumI;
 
-    if (residentialCount === 0 && jobsLevels === 0) {
+    if (residentialCount === 0 && jobsCapacitySum === 0) {
       this.happiness = EMPTY_CITY_HAPPINESS;
       this.happinessDirty = false;
       return;
     }
 
     const landScore = residentialCount > 0 ? clamp01(residentialLandValueSum / residentialCount) : 0;
-    const jobsBalance = clamp01(1 - Math.abs(jobsLevels - levelSumR) / Math.max(jobsLevels + levelSumR, 1));
+    const jobsBalance = clamp01(1 - Math.abs(jobsCapacitySum - capacitySumR) / Math.max(jobsCapacitySum + capacitySumR, 1));
     const budgetHealth = clamp01(this.money / STARTING_FUNDS);
     // Traffic drains on read; the land-value drain above already refreshed it whenever traffic
     // was dirty (markTrafficDirty dirties land value too), so this is a plain read in practice.
@@ -770,14 +771,14 @@ export class World {
     this.happinessDirty = false;
   }
 
-  /** Sum of (building.level × POPULATION_PER_LEVEL) across all buildings. Population now lives on buildings, not tiles. */
+  /** Sum of buildingCapacity(building) across all non-abandoned buildings. Population now lives on buildings, not tiles. */
   getPopulation(): number {
     let sum = 0;
     for (const building of this.map.getBuildings().iterBuildings()) {
       if (building.abandoned) continue;
-      sum += building.level;
+      sum += buildingCapacity(building);
     }
-    return sum * POPULATION_PER_LEVEL;
+    return sum;
   }
 
   /**

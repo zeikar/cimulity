@@ -5,6 +5,15 @@ import { StructureMap } from './StructureMap';
 import { TileType, createTile } from './Tile';
 import type { CommuteFlow } from './laborMarket';
 
+describe('TRAFFIC_CAPACITY', () => {
+  it('is exactly 500 — the modal building recalibration must not silently rescale it', () => {
+    // The existing tests below only derive expectations FROM TRAFFIC_CAPACITY, so a
+    // regression that changes its value (e.g. re-deriving it from the wrong unit) would
+    // pass them anyway. Pin the number the module JSDoc calibrates against directly.
+    expect(TRAFFIC_CAPACITY).toBe(500);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

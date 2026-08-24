@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LaborMarketMap } from './LaborMarketMap';
-import { JOBS_PER_LEVEL, WORKERS_PER_LEVEL } from './laborMarket';
+import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import { GameMap } from './Map';
 import { BuildingMap, type BuildingType } from './Building';
 import { StructureMap } from './StructureMap';
@@ -84,10 +84,10 @@ describe('LaborMarketMap', () => {
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
 
-      expect(lm.getEmployed()).toBe(WORKERS_PER_LEVEL);
+      expect(lm.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
       expect(lm.getUnemployed()).toBe(0);
-      expect(lm.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
-      expect(lm.getJobsFilled()).toBe(JOBS_PER_LEVEL);
+      expect(lm.getJobsCapacity()).toBe(POPULATION_PER_TILE_LEVEL);
+      expect(lm.getJobsFilled()).toBe(POPULATION_PER_TILE_LEVEL);
       expect(lm.getReachableUnfilledJobs()).toBe(0);
 
       const flows = lm.getFlows();
@@ -95,7 +95,7 @@ describe('LaborMarketMap', () => {
       expect(flows[0]).toEqual({
         originNode: idxOf(w, 1, 1),
         destNode: idxOf(w, 5, 1),
-        count: WORKERS_PER_LEVEL,
+        count: POPULATION_PER_TILE_LEVEL,
       });
     });
 
@@ -113,10 +113,10 @@ describe('LaborMarketMap', () => {
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
 
-      expect(lm.getEmployed()).toBe(JOBS_PER_LEVEL);
-      expect(lm.getUnemployed()).toBe(WORKERS_PER_LEVEL);
-      expect(lm.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
-      expect(lm.getJobsFilled()).toBe(JOBS_PER_LEVEL);
+      expect(lm.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
+      expect(lm.getUnemployed()).toBe(POPULATION_PER_TILE_LEVEL);
+      expect(lm.getJobsCapacity()).toBe(POPULATION_PER_TILE_LEVEL);
+      expect(lm.getJobsFilled()).toBe(POPULATION_PER_TILE_LEVEL);
       expect(lm.getFlows()).toHaveLength(1);
     });
 
@@ -133,8 +133,8 @@ describe('LaborMarketMap', () => {
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
 
-      expect(lm.getEmployed()).toBe(WORKERS_PER_LEVEL);
-      expect(lm.getReachableUnfilledJobs()).toBe(2 * JOBS_PER_LEVEL - WORKERS_PER_LEVEL);
+      expect(lm.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
+      expect(lm.getReachableUnfilledJobs()).toBe(2 * POPULATION_PER_TILE_LEVEL - POPULATION_PER_TILE_LEVEL);
     });
   });
 
@@ -149,7 +149,7 @@ describe('LaborMarketMap', () => {
 
       const lm = new LaborMarketMap();
       lm.recompute(map, sm, bm);
-      expect(lm.getEmployed()).toBe(WORKERS_PER_LEVEL);
+      expect(lm.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
 
       lm.clear();
 

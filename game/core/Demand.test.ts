@@ -13,7 +13,7 @@ import {
   EMPTY_CITY_DEMAND,
 } from './Demand';
 import type { DemandVector } from './Demand';
-import { POPULATION_PER_LEVEL } from './growthConstants';
+import { POPULATION_PER_LEVEL, POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import { BuildingMap } from './Building';
 import type { Building } from './Building';
 
@@ -21,6 +21,13 @@ function makeBuildingMap(): BuildingMap {
   return new BuildingMap(20, 20);
 }
 
+/**
+ * `x` is doubled internally and the building given a modal 2-wide 1-deep footprint/sr
+ * (buildingCapacity = 2*level*5 = level*POPULATION_PER_LEVEL, matching every level-keyed
+ * expectation in this file exactly). Doubling every caller's `x` uniformly preserves
+ * whatever distinctness the original 1-wide `x` values already had, so no caller needs
+ * per-call collision bookkeeping.
+ */
 function addBuilding(
   map: BuildingMap,
   id: number,
@@ -29,17 +36,18 @@ function addBuilding(
   type: Building['type'],
   level: number,
 ): void {
+  const bx = x * 2;
   map.addExistingBuilding({
     id,
     type,
-    footprint: [{ x, y }],
-    anchor: { x, y },
+    footprint: [{ x: bx, y }, { x: bx + 1, y }],
+    anchor: { x: bx, y },
     level,
     density: 0,
     age: 0,
     abandoned: false,
     frontage: 'S',
-    structureRect: { x, y, w: 1, h: 1 },
+    structureRect: { x: bx, y, w: 2, h: 1 },
   });
 }
 
@@ -145,9 +153,11 @@ describe('Demand — constants', () => {
     expect(WORKPLACE_PRESSURE).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
   });
 
-  it('MIN_MARKET is 100 — ten building-levels of quantized labor', () => {
+  it('MIN_MARKET is 100 = 20 * POPULATION_PER_TILE_LEVEL, anchored on the modal building-level', () => {
     expect(MIN_MARKET).toBe(100);
-    expect(MIN_MARKET % POPULATION_PER_LEVEL).toBe(0);
+    expect(MIN_MARKET % POPULATION_PER_TILE_LEVEL).toBe(0);
+    // Still exactly one modal (structureRect area 2) building-level: 100 / POPULATION_PER_LEVEL = 10.
+    expect(MIN_MARKET / POPULATION_PER_LEVEL).toBe(10);
   });
 
   it('EMPTY_CITY_DEMAND is {1, 0, 0} and is what get() returns before the first recompute', () => {
@@ -298,9 +308,12 @@ describe('Demand — labor axis', () => {
     // Ungated, the floored 100-unit market would leave staffing at 0.75 and leak a partial floor of
     // 0.1 × 0.75 = 0.075; the workforce === 0 gate zeroes it outright.
     expect(v.industrial).toBe(0);
-    // C reads via the retail axis alone (0.25 × 0.75), the same reading the level-0 test already
-    // pins for this labor state; R via migration.
-    expect(v.commercial).toBeCloseTo(0.1875, 10);
+    // C reads via the retail axis alone: buildingCapacity(level 1) = 10 already clears the
+    // retail axis's `max(targetC, capacitySumC, 1)` floor on its own (targetC = 0.25*10 = 2.5),
+    // so retail saturates to 1 — unlike the retired raw-level axis, where a single level-1
+    // building (targetC = 0.25) sat well under that floor. Scaled by staffing (0.75) it reads
+    // 0.75, the same reading the level-0 test below pins for this labor state; R via migration.
+    expect(v.commercial).toBeCloseTo(0.75, 10);
     expect(v.residential).toBeCloseTo(0.25, 10);
   });
 });
@@ -410,7 +423,8 @@ describe('Demand — regression readings', () => {
   });
 
   it('outputs stay in [0, 1] with a large, fully severed but producible city', () => {
-    const map = makeBuildingMap();
+    // 20 modal (2-wide) buildings need 40 columns of width — wider than makeBuildingMap()'s 20.
+    const map = new BuildingMap(50, 20);
     addRun(map, 0, 0, 'residential', 20, 5);
     addRun(map, 100, 1, 'commercial', 10, 5);
     addRun(map, 200, 2, 'industrial', 10, 5);
@@ -434,9 +448,12 @@ describe('Demand — regression readings', () => {
 
     // No workforce → the 10 jobs are all vacancies against the 100-unit floor → severity 0.25.
     expect(v.residential).toBeCloseTo(0.25, 10);
-    // totalLevels is 1, not 101: targetC 0.25 → retail 0.25, damped by staffing 0.75. Were the
-    // level-0 residents counted, targetC would be 25.25 and the retail axis would read a full 1.
-    expect(v.commercial).toBeCloseTo(0.1875, 10);
+    // totalCapacity is 10 (the single level-1 I's buildingCapacity), not 1010: the 100 level-0
+    // residents each contribute buildingCapacity 0, exactly like they contributed raw level 0
+    // under the retired formula — this is the same single-I fixture as the test above, so
+    // retail saturates to 1 (targetC = 0.25*10 = 2.5 already clears the axis's floor) and,
+    // damped by staffing 0.75, commercial reads 0.75.
+    expect(v.commercial).toBeCloseTo(0.75, 10);
   });
 
   it('abandoned buildings are excluded from the level sums', () => {
@@ -445,17 +462,20 @@ describe('Demand — regression readings', () => {
     const withAbandoned = makeBuildingMap();
     addRun(withAbandoned, 0, 0, 'residential', 8, 1);
     addBuilding(withAbandoned, 10, 0, 1, 'commercial', 1);
+    // x=5 (not 1) so this footprint clears the modal-widened commercial building above,
+    // which now occupies columns 0-1 of the same row. Capacity is irrelevant here — the
+    // whole point of this fixture is that an abandoned building contributes nothing.
     withAbandoned.addExistingBuilding({
       id: 11,
       type: 'commercial',
-      footprint: [{ x: 1, y: 1 }],
-      anchor: { x: 1, y: 1 },
+      footprint: [{ x: 5, y: 1 }],
+      anchor: { x: 5, y: 1 },
       level: 1,
       density: 0,
       age: 0,
       abandoned: true,
       frontage: 'S',
-      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+      structureRect: { x: 5, y: 1, w: 1, h: 1 },
     });
 
     const withoutBuilding = makeBuildingMap();

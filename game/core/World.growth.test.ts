@@ -5,9 +5,8 @@ import {
   ZONE_MAX_LEVEL,
   DENSITY_COOLDOWN_INTERVALS,
 } from './World';
-import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, POPULATION_PER_LEVEL } from './growthConstants';
 import { DENSITY_DEMAND_THRESHOLD } from './Demand';
-import { WORKERS_PER_LEVEL } from './laborMarket';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
 import type { Frontage } from './buildingFootprint';
@@ -586,7 +585,8 @@ describe('World.tick() — T3 density-bump E2E', () => {
 
 describe('World.getDemand() — freshness', () => {
   it('reset({ regenerate: false }) drops demand back to the empty-city reading', () => {
-    // Three road-less level-4 R buildings: 120 workers, no jobs, market 120, ratio -1.0 →
+    // Three road-less level-4 R buildings, 1x1 sr: buildingCapacity(level 4) = 20 each = 60 total
+    // workers, no jobs, market floored to MIN_MARKET(100), ratio -0.6 →
     // saturated workplace severity, and 100% unemployment damps migration to zero.
     // (Residential, not industrial: an industrial-only fixture reads residential 1.00 on BOTH
     // sides of the reset through the zero-workforce fallback, discriminating nothing.)
@@ -610,7 +610,8 @@ describe('World.getDemand() — freshness', () => {
   });
 
   it('reset({ regenerate: true }) drops demand back to the empty-city reading', () => {
-    // Three road-less level-4 R buildings: 120 workers, no jobs, market 120, ratio -1.0 →
+    // Three road-less level-4 R buildings, 1x1 sr: buildingCapacity(level 4) = 20 each = 60 total
+    // workers, no jobs, market floored to MIN_MARKET(100), ratio -0.6 →
     // saturated workplace severity, and 100% unemployment damps migration to zero.
     // (Residential, not industrial: an industrial-only fixture reads residential 1.00 on BOTH
     // sides of the reset through the zero-workforce fallback, discriminating nothing.)
@@ -637,7 +638,9 @@ describe('World.getDemand() — freshness', () => {
     const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
     map.setTile(3, 3, createTile(3, 3, TileType.ZONE_RESIDENTIAL));
-    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 3, w: 1, h: 1 } });
+    // Modal 1x2 structureRect so buildingCapacity(level 4) = 40, matching this fixture's
+    // MIN_MARKET-era arithmetic exactly (road-less, so the extension direction is free).
+    map.getBuildings().addExistingBuilding({ id: 0, type: 'residential', footprint: [{ x: 3, y: 3 }, { x: 3, y: 4 }], anchor: { x: 3, y: 3 }, level: 4, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 3, y: 3, w: 1, h: 2 } });
 
     world.markDemandDirty();
     // Road-less level-4 R: 40 workers against the 100-unit MIN_MARKET floor → ratio 0.40 →
@@ -1205,7 +1208,14 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
     map.setTile(13, 5, createTile(13, 5, TileType.ROAD));
     map.setTile(0, 5, createTile(0, 5, TileType.ZONE_INDUSTRIAL));
     map.setTile(1, 5, createTile(1, 5, TileType.ZONE_INDUSTRIAL));
+    map.setTile(3, 5, createTile(3, 5, TileType.ZONE_INDUSTRIAL));
+    map.setTile(4, 5, createTile(4, 5, TileType.ZONE_INDUSTRIAL));
 
+    // R lots: sr shrunk to the modal south-pinned 1x2 (rows 2-3 of the 4-deep lot) — a
+    // 1-wide lot's structureDepthCap floors at MIN_STRUCTURE_DEPTH_CAP=2 (growthConstants.ts),
+    // so a full-depth (h=4) sr was never reachable by real growth anyway. This keeps
+    // buildingCapacity(level MERGE_LEVEL_THRESHOLD=2) = 1*2*2*5 = 20 each, matching this
+    // fixture's MIN_MARKET-era arithmetic (40 workers total) exactly.
     map.getBuildings().addExistingBuilding({
       id: 0,
       type: 'residential',
@@ -1216,7 +1226,7 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       age: GROWTH_COOLDOWN_INTERVALS + 6,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 0, y: 0, w: 1, h: 4 },
+      structureRect: { x: 0, y: 2, w: 1, h: 2 },
     });
     map.getBuildings().addExistingBuilding({
       id: 1,
@@ -1228,22 +1238,24 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
       age: GROWTH_COOLDOWN_INTERVALS + 6,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 1, y: 0, w: 1, h: 4 },
+      structureRect: { x: 1, y: 2, w: 1, h: 2 },
     });
-    // Level-4 industrials (lv ≈ 0.73 supports level 4), fronting the y=6 road that the (13,5)
+    // Level-4 industrials, each a modal 2-wide 1-deep lot (id 3 moved to x=3..4 so the two
+    // don't collide) so buildingCapacity(level 4) = 2*1*4*5 = 40 each — matching this
+    // fixture's MIN_MARKET-era arithmetic exactly. Both front the y=6 road that the (13,5)
     // link joins to the R lots' own road row, so their 80 jobs are reachable: the two
     // MERGE_LEVEL_THRESHOLD R lots' 40 workers are all employed and 40 vacancies remain, giving
     // ratio 0.40 on a market floored to MIN_MARKET → residential saturates at 1.0, above
     // DENSITY_DEMAND_THRESHOLD for the whole run.
     map.getBuildings().addExistingBuilding({
-      id: 2, type: 'industrial', footprint: [{ x: 0, y: 5 }], anchor: { x: 0, y: 5 },
+      id: 2, type: 'industrial', footprint: [{ x: 0, y: 5 }, { x: 1, y: 5 }], anchor: { x: 0, y: 5 },
       level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 0, y: 5, w: 1, h: 1 },
+      structureRect: { x: 0, y: 5, w: 2, h: 1 },
     });
     map.getBuildings().addExistingBuilding({
-      id: 3, type: 'industrial', footprint: [{ x: 1, y: 5 }], anchor: { x: 1, y: 5 },
+      id: 3, type: 'industrial', footprint: [{ x: 3, y: 5 }, { x: 4, y: 5 }], anchor: { x: 3, y: 5 },
       level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 1, y: 5, w: 1, h: 1 },
+      structureRect: { x: 3, y: 5, w: 2, h: 1 },
     });
 
     // Water from the start: tower spur (13,3) off road y=4, tower (13,2) feeding it.
@@ -1308,39 +1320,42 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     for (let x = 0; x < W; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
     map.setTile(W - 1, 1, createTile(W - 1, 1, TileType.ROAD)); // water spur, placed before any propagation
 
-    // Probe: 1×1 lot whose structureRect already fills it → the level-up branch fires
-    // directly (same shape as the "1×1 lot" test above). age ≫ the cooldown so only
-    // land value can gate it.
+    // Probe: 2-wide 1-deep lot (modal sr area 2, anchor unmoved since the extra cell is
+    // added EAST — every later assertion hardcodes anchor (5,1)) whose structureRect
+    // already fills it → the level-up branch fires directly. age ≫ the cooldown so only
+    // land value can gate it. buildingCapacity(level 2) = 2*1*2*5 = 20, matching this
+    // fixture's MIN_MARKET-era arithmetic exactly.
     const PROBE_ID = 0;
     map.setTile(5, 1, createTile(5, 1, TileType.ZONE_RESIDENTIAL));
     expect(map.getBuildings().addExistingBuilding({
       id: PROBE_ID,
       type: 'residential',
-      footprint: [{ x: 5, y: 1 }],
+      footprint: [{ x: 5, y: 1 }, { x: 6, y: 1 }],
       anchor: { x: 5, y: 1 },
       level: 2,
       density: 0,
       age: 100,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 5, y: 1, w: 1, h: 1 },
+      structureRect: { x: 5, y: 1, w: 2, h: 1 },
     })).toBe(true);
-    // Commercial L4 job source, road-reachable from the probe's frontage: 40 jobs keep a
-    // reachable-vacancy surplus in BOTH phases — net 20 against the L2 probe's 20 workers and
-    // net 10 against the L3 probe's 30 — so the labor axis never closes the gate on its own.
-    // Level 5 would exceed maxSupportedLevel at this anchor (lv ≈ 0.72) and abandon on the
-    // first sweep, which would silently make the whole test vacuous.
+    // Commercial L4 job source (also widened to a modal 2-wide lot, anchor unmoved), road-
+    // reachable from the probe's frontage: buildingCapacity(level 4) = 2*1*4*5 = 40 jobs,
+    // keeping a reachable-vacancy surplus in BOTH phases — net 20 against the L2 probe's 20
+    // workers and net 10 against the L3 probe's 30 — so the labor axis never closes the gate
+    // on its own. Level 5 would exceed maxSupportedLevel at this anchor (lv ≈ 0.72) and
+    // abandon on the first sweep, which would silently make the whole test vacuous.
     expect(map.getBuildings().addExistingBuilding({
       id: 1,
       type: 'commercial',
-      footprint: [{ x: 15, y: 1 }],
+      footprint: [{ x: 15, y: 1 }, { x: 16, y: 1 }],
       anchor: { x: 15, y: 1 },
       level: 4,
       density: 0,
       age: 0,
       abandoned: false,
       frontage: 'S',
-      structureRect: { x: 15, y: 1, w: 1, h: 1 },
+      structureRect: { x: 15, y: 1, w: 2, h: 1 },
     })).toBe(true);
 
     seedPower(world, 0, 3); // plant (0,3)-(1,4); (0,3) adj road (0,2) → powers the road row
@@ -1397,12 +1412,12 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     expect(map.getBuildings().getBuilding(1)!.abandoned).toBe(false);
 
     // Relief phase: re-resolve traffic from the REAL flows. The L2 probe's whole matched
-    // workforce (2 · WORKERS_PER_LEVEL, absorbed by the L2 commercial) loads road tiles
+    // workforce (2 · POPULATION_PER_LEVEL, absorbed by the L2 commercial) loads road tiles
     // x=5..15 of its commute → byte 10 at capacity 500, a residual penalty of
     // 0.20·(10/255)·(6/7) ≈ 0.0067 at the anchor (frontage at Chebyshev distance 1) —
     // real congestion from an ordinary commute, but far short of the ~0.09 that would
     // push the anchor back under LEVEL_THRESHOLDS[3].
-    const RELIEF_BYTE = Math.round((255 * 2 * WORKERS_PER_LEVEL) / TRAFFIC_CAPACITY);
+    const RELIEF_BYTE = Math.round((255 * 2 * POPULATION_PER_LEVEL) / TRAFFIC_CAPACITY);
     world.markTrafficDirty();
     world.tick(); // tick 9: traffic resolves before land value in the derived-field chain
 

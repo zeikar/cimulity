@@ -1,15 +1,19 @@
 import type { BuildingMap } from './Building';
-import { POPULATION_PER_LEVEL } from './growthConstants';
+import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
+import { buildingCapacity } from './buildingCapacity';
 
 // Readonly<...> is a compile-time guard only — the module returns an Object.freeze'd snapshot to enforce immutability at runtime.
 export type DemandVector = Readonly<{ residential: number; commercial: number; industrial: number }>;
 
 /*
  * Unit quantization — the basis every constant below is calibrated against.
- * `WORKERS_PER_LEVEL` and `JOBS_PER_LEVEL` both equal `POPULATION_PER_LEVEL`, and the matcher only
- * ever moves `Math.min()` of two multiples of ten, so every labor scalar — employed, unemployed,
- * jobsCapacity, reachableUnfilledJobs, and therefore `net` — is a multiple of 10. The smallest
- * reachable imbalance is one building-level: 10 units.
+ * Every labor scalar — employed, unemployed, jobsCapacity, reachableUnfilledJobs, and therefore
+ * `net` — is a sum of `buildingCapacity()` over residential or commercial/industrial buildings. At
+ * density 0 (the only active tier for now) that is a multiple of `POPULATION_PER_TILE_LEVEL` (5),
+ * not 10 — once the higher density tiers carry real capacity it becomes an arbitrary integer. The
+ * calibration anchor moves from "one building-level" to "one MODAL building-level" (structureRect
+ * area 2): still 10 units, so the smallest reachable imbalance a modal building can cause is
+ * unchanged.
  */
 
 // Below a 5% imbalance the city reads as balanced and the labor term contributes nothing — the only
@@ -20,11 +24,15 @@ export const DEADBAND_RATE = 0.05;
 // so a runaway imbalance cannot ask for more than "everything".
 export const SATURATION_RATE = 0.25;
 
-// Floors the severity denominator against the ten-unit quantization above: one building-level of
-// imbalance then reads 10/100 = 0.10, i.e. PARTIAL severity between deadband and saturation. A floor
-// of 40 — or no floor at all — would make that same single building an instant full-crisis reading.
-// Written as a multiple of POPULATION_PER_LEVEL so it cannot drift out of the unit it measures.
-export const MIN_MARKET = 10 * POPULATION_PER_LEVEL;
+// Floors the severity denominator against the quantization above: one MODAL building-level of
+// imbalance (10 units) then reads 10/100 = 0.10, i.e. PARTIAL severity between deadband and
+// saturation — exactly today's response. A single density-0 tile-level (5 units) reads exactly
+// DEADBAND_RATE and contributes severity 0: sub-modal-building noise is precisely what the deadband
+// exists to absorb. Halving to 50 is rejected: one modal building-level would then read 20/100 —
+// severity 0.75 instead of 0.25 — silently re-tuning small-city demand pacing, the exact
+// decalibration this unit choice avoids.
+// Written as a multiple of POPULATION_PER_TILE_LEVEL so it cannot drift out of the unit it measures.
+export const MIN_MARKET = 20 * POPULATION_PER_TILE_LEVEL;
 
 // laborMarket.ts pools C and I into one job type, so they are interchangeable providers and an even
 // split is the only allocation that invents no economic distinction. Named so it can move when C and
@@ -106,15 +114,15 @@ export class Demand {
   }
 
   recompute(buildings: BuildingMap, labor: LaborScalars): void {
-    let levelSumR = 0;
-    let levelSumC = 0;
-    let levelSumI = 0;
+    let capacitySumR = 0;
+    let capacitySumC = 0;
+    let capacitySumI = 0;
 
     for (const b of buildings.iterBuildings()) {
       if (b.abandoned) continue;
-      if (b.type === 'residential') levelSumR += b.level;
-      else if (b.type === 'commercial') levelSumC += b.level;
-      else if (b.type === 'industrial') levelSumI += b.level;
+      if (b.type === 'residential') capacitySumR += buildingCapacity(b);
+      else if (b.type === 'commercial') capacitySumC += buildingCapacity(b);
+      else if (b.type === 'industrial') capacitySumI += buildingCapacity(b);
     }
 
     // --- labor axis ---
@@ -146,9 +154,9 @@ export class Demand {
     const migration = MIGRATION_PRESSURE * clamp01(1 - unemploymentRate / MIGRATION_UNEMPLOYMENT_CUTOFF);
 
     // --- retail axis (commercial only) ---
-    const totalLevels = levelSumR + levelSumC + levelSumI;
-    const targetC = COMMERCIAL_LEVEL_SHARE * totalLevels;
-    const retail = clamp01((targetC - levelSumC) / Math.max(targetC, levelSumC, 1));
+    const totalCapacity = capacitySumR + capacitySumC + capacitySumI;
+    const targetC = COMMERCIAL_LEVEL_SHARE * totalCapacity;
+    const retail = clamp01((targetC - capacitySumC) / Math.max(targetC, capacitySumC, 1));
     // Micropolis's laborBase: with more open jobs than workers already, another shop has nobody to
     // staff it, so the retail axis collapses.
     const staffing = 1 - resSeverity;

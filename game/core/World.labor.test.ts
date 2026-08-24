@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { World, TRAFFIC_INTERVAL } from './World';
-import { JOBS_PER_LEVEL, WORKERS_PER_LEVEL } from './laborMarket';
+import { POPULATION_PER_TILE_LEVEL } from './growthConstants';
 import { TileType, createTile } from './Tile';
 
 // ---------------------------------------------------------------------------
@@ -59,9 +59,9 @@ describe('World labor market wiring', () => {
       ]);
       world.markLaborDirty();
 
-      expect(world.getEmployed()).toBe(WORKERS_PER_LEVEL);
+      expect(world.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
       expect(world.getUnemployed()).toBe(0);
-      expect(world.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
+      expect(world.getJobsCapacity()).toBe(POPULATION_PER_TILE_LEVEL);
     });
 
     it('reports leftover workers as unemployed when jobs are scarce', () => {
@@ -72,9 +72,9 @@ describe('World labor market wiring', () => {
       world.markLaborDirty();
 
       // 2 levels of workers, 1 level of jobs → half matched, half unemployed.
-      expect(world.getEmployed()).toBe(JOBS_PER_LEVEL);
-      expect(world.getUnemployed()).toBe(2 * WORKERS_PER_LEVEL - JOBS_PER_LEVEL);
-      expect(world.getJobsCapacity()).toBe(JOBS_PER_LEVEL);
+      expect(world.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
+      expect(world.getUnemployed()).toBe(2 * POPULATION_PER_TILE_LEVEL - POPULATION_PER_TILE_LEVEL);
+      expect(world.getJobsCapacity()).toBe(POPULATION_PER_TILE_LEVEL);
     });
   });
 
@@ -92,7 +92,7 @@ describe('World labor market wiring', () => {
       // Mark dirty so the next read recomputes the matched scenario.
       world.markLaborDirty();
       const fresh = world.getLaborMarket();
-      expect(fresh.getEmployed()).toBe(WORKERS_PER_LEVEL);
+      expect(fresh.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
       expect(fresh.getFlows()).toHaveLength(1);
     });
   });
@@ -104,7 +104,7 @@ describe('World labor market wiring', () => {
         { id: 2, type: 'commercial', x: 5, level: 1 },
       ]);
       world.markLaborDirty();
-      expect(world.getEmployed()).toBe(WORKERS_PER_LEVEL);
+      expect(world.getEmployed()).toBe(POPULATION_PER_TILE_LEVEL);
 
       world.reset({ regenerate: false });
 
@@ -204,6 +204,48 @@ describe('World labor market wiring', () => {
   });
 });
 
+describe('World.getPopulation() === getEmployed() + getUnemployed() + getJobsCapacity()', () => {
+  it('holds across a modal (1x2), a ribbon (1x1), and a wide (2x2) building', () => {
+    // A single ROAD row at y=2. Three buildings, one per structure-area shape:
+    //   modal:  lot (0,0)-(0,1), sr 1x2 full lot, level 3 → capacity 1*2*3*5 = 30
+    //   ribbon: lot (2,1),       sr 1x1 full lot, level 2 → capacity 1*1*2*5 = 10
+    //   wide:   lot (5,0)-(6,1), sr 2x2 full lot, level 4 → capacity 2*2*4*5 = 80
+    const world = new World(8, 6, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 8; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 0 }, { x: 0, y: 1 }], anchor: { x: 0, y: 0 },
+      level: 3, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 2 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'residential',
+      footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 },
+      level: 2, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 2, y: 1, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 3, type: 'commercial',
+      footprint: [{ x: 5, y: 0 }, { x: 6, y: 0 }, { x: 5, y: 1 }, { x: 6, y: 1 }], anchor: { x: 5, y: 0 },
+      level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 5, y: 0, w: 2, h: 2 },
+    });
+
+    world.markLaborDirty();
+
+    const population = world.getPopulation();
+    const workforce = world.getEmployed() + world.getUnemployed();
+    const jobsCapacity = world.getJobsCapacity();
+
+    // 30 + 10 residential capacity + 80 commercial capacity = 120, split as
+    // workforce (40) + jobsCapacity (80) — every worker is matched or unemployed by
+    // construction, so this holds regardless of how the labor matcher resolved flows.
+    expect(population).toBe(workforce + jobsCapacity);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // World-level demand-feedback integration tests
 // ---------------------------------------------------------------------------
@@ -225,11 +267,13 @@ describe('World demand-feedback integration', () => {
   it('markLaborDirty() cascades to demand', () => {
     const world = makeConnectedFixture();
 
-    // Warm demand in the connected state: 10 workers all employed against 20 reachable jobs →
-    // net 10 on a market floored to MIN_MARKET → residential 0.25.
+    // Warm demand in the connected state: buildingCapacity gives 5 workers (1×1×1×5) against
+    // 10 job capacity (1×1×2×5) → 5 reachable unfilled jobs → net 5, which lands EXACTLY on
+    // DEADBAND_RATE (5/100 = 0.05) against the MIN_MARKET floor → resSeverity 0. With full
+    // employment, residential is driven entirely by migration (0.1).
     world.markLaborDirty();
     const connectedResidential = world.getDemand().residential;
-    expect(connectedResidential).toBeCloseTo(0.25, 10);
+    expect(connectedResidential).toBeCloseTo(0.1, 10);
 
     // Sever the road row — building LEVELS unchanged, only reachability changes.
     const map = world.getMap();
@@ -242,7 +286,7 @@ describe('World demand-feedback integration', () => {
 
     const severedResidential = world.getDemand().residential;
 
-    // Severed ⇒ the vacancy surplus becomes 10 unemployed workers: the labor axis flips to
+    // Severed ⇒ the vacancy surplus becomes 5 unemployed workers: the labor axis flips to
     // workplace pressure and 100% unemployment damps migration to zero.
     expect(severedResidential).toBe(0);
     expect(severedResidential).toBeLessThan(connectedResidential);
@@ -280,10 +324,12 @@ describe('World demand-feedback integration', () => {
 
   it('road-less residents-only city pushes both jobs bars up', () => {
     // No road row → no labor reachability → employed=0, reachableUnfilledJobs=0.
-    // 20 road-less workers against the 100-unit MIN_MARKET floor → ratio 0.20 →
-    // workplaceSeverity 0.75, halved onto each jobs bar. Commercial takes the LARGER of that
-    // half-share and its retail gap (levelSumC 0 against a target of 0.5 → 1·0.5), so it reads
-    // 0.5 — which is also a jobs bar's ceiling now, reached here only via the retail axis.
+    // buildingCapacity(level 2, 1×1 sr, density 0) = 10 road-less workers against the
+    // 100-unit MIN_MARKET floor → ratio 0.10 → workplaceSeverity 0.25, halved onto each jobs
+    // bar (industrial 0.125). The retail axis now sums buildingCapacity (10) instead of raw
+    // level (2): targetC = COMMERCIAL_LEVEL_SHARE · 10 = 2.5, which clears the retail axis's
+    // own `max(targetC, capacitySumC, 1)` floor, so retail saturates to 1 and commercial reads
+    // 1 (a jobs bar's ceiling) — dominating its own workplaceSeverity half-share.
     const world = new World(8, 6, { regenerate: false });
     const map = world.getMap();
     // Add a residential building directly (no road, so no road access — its workers are
@@ -297,14 +343,15 @@ describe('World demand-feedback integration', () => {
 
     world.markLaborDirty();
 
-    expect(world.getDemand().commercial).toBe(0.5);
-    expect(world.getDemand().industrial).toBeCloseTo(0.375, 10);
+    expect(world.getDemand().commercial).toBe(1);
+    expect(world.getDemand().industrial).toBeCloseTo(0.125, 10);
   });
 
   it('reset zeroes the labor feedback', () => {
     // R-only fixture on purpose: the connected R+C fixture reads a nonzero residential on BOTH
-    // sides of the reset, so it would discriminate nothing. One road-less level-2 R gives 20
-    // unemployed workers against the MIN_MARKET floor → residential 0 / industrial 0.375.
+    // sides of the reset, so it would discriminate nothing. One road-less level-2 R (1×1 sr)
+    // gives buildingCapacity 10 unemployed workers against the MIN_MARKET floor → residential 0 /
+    // industrial 0.125 (the identical fixture one test above shows the full arithmetic).
     const world = new World(8, 6, { regenerate: false });
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
@@ -314,7 +361,7 @@ describe('World demand-feedback integration', () => {
     });
     world.markLaborDirty();
     expect(world.getDemand().residential).toBe(0);
-    expect(world.getDemand().industrial).toBeCloseTo(0.375, 10);
+    expect(world.getDemand().industrial).toBeCloseTo(0.125, 10);
 
     world.reset({ regenerate: false });
 
