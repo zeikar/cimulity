@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v18 is native; v17 and earlier are rejected; `worldStore` falls back to a fresh
+ * v19 is native; v18 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -14,6 +14,7 @@ import { ZONE_MAX_LEVEL } from './World';
 import type { World } from './World';
 import { isBuildingType, tileTypeFromBuildingType } from './Building';
 import { isCanonicalFootprintRect, isStructureRectInLot, lotBboxOf } from './buildingFootprint';
+import { maxDensityForLot } from './zoneGrowth';
 import type { Frontage, Rect } from './buildingFootprint';
 import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
@@ -22,9 +23,16 @@ import type { Structure, StructureType } from './StructureMap';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v18 saves are accepted.
+ * This is the `v` value written to disk. Only native v19 saves are accepted.
+ *
+ * Bumped 18 -> 19 because the lot-width density cap (`maxDensityForLot`) makes a pre-change
+ * save's over-cap density (a 1-wide lot at density 2) a state no SIMULATION path can produce going
+ * forward; rejecting stale saves at load is one of two independent guards against it persisting —
+ * see `validateBuildingsArray`'s own `e.den > maxDensityForLot(...)` check below for the other,
+ * which also catches an over-cap building hand-crafted directly into a *native* v19 envelope (e.g.
+ * via devApi, which can construct any otherwise-unreachable state and is not itself blocked here).
  */
-export const WORLD_SAVE_VERSION = 18;
+export const WORLD_SAVE_VERSION = 19;
 
 /**
  * Maps a StructureType to its corresponding TileType — single source of truth so
@@ -78,7 +86,7 @@ interface BuildingSaveEntry {
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 18).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 19).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` and `s[]` are both sorted by id ascending for deterministic byte-equality across round-trips.
@@ -218,6 +226,14 @@ function validateBuildingsArray(
 
     const lot = lotBboxOf(footprint);
 
+    // Density is capped by lot width (maxDensityForLot), not just the 0..2 enum range checked
+    // above — a native v19 save can still be hand-crafted (e.g. via devApi, the one legitimate
+    // producer of otherwise-unreachable states) with a one-wide lot at density 2, which would
+    // recreate the mixed-density merge deadlock the lot-width cap exists to prevent. Reject it
+    // here rather than clamp it: clamping would silently rewrite the save's data, the exact
+    // transitional arm CLAUDE.md forbids.
+    if (e.den > maxDensityForLot(lot, e.f)) return null;
+
     if (!Array.isArray(e.sr) || e.sr.length !== 4) return null;
     const [srx, sry, srw, srh] = e.sr;
     if (!Number.isInteger(srx) || srx < 0) return null;
@@ -323,10 +339,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v18 world envelope onto an existing World instance.
+ * Apply a serialized v19 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===18 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===19 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {

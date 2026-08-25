@@ -21,19 +21,18 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v18' to match WORLD_SAVE_VERSION = 18.
-// Legacy saves at ':v17 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v19' to match WORLD_SAVE_VERSION = 19.
+// Legacy saves at ':v18 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v18';
+const STORAGE_KEY = 'cimulity:save:v19';
 
-// Bumped to 'service-v14': the density-bump branch in World.tick now caps the reachable density
-// tier on lot width (`maxDensityForLot`) instead of the flat `density < 2` — a 1-wide (unmerged)
-// lot stops at tier 1, only an assembled >=2-wide lot reaches tier 2. No World method surface
-// changed, so a retained HMR singleton would keep running the flat gate after a Fast Refresh.
-// Grandfathered: the gate blocks increases only, so a pre-change save's over-cap density stays in
-// place untouched. Capacity is derived and never persisted, so the save format (v18 / STORAGE_KEY)
-// is untouched — only the guard token bumps.
-const WORLD_SINGLETON_GUARD = 'service-v14' as const;
+// Bumped from 'service-v13' to 'service-v15' for two behavioral changes to World.tick, neither
+// an API addition `hasCurrentWorldApi` can detect: the density-bump branch now caps the reachable
+// tier on lot width (`maxDensityForLot`) instead of the flat `density < 2`, and WORLD_SAVE_VERSION
+// moved 18 -> 19 in step. A retained singleton could otherwise keep running the old flat gate, or
+// sit on a world hydrated from a save format this branch no longer reads — discarding it forces a
+// fresh hydration that re-validates against both changes.
+const WORLD_SINGLETON_GUARD = 'service-v15' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -63,7 +62,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v14 / v18 — density-bump branch caps the reachable tier on lot
+ * Checked methods (as of service-v15 / v19 — density-bump branch caps the reachable tier on lot
  * width instead of a flat `density < 2`):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,

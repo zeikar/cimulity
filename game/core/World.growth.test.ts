@@ -610,8 +610,13 @@ describe('World.tick() — density tier', () => {
     });
     // Density-1 target now supplies 2*1*5*7 = 70 workers (up from the 0-density actuator's 50),
     // so the original two C/I seeders (75 jobs total) no longer clear the surplus needed for
-    // DENSITY_DEMAND_THRESHOLD; a third, small (level 2, unzoned so it sits outside the growth
-    // loop's zone-tile scan and can never itself age or grow) industrial seeder restores it.
+    // DENSITY_DEMAND_THRESHOLD; a third, small (level 2) industrial seeder restores it. Its tile
+    // is zoned to match its type (an unzoned footprint is an impossible persisted/gameplay state),
+    // but it still never grows across the single growth pass below: age starts at 0 and the
+    // shared growth-gate cooldown is GROWTH_COOLDOWN_INTERVALS(8) + stagger(id), so one tick's
+    // age += 1 (age 1) can never clear it — the ordinary cooldown gate keeps it stationary, not
+    // its zoning.
+    map.setTile(9, 1, createTile(9, 1, TileType.ZONE_INDUSTRIAL));
     map.getBuildings().addExistingBuilding({
       id: 3, type: 'industrial', footprint: [{ x: 9, y: 1 }], anchor: { x: 9, y: 1 },
       level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 9, y: 1, w: 1, h: 1 },
@@ -648,6 +653,89 @@ describe('World.tick() — density tier', () => {
     expect(i2After.structureRect).toEqual(i2Before.structureRect);
 
     expect(world.getPopulation()).toBe(popBefore + 30);
+  });
+
+  it('adjacent 1-wide neighbors on staggered growth histories converge at density 1, then merge', () => {
+    // The central merge-race hypothesis: before the lot-width cap, the first 1-wide lot to reach
+    // ZONE_MAX_LEVEL could keep densifying (density 0 -> 1 -> 2) on its own 24-tick cooldown while
+    // an adjacent, later-starting 1-wide lot was still leveling up — and canMerge's equal-density
+    // gate then blocked them forever once the trailing lot finally caught up at density 0/1. This
+    // pins that the cap now closes that race: both grow from level 1 through natural ticks (no
+    // hand-placed max-level shortcut) with STAGGERED starting ages so they reach ZONE_MAX_LEVEL at
+    // different times, and the assertion inside the loop below fails loudly the instant either one
+    // is ever observed above density 1 while still unmerged.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(3, 1, createTile(3, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(6, 1, createTile(6, 1, TileType.ZONE_INDUSTRIAL));
+    map.setTile(9, 1, createTile(9, 1, TileType.ZONE_INDUSTRIAL));
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+
+    // A (id 0) starts one full GROWTH_COOLDOWN_INTERVALS ahead of B (id 1) — a growth-tick head
+    // start, not a shortcut to a higher level, so both climb the SAME level-1..5 ladder on their
+    // own clock. Single-cell footprints (matching SERVED_R/C/I elsewhere in this file) keep the lot
+    // depth at 1 so there is no structure-grow phase to model — every growth tick is a level-up or
+    // (once at ZONE_MAX_LEVEL) a density bump, exactly the branch this cap gates.
+    map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [{ x: 2, y: 1 }], anchor: { x: 2, y: 1 },
+      level: 1, density: 0, age: GROWTH_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
+      structureRect: { x: 2, y: 1, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 1, type: 'residential', footprint: [{ x: 3, y: 1 }], anchor: { x: 3, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 3, y: 1, w: 1, h: 1 },
+    });
+    // Static job bank — same 85-job total (25 + 50 + 10) already verified by the positive-control
+    // test above to keep residential demand >= DENSITY_DEMAND_THRESHOLD at the pair's combined
+    // level-5/density-1 ceiling (capacity 70, same arithmetic as that test's target).
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'commercial', footprint: [SERVED_C], anchor: SERVED_C, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({
+      id: 3, type: 'industrial', footprint: [{ x: 5, y: 1 }, { x: 6, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 5, y: 1, w: 2, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({
+      id: 4, type: 'industrial', footprint: [{ x: 9, y: 1 }], anchor: { x: 9, y: 1 },
+      level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 9, y: 1, w: 1, h: 1 },
+    });
+
+    let sawBothAtDensity1 = false;
+    let mergedId: number | null = null;
+    // Generous upper bound: worst-case per building is 4 level-ups at up to
+    // GROWTH_COOLDOWN_INTERVALS(8) + stagger(id ≤ 6) growth-ticks each, plus
+    // DENSITY_COOLDOWN_INTERVALS(24) to first density-bump, plus another cooldown before merge
+    // eligibility — comfortably under 150 growth-ticks even for the trailing building.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 300 && mergedId === null; i++) {
+      world.tick();
+      // Fresh snapshot each tick — never retain a live Building reference across a world.tick()
+      // call, since getBuildingAt returns the object the next tick mutates in place.
+      const a = map.getBuildings().getBuildingAt(2, 1);
+      const b = map.getBuildings().getBuildingAt(3, 1);
+      if (a === null || b === null) throw new Error('building unexpectedly removed without merging');
+      if (a.id === b.id) {
+        mergedId = a.id;
+        break;
+      }
+      // The property under test: neither lot is ever observed above the 1-wide density cap while
+      // still unmerged, regardless of which one reached ZONE_MAX_LEVEL first.
+      expect(a.density).toBeLessThanOrEqual(1);
+      expect(b.density).toBeLessThanOrEqual(1);
+      if (a.density === 1 && b.density === 1) sawBothAtDensity1 = true;
+    }
+
+    // They actually converged at density 1 before merging — not merged by coincidence at density 0.
+    expect(sawBothAtDensity1).toBe(true);
+    expect(mergedId).not.toBeNull();
+
+    const merged = map.getBuildings().getBuilding(mergedId!)!;
+    expect(merged.level).toBe(ZONE_MAX_LEVEL);
+    expect(merged.density).toBe(1);
+    expect(merged.footprint).toHaveLength(2);
+    expect(merged.structureRect).toEqual({ x: 2, y: 1, w: 2, h: 1 });
+    expect(buildingCapacity(merged)).toBe(70); // conserved: 1*5*7 + 1*5*7
   });
 });
 

@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 18', () => {
-    expect(WORLD_SAVE_VERSION).toBe(18);
+  it('is 19', () => {
+    expect(WORLD_SAVE_VERSION).toBe(19);
   });
 });
 
-describe('v18 serialization', () => {
-  it('WORLD_SAVE_VERSION is 18 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v19 serialization', () => {
+  it('WORLD_SAVE_VERSION is 19 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(18);
-    expect(parsed.v).toBe(18);
+    expect(WORLD_SAVE_VERSION).toBe(19);
+    expect(parsed.v).toBe(19);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -328,9 +328,55 @@ describe('v18 serialization', () => {
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
   });
 
-  it('rejects a v17 save (v17 and earlier rejected since v18 is native)', () => {
+  it('rejects a one-wide lot at density 2 (lot-width density cap, not just the 0..2 enum range)', () => {
+    // A 1×1 footprint is a 1-wide lot on every frontage — maxDensityForLot caps it at tier 1.
+    // den=2 passes the earlier 0..2 enum-range check but must still be rejected: an unmerged
+    // 1-wide lot at density 2 is the exact mixed-density merge-deadlock state the v19 bump
+    // exists to keep out of a native save.
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0]],
+      anc: [0, 0],
+      lvl: 2,
+      den: 2,
+      age: 0,
+      f: 'S',
+      sr: [0, 0, 1, 1],
+      ab: false,
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(false);
+  });
+
+  it('accepts a two-wide lot at density 2 (an assembled lot clears the cap)', () => {
+    // A 2×1 footprint (frontage S, width axis = x) is a 2-wide lot — maxDensityForLot allows
+    // tier 2. Same den value as the rejected case above; only the lot width differs, isolating
+    // the cap (not some other field) as the reason the 1-wide case was rejected.
+    const base = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+    const w = 4;
+    base.t[0 * w + 0] = TileType.ZONE_RESIDENTIAL;
+    base.t[0 * w + 1] = TileType.ZONE_RESIDENTIAL;
+    base.b = [{
+      id: 0,
+      type: 'residential',
+      foot: [[0, 0], [1, 0]],
+      anc: [0, 0],
+      lvl: 2,
+      den: 2,
+      age: 0,
+      f: 'S',
+      sr: [0, 0, 2, 1],
+      ab: false,
+    }];
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(true);
+  });
+
+  it('rejects a v18 save (v18 and earlier rejected since v19 is native)', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
-    obj.v = 17;
+    obj.v = 18;
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 });
@@ -880,7 +926,7 @@ describe('v16 police station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(18);
+    expect(parsed.v).toBe(19);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -981,7 +1027,7 @@ describe('v16 fire station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(18);
+    expect(parsed.v).toBe(19);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1082,7 +1128,7 @@ describe('v16 hospital station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(18);
+    expect(parsed.v).toBe(19);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1183,7 +1229,7 @@ describe('v16 school station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(18);
+    expect(parsed.v).toBe(19);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1278,7 +1324,7 @@ describe('v17 park persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(18);
+    expect(parsed.v).toBe(19);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);

@@ -332,8 +332,10 @@ describe('canMerge — merge conservation invariant', () => {
               expect(buildingCapacity(merged), label).toBe(buildingCapacity(a) + buildingCapacity(b));
 
               // The merged lot is strictly wider than either input along the frontage axis, so its
-              // density cap never falls below the pair's shared tier — even a grandfathered
-              // width-1 + width-1 density-2 pair lands inside the 2-wide cap.
+              // density cap never falls below the pair's shared tier — even a width-1 + width-1
+              // density-2 pair (a state real growth/saves can never produce, since the density
+              // gate blocks increases past the cap and stale saves are rejected at v19) lands
+              // inside the 2-wide cap.
               expect(merged.density, label).toBeLessThanOrEqual(
                 maxDensityForLot(lotBboxOf(merged.footprint), frontage),
               );

@@ -1156,8 +1156,14 @@ export class World {
           // value later drops below the threshold, the whole building abandons.
           // The tier ceiling is keyed on lot width along the frontage: a 1-wide (unmerged) lot
           // stops at tier 1, only an assembled >=2-wide lot reaches tier 2 — assembling land, not
-          // waiting, unlocks the top tier. This gate blocks INCREASES only, so a pre-change save's
-          // over-cap density is grandfathered in place rather than clamped or clawed back.
+          // waiting, unlocks the top tier. This gate blocks INCREASES only, but no SIMULATION path
+          // can ever exceed the cap: spawns start at density 0, this gate blocks every increase,
+          // and a merge output's cap is never below its inputs' (mergePolicy.test.ts). A save
+          // carrying an over-cap building (from before this cap existed) is rejected at load —
+          // both the envelope version (WORLD_SAVE_VERSION 19) and, independently, the per-building
+          // density-vs-lot-width check in mapSerialization.ts. The dev-only devApi seeding path can
+          // still construct an over-cap building directly in memory, as it can construct any other
+          // otherwise-unreachable state; this gate does not and cannot guard against that.
           if (
             demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
