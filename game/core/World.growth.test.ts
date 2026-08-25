@@ -6,13 +6,12 @@ import {
   DENSITY_COOLDOWN_INTERVALS,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, POPULATION_PER_LEVEL } from './growthConstants';
-import { DENSITY_DEMAND_THRESHOLD } from './Demand';
+import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
 import type { Frontage } from './buildingFootprint';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
-import { MERGE_LEVEL_THRESHOLD } from './mergePolicy';
 import { buildingCapacity } from './buildingCapacity';
 import { isAnchorCovered } from './ServiceCoverageMap';
 import { isFireAnchorCovered } from './FireCoverageMap';
@@ -1724,112 +1723,119 @@ describe('World.tick() — power gate: building loses power → stops aging', ()
 
 describe('World.tick() — power gate: merge blocked without power, succeeds with power', () => {
   it('no merge when both buildings are unpowered; merge succeeds once power is added', () => {
-    // Two adjacent 1×4 R lots (road at y=4) plus level-4 industrial demand seeders
-    // (road at y=6) on land served by all four services + a park, so the
-    // abandonment sweep (Task 4) flags none of them: the R anchors clear level 2
-    // (lv ≈ 0.4, below LEVEL_THRESHOLDS[3]=0.45 so no level-up resets age before
-    // the merge pass), and the industrials clear level 4 (lv ≈ 0.73) so they keep
-    // feeding residential demand. Water is present from the start; only adding
-    // power flips the merge from blocked to firing.
-    const world = new World(14, 10, { regenerate: false });
+    // Two adjacent BUILT-OUT R parcels (level 5, density 1 — a 1-wide lot's cap — with a
+    // structureRect that already fills the lot) plus a level-4 industrial job bank, all fronting
+    // one road row at y=2. Water, all four services and land value are in place from the start,
+    // so POWER is the only variable: the first growth tick finds both parcels unpowered and no
+    // merge fires; adding a plant flips the same tick's outcome.
+    //
+    // ONE-CELL-DEEP R lots, matching setupMergeStrip in World.merge.test.ts — see the two
+    // reasons documented there. Only the first (anchor at off-road hop 1) binds in THIS fixture,
+    // which never consolidates past 2 wide. The anchor is the lot's NW cell, so with the
+    // frontage 'S' used here — road to the SOUTH — one cell of depth is what puts the anchor at
+    // hop 1; a north-fronted lot could be deeper.
+    // Each anchor then reads 0.40 · 6/7 (road at Chebyshev 1) + 0.10 · 1/3 (R only in the 3×3)
+    // + 0.50 · 0.79–0.83 (four stations, road-hop distances 1–8) + 0.25 · 4/5 (park at
+    // Chebyshev 1) = 0.972 at (0,1) and 0.993 at (1,1) — well clear of 0.85 even after this
+    // fixture's peak 70-trip load (byte 36, penalty 0.20 · (36/255) · 6/7 ≈ 0.024).
+    const world = new World(14, 8, { regenerate: false });
     const map = world.getMap();
 
-    // R lots: cols 0,1 over rows 0..3, fronting the road at y=4.
-    for (let x = 0; x < 14; x++) map.setTile(x, 4, createTile(x, 4, TileType.ROAD));
-    for (let y = 0; y < 4; y++) {
-      map.setTile(0, y, createTile(0, y, TileType.ZONE_RESIDENTIAL));
-      map.setTile(1, y, createTile(1, y, TileType.ZONE_RESIDENTIAL));
+    // Single frontage road at y=2; the R parcels front it from the north, the job bank from the
+    // north as well (one row, different columns) so every job is reachable from the R access node.
+    for (let x = 0; x < 14; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    map.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 1, createTile(1, 1, TileType.ZONE_RESIDENTIAL));
+
+    // Built out: level 5 AND density 1 (maxDensityForLot for a 1-wide lot) AND a structureRect
+    // that fills the lot depth — every rung canMerge's built-out gate reads. Capacity 1·1·5·7 = 35.
+    // Age clears the worst-case merge cooldown (GROWTH_COOLDOWN_INTERVALS + max stagger 6 = 14);
+    // unpowered buildings never age, so it still clears it on the second, powered tick.
+    for (const x of [0, 1]) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: x,
+        type: 'residential',
+        footprint: [{ x, y: 1 }],
+        anchor: { x, y: 1 },
+        level: ZONE_MAX_LEVEL,
+        density: 1,
+        age: GROWTH_COOLDOWN_INTERVALS + 6,
+        abandoned: false,
+        frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
     }
-    // Industrial demand seeders fronting a second road row at y=6, linked to the
-    // y=4 row by a vertical road at (13,5) so one power plant feeds both rows.
-    for (let x = 0; x < 14; x++) map.setTile(x, 6, createTile(x, 6, TileType.ROAD));
-    map.setTile(13, 5, createTile(13, 5, TileType.ROAD));
-    map.setTile(0, 5, createTile(0, 5, TileType.ZONE_INDUSTRIAL));
-    map.setTile(1, 5, createTile(1, 5, TileType.ZONE_INDUSTRIAL));
-    map.setTile(3, 5, createTile(3, 5, TileType.ZONE_INDUSTRIAL));
-    map.setTile(4, 5, createTile(4, 5, TileType.ZONE_INDUSTRIAL));
 
-    // R lots: sr shrunk to the modal south-pinned 1x2 (rows 2-3 of the 4-deep lot) — a
-    // 1-wide lot's structureDepthCap floors at MIN_STRUCTURE_DEPTH_CAP=2 (growthConstants.ts),
-    // so a full-depth (h=4) sr was never reachable by real growth anyway. This keeps
-    // buildingCapacity(level MERGE_LEVEL_THRESHOLD=2) = 1*2*2*5 = 20 each, matching this
-    // fixture's MIN_MARKET-era arithmetic (40 workers total) exactly.
-    map.getBuildings().addExistingBuilding({
-      id: 0,
-      type: 'residential',
-      footprint: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }],
-      anchor: { x: 0, y: 0 },
-      level: MERGE_LEVEL_THRESHOLD,
-      density: 0,
-      age: GROWTH_COOLDOWN_INTERVALS + 6,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 0, y: 2, w: 1, h: 2 },
-    });
-    map.getBuildings().addExistingBuilding({
-      id: 1,
-      type: 'residential',
-      footprint: [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 1, y: 3 }],
-      anchor: { x: 1, y: 0 },
-      level: MERGE_LEVEL_THRESHOLD,
-      density: 0,
-      age: GROWTH_COOLDOWN_INTERVALS + 6,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 1, y: 2, w: 1, h: 2 },
-    });
-    // Level-4 industrials, each a modal 2-wide 1-deep lot (id 3 moved to x=3..4 so the two
-    // don't collide) so buildingCapacity(level 4) = 2*1*4*5 = 40 each — matching this
-    // fixture's MIN_MARKET-era arithmetic exactly. Both front the y=6 road that the (13,5)
-    // link joins to the R lots' own road row, so their 80 jobs are reachable: the two
-    // MERGE_LEVEL_THRESHOLD R lots' 40 workers are all employed and 40 vacancies remain, giving
-    // ratio 0.40 on a market floored to MIN_MARKET → residential saturates at 1.0, above
-    // DENSITY_DEMAND_THRESHOLD for the whole run.
-    map.getBuildings().addExistingBuilding({
-      id: 2, type: 'industrial', footprint: [{ x: 0, y: 5 }, { x: 1, y: 5 }], anchor: { x: 0, y: 5 },
-      level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 0, y: 5, w: 2, h: 1 },
-    });
-    map.getBuildings().addExistingBuilding({
-      id: 3, type: 'industrial', footprint: [{ x: 3, y: 5 }, { x: 4, y: 5 }], anchor: { x: 3, y: 5 },
-      level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 3, y: 5, w: 2, h: 1 },
-    });
+    // Job bank: four level-4 industrials on GRASS at y=1, frontage 'S' onto the same road row, so
+    // their access node is the R parcels' own. GRASS keeps them out of the zone-growth loop, so
+    // they never age, level or merge. buildingCapacity = 1·1·4·5 = 20 each → 80 jobs against the
+    // pair's 2 × 35 = 70 workers: unemployment is 0, so the MIGRATION_PRESSURE floor alone
+    // already holds residential demand above GROWTH_DEMAND_THRESHOLD, all the merge gate needs.
+    // Their anchors read lv ≈ 0.76, over LEVEL_THRESHOLDS[4] = 0.65 and under [5] = 0.85, so the
+    // sweep leaves them alone at level 4 and would abandon them at level 5.
+    for (const x of [10, 11, 12, 13]) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: x, type: 'industrial', footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level: 4, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
+    }
 
-    // Water from the start: tower spur (13,3) off road y=4, tower (13,2) feeding it.
-    map.setTile(13, 3, createTile(13, 3, TileType.ROAD));
-    seedWater(world, 13, 2);
-    // Four services (no power needed) over both road rows so every anchor is covered.
-    seedPolice(world, 4, 2);
-    seedFire(world, 6, 2);
-    seedHospital(world, 8, 2);
-    seedSchool(world, 10, 2);
-    // Park near the R lot tops for the additive boost to clear level 2.
-    seedPark(world, 2, 0);
+    // Water from the start: tower (10,3) adj road (10,2) → waters the road row and its neighbours.
+    seedWater(world, 10, 3);
+    // Four services hung off the road row from the south → coverage reaches the y=1 anchors.
+    seedHospital(world, 2, 3);
+    seedPolice(world, 4, 3);
+    seedFire(world, 6, 3);
+    seedSchool(world, 8, 3);
+    // Parks directly north of the R anchors for the additive boost that clears level 5.
+    seedPark(world, 0, 0);
+    seedPark(world, 1, 0);
     world.markLandValueDirty();
     world.recomputeLandValue();
     world.markDemandDirty();
+    world.recomputeLabor();
+
+    // Preconditions: everything EXCEPT power is satisfied on both parcels.
+    for (const x of [0, 1]) {
+      expect(world.getWaterMap().isWatered(x, 1)).toBe(true);
+      expect(world.getPowerMap().isPowered(x, 1)).toBe(false);
+      expect(world.getLandValue().getValue(x, 1)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+      expect(isAnchorCovered({ x, y: 1 }, world.getServiceCoverageMap())).toBe(true);
+      expect(isFireAnchorCovered({ x, y: 1 }, world.getFireCoverageMap())).toBe(true);
+      expect(isHospitalAnchorCovered({ x, y: 1 }, world.getHospitalCoverageMap())).toBe(true);
+      expect(isSchoolAnchorCovered({ x, y: 1 }, world.getSchoolCoverageMap())).toBe(true);
+      expect(buildingCapacity(map.getBuildings().getBuilding(x)!)).toBe(35);
+    }
+    expect(world.getLaborMarket().getUnemployed()).toBe(0);
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
 
     // No power — first growth tick: no merge (buildings are unpowered; water alone is not enough).
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     world.tick();
     expect(map.getBuildings().getBuilding(0)).not.toBeNull();
     expect(map.getBuildings().getBuilding(1)).not.toBeNull();
+    expect(map.getBuildings().getBuilding(0)!.abandoned).toBe(false);
+    expect(map.getBuildings().getBuilding(1)!.abandoned).toBe(false);
 
-    // Add power: plant at (12,7)-(13,8); cell (12,7) adj road (12,6) → powers the
-    // connected road network (y=6 ↔ y=4 via the (13,3) spur). Buildings have NOT
-    // aged (unpowered), so age still satisfies cooldown.
-    seedPower(world, 12, 7);
+    // Add power: plant at (12,3)-(13,4); cell (12,3) adj road (12,2) → powers the road row and,
+    // through it, the y=1 parcels. Buildings have NOT aged (unpowered), so age still clears the
+    // merge cooldown.
+    seedPower(world, 12, 3);
     world.markPowerDirty();
     world.recomputePower();
+    for (const x of [0, 1]) expect(world.getPowerMap().isPowered(x, 1)).toBe(true);
 
     // Run another growth tick: both powered → merge succeeds.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
     world.tick();
 
-    const aExists = map.getBuildings().getBuilding(0) !== null;
-    const bExists = map.getBuildings().getBuilding(1) !== null;
-    expect(aExists && bExists).toBe(false);
+    expect(map.getBuildings().getBuilding(0)).toBeNull();
+    expect(map.getBuildings().getBuilding(1)).toBeNull();
+    const merged = [...map.getBuildings().iterBuildings()].filter(b => b.type === 'residential');
+    expect(merged.length).toBe(1);
+    expect(merged[0].structureRect).toEqual({ x: 0, y: 1, w: 2, h: 1 });
+    expect(buildingCapacity(merged[0])).toBe(70); // conserved: 35 + 35
   });
 });
 

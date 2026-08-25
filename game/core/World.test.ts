@@ -22,7 +22,7 @@ import {
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, stagger } from './growthConstants';
 import { buildingCapacity } from './buildingCapacity';
-import { DENSITY_DEMAND_THRESHOLD } from './Demand';
+import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import { TileType, createTile } from './Tile';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
@@ -1273,11 +1273,13 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
   //   Water (positive): (7,3) is ROAD (gap filled); same tower waters full (5,3)→(8,3) row.
 
   it('(d-neg) merge water gate — one unwatered candidate: no merge (asserts unconditionally)', () => {
-    // NEGATIVE: two merge-eligible ZONE_MAX_LEVEL lots sit on two road components that share no
-    // orthogonal ROAD chain, and only the western one has a water source — water is the sole
-    // variable. Everything else (power, all four coverages, land value ≥ LEVEL_THRESHOLDS[5],
-    // reachable jobs) is satisfied on BOTH sides, so neither probe can be frozen by the
-    // abandonment sweep and make "no merge" true for the wrong reason.
+    // NEGATIVE: two BUILT-OUT lots sit on two road components that share no orthogonal ROAD
+    // chain, and only the western one has a water source — water is the sole variable. Both
+    // probes are at ZONE_MAX_LEVEL, at density 2 (maxDensityForLot for their 2-wide lots) and
+    // carry a structureRect that already fills their 1-deep lot, so every rung of canMerge's
+    // built-out gate is satisfied. Everything else (power, all four coverages, land value ≥
+    // LEVEL_THRESHOLDS[5], reachable jobs) is satisfied on BOTH sides too, so neither probe can
+    // be frozen by the abandonment sweep and make "no merge" true for the wrong reason.
     //
     // ROAD tiles — these and no others: (0,5)…(11,5) = component A, (12,5) GRASS (the gap),
     // (13,5)…(23,5) = component B. Row 5 holds every road on the map, so no orthogonal chain
@@ -1313,18 +1315,13 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(world.getStructureMap().addStructure({ type: 'park', anchor: { x: 13, y: 3 }, footprint: [{ x: 13, y: 3 }] })).not.toBeNull();
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
-    // Jobs bank: four level-4 commercials on GRASS at y=4, each fronting the A road directly
-    // below it. Level 4, not 5: those anchors reach lv ≈ 0.78 (road + service, no park in
-    // range), which clears LEVEL_THRESHOLDS[4] = 0.65 but not [5] = 0.85, so a level-5 bank
-    // would abandon on the first sweep. Grass tiles keep the bank out of the zone loop, so it
-    // never ages, levels or merges. 160 jobs is the size: with 100 workers and every job on A,
-    // employed = 50, unemployed = 50, reachable = J − 50, market = J + 50 and net = J − 100,
-    // so (J−100)/(J+50) ≥ 0.125 needs J ≥ 130; 160 saturates the bar instead of sitting just
-    // over the line.
-    // Each bank is a 2-wide 1-deep lot (modal sr area 2) so buildingCapacity(level 4) = 40,
-    // matching the level * POPULATION_PER_LEVEL figure this fixture's arithmetic was written
-    // against — widening keeps the anchor's road distance (and land value) unchanged, unlike
-    // deepening the lot northward would.
+    // Jobs bank, part 1: four level-4 commercials on GRASS at y=4, each a 2-wide 1-deep lot
+    // fronting the A road directly below it → buildingCapacity = 2·1·4·5 = 40 each, 160 jobs.
+    // Level 4, not 5: those anchors reach lv ≈ 0.78 (road + service, no park in range), which
+    // clears LEVEL_THRESHOLDS[4] = 0.65 but not [5] = 0.85, so a level-5 bank would abandon on
+    // the first sweep. Grass tiles keep the bank out of the zone loop, so it never ages, levels
+    // or merges. Widening (rather than deepening northward) keeps each anchor's road distance —
+    // and therefore its land value — unchanged.
     for (const [i, x] of [2, 4, 6, 8].entries()) {
       expect(map.getBuildings().addExistingBuilding({
         id: 900 + i, type: 'commercial',
@@ -1333,17 +1330,41 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
         structureRect: { x, y: 4, w: 2, h: 1 },
       })).toBe(true);
     }
+    // Jobs bank, part 2: the built-out probes carry 2·1·5·10 = 100 workers EACH, and probe B's
+    // 100 are stranded on component B with no job in reach, so unemployment is pinned at 100 of
+    // a 200 workforce — a 50% rate that damps migration to exactly 0. Residential demand can
+    // therefore only come from a net vacancy surplus past the deadband, and 160 jobs alone give
+    // net = (160 − 100) − 100 < 0. One more level-4 commercial takes the bank to 240: a 1-wide,
+    // 4-deep lot on the GRASS south of the A road at column 11 → buildingCapacity = 1·4·4·5 = 80.
+    // Column 11 is the ONLY column free there — the plant owns 0–1, the four stations 2–9 and the
+    // water tower (10,6) — and column 12 has no road on its frontage face (that is the gap).
+    // Result: employed 100, reachable 140, net 40 on a market of 340 → residential ≈ 0.34.
+    // NEW LOT SHAPE, so its anchor land value is re-derived rather than inherited: (11,6) reads
+    // 0.40 · 6/7 (road (11,5) at Chebyshev 1) + 0.10 · 0 (no zone tile in the 3×3) + 0.50 · ~0.79
+    // (four A stations, road-hop distances 2/4/6/8) + 0.25 · 2/5 (park (11,3) at Chebyshev 3)
+    // = 0.839 — over LEVEL_THRESHOLDS[4] = 0.65 and under [5] = 0.85, so level 4 survives the
+    // sweep and level 5 would not. Its survival is load-bearing; pinned after the tick below.
+    expect(map.getBuildings().addExistingBuilding({
+      id: 910, type: 'commercial',
+      footprint: [{ x: 11, y: 6 }, { x: 11, y: 7 }, { x: 11, y: 8 }, { x: 11, y: 9 }],
+      anchor: { x: 11, y: 6 },
+      level: 4, density: 0, age: 0, abandoned: false, frontage: 'N',
+      structureRect: { x: 11, y: 6, w: 1, h: 4 },
+    })).toBe(true);
 
+    // Density 2 is maxDensityForLot for a 2-wide lot, and the 2×1 structureRect already fills the
+    // 1-deep lot, so both probes are BUILT OUT — canMerge's density and extend gates pass and the
+    // water gate is the only thing left that can block them. Capacity 2·1·5·10 = 100 each.
     const okA = map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential',
       footprint: [{ x: 11, y: 4 }, { x: 12, y: 4 }], anchor: { x: 11, y: 4 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 2, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 11, y: 4, w: 2, h: 1 },
     });
     const okB = map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 13, y: 4 }, { x: 14, y: 4 }], anchor: { x: 13, y: 4 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 2, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 13, y: 4, w: 2, h: 1 },
     });
     expect(okA).toBe(true);
@@ -1368,9 +1389,13 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
       expect(world.getSchoolCoverageMap().getCoverage(a.x, a.y)).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
       expect(world.getLandValue().getValue(a.x, a.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[5]);
     }
-    // 160 jobs on A, 50 of them filled by probe A's workers; probe B's 50 reach none.
-    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBe(110);
-    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+    for (const id of [0, 1]) expect(buildingCapacity(map.getBuildings().getBuilding(id)!)).toBe(100);
+    // 240 jobs on A, 100 of them filled by probe A's workers; probe B's 100 reach none.
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBe(140);
+    expect(world.getLaborMarket().getUnemployed()).toBe(100);
+    // Demand positivity is a PRECONDITION here, not an outcome: with it, "no merge" can only be
+    // the water gate. The merge gate keys on GROWTH_DEMAND_THRESHOLD now, not on a density spike.
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
 
     // One growth tick. B unwatered → merge water gate blocks → both buildings survive.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
@@ -1379,19 +1404,32 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     // Unconditional — no if-guard.
     expect(map.getBuildings().getBuilding(0)).not.toBeNull();
     expect(map.getBuildings().getBuilding(1)).not.toBeNull();
-    // Neither probe was frozen by the abandonment sweep, and neither density bump reset an age
-    // (age 19 < DENSITY_COOLDOWN_INTERVALS), so "no merge" can only be the water gate.
+    // Neither probe was frozen by the abandonment sweep, and neither could have moved off its
+    // seeded state (both already sit at their lot's density cap), so "no merge" can only be the
+    // water gate.
     expect(map.getBuildings().getBuilding(0)!.abandoned).toBe(false);
     expect(map.getBuildings().getBuilding(1)!.abandoned).toBe(false);
-    expect(map.getBuildings().getBuilding(0)!.density).toBe(0);
-    expect(map.getBuildings().getBuilding(1)!.density).toBe(0);
+    expect(map.getBuildings().getBuilding(0)!.density).toBe(2);
+    expect(map.getBuildings().getBuilding(1)!.density).toBe(2);
+    // ...and the part-2 bank lot that carries the demand argument is still occupied, so the
+    // vacancy surplus the precondition measured was still there when the merge pass ran. Were it
+    // abandoned the bank would fall 240 → 160 jobs, net would go negative and residential to 0,
+    // and "no merge" would become attributable to the DEMAND gate instead of the water gate.
+    expect(map.getBuildings().getBuilding(910)!.abandoned).toBe(false);
   });
 
   it('(d-pos) merge water gate — both candidates watered: merge succeeds (asserts unconditionally)', () => {
     // POSITIVE: (7,3) is now ROAD (gap filled) → A+B connected → tower waters both → merge fires.
-    // Taller/wider (16×12) so the max-level merge candidates can be fully served (lv ≈ 0.93 →
-    // not abandoned) via stations hung off a full-width frontage road, with jobs from a bank
-    // that fronts that SAME road — leaving water the sole merge variable.
+    // Taller/wider (16×12) so the built-out merge candidates can be fully served (not abandoned)
+    // via stations hung off a full-width frontage road, with jobs from a bank that fronts that
+    // SAME road — leaving water the sole merge variable. Both probe anchors read 0.933 at seed
+    // and still 0.933 through the single growth tick this test runs, because land value is only
+    // recomputed against a REFRESHED traffic map on the TRAFFIC_INTERVAL cadence, which tick 8
+    // does not reach. Fold this fixture's post-merge commute load in and they read 0.865 at
+    // (5,2) and 0.875 at (7,2) — still over LEVEL_THRESHOLDS[5], but by 0.015 rather than the
+    // 0.08 the pre-density-2 fixture had. Raising the probes past 2·1·5·10 = 100 workers each
+    // would spend that margin: their whole workforce leaves from one access node
+    // (roadGraph.accessNodeFor), so the byte on it — 102 here — scales with capacity.
     const world = new World(16, 12, { regenerate: false });
     const map = world.getMap();
 
@@ -1419,36 +1457,40 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     expect(world.getWaterMap().isWatered(5, 2)).toBe(true);  // A footprint cell watered
 
     const cooldown = GROWTH_COOLDOWN_INTERVALS;
-    // Jobs bank: three level-4 commercials on GRASS at y=4, frontage 'N' onto the shared y=3
-    // road, so their jobs are reachable from both probes' access nodes. The two level-5 probes
-    // supply 100 workers and every job is reachable, so market = J and clearing
-    // DENSITY_DEMAND_THRESHOLD needs (J−100)/J ≥ 0.125 → J ≥ 120: three level-4 buildings
-    // exactly, giving ratio 0.167 and residential ≈ 0.583. Level 4 (not 5) because those
-    // anchors reach lv ≈ 0.74 — over LEVEL_THRESHOLDS[4] but under [5], so a level-5 bank
-    // would abandon on the first sweep and take the demand with it.
-    // Each bank is a 1-wide 2-deep lot (modal sr area 2, extending SOUTH into the free row
-    // y=5) so buildingCapacity(level 4) = 40, matching the level * POPULATION_PER_LEVEL figure
-    // this fixture's arithmetic was written against. Extending south (not north) keeps the lot's
-    // top row — and therefore the frontage-N anchor's distance to the y=3 road — unchanged.
-    for (const x of [4, 6, 8]) {
+    // Jobs bank: five level-4 commercials on GRASS at y=4, frontage 'N' onto the shared y=3
+    // road, so their jobs are reachable from both probes' access nodes. The two BUILT-OUT probes
+    // supply 2 × 100 = 200 workers and every job is reachable, so a bank of J jobs leaves
+    // employed = min(200, J): J must exceed 200 just to zero out unemployment and let the 0.1
+    // migration floor hold residential demand positive at all. Each bank lot is 1 wide × 3 deep
+    // (rows 4–6) → buildingCapacity = 1·3·4·5 = 60, and five of them (columns 4, 6, 7, 8, 9 —
+    // the stations, the plant and the water tower own the rest) give J = 300: employed 200,
+    // reachable 100, net 100 on a market of 300 → residential saturates at 1.0. Level 4 (not 5)
+    // because those anchors reach lv ≈ 0.80 — over LEVEL_THRESHOLDS[4] = 0.65 but under
+    // [5] = 0.85, so a level-5 bank would abandon on the first sweep and take the demand with it.
+    // The lots extend SOUTH (not north), which keeps the frontage-'N' anchor on row 4 and
+    // therefore its distance to the y=3 road — and its land value — unchanged.
+    for (const x of [4, 6, 7, 8, 9]) {
       expect(map.getBuildings().addExistingBuilding({
         id: 900 + x, type: 'commercial',
-        footprint: [{ x, y: 4 }, { x, y: 5 }], anchor: { x, y: 4 },
+        footprint: [{ x, y: 4 }, { x, y: 5 }, { x, y: 6 }], anchor: { x, y: 4 },
         level: 4, density: 0, age: 0, abandoned: false, frontage: 'N',
-        structureRect: { x, y: 4, w: 1, h: 2 },
+        structureRect: { x, y: 4, w: 1, h: 3 },
       })).toBe(true);
     }
 
+    // Density 2 is maxDensityForLot for a 2-wide lot, and the 2×1 structureRect already fills the
+    // 1-deep lot, so both probes are BUILT OUT — every rung of canMerge's built-out gate passes
+    // and water is the only variable left. Capacity 2·1·5·10 = 100 each.
     const okA = map.getBuildings().addExistingBuilding({
       id: 0, type: 'residential',
       footprint: [{ x: 5, y: 2 }, { x: 6, y: 2 }], anchor: { x: 5, y: 2 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 2, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 5, y: 2, w: 2, h: 1 },
     });
     const okB = map.getBuildings().addExistingBuilding({
       id: 1, type: 'residential',
       footprint: [{ x: 7, y: 2 }, { x: 8, y: 2 }], anchor: { x: 7, y: 2 },
-      level: ZONE_MAX_LEVEL, density: 0, age: cooldown + 10, abandoned: false, frontage: 'S',
+      level: ZONE_MAX_LEVEL, density: 2, age: cooldown + 10, abandoned: false, frontage: 'S',
       structureRect: { x: 7, y: 2, w: 2, h: 1 },
     });
     expect(okA).toBe(true);
@@ -1457,8 +1499,18 @@ describe('World.tick() water gate — level-up/density/merge gated, spawn and ag
     world.recomputeLandValue();
     world.markDemandDirty();
     world.recomputeLabor();
-    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBeGreaterThan(0);
-    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+    for (const id of [0, 1]) expect(buildingCapacity(map.getBuildings().getBuilding(id)!)).toBe(100);
+    // Anchor pin, matching (d-neg)'s: below this the sweep would freeze both probes and "merge
+    // fires" could never be attributed to water.
+    for (const a of [{ x: 5, y: 2 }, { x: 7, y: 2 }]) {
+      expect(world.getLandValue().getValue(a.x, a.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[5]);
+    }
+    // 300 jobs, all reachable, against 200 workers.
+    expect(world.getLaborMarket().getReachableUnfilledJobs()).toBe(100);
+    expect(world.getLaborMarket().getUnemployed()).toBe(0);
+    // Demand positivity is a PRECONDITION here, not an outcome: with it, the merge firing can
+    // only be the water gate opening. The merge gate keys on GROWTH_DEMAND_THRESHOLD now.
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
 
     // One growth tick. Both watered → merge fires.
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
