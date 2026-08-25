@@ -458,8 +458,14 @@ describe('World.tick() — density tier', () => {
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
 
     expect(buildingCapacity(map.getBuildings().getBuilding(0)!)).toBe(25); // 1*1*5*5
-    const cBefore = map.getBuildings().getBuilding(1)!;
-    const iBefore = map.getBuildings().getBuilding(2)!;
+    // `getBuilding` returns the STORED object and `World.tick` mutates it in place, so a bare
+    // `const cBefore = map.getBuildings().getBuilding(1)!` would alias the post-tick object —
+    // every "pinned unchanged" assertion below would compare a value to itself. Snapshot the
+    // primitive fields plus a cloned structureRect instead.
+    const b1 = map.getBuildings().getBuilding(1)!;
+    const b2 = map.getBuildings().getBuilding(2)!;
+    const cBefore = { level: b1.level, density: b1.density, structureRect: { ...b1.structureRect } };
+    const iBefore = { level: b2.level, density: b2.density, structureRect: { ...b2.structureRect } };
     const popBefore = world.getPopulation();
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
@@ -517,8 +523,12 @@ describe('World.tick() — density tier', () => {
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
 
     expect(buildingCapacity(map.getBuildings().getBuilding(0)!)).toBe(50); // 2*1*5*5
-    const cBefore = map.getBuildings().getBuilding(1)!;
-    const iBefore = map.getBuildings().getBuilding(2)!;
+    // See the ribbon actuator test above: `getBuilding` returns the stored, in-place-mutated
+    // object, so a bare reference would self-compare. Snapshot instead.
+    const b1 = map.getBuildings().getBuilding(1)!;
+    const b2 = map.getBuildings().getBuilding(2)!;
+    const cBefore = { level: b1.level, density: b1.density, structureRect: { ...b1.structureRect } };
+    const iBefore = { level: b2.level, density: b2.density, structureRect: { ...b2.structureRect } };
     const popBefore = world.getPopulation();
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
@@ -537,6 +547,107 @@ describe('World.tick() — density tier', () => {
     expect(iAfter.structureRect).toEqual(iBefore.structureRect);
 
     expect(world.getPopulation()).toBe(popBefore + 20);
+  });
+
+  it('1-wide lot never bumps past tier 1 (width cap, not a closed demand/abandonment gate)', () => {
+    // Clone of the ribbon actuator fixture above, but the target already sits at density 1 —
+    // the negative control for the lot-width density cap. A density-1 target supplies
+    // 1*1*5*7 = 35 workers (up from the 0-density actuator's 25), so the level-4 C/I seeders
+    // there no longer clear DENSITY_DEMAND_THRESHOLD; retuned to level 5 (max, still 1x1 — the
+    // served cluster already supports level 5 at 1x1, as the modal fixture's own C seeder
+    // proves) to restore the vacancy surplus.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+
+    map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [SERVED_R], anchor: SERVED_R,
+      level: ZONE_MAX_LEVEL, density: 1, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'commercial', footprint: [SERVED_C], anchor: SERVED_C, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [SERVED_I], anchor: SERVED_I, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 } });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    const ageBefore = map.getBuildings().getBuilding(0)!.age;
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL * 2; i++) {
+      world.tick();
+      const b = map.getBuildings().getBuilding(0)!;
+      // Pin every other gate open on every sample: without this, "density stays 1" could pass
+      // for a silently-closed demand/abandonment gate rather than the width cap.
+      expect(b.abandoned).toBe(false);
+      expect(b.density).toBe(1);
+    }
+
+    // The branch was actually visited (aging happened) across the run, not skipped entirely.
+    expect(map.getBuildings().getBuilding(0)!.age).toBeGreaterThan(ageBefore);
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+  });
+
+  it('2-wide lot reaches tier 2 (positive control): target steps 70 -> 100, and the citywide population step matches once C/I are pinned unchanged', () => {
+    // Clone of the modal actuator fixture's 2-wide x 1-deep lot above, but the target already
+    // sits at density 1 (buildingCapacity 70) — the width variable's positive control, and proof
+    // an assembled lot actually reaches the top tier the ribbon negative above is capped out of.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+    map.setTile(2, 1, createTile(2, 1, TileType.ZONE_RESIDENTIAL));
+    map.setTile(6, 1, createTile(6, 1, TileType.ZONE_INDUSTRIAL));
+    world.markLandValueDirty();
+    world.recomputeLandValue();
+
+    map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [{ x: 2, y: 1 }, { x: 3, y: 1 }], anchor: { x: 2, y: 1 },
+      level: ZONE_MAX_LEVEL, density: 1, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
+      structureRect: { x: 2, y: 1, w: 2, h: 1 },
+    });
+    map.getBuildings().addExistingBuilding({ id: 1, type: 'commercial', footprint: [SERVED_C], anchor: SERVED_C, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } });
+    map.getBuildings().addExistingBuilding({
+      id: 2, type: 'industrial', footprint: [{ x: 5, y: 1 }, { x: 6, y: 1 }], anchor: { x: 5, y: 1 },
+      level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 5, y: 1, w: 2, h: 1 },
+    });
+    // Density-1 target now supplies 2*1*5*7 = 70 workers (up from the 0-density actuator's 50),
+    // so the original two C/I seeders (75 jobs total) no longer clear the surplus needed for
+    // DENSITY_DEMAND_THRESHOLD; a third, small (level 2, unzoned so it sits outside the growth
+    // loop's zone-tile scan and can never itself age or grow) industrial seeder restores it.
+    map.getBuildings().addExistingBuilding({
+      id: 3, type: 'industrial', footprint: [{ x: 9, y: 1 }], anchor: { x: 9, y: 1 },
+      level: 2, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: 9, y: 1, w: 1, h: 1 },
+    });
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    expect(buildingCapacity(map.getBuildings().getBuilding(0)!)).toBe(70); // 2*1*5*7
+    const b1 = map.getBuildings().getBuilding(1)!;
+    const b2 = map.getBuildings().getBuilding(2)!;
+    const b3 = map.getBuildings().getBuilding(3)!;
+    const cBefore = { level: b1.level, density: b1.density, structureRect: { ...b1.structureRect } };
+    const iBefore = { level: b2.level, density: b2.density, structureRect: { ...b2.structureRect } };
+    const i2Before = { level: b3.level, density: b3.density, structureRect: { ...b3.structureRect } };
+    const popBefore = world.getPopulation();
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    const target = map.getBuildings().getBuilding(0)!;
+    expect(target.density).toBe(2);
+    expect(buildingCapacity(target)).toBe(100); // 2*1*5*10
+
+    const cAfter = map.getBuildings().getBuilding(1)!;
+    const iAfter = map.getBuildings().getBuilding(2)!;
+    const i2After = map.getBuildings().getBuilding(3)!;
+    expect(cAfter.level).toBe(cBefore.level);
+    expect(cAfter.density).toBe(cBefore.density);
+    expect(cAfter.structureRect).toEqual(cBefore.structureRect);
+    expect(iAfter.level).toBe(iBefore.level);
+    expect(iAfter.density).toBe(iBefore.density);
+    expect(iAfter.structureRect).toEqual(iBefore.structureRect);
+    expect(i2After.level).toBe(i2Before.level);
+    expect(i2After.density).toBe(i2Before.density);
+    expect(i2After.structureRect).toEqual(i2Before.structureRect);
+
+    expect(world.getPopulation()).toBe(popBefore + 30);
   });
 });
 

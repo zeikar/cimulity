@@ -28,6 +28,7 @@ import {
   hasFrontageRoadAccess,
   canExtendStructure,
   extendStructureToward,
+  maxDensityForLot,
   isUnderSupported,
 } from './zoneGrowth';
 import { lotBboxOf } from './buildingFootprint';
@@ -1153,10 +1154,14 @@ export class World {
           // that reaches this branch already clears that threshold — an explicit check here would
           // be dead code. That same sweep is what claws density-created capacity back: if land
           // value later drops below the threshold, the whole building abandons.
+          // The tier ceiling is keyed on lot width along the frontage: a 1-wide (unmerged) lot
+          // stops at tier 1, only an assembled >=2-wide lot reaches tier 2 — assembling land, not
+          // waiting, unlocks the top tier. This gate blocks INCREASES only, so a pre-change save's
+          // over-cap density is grandfathered in place rather than clamped or clawed back.
           if (
             demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
-            existing.density < 2 &&
+            existing.density < maxDensityForLot(lot, existing.frontage) &&
             isBuildingWatered(existing, wm) &&
             isAnchorCovered(existing.anchor, svc) &&
             isFireAnchorCovered(existing.anchor, fireSvc) &&
