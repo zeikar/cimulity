@@ -4,6 +4,7 @@ import type { Building } from './Building';
 import type { Frontage, Rect } from './buildingFootprint';
 import { isStructureRectInLot, lotBboxOf } from './buildingFootprint';
 import { buildingCapacity } from './buildingCapacity';
+import { maxDensityForLot } from './zoneGrowth';
 
 function makeBuilding(opts: {
   id: number;
@@ -329,6 +330,13 @@ describe('canMerge — merge conservation invariant', () => {
               const merged: Building = { ...mergedBuildingShape(a, b), id: idBase };
               idBase += 1;
               expect(buildingCapacity(merged), label).toBe(buildingCapacity(a) + buildingCapacity(b));
+
+              // The merged lot is strictly wider than either input along the frontage axis, so its
+              // density cap never falls below the pair's shared tier — even a grandfathered
+              // width-1 + width-1 density-2 pair lands inside the 2-wide cap.
+              expect(merged.density, label).toBeLessThanOrEqual(
+                maxDensityForLot(lotBboxOf(merged.footprint), frontage),
+              );
             }
           }
         }
