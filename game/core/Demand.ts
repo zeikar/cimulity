@@ -49,8 +49,9 @@ export const COMMERCIAL_CAPACITY_SHARE = 0.25;
 // growth driver, without which the all-zero state would be absorbing (no zone tile supplies workers,
 // jobs or levels, so nothing the player painted could change the ratio). Must stay strictly between
 // GROWTH_DEMAND_THRESHOLD (so the R gates stay open when balanced) and DENSITY_DEMAND_THRESHOLD (so
-// migration alone can never densify or merge); set at the low end, where it fills exactly one of the
-// HUD's ten blocks.
+// migration alone can never densify); set at the low end, where it fills exactly one of the HUD's ten
+// blocks. Merges are deliberately outside that band: canMerge keys on built-out parcels and accepts
+// this floor, so a balanced city still consolidates land.
 export const MIGRATION_PRESSURE = 0.1;
 
 // The unemployment rate at which in-migration stops entirely — Micropolis's
@@ -64,24 +65,24 @@ export const MIGRATION_UNEMPLOYMENT_CUTOFF = 0.2;
 // external-market pull that keeps the workplace gates open at balance, MIGRATION_PRESSURE's
 // counterpart for commercial and industrial. Must stay strictly between GROWTH_DEMAND_THRESHOLD
 // (so the C/I spawn/level-up gates stay open when balanced) and DENSITY_DEMAND_THRESHOLD (so the
-// floor alone can never densify or merge); set at the low end, like MIGRATION_PRESSURE. Shared
-// unsplit by C and I: laborMarket.ts pools their jobs as interchangeable, so there is no shared
-// quantity to divide between them.
+// floor alone can never densify — it can still merge a built-out pair, by design); set at the low
+// end, like MIGRATION_PRESSURE. Shared unsplit by C and I: laborMarket.ts pools their jobs as
+// interchangeable, so there is no shared quantity to divide between them.
 export const WORKPLACE_PRESSURE = 0.1;
 
 // Applied whenever the labor market is empty: there is nothing to be proportional to in that state
 // and "build homes" is the only correct instruction. A gate opener, not a pacing knob.
 export const BOOTSTRAP_RESIDENTIAL_DEMAND = 1;
 
-// Gate for spawn and level-up. Zero is the anchor, not the absence of one: the deadband already
-// encodes "balanced", so a strictly positive reading is either an imbalance beyond DEADBAND_RATE or
-// live in-migration.
+// Gate for spawn, level-up, and — now that consolidation keys on built-out parcels — merge. Zero is
+// the anchor, not the absence of one: the deadband already encodes "balanced", so a strictly
+// positive reading is either an imbalance beyond DEADBAND_RATE or live in-migration.
 export const GROWTH_DEMAND_THRESHOLD = 0;
 
 // The one gate where magnitude matters. A jobs bar reaches 0.375 exactly when citywide unemployment
 // hits 20% with no reachable vacancies (0.5 × 0.75); the residential bar reaches it at a 12.5%
 // reachable-vacancy surplus. A jobs bar caps at COMMERCIAL_JOB_SHARE, so the previous 0.6 would have
-// made industrial density bumps and merges unreachable in every city.
+// made industrial density bumps unreachable in every city.
 export const DENSITY_DEMAND_THRESHOLD = 0.375;
 
 /** Reading of a city whose labor market is empty; also Demand's value before the first recompute. */

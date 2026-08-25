@@ -26,13 +26,12 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v19';
 
-// Bumped from 'service-v13' to 'service-v15' for two behavioral changes to World.tick, neither
-// an API addition `hasCurrentWorldApi` can detect: the density-bump branch now caps the reachable
-// tier on lot width (`maxDensityForLot`) instead of the flat `density < 2`, and WORLD_SAVE_VERSION
-// moved 18 -> 19 in step. A retained singleton could otherwise keep running the old flat gate, or
-// sit on a world hydrated from a save format this branch no longer reads — discarding it forces a
-// fresh hydration that re-validates against both changes.
-const WORLD_SINGLETON_GUARD = 'service-v15' as const;
+// Bumped from 'service-v15' to 'service-v16' for a behavioral change to World.tick that
+// `hasCurrentWorldApi` cannot detect, since it adds no method: the merge gate is rekeyed from a
+// demand spike to BUILT-OUT parcels (max level, at their lot-width density cap, structures that
+// cannot extend), so which pairs consolidate changes even though the save format stays at v19. A
+// retained singleton would otherwise keep running the old spike gate for the rest of the session.
+const WORLD_SINGLETON_GUARD = 'service-v16' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
