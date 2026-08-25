@@ -200,6 +200,16 @@ function structureDepthCap(lot: Rect, frontage: Frontage): number {
   return Math.max(MIN_STRUCTURE_DEPTH_CAP, lotWidthAlongFrontage(lot, frontage));
 }
 
+/**
+ * Cap the density tier a lot can reach, keyed on the same frontage-axis
+ * width as `structureDepthCap` so both lot-size limits share one measure.
+ * A 1-wide (unmerged) lot stops at tier 1; only an assembled >=2-wide lot
+ * reaches tier 2 — land assembly, not waiting, unlocks the top tier.
+ */
+export function maxDensityForLot(lot: Rect, frontage: Frontage): 1 | 2 {
+  return lotWidthAlongFrontage(lot, frontage) >= 2 ? 2 : 1;
+}
+
 // A structure can grow further only when it has neither hit the depth cap
 // nor saturated the lot's depth.
 export function canExtendStructure(sr: Rect, lot: Rect, frontage: Frontage): boolean {

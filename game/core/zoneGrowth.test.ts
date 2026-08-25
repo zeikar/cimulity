@@ -10,6 +10,7 @@ import {
   extendStructureToward,
   structureRectFillsLotDepth,
   canExtendStructure,
+  maxDensityForLot,
   maxSupportedLevel,
   isUnderSupported,
 } from './zoneGrowth';
@@ -519,6 +520,20 @@ describe('canExtendStructure', () => {
     const lot = { x: 0, y: 0, w: 4, h: 3 };
     const sr = { x: 0, y: 0, w: 3, h: 3 };
     expect(canExtendStructure(sr, lot, 'W')).toBe(false);
+  });
+});
+
+describe('maxDensityForLot', () => {
+  it('1-wide lot (width = lot.w for N/S frontage) caps at tier 1', () => {
+    expect(maxDensityForLot({ x: 0, y: 0, w: 1, h: 4 }, 'N')).toBe(1);
+  });
+
+  it('same rect, W frontage: width = lot.h = 4 caps at tier 2 (orientation sensitive)', () => {
+    expect(maxDensityForLot({ x: 0, y: 0, w: 1, h: 4 }, 'W')).toBe(2);
+  });
+
+  it('2×2 lot at the width-2 boundary caps at tier 2', () => {
+    expect(maxDensityForLot({ x: 0, y: 0, w: 2, h: 2 }, 'S')).toBe(2);
   });
 });
 
