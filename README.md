@@ -16,7 +16,7 @@ MVP-1 is playable and in active development. The current build supports:
 - Vertex-based terrain with smooth slopes, elevation-derived water, and coplanar road/zone placement
 - Fixed-timestep simulation with zone growth, capacity-conserving lot merges, population, money, speed/pause controls, autosave, and New City reset
 - Power plants + binary reachability gate zone growth
-- Water towers gate zone level-ups/density — density tiers now add real population/job capacity rather than a cosmetic tag (power gates initial spawn)
+- Water towers gate zone level-ups/density — density tiers now add real population/job capacity rather than a cosmetic tag, and the top density tier requires an assembled ≥2-wide lot, so merging is how the tallest buildings unlock (power gates initial spawn)
 - Population, workforce, and job capacity all derive from each building's built structure area (not level alone), so a wider merged lot or a fully built-out structure holds proportionally more people and jobs
 - Police, fire, hospital, and school stations provide road-network coverage; level-up now requires all four at the anchor
 - Land value gates level-up at the anchor: road proximity (weight 0.40), zone-mix diversity (0.10), service coverage (0.50 — avg of the four), plus additive park proximity (+0.25 max) and a subtractive road-congestion penalty (−0.20 max); park is a separate amenity, not a fifth coverage service
