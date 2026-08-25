@@ -15,7 +15,11 @@ import type { ScreenCoord } from '@/game/types/coordinates';
 // Cursor offset and rough panel extents used to keep the panel on-screen.
 const CURSOR_OFFSET = 14;
 const EST_WIDTH = 240;
-const EST_HEIGHT = 320;
+// Sized against the tallest panel: a zoned+building tile with an at-cap Density
+// row (its lot-width suffix can wrap to a second line at this panel's 220px
+// min-width) plus the Capacity row — both must fit before the bottom-edge
+// overflow check below flips the panel to the other side of the cursor.
+const EST_HEIGHT = 360;
 
 /**
  * Place the panel near the click, flipping to the opposite side of the cursor
@@ -192,7 +196,12 @@ export function TileInfoPanel({
             <div style={{ marginTop: '6px', opacity: 0.7 }}>Building</div>
             <Row label="Kind">{BUILDING_TYPE_LABELS[info.building.type]}</Row>
             <Row label="Level">{info.building.level}</Row>
-            <Row label="Density">{DENSITY_LABELS[info.building.density]}</Row>
+            <Row label="Density">
+              {info.building.density === info.building.maxDensity
+                ? `${DENSITY_LABELS[info.building.density]} — max for this ${info.building.lotWidth}-wide lot`
+                : DENSITY_LABELS[info.building.density]}
+            </Row>
+            <Row label="Capacity">{info.building.capacity}</Row>
             <Row label="Age">{info.building.age}</Row>
             <Row label="Status">
               <span style={{ color: info.building.abandoned ? '#ff6b6b' : '#4caf50' }}>
