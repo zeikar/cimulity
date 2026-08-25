@@ -245,20 +245,84 @@ describe('inspectTile', () => {
   it('surfaces a grown building occupying the tile', () => {
     const world = makeWorld();
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    // A 1-wide lot capped at density tier 1 (level 5, density 1) — the built-out
+    // state a width-1 lot can actually reach, unlike the old level-1/density-2
+    // fixture, which no simulation path can produce (over the lot-width cap).
     world.getMap().getBuildings().addBuilding({
       type: 'residential',
       footprint: [{ x: 2, y: 2 }],
       anchor: { x: 2, y: 2 },
-      level: 1,
-      density: 2,
+      level: 5,
+      density: 1,
       age: 5,
       abandoned: false,
       frontage: 'S',
       structureRect: { x: 2, y: 2, w: 1, h: 1 },
     });
     const info = inspectTile(world, { x: 2, y: 2 });
-    expect(info!.building).toEqual({ type: 'residential', level: 1, density: 2, age: 5, abandoned: false });
+    // capacity = 1 * 1 * 5 * DENSITY_CAPACITY_UNITS[1] (7) = 35.
+    expect(info!.building).toEqual({
+      type: 'residential',
+      level: 5,
+      density: 1,
+      age: 5,
+      abandoned: false,
+      capacity: 35,
+      lotWidth: 1,
+      maxDensity: 1,
+    });
     expect(info!.structure).toBeNull();
+  });
+
+  it('reports capacity 200, lotWidth 2, maxDensity 2 for a built-out 2x2 lot at density tier 2', () => {
+    const world = makeWorld();
+    for (const [x, y] of [[2, 2], [3, 2], [2, 3], [3, 3]]) {
+      world.getMap().setTile(x, y, createTile(x, y, TileType.ZONE_RESIDENTIAL));
+    }
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+      anchor: { x: 2, y: 2 },
+      level: 5,
+      density: 2,
+      age: 5,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 2, h: 2 },
+    });
+    const info = inspectTile(world, { x: 2, y: 2 });
+    // capacity = 2 * 2 * 5 * DENSITY_CAPACITY_UNITS[2] (10) = 200.
+    expect(info!.building!.capacity).toBe(200);
+    expect(info!.building!.lotWidth).toBe(2);
+    expect(info!.building!.maxDensity).toBe(2);
+  });
+
+  it('reports lotWidth 2 for a W-frontage lot 1 wide x 2 tall (width measured along the depth-perpendicular axis)', () => {
+    const world = makeWorld();
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(2, 3, createTile(2, 3, TileType.ZONE_RESIDENTIAL));
+    // A 2-cell-along-the-width-axis footprint only exists after a merge (mergePolicy.ts),
+    // which requires both parents at ZONE_MAX_LEVEL first — so level must be 5, not a
+    // fresh-spawn 1. density 1 is the just-merged, not-yet-density-bumped state: merge
+    // takes max(a.density, b.density), and each 1-wide parent was capped at tier 1.
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 2, y: 2 }, { x: 2, y: 3 }],
+      anchor: { x: 2, y: 2 },
+      level: 5,
+      density: 1,
+      age: 0,
+      abandoned: false,
+      frontage: 'W',
+      structureRect: { x: 2, y: 2, w: 1, h: 2 },
+    });
+    const info = inspectTile(world, { x: 2, y: 2 });
+    // lot is 1 wide x 2 tall; for W/E frontage the width-along-frontage axis is
+    // lot.h, not lot.w — so this must read 2, not 1 (the N/S-axis answer).
+    // capacity = 1 * 2 * 5 * DENSITY_CAPACITY_UNITS[1] (7) = 70.
+    expect(info!.building!.capacity).toBe(70);
+    expect(info!.building!.lotWidth).toBe(2);
+    expect(info!.building!.maxDensity).toBe(2);
   });
 
   it('surfaces abandoned:true for an abandoned building and abandoned:false for an active one', () => {

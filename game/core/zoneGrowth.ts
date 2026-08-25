@@ -188,8 +188,12 @@ function structureDepth(sr: Rect, frontage: Frontage): number {
   return (frontage === 'N' || frontage === 'S') ? sr.h : sr.w;
 }
 
-// Width of the lot along its frontage axis (parallel to the road).
-function lotWidthAlongFrontage(lot: Rect, frontage: Frontage): number {
+/**
+ * Width of the lot along its frontage axis (parallel to the road).
+ * Exported so inspectTile can report the same width measure maxDensityForLot
+ * and structureDepthCap gate on.
+ */
+export function lotWidthAlongFrontage(lot: Rect, frontage: Frontage): number {
   return (frontage === 'N' || frontage === 'S') ? lot.w : lot.h;
 }
 

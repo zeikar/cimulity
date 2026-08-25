@@ -18,11 +18,14 @@ import type { World } from '../core/World';
 import type { GameMap } from '../core/Map';
 import type { TileCoord } from '../types/coordinates';
 import type { TileType } from '../core/Tile';
-import type { BuildingType } from '../core/Building';
+import type { Building, BuildingType } from '../core/Building';
 import type { Structure, StructureType } from '../core/StructureMap';
 import { isBuildingPowered, isStructurePowered, type PowerMap } from '../core/PowerMap';
 import { isBuildingWatered, isStructureWatered, type WaterMap } from '../core/WaterMap';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from '../core/ServiceCoverageMap';
+import { buildingCapacity } from '../core/buildingCapacity';
+import { lotBboxOf } from '../core/buildingFootprint';
+import { lotWidthAlongFrontage, maxDensityForLot } from '../core/zoneGrowth';
 
 export interface TileBuildingInfo {
   readonly type: BuildingType;
@@ -30,6 +33,12 @@ export interface TileBuildingInfo {
   readonly density: 0 | 1 | 2;
   readonly age: number;
   readonly abandoned: boolean;
+  /** Workforce/population units this building contributes — buildingCapacity(b), pure geometry. */
+  readonly capacity: number;
+  /** Lot width along the frontage axis — the same measure maxDensityForLot/structureDepthCap gate on. */
+  readonly lotWidth: number;
+  /** Highest density tier this lot's width allows (1 unmerged, 2 once assembled >=2 wide). */
+  readonly maxDensity: 1 | 2;
 }
 
 export interface TileInfo {
@@ -94,6 +103,26 @@ function structureWatered(structure: Structure, water: WaterMap, map: GameMap): 
   if (structure.type === 'water_tower') return true;
   if (structure.type === 'power_plant') return false;
   return isStructureWatered(structure, water, map);
+}
+
+/**
+ * Building readout. Pulled out of the return-object ternary because `lot`
+ * (lotBboxOf(building.footprint)) is shared by two fields (lotWidth,
+ * maxDensity) but only exists inside the nullable `building` branch — a
+ * helper avoids an IIFE or a hoisted `const lot` plus a non-null assertion.
+ */
+function buildingInfo(building: Building): TileBuildingInfo {
+  const lot = lotBboxOf(building.footprint);
+  return {
+    type: building.type,
+    level: building.level,
+    density: building.density,
+    age: building.age,
+    abandoned: building.abandoned,
+    capacity: buildingCapacity(building),
+    lotWidth: lotWidthAlongFrontage(lot, building.frontage),
+    maxDensity: maxDensityForLot(lot, building.frontage),
+  };
 }
 
 /**
@@ -194,15 +223,7 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     isSchoolSource,
     landValue: world.getLandValue().getValue(coord.x, coord.y),
     congestionPenalty: world.getLandValue().getCongestionPenalty(coord.x, coord.y),
-    building: building
-      ? {
-          type: building.type,
-          level: building.level,
-          density: building.density,
-          age: building.age,
-          abandoned: building.abandoned,
-        }
-      : null,
+    building: building ? buildingInfo(building) : null,
     structure: structure ? { type: structure.type } : null,
   };
 }
