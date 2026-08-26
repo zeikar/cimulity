@@ -136,10 +136,19 @@ describe('World.tick() — abandonment / dilapidation', () => {
     expect(map.getBuildings().getBuilding(0)!.age).toBe(ageWhileAbandoned + 2);
   });
 
-  it('an abandoned building does not age or level-up across several growth ticks', () => {
+  it('a derelict that keeps its road and power keeps aging, but never levels up', () => {
+    // Road-accessed AND powered, and still under-supported: the anchor's uncongested land
+    // value is road proximity plus zone-mix diversity only — no stations and no parks in this
+    // fixture — so ROAD_WEIGHT · (1 − 1/(ROAD_RADIUS+1)) + DIVERSITY_WEIGHT · 1/3 =
+    // 0.40 · 6/7 + 0.10 · 1/3 ≈ 0.37619 (LandValueMap.ts). That clears
+    // LEVEL_THRESHOLDS[2] = 0.25 but not LEVEL_THRESHOLDS[3] = 0.45, so maxSupportedLevel is 2,
+    // the level-3 building is condemned on the first sweep, and nothing in the fixture can ever
+    // lift it back over 0.45. There are no jobs anywhere, so no commuter loads any road and the
+    // congested value the growth gates read is the same number.
     const world = new World(8, 8, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
     map.getBuildings().addExistingBuilding({
       id: 0,
       type: 'residential',
@@ -149,18 +158,39 @@ describe('World.tick() — abandonment / dilapidation', () => {
       density: 0,
       age: 0,
       abandoned: false,
-      frontage: 'S',
+      frontage: 'E',
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
+    // Plant (2,0)-(3,1). Power conducts along ROADS only: (2,0) is orthogonally adjacent to
+    // the road at (1,0), which in turn powers the building cell (0,0) next to it (PowerMap.ts).
+    seedPower(world, 2, 0);
     world.markLandValueDirty();
-    seedPower(world, 4, 4);
+    // Land value does NOT drain on read — force it before asserting the sweep's input.
+    world.recomputeLandValueIfDirty();
+    expect(world.getLandValue().getUncongestedValue(0, 0)).toBeCloseTo(0.4 * (6 / 7) + 0.1 / 3, 6);
+    expect(world.getLandValue().getUncongestedValue(0, 0)).toBeLessThan(LEVEL_THRESHOLDS[3]);
 
-    for (let i = 0; i < 5; i++) tickOneGrowthInterval(world);
+    // First growth interval: the sweep condemns it, and it ages anyway. The road and power
+    // gates are what hold a building's age still, and this fixture passes both — the freeze
+    // check sits after the age++ (World.ts) precisely so eligibility keeps accruing.
+    tickOneGrowthInterval(world);
+    const first = map.getBuildings().getBuilding(0)!;
+    expect(first.abandoned).toBe(true);
+    expect(first.age).toBe(1);
+    expect(first.level).toBe(3);
 
-    const b = map.getBuildings().getBuilding(0)!;
-    expect(b.abandoned).toBe(true);
-    expect(b.age).toBe(0); // never aged while abandoned
-    expect(b.level).toBe(3); // never levelled
+    // Four more intervals, each asserted against a COPY of `age` taken before the tick:
+    // getBuilding hands back the live object World.tick mutates, so a "before" held by
+    // reference is the same object as the "after" and would compare against itself.
+    for (let i = 0; i < 4; i++) {
+      const ageBefore = map.getBuildings().getBuilding(0)!.age;
+      tickOneGrowthInterval(world);
+      const b = map.getBuildings().getBuilding(0)!;
+      expect(b.age).toBe(ageBefore + 1); // aging is eligibility, not a growth mutation
+      expect(b.abandoned).toBe(true);    // land value never recovers, so the freeze never lifts
+      expect(b.level).toBe(3);           // frozen — every growth branch is skipped
+    }
+    expect(map.getBuildings().getBuilding(0)!.age).toBe(5);
   });
 
   it('a level-1 building on zero-value land is NOT abandoned (level-1 floor)', () => {

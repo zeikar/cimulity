@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { World, ZONE_GROWTH_INTERVAL, DENSITY_COOLDOWN_INTERVALS } from './World';
-import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, MIN_STRUCTURE_DEPTH_CAP, ZONE_MAX_LEVEL } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, MIN_STRUCTURE_DEPTH_CAP, stagger, ZONE_MAX_LEVEL } from './growthConstants';
 import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import { buildingCapacity } from './buildingCapacity';
 import { canExtendStructure, footprintCells, maxDensityForLot, structureDepth } from './zoneGrowth';
@@ -251,6 +251,130 @@ describe("World.tick() — merge (Branch B'')", () => {
     // structureRect = bbox union of the two 1×1 structureRects → 2×1
     expect(merged.structureRect).toEqual({ x: X0, y: R_Y, w: 2, h: 1 });
     expect(buildingCapacity(merged)).toBe(70); // conserved: 2·1·5·7 = 35 + 35
+  });
+
+  it('a derelict pair ages through the freeze, so it merges on the first unfrozen pass after recovery', () => {
+    // The happy-path fixture put through a dereliction, with `age` reset to 0 first so the ONLY
+    // thing that can carry the pair back over canMerge's cooldown gate is the aging that happens
+    // WHILE it is derelict. World.tick's freeze check sits after the age++, so a derelict that
+    // keeps its road and power keeps accruing merge eligibility instead of re-earning all of it
+    // after recovery.
+    const { world, ids } = setupMergeStrip(2);
+    const map = world.getMap();
+    const sm = world.getStructureMap();
+    const [idA, idB] = ids;
+
+    // canMerge gate 6 needs GROWTH_COOLDOWN_INTERVALS + stagger(id) on BOTH sides, so the
+    // binding figure is the larger of the two — derived here rather than written as a literal.
+    const mergeCooldown = Math.max(
+      GROWTH_COOLDOWN_INTERVALS + stagger(idA),
+      GROWTH_COOLDOWN_INTERVALS + stagger(idB),
+    );
+    expect(mergeCooldown).toBeLessThanOrEqual(GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER);
+    for (const id of ids) map.getBuildings().getBuilding(id)!.age = 0;
+
+    // BOTH parks have to go. Park proximity is nearest-wins over every park cell in radius, and
+    // each anchor sits at Chebyshev 1 from its NEIGHBOUR's park as well as its own, so leaving
+    // either one standing holds both anchors at the full boost.
+    const withParks = ids.map(id => {
+      const a = map.getBuildings().getBuilding(id)!.anchor;
+      return world.getLandValue().getUncongestedValue(a.x, a.y);
+    });
+    for (let i = 0; i < ids.length; i++) {
+      const park = sm.getStructureAt(X0 + i, PARK_Y)!;
+      expect(park.type).toBe('park');
+      expect(sm.removeStructure(park.id)).toBe(true);
+    }
+    world.markLandValueDirty();
+    // Land value does NOT drain on read — force it before reading the sweep's input.
+    world.recomputeLandValueIfDirty();
+
+    // The park term is the only land-value input that moved, and it is worth exactly
+    // PARK_BOOST_MAX · (1 − 1/(PARK_RADIUS+1)) = 0.25 · 4/5 = 0.20 at Chebyshev 1
+    // (LandValueMap.ts), taking each anchor from ≈ 0.99 to ≈ 0.79. That lands inside
+    // [LEVEL_THRESHOLDS[4], LEVEL_THRESHOLDS[5]) = [0.65, 0.85) — one level short — so
+    // maxSupportedLevel is 4 and both level-5 parcels are condemned. The sweep reads the
+    // UNCONGESTED value, which is what these assertions therefore read too.
+    ids.forEach((id, i) => {
+      const a = map.getBuildings().getBuilding(id)!.anchor;
+      const unc = world.getLandValue().getUncongestedValue(a.x, a.y);
+      expect(unc).toBeCloseTo(withParks[i] - 0.25 * (4 / 5), 6);
+      expect(unc).toBeLessThan(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+      expect(unc).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL - 1]);
+    });
+
+    // Condemnation pass. Both are frozen from here on, and both age on this very pass: road
+    // access and power are what pin a building's age, and the fixture keeps both throughout.
+    oneGrowthTick(world);
+    for (const id of ids) {
+      const b = map.getBuildings().getBuilding(id)!;
+      expect(b.abandoned).toBe(true);
+      expect(b.age).toBe(1);
+      expect(b.level).toBe(ZONE_MAX_LEVEL);
+    }
+
+    // A worst-case cooldown's worth of derelict passes. `age` is copied into a local BEFORE each
+    // tick: getBuilding returns the live object World.tick mutates, so a "before" held by
+    // reference is the same object as the "after" and would compare against itself.
+    const DERELICT_PASSES = GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER;
+    for (let g = 0; g < DERELICT_PASSES; g++) {
+      const agesBefore = ids.map(id => map.getBuildings().getBuilding(id)!.age);
+      oneGrowthTick(world);
+      ids.forEach((id, i) => {
+        const b = map.getBuildings().getBuilding(id)!;
+        expect(b.age).toBe(agesBefore[i] + 1); // eligibility accrues through the freeze
+        expect(b.abandoned).toBe(true);
+      });
+    }
+    expect(residentialOf(world).length).toBe(2); // frozen the whole way — nothing merged
+
+    // Parks back → the anchors return to the value they started at and the pair re-occupies.
+    for (let i = 0; i < ids.length; i++) {
+      expect(sm.addStructure({
+        type: 'park',
+        anchor: { x: X0 + i, y: PARK_Y },
+        footprint: [{ x: X0 + i, y: PARK_Y }],
+      })).not.toBeNull();
+    }
+    world.markLandValueDirty();
+    world.recomputeLandValueIfDirty();
+    ids.forEach((id, i) => {
+      const a = map.getBuildings().getBuilding(id)!.anchor;
+      expect(world.getLandValue().getUncongestedValue(a.x, a.y)).toBeCloseTo(withParks[i], 6);
+    });
+
+    // Recovery pass: the sweep flips both back to occupied, but frozenThisTick holds every
+    // building abandoned at sweep ENTRY, so neither may merge on this pass either.
+    const agesAtRecovery = ids.map(id => map.getBuildings().getBuilding(id)!.age);
+    oneGrowthTick(world);
+    ids.forEach((id, i) => {
+      const b = map.getBuildings().getBuilding(id)!;
+      expect(b.abandoned).toBe(false);
+      expect(b.age).toBe(agesAtRecovery[i] + 1);
+      expect(b.age).toBe(1 + DERELICT_PASSES + 1); // 1 condemnation + 14 derelict + 1 recovery
+      expect(b.age).toBeGreaterThanOrEqual(mergeCooldown);
+    });
+    expect(residentialOf(world).length).toBe(2);
+
+    // First unfrozen pass — and THIS is the assertion that pins the age++/freeze ordering. With
+    // the freeze check back above the age++, `age` would have stayed 0 for the whole
+    // dereliction AND the recovery pass, so this pass would be the pair's first age++ (age 1),
+    // canMerge's cooldown gate would reject, and the merge would fire only after the pair
+    // re-earned the full cooldown post-recovery. Eligibility accruing DURING abandonment is
+    // what moves the merge forward to this pass.
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
+    const popBefore = world.getPopulation();
+
+    oneGrowthTick(world);
+
+    expect(map.getBuildings().getBuilding(idA)).toBeNull();
+    expect(map.getBuildings().getBuilding(idB)).toBeNull();
+    const remaining = residentialOf(world);
+    expect(remaining.length).toBe(1);
+    expect(remaining[0].level).toBe(ZONE_MAX_LEVEL);
+    expect(remaining[0].structureRect).toEqual({ x: X0, y: R_Y, w: 2, h: 1 });
+    expect(buildingCapacity(remaining[0])).toBe(70); // conserved: 35 + 35
+    expect(world.getPopulation()).toBe(popBefore);
   });
 
   it('disjoint pairs then a second generation: 4 parcels consolidate to one 4-wide building', () => {
