@@ -26,12 +26,12 @@ const MAP_HEIGHT = 64;
 // First save under this key always creates fresh data (no silent overwrite of stale data).
 const STORAGE_KEY = 'cimulity:save:v19';
 
-// Bumped from 'service-v15' to 'service-v16' for a behavioral change to World.tick that
-// `hasCurrentWorldApi` cannot detect, since it adds no method: the merge gate is rekeyed from a
-// demand spike to BUILT-OUT parcels (max level, at their lot-width density cap, structures that
-// cannot extend), so which pairs consolidate changes even though the save format stays at v19. A
-// retained singleton would otherwise keep running the old spike gate for the rest of the session.
-const WORLD_SINGLETON_GUARD = 'service-v16' as const;
+// Bumped from 'service-v16' to 'service-v17' for a behavioral change to World.tick that
+// `hasCurrentWorldApi` cannot detect, since it adds no method: the merge shape gate now checks
+// only structureRect DEPTH equality (not full width x depth equality), so lots of unequal width
+// merge — which pairs consolidate changes even though the save format stays at v19. A retained
+// singleton would otherwise keep running the old equal-dimensions gate for the rest of the session.
+const WORLD_SINGLETON_GUARD = 'service-v17' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -61,8 +61,9 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v15 / v19 — density-bump branch caps the reachable tier on lot
- * width instead of a flat `density < 2`):
+ * Checked methods (as of service-v17 / v19). The list itself has not moved since service-v15 —
+ * v16 and v17 were behavioural `World.tick` bumps that added no method — but the stamp tracks the
+ * guard so a reader can tell at a glance that it was reviewed against the current sentinel:
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,
