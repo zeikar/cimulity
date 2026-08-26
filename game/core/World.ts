@@ -1118,11 +1118,18 @@ export class World {
         if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
           // Branch B' — structure-grow, reachable at ANY level now, not just below max.
           // Below max this already preceded level-up (bit-identical behaviour there). At max
-          // level this is the one new path: it makes a second-generation (4-wide) merged lot's
-          // raised depth cap (max(2, 4) = 4) reachable, which the old level-gated routing could
-          // never reach. A first-generation (2-wide) merged lot's cap is still max(2, 2) = 2 —
-          // no gain — because the equal-shape merge gate doubles widths (1 → 2 → 4), so only
-          // 4-wide-and-up lots benefit.
+          // level this is the one new path: it makes a merged lot's raised depth cap
+          // (max(MIN_STRUCTURE_DEPTH_CAP, frontage-axis width)) reachable, which the old
+          // level-gated routing could never reach. The gain is keyed on that WIDTH, not on merge
+          // generation: a 2-wide lot's cap is still max(2, 2) = 2, so nothing to spend, while
+          // every lot 3 wide and up carries a cap above the floor. Now that the merge shape gate
+          // frees the width axis (widths run 1 → 2 → 3 → 4 rather than doubling), 3-wide is a
+          // reachable shape at all, so ODD runs — which used to strand their leftover — reach the
+          // headroom too, not just runs whose length is a power of two. Getting past width 2 still
+          // takes two merge generations, because greedyDepthLot walks only the depth axis and so
+          // every UNMERGED lot is exactly 1 wide: 1+1 → 2, then 2+1 → 3. And the headroom is only
+          // spendable on land deep enough to spend it — a structure already filling its lot's
+          // depth can never extend however high the cap goes.
           if (growthGate) {
             const grown = extendStructureToward(existing.structureRect, lot, existing.frontage);
             if (grown !== null) {

@@ -52,6 +52,8 @@ describe("World.tick() — merge (Branch B'')", () => {
   // ---- Strip geometry: one source of truth for every coordinate below. ----
   const W = 24;
   const H = 8;
+  /** Worst-case merge-cooldown slack on top of GROWTH_COOLDOWN_INTERVALS: stagger() is % 7. */
+  const MAX_STAGGER = 6;
   /** Road row the R strip fronts ('S') and the job bank fronts ('N'). */
   const ROAD_Y = 2;
   /** R row — ONE cell deep, directly north of the road. */
@@ -96,8 +98,8 @@ describe("World.tick() — merge (Branch B'')", () => {
    * SAME road row, so every job is road-reachable from the R access nodes. Grass keeps them out of
    * the zone-growth loop entirely (it iterates zone tiles), so they never age, level, densify or
    * merge, and level 3 needs only LEVEL_THRESHOLDS[3] = 0.45, which their anchors clear with room
-   * for the congestion penalty. 585 jobs against a worst case of 235 workers (a fully consolidated
-   * n = 5 strip: 100 + 100 + 35) leaves both demand regimes satisfied throughout — see the
+   * for the congestion penalty. 585 jobs against a worst case of 250 workers (a fully consolidated
+   * n = 5 strip: 100 + 150) leaves both demand regimes satisfied throughout — see the
    * per-test preconditions.
    */
   function setupMergeStrip(n: number): {
@@ -124,7 +126,7 @@ describe("World.tick() — merge (Branch B'')", () => {
     seedWater(world, 23, 3);       // (23,3) adj road (23,2) → waters the road row
 
     // Built-out R parcels, ids 0..n-1. Age clears the worst-case merge cooldown
-    // (GROWTH_COOLDOWN_INTERVALS + max stagger = 8 + 6 = 14) after the growth pass's age++.
+    // (GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER = 8 + 6 = 14) after the growth pass's age++.
     const ids: number[] = [];
     for (let i = 0; i < n; i++) {
       const x = X0 + i;
@@ -135,7 +137,7 @@ describe("World.tick() — merge (Branch B'')", () => {
         anchor: { x, y: R_Y },
         level: ZONE_MAX_LEVEL,
         density: 1,
-        age: GROWTH_COOLDOWN_INTERVALS + 6,
+        age: GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER,
         abandoned: false,
         frontage: 'S',
         structureRect: { x, y: R_Y, w: 1, h: 1 },
@@ -291,8 +293,8 @@ describe("World.tick() — merge (Branch B'')", () => {
     }
 
     // PHASE 3 — both intermediates are now built out; the density bump reset their ages to 0, so
-    // run the worst-case merge cooldown (GROWTH_COOLDOWN_INTERVALS + max stagger 6) back out.
-    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + 6; g++) oneGrowthTick(world);
+    // run the worst-case merge cooldown (GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER) back out.
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER; g++) oneGrowthTick(world);
 
     const afterPhase3 = residentialOf(world);
     expect(afterPhase3.length).toBe(1);
@@ -304,21 +306,79 @@ describe("World.tick() — merge (Branch B'')", () => {
     expect(buildingCapacity(consolidated)).toBe(200); // conserved: 100 + 100
   });
 
-  it('5-strip multi-generation consolidation conserves the footprint and strands the odd parcel', () => {
-    // Five parcels cannot pair evenly, so one is always left over. This pins the shape of that
-    // end state — one fully consolidated 4-wide building plus the stranded 1-wide parcel, with
-    // every original cell still accounted for.
+  it('3-strip absorption: an odd run consolidates completely into one 3-wide building', () => {
+    // The headline of the unequal-width shape gate. While the gate demanded equal structureRect
+    // WIDTHS, lot widths could only double (1 → 2 → 4), so a 3-cell run was stuck at 2 + 1 for
+    // good and width 3 was unreachable by any simulation path. With only equal DEPTH required,
+    // the leftover 1-wide claims the generation-1 2-wide and the run consolidates completely.
     //
-    // NOT a size-cap test: the end-state pair (4-wide + 1-wide) is rejected by canMerge's gate 7
-    // (structureRect widths 4 vs 1) before `mergedW > 4` is ever evaluated, so no rejection here
-    // can be attributed to the cap. Attributable cap coverage lives in mergePolicy.test.ts's
-    // equal-width 3+3 cases.
+    // Unlike the 5-strip below, this end state is ORDERING-INDEPENDENT: whichever pair merges
+    // first, the survivors are a 2-wide and the one cell beside it, which union to the same
+    // {X0, w: 3} lot. Nothing here rests on which parcel the merge pass reaches first.
+    const { world } = setupMergeStrip(3);
+    const cells = () => residentialOf(world).map(b => b.footprint.length).sort((a, z) => a - z);
+
+    // PHASE 1 — a pair merges; the third parcel has no partner this pass (the merge output is
+    // appended after the candidate snapshot was taken).
+    oneGrowthTick(world);
+    expect(cells()).toEqual([1, 2]);
+
+    // PHASE 2 — gate 8 keeps the mixed pair apart until the 2-wide reaches ITS lot's density cap
+    // of 2; the 1-wide already sits at its own cap of 1. Same flat DENSITY_COOLDOWN_INTERVALS
+    // with no stagger as the 4-strip above.
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+    for (let g = 0; g < DENSITY_COOLDOWN_INTERVALS; g++) oneGrowthTick(world);
+    expect(cells()).toEqual([1, 2]);
+    const intermediate = residentialOf(world).find(b => b.footprint.length === 2)!;
+    expect(intermediate.density).toBe(2);
+    expect(buildingCapacity(intermediate)).toBe(100); // 2·1·5·10
+
+    // PHASE 3 — the density bump reset the 2-wide's age to 0, so run the worst-case merge
+    // cooldown (GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER) back out.
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER; g++) oneGrowthTick(world);
+
+    // No 1-wide left over: all three cells are in one building.
+    const remaining = residentialOf(world);
+    expect(remaining.length).toBe(1);
+    const merged = remaining[0];
+    expect(merged.footprint.length).toBe(3);
+    expect(merged.anchor).toEqual({ x: X0, y: R_Y });
+    expect(merged.structureRect).toEqual({ x: X0, y: R_Y, w: 3, h: 1 });
+    expect(merged.level).toBe(ZONE_MAX_LEVEL);
+    // Unlike the equal-width 1+1 case, a mixed pair carries a tier-2 side, so the max in
+    // mergedBuildingShape puts the assembled lot at its own cap of 2 the instant the merge
+    // fires — no density cooldown to wait out afterwards.
+    expect(merged.density).toBe(2);
+    // 3·1·5·10 = 150 against 35 + 100 in. The +15 is the leftover's one cell revalued from
+    // density unit 7 to unit 10 — the tier upgrade the merge just granted it, not a leak.
+    expect(buildingCapacity(merged)).toBe(150);
+  });
+
+  it('5-strip: the odd parcel is absorbed into a 2 + 3 end state that only the 4-wide lot cap holds', () => {
+    // Five parcels cannot pair evenly, so generation 1 always leaves one over. This pins the
+    // shape of the end state — the leftover is ABSORBED by its neighbour rather than stranded,
+    // so the strip settles at 2 + 3 with every original cell still accounted for.
+    //
+    // WHICH neighbour absorbs it is iteration-order determinism, not chance. The merge pass
+    // walks `iterBuildings()` in Map insertion order, and the leftover still sits in its
+    // original slot while both generation-1 merges were appended after it — so it is the first
+    // `a` the pass considers. Its only geometrically legal partner is the EAST 2-wide, so the
+    // pass claims that one the moment east's merge cooldown clears, before west+east can pair.
+    //
+    // This IS attributable size-cap coverage, and PHASE 4 below is what makes it attributable:
+    // on the end-state pair every other gate passes, leaving `mergedW = 2 + 3 = 5 > 4` as the
+    // sole rejection.
     const { world } = setupMergeStrip(5);
     const cells = () => residentialOf(world).map(b => b.footprint.length).sort((a, z) => a - z);
 
     // PHASE 1 — two disjoint pairs merge; the fifth parcel has no partner.
     oneGrowthTick(world);
     expect(cells()).toEqual([1, 2, 2]);
+    // `cells()` sorts, so it says nothing about WHICH parcel was left over — and the end state
+    // below rests entirely on that being the EASTERNMOST one (its sole legal partner is the east
+    // 2-wide). Pinned here so a pairing-order change fails at the premise rather than as an
+    // unexplained shape mismatch three phases later.
+    expect(residentialOf(world).find(b => b.footprint.length === 1)!.anchor).toEqual({ x: X0 + 4, y: R_Y });
 
     // PHASE 2 — both 2-wide intermediates reach their lot's density cap.
     expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
@@ -327,20 +387,47 @@ describe("World.tick() — merge (Branch B'')", () => {
     expect(intermediates.length).toBe(2);
     for (const b of intermediates) expect(b.density).toBe(2);
 
-    // PHASE 3 — the second-generation merge fires once the cooldown runs out.
-    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + 6; g++) oneGrowthTick(world);
+    // PHASE 3 — the second-generation merge fires once the cooldown runs out: as in the 3-strip
+    // above, it is the leftover that claims its neighbour — here the east 2-wide.
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER; g++) oneGrowthTick(world);
 
     const steady = residentialOf(world);
     expect(steady.length).toBe(2);
-    // 1 + 4 = the 5 cells seeded: no cell was lost or invented across three generations.
-    expect(cells()).toEqual([1, 4]);
+    // 2 + 3 = the 5 cells seeded: no cell was lost or invented across three generations.
+    expect(cells()).toEqual([2, 3]);
 
-    const consolidated = steady.find(b => b.footprint.length === 4)!;
-    expect(consolidated.structureRect).toEqual({ x: X0, y: R_Y, w: 4, h: 1 });
-    expect(buildingCapacity(consolidated)).toBe(200);
-    const stranded = steady.find(b => b.footprint.length === 1)!;
-    expect(stranded.anchor).toEqual({ x: X0 + 4, y: R_Y });
-    expect(buildingCapacity(stranded)).toBe(35);
+    const absorbed = steady.find(b => b.footprint.length === 3)!;
+    expect(absorbed.anchor).toEqual({ x: X0 + 2, y: R_Y });
+    expect(absorbed.structureRect).toEqual({ x: X0 + 2, y: R_Y, w: 3, h: 1 });
+    expect(absorbed.density).toBe(2);
+    // 3·1·5·10 = 150 against 35 + 100 in. The +15 gain is BY DESIGN: mergedBuildingShape takes
+    // the max tier, so the leftover's single cell is revalued from density unit 7 to unit 10.
+    expect(buildingCapacity(absorbed)).toBe(150);
+    const west = steady.find(b => b.footprint.length === 2)!;
+    expect(west.anchor).toEqual({ x: X0, y: R_Y });
+    expect(buildingCapacity(west)).toBe(100); // 2·1·5·10 — untouched by the second generation
+
+    // PHASE 4 — stability window. The merge reset the 3-wide's age to 0, so run the worst-case
+    // cooldown back out for both survivors. Now nothing else can be blamed for the strip holding
+    // at two buildings: both sides are built out (max level, at their lot's density cap, no room
+    // to extend), demand is positive, and the lots are adjacent, frontage-aligned and of equal
+    // structure depth 1 — the merged-size cap is the only gate left that says no.
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER; g++) oneGrowthTick(world);
+
+    const settled = residentialOf(world);
+    expect(settled.length).toBe(2);
+    expect(cells()).toEqual([2, 3]);
+    expect(buildingCapacity(settled.find(b => b.footprint.length === 3)!)).toBe(150);
+    expect(buildingCapacity(settled.find(b => b.footprint.length === 2)!)).toBe(100);
+    // The merge loop also skips on `frozenThisTick` and on canMerge's age cooldown, and neither
+    // is visible in the shape above. This fixture is precisely the one a congestion or land-value
+    // retune could push under LEVEL_THRESHOLDS[5] at an anchor — which would freeze the pair and
+    // leave the strip at [2, 3] for a reason that has nothing to do with the cap.
+    for (const b of settled) {
+      expect(b.abandoned).toBe(false);
+      expect(b.age).toBeGreaterThanOrEqual(GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER);
+    }
   });
 
   it('below the ceiling there is no merge: a level-5 / density-0 pair only merges once density is at its cap', () => {
