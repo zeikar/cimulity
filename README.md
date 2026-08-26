@@ -14,7 +14,7 @@ MVP-1 is playable and in active development. The current build supports:
 - 64x64 isometric terrain with camera pan/zoom, hover/select, and drag previews
 - Roads, bulldoze, R/C/I zoning, and raise/lower/level terrain tools
 - Vertex-based terrain with smooth slopes, elevation-derived water, and coplanar road/zone placement
-- Fixed-timestep simulation with zone growth, capacity-conserving lot merges, population, money, speed/pause controls, autosave, and New City reset
+- Fixed-timestep simulation with zone growth, lot merges (capacity-conserving at equal density tiers, capacity-gaining across mixed tiers), population, money, speed/pause controls, autosave, and New City reset
 - Power plants + binary reachability gate zone growth
 - Water towers gate zone level-ups/density — density tiers now add real population/job capacity rather than a cosmetic tag, and once a lot is fully built out with its structure unable to extend any further, it merges with a neighbouring lot, unlocking the top density tier (power gates initial spawn)
 - Population, workforce, and job capacity all derive from each building's built structure area (not level alone), so a wider merged lot or a fully built-out structure holds proportionally more people and jobs
