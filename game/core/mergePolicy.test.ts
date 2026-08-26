@@ -546,6 +546,10 @@ describe('canMerge — unequal-width merge capacity', () => {
   // isStructureRectInLot and save load accept, and canExtendStructure still refuses to extend
   // them — the same hand-built class the equal-width matrix's own srDepth-4 entries use. The
   // growth-reachable rows are srDepth 2 on the 4-deep (1, 2) pair and the 2-deep (1, 3) pair.
+  // Kept deliberately: this table is the GATE-level counterpart to World.merge.test.ts's
+  // deep-lot test, which drives the one growth-REACHABLE deep case (1 + 2 -> 3-wide, then 3×3)
+  // through the real World.tick — the simulation covers what growth can build, these entries
+  // cover what the gate accepts at any lot depth, which is the claim docs/architecture.md makes.
   const ENTRIES: ReadonlyArray<{
     widthA: 1;
     widthB: 2 | 3;

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { World, ZONE_GROWTH_INTERVAL, DENSITY_COOLDOWN_INTERVALS } from './World';
-import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
+import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, MIN_STRUCTURE_DEPTH_CAP, ZONE_MAX_LEVEL } from './growthConstants';
 import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import { buildingCapacity } from './buildingCapacity';
-import { maxDensityForLot } from './zoneGrowth';
+import { canExtendStructure, footprintCells, maxDensityForLot, structureDepth } from './zoneGrowth';
+import type { Rect } from './buildingFootprint';
+import { lotBboxOf } from './buildingFootprint';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
@@ -352,6 +354,237 @@ describe("World.tick() — merge (Branch B'')", () => {
     // 3·1·5·10 = 150 against 35 + 100 in. The +15 is the leftover's one cell revalued from
     // density unit 7 to unit 10 — the tier upgrade the merge just granted it, not a leak.
     expect(buildingCapacity(merged)).toBe(150);
+  });
+
+  // ---- Deep-lot geometry: a second fixture, for the ONE thing the 1-deep strip cannot reach. ----
+  // The strip above proves width 3 ASSEMBLES; it can never show what a 3-wide lot is FOR, because
+  // a 1-deep lot has no depth to spend. These constants build the same 1 + 2 -> 3 merge on lots
+  // 3 cells deep, where the merged lot's structureDepthCap of 3 is actually spendable.
+
+  /** North edge of the deep R lots — the anchors' row, one hop south of the shared road row. */
+  const DEEP_LOT_Y = ROAD_Y + 1;
+  /**
+   * Lot depth 3: the shallowest lot on which a 3-wide lot's cap of
+   * max(MIN_STRUCTURE_DEPTH_CAP, 3) = 3 is reachable AND both narrow inputs are still built out
+   * short of their lot's depth (a 1-wide lot caps at MIN_STRUCTURE_DEPTH_CAP = 2, a 2-wide at
+   * max(2, 2) = 2). On a 2-deep lot both inputs would already FILL their depth and the merged
+   * 3-wide would have nothing left to grow into.
+   */
+  const DEEP_LOT_DEPTH = 3;
+  /** Column of the 1-wide parcel; the 2-wide occupies DEEP_X0 + 1 .. DEEP_X0 + 2. */
+  const DEEP_X0 = 10;
+  /** Park cell — Chebyshev 1 from the merged anchor, which is what pays for the congestion below. */
+  const DEEP_PARK = { x: DEEP_X0 - 1, y: DEEP_LOT_Y };
+  /** Job-bank columns: grass at y = 3..5 that no lot, park, station or utility owns. */
+  const DEEP_BANK_COLS = [4, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18];
+  const DEEP_BANK_JOBS_TOTAL = DEEP_BANK_COLS.length * BANK_JOBS_EACH; // 11 × 45 = 495
+
+  /**
+   * ONE deep-lot pair: a BUILT-OUT 1-wide parcel and a BUILT-OUT 2-wide parcel, side by side on
+   * lots DEEP_LOT_DEPTH cells deep, both fronting 'N' onto the road at ROAD_Y to their north.
+   *
+   * NORTH FRONTAGE IS LOAD-BEARING, for the reason `setupMergeStrip` documents from the other
+   * side: a lot's anchor is its bbox NW cell and `propagateServiceCoverage` reaches only 2
+   * orthogonal hops off a road. Under frontage 'S' the NW cell is the lot's DEEPEST cell — hop 3
+   * here — so the anchor would read no coverage at all and the abandonment sweep would freeze
+   * both parcels before the merge pass ever saw them. That is exactly why the strip fixture is
+   * limited to 1-deep lots; facing these lots north puts the anchor back at hop 1 instead.
+   *
+   * CONGESTION IS THE SECOND HAZARD, and on a deep lot it bites much harder than on the strip.
+   * `roadGraph.accessNodeFor` hands a building ONE road cell, so the terminal 3×3 parcel's whole
+   * 450-worker workforce loads (DEEP_X0, ROAD_Y) alone: round(255 · 450 / TRAFFIC_CAPACITY) = 230
+   * of 255, for a nominal anchor penalty of 0.20 · (230/255) · 6/7 ≈ 0.155 against the level-5
+   * threshold of 0.85. The fixture therefore buys an uncongested base ABOVE 1.0, which the land
+   * value formula permits because the congestion term is subtracted from the UNCLAMPED base:
+   *   0.40 · 6/7 (road at Chebyshev 1)          ≈ 0.343
+   * + 0.10 · 1/3 (R is the only zone in the 3×3) ≈ 0.033
+   * + 0.50 · 239/255 (police/fire/hospital/school at 0/1/2/3 road hops from the anchor's own
+   *                   road cell → coverage bytes 255/244/234/223) ≈ 0.469
+   * + 0.25 · 4/5 (park at Chebyshev 1)            = 0.200
+   *                                              ≈ 1.045 uncongested
+   * Net of the peak penalty the merged anchor reads 0.890 — clear of 0.85, with the whole margin
+   * coming from that above-1.0 base. Weakening ANY term (moving the park a cell out, pushing a
+   * station one hop further along the road row) abandons the building mid-test.
+   *
+   * The job bank is the same static level-3 commercial row `setupMergeStrip` uses — grass at
+   * y = 3..5 fronting 'N' onto the same road, so the zone-growth loop never visits it and it
+   * never ages, levels, densifies or merges (level 3 < ZONE_MAX_LEVEL fails canMerge's gate 4).
+   * 495 jobs against the terminal 450 workers keeps unemployment at 0, which is what holds
+   * residential demand at or above the MIGRATION_PRESSURE floor for the whole run.
+   */
+  function setupDeepPair(): { world: World; narrowId: number; wideId: number } {
+    const world = new World(W, H, { regenerate: false });
+    const map = world.getMap();
+    const sm = world.getStructureMap();
+
+    for (let x = 0; x < W; x++) map.setTile(x, ROAD_Y, createTile(x, ROAD_Y, TileType.ROAD));
+
+    const narrowLot: Rect = { x: DEEP_X0, y: DEEP_LOT_Y, w: 1, h: DEEP_LOT_DEPTH };
+    const wideLot: Rect = { x: DEEP_X0 + 1, y: DEEP_LOT_Y, w: 2, h: DEEP_LOT_DEPTH };
+    for (const lot of [narrowLot, wideLot]) {
+      for (const c of footprintCells(lot)) {
+        map.setTile(c.x, c.y, createTile(c.x, c.y, TileType.ZONE_RESIDENTIAL));
+      }
+    }
+    expect(sm.addStructure({ type: 'park', anchor: DEEP_PARK, footprint: [DEEP_PARK] })).not.toBeNull();
+
+    // Utilities and stations hang off the road row from the NORTH (y = 0..1), which leaves the
+    // whole southern band to the lots, the park and the job bank. The offsets put the four
+    // stations at 0, 1, 2 and 3 road hops from the merged anchor's own road cell.
+    seedPower(world, 0, 0);                                // (0,1) adj road (0,2) → powers the road row
+    seedStation(world, 'police_station', DEEP_X0, 0);      // 0 hops
+    seedStation(world, 'fire_station', DEEP_X0 - 2, 0);    // 1 hop
+    seedStation(world, 'hospital', DEEP_X0 + 2, 0);        // 2 hops
+    seedStation(world, 'school', DEEP_X0 - 4, 0);          // 3 hops
+    seedWater(world, W - 1, 1);                            // (23,1) adj road (23,2) → waters the road row
+
+    // Both parcels seeded at every ceiling their OWN lot allows: ZONE_MAX_LEVEL, their lot
+    // width's density cap, and a structureRect at their lot width's depth cap — which is
+    // MIN_STRUCTURE_DEPTH_CAP for a 1-wide AND for a 2-wide lot, so the two agree on the one
+    // axis the shape gate compares. Age clears the worst-case merge cooldown after the growth
+    // pass's age++, as in setupMergeStrip.
+    const ids: number[] = [];
+    for (const [i, lot] of [narrowLot, wideLot].entries()) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: i,
+        type: 'residential',
+        footprint: footprintCells(lot),
+        anchor: { x: lot.x, y: lot.y },
+        level: ZONE_MAX_LEVEL,
+        density: maxDensityForLot(lot, 'N'),
+        age: GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER,
+        abandoned: false,
+        frontage: 'N',
+        structureRect: { x: lot.x, y: lot.y, w: lot.w, h: MIN_STRUCTURE_DEPTH_CAP },
+      })).toBe(true);
+      ids.push(i);
+    }
+
+    for (const [k, x] of DEEP_BANK_COLS.entries()) {
+      expect(map.getBuildings().addExistingBuilding({
+        id: 100 + k,
+        type: 'commercial',
+        footprint: [{ x, y: 3 }, { x, y: 4 }, { x, y: 5 }],
+        anchor: { x, y: 3 },
+        level: 3,
+        density: 0,
+        age: 0,
+        abandoned: false,
+        frontage: 'N',
+        structureRect: { x, y: 3, w: 1, h: 3 },
+      })).toBe(true);
+    }
+
+    world.markServiceDirty();
+    world.markFireDirty();
+    world.markHospitalDirty();
+    world.markSchoolDirty();
+    world.recomputeService();
+    world.recomputeFire();
+    world.recomputeHospital();
+    world.recomputeSchool();
+    // markLaborDirty (not markLandValueDirty) so the seed land value below is read through a
+    // POPULATED traffic map: congestion is the hazard this fixture is built around, and a
+    // land value computed before the first labor/traffic resolve would hide it.
+    world.markLaborDirty();
+    world.recomputeLandValue();
+
+    const [narrowId, wideId] = ids;
+    const narrow = map.getBuildings().getBuilding(narrowId)!;
+    const wide = map.getBuildings().getBuilding(wideId)!;
+
+    // Every gate the merge below depends on, pinned at seed time.
+    for (const [b, lot, cap] of [[narrow, narrowLot, 70], [wide, wideLot, 200]] as const) {
+      expect(b.level).toBe(ZONE_MAX_LEVEL);
+      expect(b.density).toBe(maxDensityForLot(lot, 'N'));
+      // Built out on the depth axis too: at its own lot width's cap, so canMerge's gate 9 and
+      // World.tick's structure-grow branch both refuse it. Only the ASSEMBLED lot has headroom.
+      expect(canExtendStructure(b.structureRect, lot, 'N')).toBe(false);
+      expect(buildingCapacity(b)).toBe(cap); // 1·2·5·7 = 70 and 2·2·5·10 = 200
+      // The abandonment sweep would freeze the pair out of the merge pass below 0.85.
+      // Measured: 0.976 at the narrow anchor, 0.921 at the wide one.
+      expect(world.getLandValue().getValue(b.anchor.x, b.anchor.y))
+        .toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+    }
+    // The one axis the shape gate compares. Equal here DESPITE unequal widths, which is the
+    // whole reason this pair is admissible.
+    expect(structureDepth(narrow.structureRect, 'N')).toBe(MIN_STRUCTURE_DEPTH_CAP);
+    expect(structureDepth(wide.structureRect, 'N')).toBe(MIN_STRUCTURE_DEPTH_CAP);
+
+    expect(world.getLaborMarket().getJobsCapacity()).toBe(DEEP_BANK_JOBS_TOTAL);
+    expect(world.getLaborMarket().getUnemployed()).toBe(0);
+    return { world, narrowId, wideId };
+  }
+
+  it('deep lots: a 1-wide and a 2-wide merge into a 3-wide, which then grows its structure to 3×3', () => {
+    // The PAYOFF of the unequal-width shape gate, and the one path the 1-deep strip fixtures
+    // above cannot instantiate. Width 3 is not just a shape that now assembles: a 3-wide lot's
+    // structureDepthCap is max(MIN_STRUCTURE_DEPTH_CAP, 3) = 3, so on land deep enough to spend
+    // it the merged parcel gains structure depth its two inputs — capped at 2 by their own
+    // widths — could never reach. This test walks that whole sequence through the real
+    // World.tick: merge (Branch B''), then structure-grow (Branch B').
+    const { world, narrowId, wideId } = setupDeepPair();
+    const map = world.getMap();
+
+    // Positive demand is all the merge asks for; the built-out gate is the real rung.
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
+
+    // PHASE 1 — one growth tick merges the pair into a 3-wide lot.
+    oneGrowthTick(world);
+
+    expect(map.getBuildings().getBuilding(narrowId)).toBeNull();
+    expect(map.getBuildings().getBuilding(wideId)).toBeNull();
+    const afterMerge = residentialOf(world);
+    expect(afterMerge.length).toBe(1);
+    const mergedId = afterMerge[0].id;
+    const merged = map.getBuildings().getBuilding(mergedId)!;
+    expect(merged.anchor).toEqual({ x: DEEP_X0, y: DEEP_LOT_Y });
+    expect(merged.footprint.length).toBe(3 * DEEP_LOT_DEPTH);
+    expect(merged.structureRect).toEqual({ x: DEEP_X0, y: DEEP_LOT_Y, w: 3, h: MIN_STRUCTURE_DEPTH_CAP });
+    expect(merged.level).toBe(ZONE_MAX_LEVEL);
+    // The mixed pair carries a tier-2 side, so the assembled lot is at its own cap immediately.
+    expect(merged.density).toBe(2);
+    // 3·2·5·10 = 300 against 70 + 200 in. The +30 is the narrow side's 2 structure cells
+    // revalued from density unit 7 to unit 10 — the tier upgrade the merge granted it.
+    expect(buildingCapacity(merged)).toBe(300);
+    // THE HEADROOM, asserted the moment it appears: the 3-wide lot's cap is 3, its structure is
+    // 2 deep, and its lot is 3 deep — so unlike either input, this parcel can still extend.
+    expect(canExtendStructure(merged.structureRect, lotBboxOf(merged.footprint), 'N')).toBe(true);
+
+    // PHASE 2 — Branch B' spends it. The merge reset age to 0, so run the worst-case growth
+    // cooldown (GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER) back out.
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER; g++) oneGrowthTick(world);
+
+    const grown = map.getBuildings().getBuilding(mergedId)!;
+    expect(grown.structureRect).toEqual({ x: DEEP_X0, y: DEEP_LOT_Y, w: 3, h: DEEP_LOT_DEPTH });
+    expect(grown.abandoned).toBe(false);
+    // 3·3·5·10 = 450, half again the merged 300 — depth the inputs' width-keyed caps forbade.
+    expect(buildingCapacity(grown)).toBe(450);
+    // Spent: the structure now fills the lot's depth, so there is nothing left to extend into.
+    expect(canExtendStructure(grown.structureRect, lotBboxOf(grown.footprint), 'N')).toBe(false);
+    // 450 workers on the single access node (DEEP_X0, ROAD_Y) is the fixture's peak congestion.
+    // Measured at the anchor: 0.890 against the 0.85 the next sweep gates on — the margin the
+    // above-1.0 uncongested base in setupDeepPair's JSDoc exists to buy.
+    world.recomputeLandValue();
+    expect(world.getLandValue().getValue(DEEP_X0, DEEP_LOT_Y))
+      .toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+
+    // PHASE 3 — stability window. Nothing above survives if the peak congestion the 3×3 creates
+    // pulls its own anchor under the threshold a tick later, so run the worst-case cooldown back
+    // out once more and re-derive the whole end state.
+    for (let g = 0; g < GROWTH_COOLDOWN_INTERVALS + MAX_STAGGER; g++) oneGrowthTick(world);
+
+    const settled = residentialOf(world);
+    expect(settled.length).toBe(1);
+    expect(settled[0].id).toBe(mergedId);
+    expect(settled[0].structureRect).toEqual({ x: DEEP_X0, y: DEEP_LOT_Y, w: 3, h: DEEP_LOT_DEPTH });
+    expect(settled[0].density).toBe(2);
+    expect(settled[0].abandoned).toBe(false);
+    expect(buildingCapacity(settled[0])).toBe(450);
+    // And the demand premise held the whole way: no job-bank building abandoned (which would
+    // have cut jobs below the workforce, zeroed migration and closed the growth gate above).
+    expect(world.getLaborMarket().getJobsCapacity()).toBe(DEEP_BANK_JOBS_TOTAL);
+    expect(world.getLaborMarket().getUnemployed()).toBe(0);
   });
 
   it('5-strip: the odd parcel is absorbed into a 2 + 3 end state that only the 4-wide lot cap holds', () => {
