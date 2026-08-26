@@ -1,8 +1,10 @@
 /**
  * Single pure capacity function every population/labor/overlay consumer sums
  * over. Capacity is derived from BUILT structure area, not the lot footprint,
- * so merging two lots into a bigger structure is capacity-conserving instead
- * of halving the total (the pre-existing defect this module fixes).
+ * so merging two lots into a bigger structure never halves the total (the
+ * pre-existing defect this module fixes). Conservation is EXACT only when the
+ * two sides share a density tier; a mixed-tier merge revalues the narrow
+ * side's area at the max tier, so merged capacity is `>=` the input sum.
  *
  *   buildingCapacity(b) = structureRect.w * structureRect.h * level * DENSITY_CAPACITY_UNITS[density]
  *
@@ -11,9 +13,10 @@
  * World.recomputeHappiness, laborMarket.computeLaborMarket, Demand.recompute,
  * dataViewColors.buildingEmploymentShares — each skips abandoned buildings
  * before summing). Keeping the flag out of this function is what makes the
- * merge-conservation invariant (buildingCapacity(merged) ===
- * buildingCapacity(a) + buildingCapacity(b)) unconditional arithmetic rather
- * than a case analysis over `abandoned`.
+ * merge-conservation invariant (buildingCapacity(merged) >=
+ * buildingCapacity(a) + buildingCapacity(b), with equality iff the two
+ * densities match) plain arithmetic over geometry rather than a case analysis
+ * over `abandoned`.
  */
 
 import type { Building } from './Building';

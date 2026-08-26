@@ -183,8 +183,13 @@ export function structureRectFillsLotDepth(sr: Rect, lot: Rect, frontage: Fronta
   return sr.w === lot.w;
 }
 
-// Depth of the structure along the lot's depth axis.
-function structureDepth(sr: Rect, frontage: Frontage): number {
+/**
+ * Depth of the structure along the lot's depth axis — the axis isStructureRectInLot does NOT
+ * pin (N/S pin sr.w to the lot width, so depth is sr.h; W/E pin sr.h, so depth is sr.w).
+ * Exported so mergePolicy's equal-depth gate reads the depth axis from the same place
+ * structureDepthCap and canExtendStructure do.
+ */
+export function structureDepth(sr: Rect, frontage: Frontage): number {
   return (frontage === 'N' || frontage === 'S') ? sr.h : sr.w;
 }
 

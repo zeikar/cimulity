@@ -4,7 +4,7 @@ import { lotBboxOf } from './buildingFootprint';
 import type { DemandVector } from './Demand';
 import { GROWTH_DEMAND_THRESHOLD } from './Demand';
 import { GROWTH_COOLDOWN_INTERVALS, stagger, ZONE_MAX_LEVEL } from './growthConstants';
-import { canExtendStructure, footprintCells, maxDensityForLot } from './zoneGrowth';
+import { canExtendStructure, footprintCells, maxDensityForLot, structureDepth } from './zoneGrowth';
 
 // Lot consolidation is the LAST redevelopment rung, not a response to a demand spike: a pair
 // merges only once BOTH parcels are BUILT OUT — at ZONE_MAX_LEVEL (gate 4), at the density tier
@@ -52,22 +52,38 @@ export function canMerge(
     b.age < GROWTH_COOLDOWN_INTERVALS + stagger(b.id)
   ) return false;
 
-  // 7. Equal structureRect dimensions (both w and h). isStructureRectInLot pins every stored
-  // Building's structureRect to the frontage edge and forces it to span the lot's full width
-  // axis, so this one gate does two jobs. It closes the only degree of freedom the built-out
-  // gates leave open — depth mismatch, since a deep lot is built out at the same structure
-  // depth as a shallow one — which is what turns buildingCapacity(merged) ===
-  // buildingCapacity(a) + buildingCapacity(b) into an exact integer invariant instead of a case
-  // analysis. And it rejects mixed-width pairs: equal sr width means equal lot width, hence
-  // equal maxDensityForLot, which with gate 8 below means equal density.
-  if (
-    a.structureRect.w !== b.structureRect.w ||
-    a.structureRect.h !== b.structureRect.h
-  ) return false;
+  const frontage = a.frontage;
+
+  // 7. Equal structureRect DEPTH — the axis isStructureRectInLot does NOT pin. That predicate
+  // fixes each structure to its lot's frontage edge and forces it to span the lot's full width
+  // axis (N/S: sr.w === lot.w, so depth is sr.h; W/E: sr.h === lot.h, so depth is sr.w), which
+  // leaves depth as the one degree of freedom the built-out gates still allow — a deep lot is
+  // built out at the same structure depth as a shallow one. Equal depth is what keeps the
+  // structureRect union EXACT: the frontage-edge alignment gate below, plus that same pinning,
+  // already give both sides the same origin on the depth axis, so two width-axis-adjacent rects
+  // of shared depth d union to exactly (wa + wb) x d — area in, area out, no swallowed empty
+  // cells. Unequal depths would union to a rect larger than the two inputs combined. (The
+  // separate equal-lot-depth gate below is what keeps the LOT union exact, not this one.)
+  //
+  // The WIDTH axis is deliberately left free. Forcing equal widths too made width 3 structurally
+  // unreachable (widths could only double: 1 -> 2 -> 4) and stranded every narrow parcel whose
+  // run length was not a power of two. The cost is that equal density is NO LONGER implied: a
+  // mixed-width pair can be built out at different tiers (a 1-wide lot caps at 1, a >=2-wide one
+  // at 2 — so 1+2 differs while 2+3 does not), and mergedBuildingShape takes the max.
+  //
+  // Freeing the width axis does NOT, however, free every mixed-width pair in natural play,
+  // because structureDepthCap is itself width-keyed: max(MIN_STRUCTURE_DEPTH_CAP, lot width).
+  // On a lot deeper than 2 a grown 1-wide parcel stops at structure depth 2 while a grown
+  // 3-wide stops at 3, and this gate then rejects them. What actually merges after growth is
+  // therefore 1+2 (shared cap 2) at any lot depth, plus any pair on lots at most 2 deep (where
+  // both structures fill the lot). Widening that further means changing the depth cap, not this
+  // gate — mergePolicy.test.ts pins the gap as a documented rejection.
+  const aSrDepth = structureDepth(a.structureRect, frontage);
+  const bSrDepth = structureDepth(b.structureRect, frontage);
+  if (aSrDepth !== bSrDepth) return false;
 
   const aLot = lotBboxOf(a.footprint);
   const bLot = lotBboxOf(b.footprint);
-  const frontage = a.frontage;
 
   // 8. Both at the density tier their own lot width allows — the same cap World.tick's
   // density-bump branch stops at, so a parcel reaches this gate only once that branch is spent.
@@ -155,10 +171,17 @@ export function mergedBuildingShape(a: Building, b: Building): Omit<Building, 'i
     type: a.type,
     footprint: footprintCells(mergedLot),
     anchor: { x: mergedLot.x, y: mergedLot.y },
-    // Both Math.max calls are degenerate on merge inputs: canMerge's max-level gate pins both
-    // levels to ZONE_MAX_LEVEL, and equal sr dimensions force equal lot widths, hence equal
-    // maxDensityForLot — which each side's density has to equal. Kept as-is for shape stability
-    // rather than picking a side arbitrarily.
+    // The level max is degenerate on merge inputs — canMerge's max-level gate (4) pins both
+    // levels to ZONE_MAX_LEVEL — and is kept for shape stability rather than picking a side
+    // arbitrarily. The density max does real work now that the shape gate frees the width axis:
+    // a mixed-width pair arrives at different tiers (1-wide lot caps at tier 1, >=2-wide at 2),
+    // and the max upgrades the narrow side to the tier the assembled lot supports. It can never
+    // overshoot that lot's own cap — a merged lot is at least 2 wide along the frontage axis, so
+    // maxDensityForLot(mergedLot) is 2, and neither input can exceed 2. Note the asymmetry this
+    // creates: an EQUAL-width pair inherits its shared (lower) tier and has to wait out
+    // DENSITY_COOLDOWN_INTERVALS in World.tick's density branch before it reaches the assembled
+    // lot's cap (World.merge.test.ts's 1+1 -> 2-wide case), whereas a mixed-width pair carrying
+    // a tier-2 side arrives at that cap the instant the merge fires.
     level: Math.max(a.level, b.level),
     density: Math.max(a.density, b.density) as 0 | 1 | 2,
     age: 0,
