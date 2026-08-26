@@ -488,6 +488,67 @@ describe('LandValueMap', () => {
     });
   });
 
+  describe('getUncongestedValue: the abandonment sweep\'s congestion-free input', () => {
+    it('(a) with zero traffic, getUncongestedValue equals getValue on every tile', () => {
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(map, new StructureMap(5, 5), fullCoverage(5, 5), noTraffic(5, 5));
+
+      for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+          expect(lv.getUncongestedValue(x, y)).toBe(lv.getValue(x, y));
+        }
+      }
+    });
+
+    it('(b) is byte-identical across differing traffic states, even where getValue/getCongestionPenalty change', () => {
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const structures = new StructureMap(5, 5);
+      const coverage = zeroCoverage(5, 5);
+
+      const quiet = new LandValueMap(5, 5);
+      quiet.recompute(map, structures, coverage, congestedTraffic(5, 5, [{ x: 2, y: 2, c: 50 }]));
+
+      const jammed = new LandValueMap(5, 5);
+      jammed.recompute(map, structures, coverage, congestedTraffic(5, 5, [{ x: 2, y: 2, c: 255 }]));
+
+      // Sanity: the two traffic states actually produced different congestion-bearing output —
+      // otherwise the "identical across states" assertion below would be vacuous.
+      expect(jammed.getValue(2, 1)).not.toBe(quiet.getValue(2, 1));
+      expect(jammed.getCongestionPenalty(2, 1)).not.toBe(quiet.getCongestionPenalty(2, 1));
+
+      for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+          expect(jammed.getUncongestedValue(x, y)).toBe(quiet.getUncongestedValue(x, y));
+        }
+      }
+    });
+
+    it('(c) out-of-bounds coordinates report 0', () => {
+      const lv = new LandValueMap(5, 5);
+      lv.recompute(new GameMap(5, 5), new StructureMap(5, 5), zeroCoverage(5, 5), noTraffic(5, 5));
+
+      expect(lv.getUncongestedValue(-1, 0)).toBe(0);
+      expect(lv.getUncongestedValue(0, -1)).toBe(0);
+      expect(lv.getUncongestedValue(5, 0)).toBe(0);
+      expect(lv.getUncongestedValue(0, 5)).toBe(0);
+    });
+
+    it('(d) is only approximately (not exactly) getValue + getCongestionPenalty, because both are independently float32-rounded', () => {
+      const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
+      const congested = new LandValueMap(5, 5);
+      congested.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5),
+        congestedTraffic(5, 5, [{ x: 2, y: 2, c: 100 }]));
+
+      const sum = congested.getValue(2, 1) + congested.getCongestionPenalty(2, 1);
+
+      // The naive derivation drifts at the float32 ulp level — this is the whole reason
+      // getUncongestedValue is a stored array rather than getValue(x,y) + getCongestionPenalty(x,y).
+      expect(sum).not.toBe(congested.getUncongestedValue(2, 1));
+      expect(sum).toBeCloseTo(congested.getUncongestedValue(2, 1), 6);
+    });
+  });
+
   describe('dirty-mark integration: observable behavior only', () => {
     it('value at road tile is 0 before placement, > 0 after tick', () => {
       const world = new World(8, 8, { regenerate: false });

@@ -55,18 +55,20 @@ export class LandValueMap {
   private readonly height: number;
   private readonly values: Float32Array;
   private readonly congestionPenalties: Float32Array;
+  private readonly uncongestedValues: Float32Array;
 
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
     this.values = new Float32Array(width * height);
     this.congestionPenalties = new Float32Array(width * height);
+    this.uncongestedValues = new Float32Array(width * height);
   }
 
   /**
    * Recompute the entire influence field from the current map state.
    * Pure: no side-effects beyond writing to this map's backing arrays
-   * (`values` and `congestionPenalties`).
+   * (`values`, `congestionPenalties`, and `uncongestedValues`).
    *
    * `traffic` must already be a fresh snapshot — this reads it, it never drains it.
    */
@@ -198,6 +200,7 @@ export class LandValueMap {
         const combined = Math.min(1, Math.max(0, base - CONGESTION_PENALTY_MAX * congestionScore));
         this.values[ty * w + tx] = combined;
         this.congestionPenalties[ty * w + tx] = uncongested - combined;
+        this.uncongestedValues[ty * w + tx] = uncongested;
       }
     }
   }
@@ -225,6 +228,25 @@ export class LandValueMap {
   getCongestionPenalty(x: number, y: number): number {
     if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
     return this.congestionPenalties[y * this.width + x];
+  }
+
+  /**
+   * Returns the land value at (x, y) with the congestion term REMOVED — the value the
+   * abandonment sweep must read so its verdict cannot depend on the `abandoned` flag it is
+   * about to set (abandoning removes commuters, which removes congestion, which would
+   * otherwise change this same value on the next recompute).
+   *
+   * Stored separately from `values`/`congestionPenalties` rather than derived as
+   * `getValue(x, y) + getCongestionPenalty(x, y)`: both of those are independently rounded
+   * to float32, so their sum drifts at the ulp level across traffic states. The sweep needs
+   * this value to be byte-identical regardless of the current congestion — that is what makes
+   * its verdict unable to alter its own next input — and only a dedicated array guarantees it.
+   *
+   * Returns 0 for out-of-bounds coordinates.
+   */
+  getUncongestedValue(x: number, y: number): number {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
+    return this.uncongestedValues[y * this.width + x];
   }
 
   /**
