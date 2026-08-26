@@ -12,14 +12,15 @@ import type { StructureType } from '@/game/core/StructureMap';
 import type { TileInfo } from '@/game/engine';
 import type { ScreenCoord } from '@/game/types/coordinates';
 
-// Cursor offset and rough panel extents used to keep the panel on-screen.
+// Cursor offset and panel extents used to keep the panel on-screen.
 const CURSOR_OFFSET = 14;
+// Applied as an explicit border-box `width` below, not just a minimum, so the element
+// can never outgrow what anchoredPosition reserves for it and clip at the viewport edge.
 const EST_WIDTH = 240;
-// Sized against the tallest panel: a zoned+building tile with an at-cap Density
-// row (its lot-width suffix can wrap to a second line at this panel's 220px
-// min-width) plus the Capacity row — both must fit before the bottom-edge
-// overflow check below flips the panel to the other side of the cursor.
-const EST_HEIGHT = 360;
+// Sized for the tallest panel this component renders — a zoned tile with a building,
+// whose Density row wraps to two lines at the pinned EST_WIDTH. Rounded up, because
+// under-estimating is the failure mode: the bottom-edge flip below trusts this number.
+const EST_HEIGHT = 420;
 
 /**
  * Place the panel near the click, flipping to the opposite side of the cursor
@@ -76,8 +77,11 @@ const DENSITY_LABELS: Record<0 | 1 | 2, string> = {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
-      <span style={{ opacity: 0.7 }}>{label}</span>
-      <span>{children}</span>
+      <span style={{ opacity: 0.7, flexShrink: 0 }}>{label}</span>
+      {/* minWidth 0 lets the value shrink past its automatic min-content floor and
+          wrap inside the panel's fixed width instead of widening it; textAlign keeps
+          a wrapped second line flush with the right-hand column. */}
+      <span style={{ minWidth: 0, textAlign: 'right' }}>{children}</span>
     </div>
   );
 }
@@ -109,7 +113,12 @@ export function TileInfoPanel({
         position: 'fixed',
         left: `${left}px`,
         top: `${top}px`,
-        minWidth: '220px',
+        width: `${EST_WIDTH}px`,
+        // Never wider than the viewport minus anchoredPosition's 8px clamp on each
+        // side. When this bites, the panel is NARROWER than EST_WIDTH, which only
+        // makes the placement maths below more conservative — it can never clip.
+        maxWidth: 'calc(100vw - 16px)',
+        boxSizing: 'border-box',
         padding: '12px 16px',
         backgroundColor: 'rgba(0, 0, 0, 0.8)',
         color: 'white',
@@ -196,10 +205,14 @@ export function TileInfoPanel({
             <div style={{ marginTop: '6px', opacity: 0.7 }}>Building</div>
             <Row label="Kind">{BUILDING_TYPE_LABELS[info.building.type]}</Row>
             <Row label="Level">{info.building.level}</Row>
+            {/* Current tier AND the lot's ceiling, always — the ceiling is most actionable
+                BELOW it (a freshly merged 2-wide lot inherits Medium but can reach High).
+                At the cap the tier is not repeated ('High · max High' reads as noise);
+                'at max' says the same thing without the echo. */}
             <Row label="Density">
               {info.building.density === info.building.maxDensity
-                ? `${DENSITY_LABELS[info.building.density]} — max for this ${info.building.lotWidth}-wide lot`
-                : DENSITY_LABELS[info.building.density]}
+                ? `${DENSITY_LABELS[info.building.density]} · at max (${info.building.lotWidth}-wide lot)`
+                : `${DENSITY_LABELS[info.building.density]} · max ${DENSITY_LABELS[info.building.maxDensity]} (${info.building.lotWidth}-wide lot)`}
             </Row>
             <Row label="Capacity">{info.building.capacity}</Row>
             <Row label="Age">{info.building.age}</Row>
