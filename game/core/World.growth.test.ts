@@ -114,11 +114,17 @@ const SERVED_I = { x: 5, y: 1 };
  *
  * Layout on a ≥12×6 world: a road ROW at y=2; a power plant and water tower
  * hung off road spurs; all four 2×2 stations one row below the road (y=3); a
- * park at (3,0) directly north of the R anchor for the final land-value boost.
+ * park near the R anchor (default (3,0), directly north) for the final land-value boost.
  * Recomputes power/water/coverage/land value before returning, and asserts the
  * cluster is powered, watered, covered, and supports level 5.
+ *
+ * @param park - Where to put that park. The default sits Chebyshev 1 from the R anchor
+ *   (boost 0.25·(1 − 1/5) = 0.20), which pushes that anchor's inputs PAST 1.0 so the
+ *   land-value clamp bites. Fixtures that need the R anchor strictly below 1 — so a
+ *   congestion penalty applies in full rather than being partly absorbed by the clamp —
+ *   pass a farther cell.
  */
-function seedServedCluster(world: World): void {
+function seedServedCluster(world: World, park: { x: number; y: number } = { x: SERVED_R.x, y: 0 }): void {
   const map = world.getMap();
   const W = map.getWidth();
   // Cluster zone tiles — the growth loop only visits zone-typed tiles.
@@ -138,8 +144,8 @@ function seedServedCluster(world: World): void {
   seedFire(world, 9, 3);
   seedHospital(world, 0, 0);
   seedSchool(world, 7, 0);
-  // Park directly north of the R anchor for the additive land-value boost.
-  seedPark(world, SERVED_R.x, 0);
+  // Park near the R anchor for the additive land-value boost.
+  seedPark(world, park.x, park.y);
   world.markLandValueDirty();
   world.recomputeLandValue();
   for (const a of [SERVED_R, SERVED_C, SERVED_I]) {
@@ -1839,105 +1845,231 @@ describe('World.tick() — power gate: merge blocked without power, succeeds wit
   });
 });
 
+/**
+ * ONE fixture, used by BOTH congestion-vs-density tests below, so the pair differs by exactly
+ * one variable: the synthetic congestion byte. Everything that could otherwise diverge —
+ * layout, park position, seeded parcels, demand, the drain that materialises trafficRaw —
+ * happens here, once, identically.
+ *
+ * The R parcel is a max-level 1-wide lot whose structure already fills it, so the growth loop
+ * routes it to the density branch (canExtendStructure is false, level is not < ZONE_MAX_LEVEL),
+ * with every density gate but land value already open: demand ≥ DENSITY_DEMAND_THRESHOLD,
+ * age ≥ DENSITY_COOLDOWN_INTERVALS, density 0 below the 1-wide lot's tier cap of 1, powered,
+ * watered, all four coverages.
+ *
+ * The park moves one cell out from seedServedCluster's default. At the default the R anchor's
+ * inputs sum to 0.8267 + 0.25*(1 - 1/5) = 1.0268 and clamp to 1.0, so the clamp absorbs part
+ * of any congestion penalty (clamped jammed value 0.8553 — still over the gate, and the jam
+ * test would be vacuous). One cell farther the boost is 0.25*(1 - 2/5) = 0.15, the sum is
+ * 0.9767 < 1, and the penalty applies in full.
+ */
+function seedDensityCongestionFixture(world: World): {
+  /** TrafficMap's retained backing array — write the synthetic congestion byte here. */
+  trafficRaw: Uint8Array;
+  /** Flat index of the R parcel's frontage road cell (SERVED_R.x, 2). */
+  frontageIndex: number;
+  /** The R anchor's land value with the congestion term removed — the sweep's input. */
+  uncongestedLv: number;
+} {
+  const map = world.getMap();
+  seedServedCluster(world, { x: 5, y: 0 }); // Chebyshev 2 from SERVED_R — see above
+
+  map.getBuildings().addBuilding({
+    type: 'residential',
+    footprint: [SERVED_R],
+    anchor: SERVED_R,
+    level: ZONE_MAX_LEVEL,
+    density: 0,
+    age: DENSITY_COOLDOWN_INTERVALS,
+    abandoned: false,
+    frontage: 'S',
+    structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
+  });
+  // Same C/I demand seeders as the density-advance tests above — they keep residential demand
+  // over DENSITY_DEMAND_THRESHOLD and are themselves supported at level 4 (uncongested lv 1.0
+  // at both anchors), so the sweep never freezes the jobs out from under the R parcel.
+  map.getBuildings().addBuilding({
+    type: 'commercial',
+    footprint: [SERVED_C],
+    anchor: SERVED_C,
+    level: 4,
+    density: 0,
+    age: 0,
+    abandoned: false,
+    frontage: 'S',
+    structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 },
+  });
+  map.getBuildings().addBuilding({
+    type: 'industrial',
+    footprint: [SERVED_I],
+    anchor: SERVED_I,
+    level: 4,
+    density: 0,
+    age: 0,
+    abandoned: false,
+    frontage: 'S',
+    structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
+  });
+  world.markDemandDirty();
+  world.markLandValueDirty();
+  world.recomputeLandValueIfDirty();
+
+  // 0.50 measured against a threshold of 0.375 — demand is not what either phase turns on.
+  expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+  // road 0.40*(1 - 1/7) + diversity 0.10*(2/3) + service 0.50*(213+191+234+213)/1020
+  // + park 0.25*(1 - 2/5) = 0.3429 + 0.0667 + 0.4172 + 0.15 = 0.9767.
+  const uncongestedLv = world.getLandValue().getUncongestedValue(SERVED_R.x, SERVED_R.y);
+  // Supported at max level, so the abandonment sweep (which reads exactly this) lets the
+  // parcel through to the density branch in BOTH phases...
+  expect(uncongestedLv).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+  // ...and strictly under the clamp, so the jam phase's penalty is not partly swallowed by it.
+  expect(uncongestedLv).toBeLessThan(1);
+
+  // Materialise the retained byte array identically in both phases (getTrafficMap() drains;
+  // getRaw() does not, so every later read of it is the seeded state, never a self-triggered
+  // recompute).
+  return { trafficRaw: world.getTrafficMap().getRaw(), frontageIndex: 2 * map.getWidth() + SERVED_R.x, uncongestedLv };
+}
+
+/**
+ * ONE fixture for the two congestion-SEAM tests below — the blocking/relief pair and the
+ * freeze test — parameterised by the single thing they actually vary: the probe's seeded
+ * level. Everything else (layout, services, job source, the land-value arithmetic, the
+ * TrafficMap.getRaw() drain) happens here, once, so the two can never drift apart.
+ *
+ * Seeding a congestion byte is a legitimate seam here: TrafficMap.getRaw() hands back the
+ * backing Uint8Array by reference, and while trafficDirty stays false nothing recomputes over
+ * it before the TRAFFIC_INTERVAL = 16 cadence (the same retained-reference contract the
+ * "traffic cadence" test in World.test.ts pins down). Drain-on-read is untouched because this
+ * fixture never sets dirtiness — each caller does that itself, at the point it chooses.
+ *
+ * Reserved cells (nothing overlaps): road row y=2 (x=0..W-1) + water spur (W-1,1);
+ * power plant (0,3)-(1,4); probe zone (5,1); commercial job source (15,1);
+ * police (20,3)-(21,4); fire (20,0)-(21,1); hospital (22,3)-(23,4);
+ * school (22,0)-(23,1); water tower (W-1,0).
+ *
+ * @param world - a 32×8 non-regenerated world; the fixture owns every cell it touches.
+ * @param probeLevel - the residential probe's seeded level. At 2 the jam puts the NEXT rung
+ *   (LEVEL_THRESHOLDS[3] = 0.45) out of reach; at 3 it puts the probe's OWN rung out of reach,
+ *   which is the CONDEMNING case the sweep's uncongested read exists for.
+ */
+function seedCongestionSeamFixture(world: World, probeLevel: number): {
+  /** Building id of the residential probe anchored at (5,1). */
+  probeId: number;
+  /** TrafficMap's retained backing array — write the synthetic congestion byte here. */
+  trafficRaw: Uint8Array;
+  /** Flat index of the probe's frontage road cell (5,2). */
+  frontageIndex: number;
+  /**
+   * The probe anchor's land value with the congestion term removed, from the shipped weights:
+   * road 0.40·(1 − 1/7) + diversity 0.10·(1/3) (only the probe's own R tile is zoned in the
+   * 3×3) + service 0.50·(96+96+74+74)/1020 ≈ 0.5429. Computed ONCE, here, so the callers
+   * cannot disagree about it.
+   */
+  uncongestedLv: number;
+} {
+  const map = world.getMap();
+  // Single width source of truth (as seedServedCluster does) — the flat traffic index
+  // below derives from it, so a resized fixture can never silently address another cell.
+  const W = map.getWidth();
+  for (let x = 0; x < W; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+  map.setTile(W - 1, 1, createTile(W - 1, 1, TileType.ROAD)); // water spur, placed before any propagation
+
+  // Probe: 2-wide 1-deep lot (modal sr area 2, anchor unmoved since the extra cell is
+  // added EAST — every caller's assertions hardcode anchor (5,1)) whose structureRect
+  // already fills it → the level-up branch fires directly. age ≫ the cooldown so only
+  // land value can gate it. buildingCapacity = 2*1*probeLevel*5, i.e. 20 at level 2 and 30
+  // at level 3, matching this fixture's MIN_MARKET-era arithmetic exactly.
+  const PROBE_ID = 0;
+  map.setTile(5, 1, createTile(5, 1, TileType.ZONE_RESIDENTIAL));
+  expect(map.getBuildings().addExistingBuilding({
+    id: PROBE_ID,
+    type: 'residential',
+    footprint: [{ x: 5, y: 1 }, { x: 6, y: 1 }],
+    anchor: { x: 5, y: 1 },
+    level: probeLevel,
+    density: 0,
+    age: 100,
+    abandoned: false,
+    frontage: 'S',
+    structureRect: { x: 5, y: 1, w: 2, h: 1 },
+  })).toBe(true);
+  // Commercial L4 job source (also widened to a modal 2-wide lot, anchor unmoved), road-
+  // reachable from the probe's frontage: buildingCapacity(level 4) = 2*1*4*5 = 40 jobs,
+  // keeping a reachable-vacancy surplus at BOTH probe levels — net 20 against the L2 probe's
+  // 20 workers and net 10 against the L3 probe's 30 — so the labor axis never closes the gate
+  // on its own. Level 5 would exceed maxSupportedLevel at this anchor (lv ≈ 0.72) and
+  // abandon on the first sweep, which would silently make the callers vacuous. Its footprint
+  // is left UNZONED, so the growth loop never visits it and it neither ages nor grows.
+  expect(map.getBuildings().addExistingBuilding({
+    id: 1,
+    type: 'commercial',
+    footprint: [{ x: 15, y: 1 }, { x: 16, y: 1 }],
+    anchor: { x: 15, y: 1 },
+    level: 4,
+    density: 0,
+    age: 0,
+    abandoned: false,
+    frontage: 'S',
+    structureRect: { x: 15, y: 1, w: 2, h: 1 },
+  })).toBe(true);
+
+  seedPower(world, 0, 3); // plant (0,3)-(1,4); (0,3) adj road (0,2) → powers the road row
+  seedWater(world, W - 1, 0); // tower (W-1,0) adj spur (W-1,1) → waters the whole road row
+  // Stations hang off the road row east of the probe. Police/fire nearest seed is (20,2),
+  // 15 road hops from the probe's frontage (5,2) → round(255·(1−15/SERVICE_RANGE_TILES))
+  // = 96 with SERVICE_RANGE_TILES = 24 (serviceCoveragePropagation.ts); hospital/school
+  // nearest seed is (22,2), 17 hops → round(255·(1−17/24)) = 74.
+  // The anchor (5,1) is off-road distance 1 from (5,2) → offRoadFactor(1) = 1.0 → it
+  // receives the frontage road cell's full intensity.
+  seedPolice(world, 20, 3);
+  seedFire(world, 20, 0);
+  seedHospital(world, 22, 3);
+  seedSchool(world, 22, 0);
+
+  // The seed helpers only MARK land value dirty and getLandValue() does not drain, so
+  // force the recompute before asserting preconditions (as seedServedCluster does).
+  world.recomputeLandValue();
+
+  // Derived preconditions — all four coverages clear SERVICE_COVERAGE_THRESHOLD_RAW = 64,
+  // and they are what the uncongestedLv arithmetic above is built from.
+  expect(world.getServiceCoverageMap().getCoverage(5, 1)).toBe(96);
+  expect(world.getFireCoverageMap().getCoverage(5, 1)).toBe(96);
+  expect(world.getHospitalCoverageMap().getCoverage(5, 1)).toBe(74);
+  expect(world.getSchoolCoverageMap().getCoverage(5, 1)).toBe(74);
+
+  // The recompute above drains traffic, which is NOT dirty, so the still-zero congestion map
+  // leaves the stored value uncongested and the two reads agree.
+  const uncongestedLv = 0.40 * (6 / 7) + 0.10 * (1 / 3) + 0.50 * (340 / 1020);
+  expect(world.getLandValue().getUncongestedValue(5, 1)).toBeCloseTo(uncongestedLv, 6);
+
+  return { probeId: PROBE_ID, trafficRaw: world.getTrafficMap().getRaw(), frontageIndex: 2 * W + 5, uncongestedLv };
+}
+
 describe('World.tick() — congestion-suppressed land value gates level-up', () => {
   it('a jammed frontage road blocks the L2→L3 level-up; relieving the jam re-enables it', () => {
     // COMPACT counterpart to the abandonment corridor test: the real
     // labor → traffic → land-value cascade is already covered (World.test.ts), so this
     // fixture seeds ONE synthetic congestion byte and checks only the gameplay
     // consequence — the land-value gate on level-up.
-    //
-    // Seeding is a legitimate seam here: TrafficMap.getRaw() hands back the backing
-    // Uint8Array by reference, and while trafficDirty stays false nothing recomputes
-    // over it before the TRAFFIC_INTERVAL = 16 cadence (the same retained-reference
-    // contract the "traffic cadence" test in World.test.ts pins down). Drain-on-read is
-    // untouched because dirtiness is never set until the relief phase.
-    //
-    // Reserved cells (nothing overlaps): road row y=2 (x=0..W-1) + water spur (W-1,1);
-    // power plant (0,3)-(1,4); probe zone (5,1); commercial job source (15,1);
-    // police (20,3)-(21,4); fire (20,0)-(21,1); hospital (22,3)-(23,4);
-    // school (22,0)-(23,1); water tower (W-1,0).
     const world = new World(32, 8, { regenerate: false });
     const map = world.getMap();
-    // Single width source of truth (as seedServedCluster does) — the flat traffic index
-    // below derives from it, so a resized fixture can never silently address another cell.
-    const W = map.getWidth();
-    for (let x = 0; x < W; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
-    map.setTile(W - 1, 1, createTile(W - 1, 1, TileType.ROAD)); // water spur, placed before any propagation
+    // Destructured under this test's original constant names: the fixture owns the layout and
+    // the land-value arithmetic now, every assertion below is unchanged.
+    const {
+      probeId: PROBE_ID,
+      trafficRaw,
+      frontageIndex: FRONTAGE_INDEX,
+      uncongestedLv: UNCONGESTED_LV,
+    } = seedCongestionSeamFixture(world, 2);
 
-    // Probe: 2-wide 1-deep lot (modal sr area 2, anchor unmoved since the extra cell is
-    // added EAST — every later assertion hardcodes anchor (5,1)) whose structureRect
-    // already fills it → the level-up branch fires directly. age ≫ the cooldown so only
-    // land value can gate it. buildingCapacity(level 2) = 2*1*2*5 = 20, matching this
-    // fixture's MIN_MARKET-era arithmetic exactly.
-    const PROBE_ID = 0;
-    map.setTile(5, 1, createTile(5, 1, TileType.ZONE_RESIDENTIAL));
-    expect(map.getBuildings().addExistingBuilding({
-      id: PROBE_ID,
-      type: 'residential',
-      footprint: [{ x: 5, y: 1 }, { x: 6, y: 1 }],
-      anchor: { x: 5, y: 1 },
-      level: 2,
-      density: 0,
-      age: 100,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 5, y: 1, w: 2, h: 1 },
-    })).toBe(true);
-    // Commercial L4 job source (also widened to a modal 2-wide lot, anchor unmoved), road-
-    // reachable from the probe's frontage: buildingCapacity(level 4) = 2*1*4*5 = 40 jobs,
-    // keeping a reachable-vacancy surplus in BOTH phases — net 20 against the L2 probe's 20
-    // workers and net 10 against the L3 probe's 30 — so the labor axis never closes the gate
-    // on its own. Level 5 would exceed maxSupportedLevel at this anchor (lv ≈ 0.72) and
-    // abandon on the first sweep, which would silently make the whole test vacuous.
-    expect(map.getBuildings().addExistingBuilding({
-      id: 1,
-      type: 'commercial',
-      footprint: [{ x: 15, y: 1 }, { x: 16, y: 1 }],
-      anchor: { x: 15, y: 1 },
-      level: 4,
-      density: 0,
-      age: 0,
-      abandoned: false,
-      frontage: 'S',
-      structureRect: { x: 15, y: 1, w: 2, h: 1 },
-    })).toBe(true);
-
-    seedPower(world, 0, 3); // plant (0,3)-(1,4); (0,3) adj road (0,2) → powers the road row
-    seedWater(world, W - 1, 0); // tower (W-1,0) adj spur (W-1,1) → waters the whole road row
-    // Stations hang off the road row east of the probe. Police/fire nearest seed is (20,2),
-    // 15 road hops from the probe's frontage (5,2) → round(255·(1−15/SERVICE_RANGE_TILES))
-    // = 96 with SERVICE_RANGE_TILES = 24 (serviceCoveragePropagation.ts); hospital/school
-    // nearest seed is (22,2), 17 hops → round(255·(1−17/24)) = 74.
-    // The anchor (5,1) is off-road distance 1 from (5,2) → offRoadFactor(1) = 1.0 → it
-    // receives the frontage road cell's full intensity.
-    seedPolice(world, 20, 3);
-    seedFire(world, 20, 0);
-    seedHospital(world, 22, 3);
-    seedSchool(world, 22, 0);
-
-    // The seed helpers only MARK land value dirty and getLandValue() does not drain, so
-    // force the recompute before asserting preconditions (as seedServedCluster does).
-    world.recomputeLandValue();
-
-    // Derived preconditions — all four coverages clear SERVICE_COVERAGE_THRESHOLD_RAW = 64.
-    expect(world.getServiceCoverageMap().getCoverage(5, 1)).toBe(96);
-    expect(world.getFireCoverageMap().getCoverage(5, 1)).toBe(96);
-    expect(world.getHospitalCoverageMap().getCoverage(5, 1)).toBe(74);
-    expect(world.getSchoolCoverageMap().getCoverage(5, 1)).toBe(74);
     // 20 workers, 40 reachable jobs → net 20 on a market floored to MIN_MARKET → ratio 0.20.
     expect(world.getDemand().residential).toBeCloseTo(0.75, 10);
-    // Uncongested anchor land value: road 0.40·(1 − 1/7) + diversity 0.10·(1/3) (only the
-    // probe's own R tile is zoned in the 3×3) + service 0.50·(96+96+74+74)/1020 ≈ 0.5429.
-    // The recompute drains traffic, which is NOT dirty, so the still-zero congestion map
-    // leaves this value uncongested.
-    const UNCONGESTED_LV = 0.40 * (6 / 7) + 0.10 * (1 / 3) + 0.50 * (340 / 1020);
     expect(world.getLandValue().getValue(5, 1)).toBeCloseTo(UNCONGESTED_LV, 6);
 
     // Blocked phase: jam the probe's frontage road (5,2) at full congestion. The retained
     // reference is read back below WITHOUT going through the draining getTrafficMap(), so
     // the survival check can never be satisfied by a recompute it triggered itself.
-    const trafficRaw = world.getTrafficMap().getRaw();
-    const FRONTAGE_INDEX = 2 * W + 5; // flat index of the probe's frontage road (5,2)
     trafficRaw[FRONTAGE_INDEX] = 255;
     world.markLandValueDirty();
     for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick(); // → tick 8, first growth tick
@@ -1972,5 +2104,148 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
 
     for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick(); // → tick 16, next growth tick
     expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
+  });
+
+  it('a jam that would once have CONDEMNED the probe now only freezes it: level, occupancy and population all hold', () => {
+    // The sibling test above pins the BLOCKING half of the freeze (a jam that merely puts the
+    // next level out of reach). This pins the CONDEMNING half — the case the sweep's
+    // uncongested read exists for. Same seam fixture, one argument different: the probe's
+    // seeded level, 3 instead of 2.
+    //
+    // Why level 3 is the interesting one. Uncongested the anchor sits at ~0.5429, which
+    // supports level 3 (LEVEL_THRESHOLDS[3] = 0.45). Jammed it falls to ~0.3714, which
+    // supports only level 2 — so on PRE-TASK-2 semantics, where the sweep read the congested
+    // value, isUnderSupported(3, 0.3714) was true and the probe went derelict on the very
+    // first sweep. Today the sweep reads the uncongested value, the probe stays occupied, and
+    // congestion's whole effect is that no growth rung fires.
+    const world = new World(32, 8, { regenerate: false });
+    const map = world.getMap();
+    const {
+      probeId: PROBE_ID,
+      trafficRaw,
+      frontageIndex: FRONTAGE_INDEX,
+      uncongestedLv: UNCONGESTED_LV,
+    } = seedCongestionSeamFixture(world, 3);
+
+    // Precondition: uncongested, this anchor SUPPORTS level 3 — so anything that condemns the
+    // probe below can only have come from the congestion term.
+    expect(world.getLandValue().getUncongestedValue(5, 1)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[3]);
+    // Demand is not the confound either: residential stays above the growth deadband
+    // throughout (the fixture's C job surplus), so land value is the only closed gate.
+    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
+
+    const POPULATION_BEFORE = world.getPopulation(); // 30 (probe) + 40 (commercial) = 70
+    expect(POPULATION_BEFORE).toBe(buildingCapacity(map.getBuildings().getBuilding(PROBE_ID)!) + 40);
+
+    trafficRaw[FRONTAGE_INDEX] = 255;
+    world.markLandValueDirty();
+    // getLandValue() lazy-allocates but does NOT drain, unlike getTrafficMap() — without this
+    // explicit drain the read below would return the pre-jam value.
+    world.recomputeLandValueIfDirty();
+    // The condemning condition: 0.5429 - 0.20*(255/255)*(6/7) = 0.3714, which supports only
+    // level 2. On pre-Task-2 semantics the first sweep (tick 8, below) flips abandoned to true.
+    const jammedLv = world.getLandValue().getValue(5, 1);
+    expect(jammedLv).toBeCloseTo(UNCONGESTED_LV - 0.20 * (6 / 7), 6);
+    expect(jammedLv).toBeLessThan(LEVEL_THRESHOLDS[3]);
+
+    // Window 1 — tick 8. Inside the TRAFFIC_INTERVAL = 16 window, so the synthetic byte is
+    // still the congestion the growth pass sees; assert that immediately before the tick that
+    // reads it rather than trusting the cadence arithmetic.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    expect(trafficRaw[FRONTAGE_INDEX]).toBe(255);
+    world.tick(); // → tick 8, first growth tick
+
+    // THE revert-sensitive assertion: on pre-Task-2 semantics this reads true.
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.abandoned).toBe(false);
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.density).toBe(0);
+    expect(world.getPopulation()).toBe(POPULATION_BEFORE);
+    // Deliberately NOT asserted: `age`. A powered, road-accessed, unfrozen building ages once
+    // per growth pass even when every growth branch rejects it — aging is eligibility, not a
+    // growth mutation.
+
+    // Window 2 — tick 24. Tick 16 is the TRAFFIC_INTERVAL cadence: it recomputes traffic (and
+    // therefore land value) from the REAL flows, wiping the synthetic byte, so re-seed after
+    // it. Tick 16's own growth pass cannot move the probe either way — it runs at the
+    // uncongested 0.5429, still short of LEVEL_THRESHOLDS[4] = 0.65.
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick(); // → tick 16
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
+    trafficRaw[FRONTAGE_INDEX] = 255; // getRaw() hands back the SAME array the recompute wrote into
+    world.markLandValueDirty();
+    world.recomputeLandValueIfDirty();
+    expect(world.getLandValue().getValue(5, 1)).toBeCloseTo(UNCONGESTED_LV - 0.20 * (6 / 7), 6);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    expect(trafficRaw[FRONTAGE_INDEX]).toBe(255);
+    world.tick(); // → tick 24, second growth tick under the jam
+
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.abandoned).toBe(false);
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
+    expect(map.getBuildings().getBuilding(PROBE_ID)!.density).toBe(0);
+    expect(world.getPopulation()).toBe(POPULATION_BEFORE);
+  });
+
+  it('an UNJAMMED max-level parcel advances its density tier (positive control for the jam test below)', () => {
+    // Baseline half of the pair: the shared fixture, un-mutated. Proves every non-land-value
+    // density gate is genuinely open, so the jam test's "density stays 0" can only be the
+    // land-value gate closing.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    const { trafficRaw, frontageIndex, uncongestedLv } = seedDensityCongestionFixture(world);
+
+    // Nothing written to trafficRaw — that write is the ONLY difference from the jam test.
+    expect(trafficRaw[frontageIndex]).toBe(0);
+    // With no congestion the growth gates' congested read equals the sweep's uncongested one.
+    expect(world.getLandValue().getValue(SERVED_R.x, SERVED_R.y)).toBe(uncongestedLv);
+    expect(world.getLandValue().getValue(SERVED_R.x, SERVED_R.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick(); // → tick 8, first growth tick
+
+    const parcel = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
+    expect(parcel.abandoned).toBe(false);
+    expect(parcel.density).toBe(1);
+    expect(parcel.level).toBe(ZONE_MAX_LEVEL);
+    expect(parcel.age).toBe(0); // a density bump resets age — the tell-tale of the mutation
+  });
+
+  it('a jammed frontage road FREEZES the density bump: the max-level parcel stays occupied at density 0', () => {
+    // Mutation half of the pair. Identical fixture, identical everything, plus one byte.
+    //
+    // This is the case Task 2's density gate exists for, and it is only REACHABLE because the
+    // sweep reads the uncongested value: at the congested 0.8052 the parcel is
+    // isUnderSupported at level 5, so under the old sweep it went derelict and the branch was
+    // dead code. Now it survives, reaches the density branch, and the branch's own congested
+    // land-value term is what holds it at density 0.
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    const { trafficRaw, frontageIndex, uncongestedLv } = seedDensityCongestionFixture(world);
+
+    trafficRaw[frontageIndex] = 255; // full congestion on the parcel's frontage road (3,2)
+    world.markLandValueDirty();
+    // getLandValue() lazy-allocates but does NOT drain — without this the read below is stale.
+    world.recomputeLandValueIfDirty();
+
+    // 0.9767 - 0.20*(255/255)*(1 - 1/7) = 0.9767 - 0.1714 = 0.8052, under the 0.85 gate.
+    const jammedLv = world.getLandValue().getValue(SERVED_R.x, SERVED_R.y);
+    expect(jammedLv).toBeCloseTo(uncongestedLv - 0.20 * (6 / 7), 6);
+    expect(jammedLv).toBeLessThan(LEVEL_THRESHOLDS[ZONE_MAX_LEVEL]);
+    // The sweep's own input is untouched by the byte, so the parcel is still supported.
+    expect(world.getLandValue().getUncongestedValue(SERVED_R.x, SERVED_R.y)).toBe(uncongestedLv);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL - 1; i++) world.tick();
+    // Tick 8 is inside the TRAFFIC_INTERVAL = 16 window, so the byte the growth pass is about
+    // to read is still the synthetic one — asserted here rather than inferred.
+    expect(trafficRaw[frontageIndex]).toBe(255);
+    world.tick(); // → tick 8, first growth tick
+
+    const parcel = map.getBuildings().getBuildingAt(SERVED_R.x, SERVED_R.y)!;
+    // Congestion no longer condemns — reaching the density branch at all depends on this.
+    expect(parcel.abandoned).toBe(false);
+    expect(parcel.level).toBe(ZONE_MAX_LEVEL);
+    // ...and the branch's land-value gate freezes the bump.
+    expect(parcel.density).toBe(0);
+    // Aged once and NOT reset: the parcel ran the whole growth body (so no earlier gate — road,
+    // power, frozenThisTick — is what produced the result) and no growth mutation fired.
+    expect(parcel.age).toBe(DENSITY_COOLDOWN_INTERVALS + 1);
   });
 });
