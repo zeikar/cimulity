@@ -39,8 +39,10 @@ export function canMerge(
   // load rejects any stored level above it (mapSerialization.ts). Both sides at that ceiling are
   // therefore also EQUAL in level — which closes the NW-anchor defect: the merged
   // building's anchor is always one of the two original anchors (union NW = the NW-most lot's
-  // anchor), which the abandonment sweep already verified supports THIS level this same tick, so a
-  // merge can no longer hand the next sweep a building it abandons despite its fresh age = 0.
+  // anchor), which the abandonment sweep already verified supports THIS level this same tick,
+  // so a merge can no longer hand the next sweep a building it abandons despite its fresh
+  // age = 0. Still true now that the sweep reads the congestion-free land value (World.tick),
+  // since the next sweep reads that same value.
   if (a.level < ZONE_MAX_LEVEL || b.level < ZONE_MAX_LEVEL) return false;
 
   // 5. Demand is positive

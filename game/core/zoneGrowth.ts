@@ -374,6 +374,11 @@ export function footprintCells(rect: Rect): Array<{ x: number; y: number }> {
  * a building may level up to L only when landValue >= LEVEL_THRESHOLDS[L].
  * Floor is 1 — a building at level 1 is never considered over-supported regardless
  * of land value (there is no "level 0" to fall back to for an existing building).
+ *
+ * The mirror is deliberately ONE-SIDED in its INPUT: World.tick's growth gates pass the
+ * congested land value, its abandonment sweep passes the uncongested one. Why, and what
+ * that buys, is documented once at the sweep in World.tick — do not restate it here. This
+ * function is a pure threshold lookup over whatever value it is handed.
  */
 export function maxSupportedLevel(landValue: number): number {
   for (let L = ZONE_MAX_LEVEL; L >= 1; L--) {
@@ -385,7 +390,8 @@ export function maxSupportedLevel(landValue: number): number {
 /**
  * Returns true when a building's current level exceeds what the land value can
  * support — the condition that triggers abandonment/dilapidation.
- * Uses the same LEVEL_THRESHOLDS gate as World.tick's level-up branch.
+ * Uses the same LEVEL_THRESHOLDS gate as World.tick's level-up branch; the sweep calls it
+ * with the congestion-free land value (see maxSupportedLevel).
  * Level 1 is the floor: a level-1 building is never under-supported.
  */
 export function isUnderSupported(level: number, landValue: number): boolean {

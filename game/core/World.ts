@@ -1006,9 +1006,27 @@ export class World {
       // captures every building that is abandoned at sweep entry (so a re-occupied
       // building — abandoned === false after the flip — is still skipped by the
       // growth and merge loops, which a plain `abandoned` check would miss).
+      //
+      // The verdict reads the UNCONGESTED land value — NOT the congested `lv.getValue` every
+      // growth gate below reads. Congestion is the one land-value input that `abandoned`
+      // feeds back into: condemning a building deletes its commuters, which deletes their
+      // congestion, which CAN raise the very value that condemned it — only can, because the
+      // congestion score is max-wins over a radius (LandValueMap.ts), so one building's trips
+      // may move a given anchor by nothing at all. Whenever that raise does happen and is
+      // enough to cross back over the threshold, the verdict has removed its own cause and
+      // the building alternates derelict/occupied indefinitely — measured in a playtest as
+      // 67 flips in 134 consecutive samples, and reproduced in World.abandonment.test.ts;
+      // the TRAFFIC_CAPACITY JSDoc in trafficAssignment.ts records an earlier occurrence
+      // that was closed by retuning a scalar. The remaining inputs — road, diversity,
+      // service, park — are all things the flag cannot change, so reading only those makes
+      // the verdict unable to alter its own next input, whatever the margins happen to be.
+      // Congestion keeps its bite by FREEZING growth at the congested `anchorLandValue`
+      // gates below; it never condemns.
       const frozenThisTick = new Set<number>();
       for (const b of buildings.iterBuildings()) {
-        const lvAt = lv.getValue(b.anchor.x, b.anchor.y);
+        // One read feeds BOTH directions, so abandon and recover can never disagree about
+        // the same anchor in the same tick.
+        const lvAt = lv.getUncongestedValue(b.anchor.x, b.anchor.y);
         const under = isUnderSupported(b.level, lvAt);
         if (b.abandoned) {
           // Frozen regardless of whether it re-occupies this tick.
@@ -1080,17 +1098,23 @@ export class World {
         if (processedBuildingIds.has(existing.id)) continue;
         processedBuildingIds.add(existing.id);
 
-        // Abandonment freeze: a derelict (or just-re-occupied) building does not age
-        // or grow this tick. `frozenThisTick` (not `existing.abandoned`) is required —
-        // a building re-occupied THIS tick is `abandoned === false` but must still be skipped.
-        if (frozenThisTick.has(existing.id)) continue;
-
         // Road-access gate: buildings that lose frontage road access do not age or grow.
         if (!hasFrontageRoadAccess(existing, this)) continue;
         if (!isBuildingPowered(existing, pw)) continue;
 
         // Age every building once per growth-opportunity (this tick).
         existing.age += 1;
+
+        // Abandonment freeze: a derelict (or just-re-occupied) building does not GROW this
+        // tick — this skip precedes every growth mutation below, and the merge loop skips
+        // the same set. `frozenThisTick` (not `existing.abandoned`) is required: a building
+        // re-occupied THIS tick is `abandoned === false` but must still be frozen.
+        // It sits AFTER the age++ deliberately: aging is eligibility, not growth. A derelict
+        // that kept its road and power keeps accruing that eligibility, so a building coming
+        // out of a long dereliction no longer has to re-earn its cooldown from zero before
+        // the growth and merge gates will consider it. A building with no road or no power
+        // still does not age at all — those two gates are above and unchanged.
+        if (frozenThisTick.has(existing.id)) continue;
 
         const anchorLandValue = lv.getValue(existing.anchor.x, existing.anchor.y);
         const lot = lotBboxOf(existing.footprint);
@@ -1154,13 +1178,19 @@ export class World {
         } else {
           // Density-bump branch: building is at max level and its structure already fills its
           // depth cap (the canExtendStructure check above was false); advance density tier.
-          // Gains the same four service-coverage anchors as growthGate above, but deliberately
-          // NOT a land-value gate: the abandonment sweep runs before this loop each tick and
-          // already froze any level-5 building whose anchor land value is below
-          // LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] against this same frozen snapshot, so every building
-          // that reaches this branch already clears that threshold — an explicit check here would
-          // be dead code. That same sweep is what claws density-created capacity back: if land
-          // value later drops below the threshold, the whole building abandons.
+          // Gains the same four service-coverage anchors as growthGate above, PLUS the same
+          // congested land-value threshold. That check WAS dead code while the sweep read the
+          // same congested value against this same frozen snapshot — nothing below
+          // LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] could survive the sweep to reach here. The sweep
+          // now reads the UNCONGESTED value, so a level-5 building whose anchor is suppressed
+          // purely by traffic survives the sweep and can reach this branch below the threshold.
+          // Two independent reasons it is gated. Freeze semantics: congestion freezes growth,
+          // and density is a growth rung, so it reads the congested value exactly like the
+          // level-up and structure-grow rungs above. And feedback: a bump here raises the
+          // building's worker or job capacity, which CAN deepen the congestion that suppressed
+          // the anchor in the first place — conditionally, since the added capacity only loads
+          // roads once it is actually filled. The freeze reason stands on its own and does not
+          // depend on whether that second loop closes in a given city.
           // The tier ceiling is keyed on lot width along the frontage: a 1-wide (unmerged) lot
           // stops at tier 1, only an assembled >=2-wide lot reaches tier 2 — assembling land, not
           // waiting, unlocks the top tier. This gate blocks INCREASES only, but no SIMULATION path
@@ -1173,6 +1203,7 @@ export class World {
           // otherwise-unreachable state; this gate does not and cannot guard against that.
           if (
             demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
+            anchorLandValue >= LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
             existing.density < maxDensityForLot(lot, existing.frontage) &&
             isBuildingWatered(existing, wm) &&
