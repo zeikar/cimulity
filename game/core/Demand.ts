@@ -64,10 +64,11 @@ export const MIGRATION_UNEMPLOYMENT_CUTOFF = 0.2;
 // The C/I demand a city with a worker for every job shows from outside investment alone — the
 // external-market pull that keeps the workplace gates open at balance, MIGRATION_PRESSURE's
 // counterpart for commercial and industrial. Must stay strictly between GROWTH_DEMAND_THRESHOLD
-// (so the C/I spawn/level-up gates stay open when balanced) and DENSITY_DEMAND_THRESHOLD (so the
-// floor alone can never densify — it can still merge a built-out pair, by design); set at the low
-// end, like MIGRATION_PRESSURE. Shared unsplit by C and I: laborMarket.ts pools their jobs as
-// interchangeable, so there is no shared quantity to divide between them.
+// (so the C/I spawn/level-up gates stay open when balanced) and the smaller of DENSITY_DEMAND_BAR's
+// C and I entries (so the floor alone can never densify — it can still merge a built-out pair, by
+// design); today COMMERCIAL_JOB_SHARE's even split makes both entries equal at 0.1875, comfortably
+// above 0.1. Set at the low end, like MIGRATION_PRESSURE. Shared unsplit by C and I: laborMarket.ts
+// pools their jobs as interchangeable, so there is no shared quantity to divide between them.
 export const WORKPLACE_PRESSURE = 0.1;
 
 // Applied whenever the labor market is empty: there is nothing to be proportional to in that state
@@ -79,11 +80,27 @@ export const BOOTSTRAP_RESIDENTIAL_DEMAND = 1;
 // positive reading is either an imbalance beyond DEADBAND_RATE or live in-migration.
 export const GROWTH_DEMAND_THRESHOLD = 0;
 
-// The one gate where magnitude matters. A jobs bar reaches 0.375 exactly when citywide unemployment
-// hits 20% with no reachable vacancies (0.5 × 0.75); the residential bar reaches it at a 12.5%
-// reachable-vacancy surplus. A jobs bar caps at COMMERCIAL_JOB_SHARE, so the previous 0.6 would have
-// made industrial density bumps unreachable in every city.
+// The one gate where magnitude matters: the fraction of each type's labor-derived demand range that
+// must be crossed before density can bump. Residential's severity arm reaches 1.0, so its bar is this
+// threshold in full. The C/I workplaceSeverity arms are each split by COMMERCIAL_JOB_SHARE AFTER the
+// severity curve, so they cap at COMMERCIAL_JOB_SHARE and 1 - COMMERCIAL_JOB_SHARE respectively;
+// commercial's retail arm can exceed its share and intentionally shares the same bar, since both
+// answer "is commercial demand high enough". DENSITY_DEMAND_BAR below applies this fraction per type.
+//
+// A flat threshold failed here: capped at its share of workplaceSeverity, a jobs bar could only clear
+// 0.375 when citywide unemployment hit 20% with no reachable vacancies — exactly
+// MIGRATION_UNEMPLOYMENT_CUTOFF, the point where migration hits 0 and residential growth freezes
+// entirely. The stable policy: DENSITY_DEMAND_BAR's C/I entries — 0.1875 today, following from
+// COMMERCIAL_JOB_SHARE's even split — open the gate at that same no-reachable-vacancies unemployment
+// rate, just above 12.5%.
 export const DENSITY_DEMAND_THRESHOLD = 0.375;
+
+/** Per-type application of DENSITY_DEMAND_THRESHOLD — see the comment above for the derivation. */
+export const DENSITY_DEMAND_BAR: DemandVector = Object.freeze({
+  residential: DENSITY_DEMAND_THRESHOLD,
+  commercial: DENSITY_DEMAND_THRESHOLD * COMMERCIAL_JOB_SHARE,
+  industrial: DENSITY_DEMAND_THRESHOLD * (1 - COMMERCIAL_JOB_SHARE),
+});
 
 /** Reading of a city whose labor market is empty; also Demand's value before the first recompute. */
 export const EMPTY_CITY_DEMAND: DemandVector = Object.freeze({
