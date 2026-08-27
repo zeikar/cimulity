@@ -348,8 +348,17 @@ describe('inspectTile', () => {
     world.getHospitalCoverageMap().getRaw()[2 * size + 3] = covered;
     world.getSchoolCoverageMap().getRaw()[2 * size + 3] = covered;
 
-    // Non-vacuous: the clicked cell really is covered on its own reading.
-    expect(covered).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+    // Non-vacuous: read the maps back, not the literal. A wrong stride would leave the
+    // clicked cell at 0, and the assertions below would then hold for the wrong reason.
+    for (const map of [
+      world.getServiceCoverageMap(),
+      world.getFireCoverageMap(),
+      world.getHospitalCoverageMap(),
+      world.getSchoolCoverageMap(),
+    ]) {
+      expect(map.getCoverage(3, 2)).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+      expect(map.getCoverage(2, 2)).toBeLessThan(SERVICE_COVERAGE_THRESHOLD_RAW);
+    }
 
     const info = inspectTile(world, { x: 3, y: 2 })!;
     // The anchor decides, so every gate reads shut and every number reads 0.

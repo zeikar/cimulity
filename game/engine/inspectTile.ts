@@ -44,12 +44,13 @@ export interface TileBuildingInfo {
 /**
  * One-shot readout for the SELECT-tool panel.
  *
- * WHICH CELL a field describes depends on its kind, mirroring the split World.tick gates on:
- * the GRADED fields (`landValue`, `congestionPenalty`, and the four `*Coverage` /
- * `*Covered` pairs) are read at the building ANCHOR when a building occupies the tile,
- * because that is the cell the growth gates evaluate; `powered` / `watered` are BINARY and
- * satisfied by any footprint cell. On a bare tile or a structure every field describes the
- * clicked cell itself.
+ * WHICH CELL a field describes depends on its kind, mirroring the split World.tick gates on.
+ * The GRADED fields (`landValue`, `congestionPenalty`, and the four `*Coverage` / `*Covered`
+ * pairs) are read at the building ANCHOR when a building occupies the tile, because that is
+ * the cell the growth gates evaluate, and at the clicked cell otherwise — including on a
+ * structure. `powered` / `watered` do NOT follow that rule: they are reported at the entity
+ * level throughout (structure source/connectivity, any footprint cell for a building, the raw
+ * cell for bare land) — see the readout comments below.
  */
 export interface TileInfo {
   readonly x: number;
