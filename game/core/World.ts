@@ -7,7 +7,7 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
-import { Demand, DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
+import { Demand, DENSITY_DEMAND_BAR, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
@@ -1206,7 +1206,7 @@ export class World {
           // still construct an over-cap building directly in memory, as it can construct any other
           // otherwise-unreachable state; this gate does not and cannot guard against that.
           if (
-            demandVec[existing.type] >= DENSITY_DEMAND_THRESHOLD &&
+            demandVec[existing.type] >= DENSITY_DEMAND_BAR[existing.type] &&
             anchorLandValue >= LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&
             existing.density < maxDensityForLot(lot, existing.frontage) &&
