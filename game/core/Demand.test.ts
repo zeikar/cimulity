@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   Demand,
   DENSITY_DEMAND_THRESHOLD,
+  DENSITY_DEMAND_BAR,
   GROWTH_DEMAND_THRESHOLD,
   MIN_MARKET,
   MIGRATION_PRESSURE,
@@ -136,13 +137,22 @@ describe('Demand — constants', () => {
     expect(DENSITY_DEMAND_THRESHOLD).toBe(0.375);
     // 0.5 × severity(0.20) = 0.5 × 0.75; a jobs bar caps at COMMERCIAL_JOB_SHARE, so it is reachable.
     expect(DENSITY_DEMAND_THRESHOLD).toBeLessThan(COMMERCIAL_JOB_SHARE);
+
+    // Residential's severity arm reaches 1.0, so its bar is the flat threshold, unchanged.
+    expect(DENSITY_DEMAND_BAR.residential).toBe(DENSITY_DEMAND_THRESHOLD);
+    // C and I split the flat threshold by COMMERCIAL_JOB_SHARE — the derivation, not a restatement.
+    expect(DENSITY_DEMAND_BAR.commercial).toBe(DENSITY_DEMAND_THRESHOLD * COMMERCIAL_JOB_SHARE);
+    expect(DENSITY_DEMAND_BAR.industrial).toBe(DENSITY_DEMAND_THRESHOLD * (1 - COMMERCIAL_JOB_SHARE));
+    // Today's even split makes both entries equal at 0.1875 — exact in binary (3/8 × 1/2 = 3/16).
+    expect(DENSITY_DEMAND_BAR.commercial).toBe(0.1875);
+    expect(DENSITY_DEMAND_BAR.industrial).toBe(0.1875);
   });
 
   it('GROWTH_DEMAND_THRESHOLD is 0 and MIGRATION_PRESSURE sits strictly between the two gates', () => {
     expect(GROWTH_DEMAND_THRESHOLD).toBe(0);
     expect(MIGRATION_PRESSURE).toBe(0.1);
     expect(MIGRATION_PRESSURE).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
-    expect(MIGRATION_PRESSURE).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
+    expect(MIGRATION_PRESSURE).toBeLessThan(DENSITY_DEMAND_BAR.residential);
   });
 
   it('WORKPLACE_PRESSURE sits strictly between the two gates, like MIGRATION_PRESSURE', () => {
@@ -150,7 +160,10 @@ describe('Demand — constants', () => {
     // The hard constraint: the floor alone can never drive a density bump or merge, only open the
     // spawn/level-up gates.
     expect(WORKPLACE_PRESSURE).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
-    expect(WORKPLACE_PRESSURE).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
+    // Against the per-type bars C and I actually face, not the flat threshold — floor alone still
+    // cannot densify either one.
+    expect(WORKPLACE_PRESSURE).toBeLessThan(DENSITY_DEMAND_BAR.commercial);
+    expect(WORKPLACE_PRESSURE).toBeLessThan(DENSITY_DEMAND_BAR.industrial);
   });
 
   it('MIN_MARKET is 100 = 20 * POPULATION_PER_TILE_LEVEL, anchored on the modal building-level', () => {
@@ -491,6 +504,64 @@ describe('Demand — regression readings', () => {
     // The pinned value IS the discriminator: 5/9 is the retail gap over the NON-abandoned sums,
     // and it beats the 0.5 jobs half-share. Counting the derelict would give retail 0.2 → 0.5.
     expect(v1.commercial).toBeCloseTo(5 / 9, 10);
+  });
+
+  // The dead window the per-type DENSITY_DEMAND_BAR fixes: capped at its COMMERCIAL_JOB_SHARE
+  // share of workplaceSeverity, industrial's jobs bar could only clear the flat DENSITY_DEMAND_THRESHOLD
+  // at exactly 20% unemployment — MIGRATION_UNEMPLOYMENT_CUTOFF, where migration has already hit 0 and
+  // residential growth is frozen. Three states over ONE R:C+I = 40:40 building map (workforce 400,
+  // jobsCapacity 400, no reachable vacancies) trace the fix at u = 40, 60, 80 (10%, 15%, 20%
+  // unemployment).
+  //
+  // The exact 12.5% contour (u = 50) is deliberately untested in either direction. Measured in node
+  // against this exact chain: DENSITY_DEMAND_BAR.industrial (0.1875) is exactly representable, but at
+  // u/workforce = 0.125 the severity chain `(rate - DEADBAND_RATE) / (SATURATION_RATE - DEADBAND_RATE)`
+  // computes 1 ULP UNDER it — 0.18749999999999997, a 2.8e-17 shortfall, identical at every workforce
+  // measured from 100 to 1000; the unsplit severity is likewise 1 ULP under 0.375, so no reassociation
+  // of the arithmetic fixes it. That contour is an arithmetic artifact, not a behavior, and the
+  // production comparison stays a plain `>=` with no epsilon — the sibling gates in the same density
+  // branch compare computed floats against float constants with the identical tie property, so a lone
+  // tolerant gate here would be an inconsistency. Pinning u = 50 either way would break on a no-op
+  // reassociation, so this table brackets it instead: below at u = 40, above at u = 80, and the new
+  // window opened in between at u = 60.
+  function makeReachMap(): BuildingMap {
+    // The building map every row below shares: only the labor bag varies per row.
+    const map = makeBuildingMap();
+    addRun(map, 0, 0, 'residential', 10, 4);
+    addRun(map, 100, 1, 'commercial', 10, 2);
+    addRun(map, 200, 2, 'industrial', 10, 2);
+    return map;
+  }
+
+  it('10% unemployment — below both density bars, migration still alive', () => {
+    const v = demandFor(makeReachMap(), { employed: 360, unemployed: 40, reachableUnfilledJobs: 0, jobsCapacity: 400 });
+
+    expect(v.industrial).toBeLessThan(DENSITY_DEMAND_BAR.industrial);
+    expect(v.industrial).toBeCloseTo(0.125, 10);
+    expect(v.residential).toBeGreaterThan(0);
+    expect(v.residential).toBeCloseTo(0.05, 10);
+  });
+
+  it('15% unemployment — the new window: I clears its own bar, the flat threshold still does not, migration alive', () => {
+    const v = demandFor(makeReachMap(), { employed: 340, unemployed: 60, reachableUnfilledJobs: 0, jobsCapacity: 400 });
+
+    expect(v.industrial).toBeGreaterThanOrEqual(DENSITY_DEMAND_BAR.industrial);
+    expect(v.industrial).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
+    expect(v.industrial).toBeCloseTo(0.25, 10);
+    expect(v.residential).toBeGreaterThan(0);
+    expect(v.residential).toBeCloseTo(0.025, 10);
+  });
+
+  it('20% unemployment — above both bars, where the flat threshold first opens: the diagnosed dead window', () => {
+    const v = demandFor(makeReachMap(), { employed: 320, unemployed: 80, reachableUnfilledJobs: 0, jobsCapacity: 400 });
+
+    // The old bar's opening boundary: I first clears DENSITY_DEMAND_THRESHOLD exactly here, and
+    // (severity being monotone in u) stays above it for every u beyond, while migration — and so R —
+    // is pinned at exactly 0 for every u beyond too. This row is the diagnosed dead window itself.
+    expect(v.industrial).toBeGreaterThanOrEqual(DENSITY_DEMAND_BAR.industrial);
+    expect(v.industrial).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+    expect(v.industrial).toBeCloseTo(0.375, 10);
+    expect(v.residential).toBe(0);
   });
 });
 

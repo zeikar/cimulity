@@ -67,8 +67,10 @@ export const MIGRATION_UNEMPLOYMENT_CUTOFF = 0.2;
 // (so the C/I spawn/level-up gates stay open when balanced) and the smaller of DENSITY_DEMAND_BAR's
 // C and I entries (so the floor alone can never densify — it can still merge a built-out pair, by
 // design); today COMMERCIAL_JOB_SHARE's even split makes both entries equal at 0.1875, comfortably
-// above 0.1. Set at the low end, like MIGRATION_PRESSURE. Shared unsplit by C and I: laborMarket.ts
-// pools their jobs as interchangeable, so there is no shared quantity to divide between them.
+// above 0.1. Demand.test.ts's constants test pins that inequality, so a future COMMERCIAL_JOB_SHARE
+// change fails a test instead of silently invalidating this comment. Set at the low end, like
+// MIGRATION_PRESSURE. Shared unsplit by C and I: laborMarket.ts pools their jobs as interchangeable,
+// so there is no shared quantity to divide between them.
 export const WORKPLACE_PRESSURE = 0.1;
 
 // Applied whenever the labor market is empty: there is nothing to be proportional to in that state
