@@ -2805,7 +2805,8 @@ describe('traffic cadence constants', () => {
     // dirty land value (cascades fire on mark, never on recompute). So a cadence-forced
     // congestion refresh only reaches land value on a tick where the land-value cadence
     // fires too. If this divisibility ever breaks, the refreshed congestion sits unread and
-    // growth/abandonment decide on stale congestion for the rest of the traffic period.
+    // growth decides on stale congestion for the rest of the traffic period. The abandonment
+    // sweep is unaffected either way — it reads the uncongested land value.
     // See the TRAFFIC_INTERVAL doc comment in World.ts.
     expect(TRAFFIC_INTERVAL % LAND_VALUE_INTERVAL).toBe(0);
   });

@@ -897,10 +897,14 @@ export class World {
    *      but NOT `landValue` or any influence input. If a future rule mutates influence
    *      inputs (roads/zones) MID-TICK, this invariant breaks — recompute or split into
    *      two passes.
-   *   7. The traffic → land value → growth/abandonment → buildings → labor → traffic loop is
+   *   7. The traffic → land value → growth → buildings → labor → traffic loop is
    *      therefore ACROSS ticks, never within one: the buildings growth changes only set dirty
    *      flags (markLaborDirty at the end of this tick), which resolve at step 3 of the NEXT
    *      tick. One-tick lag, bounded work per tick.
+   *      ABANDONMENT is deliberately OUTSIDE that loop: only growth decides on congestion,
+   *      and the sweep reads the uncongested land value instead, so no edge runs from
+   *      traffic to the verdict's land-value input. That acyclicity is the property this
+   *      design buys; the argument for it is at the sweep in the growth pass below.
    */
   tick(): WorldTickResult {
     this.tickCount++;

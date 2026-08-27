@@ -16,9 +16,9 @@
  *                − 0.20 * congestion, 0, 1).
  *   The park term is additive and ≥0; the congestion term is subtractive and ≥0.
  *
- * DUAL ROLE OF SERVICES: the four coverage services hard-gate level-up at the building
- * anchor in World (all four must be covered), AND contribute to land value here via the
- * combined serviceScore term.
+ * DUAL ROLE OF SERVICES: the four coverage services hard-gate level-up, structure-grow,
+ * and the density bump at the building anchor in World (all four must be covered), AND
+ * contribute to land value here via the combined serviceScore term.
  */
 
 import type { GameMap } from './Map';
@@ -39,12 +39,14 @@ const SERVICE_WEIGHT = 0.50;   // tunable
 /**
  * Coefficient of the congestion penalty — the loss when a fully congested road sits on the
  * tile ITSELF. A building anchor is never a road tile, so the largest loss actually reachable
- * at a level-up / abandonment gate is 0.20 * 6/7 ≈ 0.171 (nearest road at Chebyshev 1).
+ * at a level-up / density gate is 0.20 * 6/7 ≈ 0.171 (nearest road at Chebyshev 1).
  *
  * 0.20 matches the WIDEST LEVEL_THRESHOLDS step gap (0.25→0.45→0.65→0.85), so within those
  * bands full congestion pulls a marginal building down about one supported level — enough to
- * gate level-up and trigger abandonment. The lower gaps are narrower (0.10 and 0.15), so at
- * low land value the same penalty can cross two. Either way it stays below ROAD_WEIGHT (0.40):
+ * gate level-up, structure-grow, and the density bump. It cannot abandon anything: the
+ * abandonment sweep reads getUncongestedValue, which omits this term entirely (why, once,
+ * at the sweep in World.tick). The lower gaps are narrower (0.10 and 0.15), so at low land
+ * value the same penalty can cross two. Either way it stays below ROAD_WEIGHT (0.40):
  * a congested road is still net-positive versus no road at all. That same inequality makes the
  * clamp's 0-floor unreachable through this term, since congestionScore ≤ roadScore on every tile.
  */
@@ -232,9 +234,8 @@ export class LandValueMap {
 
   /**
    * Returns the land value at (x, y) with the congestion term REMOVED — the value the
-   * abandonment sweep must read so its verdict cannot depend on the `abandoned` flag it is
-   * about to set (abandoning removes commuters, which removes congestion, which would
-   * otherwise change this same value on the next recompute).
+   * abandonment sweep reads. Why the sweep must not read the congested value is documented
+   * once at the sweep in World.tick; do not restate it here.
    *
    * Stored separately from `values`/`congestionPenalties` rather than derived as
    * `getValue(x, y) + getCongestionPenalty(x, y)`: both of those are independently rounded

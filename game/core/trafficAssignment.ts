@@ -68,22 +68,33 @@ import { ORTHOGONAL, buildStructureOwned, isRoadNode } from './roadGraph';
  * ordinary street reads `round(255 · 130 / 500) = 66` — a land-value penalty of
  * `0.20 · (66/255) · 6/7 ≈ 0.044`, below the smallest margin any building there
  * held over its `LEVEL_THRESHOLDS` gate (≈ 0.09), so an ordinary layout is nudged
- * and never abandoned. The corridor city reads near-saturated but un-clamped at the
- * sizes measured — `round(255 · 380 / 500) = 194` at the 380-trip stall, and a
- * re-measured 360-trip corridor read 184 — for a penalty of `0.20 · (194/255) · 6/7
- * ≈ 0.130`, roughly one whole `LEVEL_THRESHOLDS` band: enough to gate level-ups and
- * to abandon marginal buildings, which is the intended bite. Because that load is
- * GLOBAL it keeps climbing with the city and does clamp once the corridor's employed
- * population passes 500; the band is deliberately entered before the byte flattens,
- * so the gradient still carries information at the sizes a player actually reaches.
+ * without pushing anything measured there below its growth gate. The corridor city
+ * reads near-saturated but un-clamped at the sizes measured —
+ * `round(255 · 380 / 500) = 194` at the 380-trip stall, and a re-measured 360-trip
+ * corridor read 184 — for a penalty of `0.20 · (194/255) · 6/7 ≈ 0.130`, roughly
+ * one whole `LEVEL_THRESHOLDS` band: enough to FREEZE the level-up, structure-grow,
+ * and density rungs on a marginal building, which is the intended bite. It never
+ * abandons one: the sweep reads the uncongested land value instead
+ * (LandValueMap.getUncongestedValue — why, once, at the sweep in World.tick).
+ * Because that load is GLOBAL it keeps climbing with the city and does clamp once
+ * the corridor's employed population passes 500; the band is deliberately entered
+ * before the byte flattens, so the gradient still carries information at the sizes
+ * a player actually reaches.
  *
  * Rejected by the same measurement: 120 (the value this replaces) pinned the
  * ORDINARY city's busiest street at a clamped 255 and drove it into a permanent
  * boom/bust cycle — 21 of 36 buildings abandoned, recovering, abandoning again —
- * i.e. exactly the "constant tax" this knob exists to avoid. Assignment is
- * exactly linear in the worker unit, so the same measured loads project 160 to
- * byte 207 and 240 to byte 138 on that ordinary street: both still far past a
- * tolerable ordinary reading. Going the other way, capacity above ~1.4× the
+ * i.e. exactly the "constant tax" this knob exists to avoid. That exact boom/bust is
+ * unreachable now that congestion cannot abandon, but 120 stays rejected for the
+ * same underlying reason, restated in the freeze rule's terms: a clamped-255
+ * ordinary street costs the full ≈ 0.171 anchor penalty, well past the ≈ 0.09 margin
+ * measured there, and a congested value below a building's own level threshold is
+ * necessarily below the next one too (LEVEL_THRESHOLDS is increasing) — so every
+ * building the old rule condemned this one instead freezes. Same constant tax, paid
+ * as a permanent freeze rather than an oscillation. Assignment is exactly linear in
+ * the worker unit, so the same measured loads project 160 to byte 207 and 240 to
+ * byte 138 on that ordinary street: both still far past a tolerable ordinary
+ * reading. Going the other way, capacity above ~1.4× the
  * corridor load (≈ 530 at the 380-trip size measured) drops that corridor out of
  * the near-saturated reading this knob targets. Re-measure BOTH loads before
  * retuning.
