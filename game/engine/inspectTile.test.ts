@@ -242,6 +242,93 @@ describe('inspectTile', () => {
     expect(info!.landValue).toBeGreaterThan(0);
   });
 
+  it('reports the building ANCHOR land value when a non-anchor footprint cell is clicked', () => {
+    // The growth gates read the anchor (World.tick: lv.getValue(existing.anchor...)),
+    // so the panel must report the same cell — otherwise a lot straddling a land-value
+    // step shows a threshold as cleared that the deciding cell has not cleared.
+    const world = new World(20, 20, { regenerate: false });
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ZONE_RESIDENTIAL));
+    // Road adjacent to the NON-anchor cell only, so road proximity — and with it
+    // land value — differs across the two footprint cells.
+    world.getMap().setTile(4, 2, createTile(4, 2, TileType.ROAD));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [
+        { x: 2, y: 2 },
+        { x: 3, y: 2 },
+      ],
+      anchor: { x: 2, y: 2 },
+      level: 1,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 2, h: 1 },
+    });
+    world.recomputeLandValue();
+
+    const anchorValue = world.getLandValue().getValue(2, 2);
+    const cellValue = world.getLandValue().getValue(3, 2);
+    // Guard against a vacuous pass: if the fixture ever stops producing a spread,
+    // the assertion below would hold for the wrong reason.
+    expect(cellValue).not.toBe(anchorValue);
+
+    expect(inspectTile(world, { x: 3, y: 2 })!.landValue).toBe(anchorValue);
+    // The anchor itself is unchanged.
+    expect(inspectTile(world, { x: 2, y: 2 })!.landValue).toBe(anchorValue);
+  });
+
+  it('reports the building ANCHOR congestion penalty so it describes the same cell as landValue', () => {
+    // landValue and congestionPenalty are shown adjacent in the panel and are two
+    // halves of one figure (penalty = uncongested - value). Sourcing them from
+    // different cells would make the pair incoherent.
+    const size = 20;
+    const world = new World(size, size, { regenerate: false });
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(4, 2, createTile(4, 2, TileType.ROAD));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [
+        { x: 2, y: 2 },
+        { x: 3, y: 2 },
+      ],
+      anchor: { x: 2, y: 2 },
+      level: 1,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 2, h: 1 },
+    });
+    // Jam the road so the penalty is nonzero, and distance-weighted differently at
+    // each footprint cell (Chebyshev 1 from the non-anchor cell, 2 from the anchor).
+    world.getTrafficMap().getRaw()[2 * size + 4] = 255;
+    world.markLandValueDirty();
+    world.recomputeLandValueIfDirty();
+
+    const anchorPenalty = world.getLandValue().getCongestionPenalty(2, 2);
+    const cellPenalty = world.getLandValue().getCongestionPenalty(3, 2);
+    // Non-vacuous: the two cells must genuinely disagree, and the penalty must be real.
+    expect(anchorPenalty).toBeGreaterThan(0);
+    expect(cellPenalty).not.toBe(anchorPenalty);
+
+    expect(inspectTile(world, { x: 3, y: 2 })!.congestionPenalty).toBe(anchorPenalty);
+  });
+
+  it('reports the clicked cell land value when no building occupies the tile', () => {
+    // The anchor redirect applies to building cells only — a bare tile still
+    // describes itself.
+    const world = new World(20, 20, { regenerate: false });
+    world.getMap().setTile(4, 2, createTile(4, 2, TileType.ROAD));
+    world.recomputeLandValue();
+
+    expect(inspectTile(world, { x: 3, y: 2 })!.landValue).toBe(
+      world.getLandValue().getValue(3, 2),
+    );
+  });
+
   it('surfaces a grown building occupying the tile', () => {
     const world = makeWorld();
     world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));

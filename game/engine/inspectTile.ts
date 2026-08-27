@@ -73,9 +73,15 @@ export interface TileInfo {
   readonly schoolServiceCovered: boolean;
   /** True when this tile's structure is a school (the school coverage source). */
   readonly isSchoolSource: boolean;
-  /** Land value in [0, 1]. */
+  /**
+   * Land value in [0, 1], read at the building ANCHOR when a building occupies the tile —
+   * the cell the growth gates compare against LEVEL_THRESHOLDS — and at this tile otherwise.
+   */
   readonly landValue: number;
-  /** Applied land-value penalty from road congestion, in [0, 1] — same unit as `landValue`. */
+  /**
+   * Applied land-value penalty from road congestion, in [0, 1] — same unit as `landValue`
+   * and read at the same cell (see above), so the pair always describes one tile.
+   */
   readonly congestionPenalty: number;
   /** Grown building occupying this tile, if any. */
   readonly building: TileBuildingInfo | null;
@@ -172,6 +178,14 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
       ? isBuildingWatered(building, water)
       : water.isWatered(coord.x, coord.y);
 
+  // Land value follows the SAME entity-level rule as the utilities above, for the same
+  // reason: the growth gates read the building ANCHOR (World.tick), so reporting the
+  // clicked cell would show a threshold as cleared that the deciding cell has not —
+  // land value steps across a lot at a park or service-coverage edge. congestionPenalty
+  // moves with it: the two are halves of one figure (penalty = uncongested − value) and
+  // sit adjacent in the panel, so they must describe the same cell.
+  const lvCoord = building ? building.anchor : coord;
+
   // Police coverage: a police_station tile is the source — its footprint cells
   // are excluded from the coverage sweep, so we report coverage 0/false for it
   // (matching the power_plant/water_tower source exclusion pattern). All other
@@ -221,8 +235,8 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     schoolCoverage,
     schoolServiceCovered,
     isSchoolSource,
-    landValue: world.getLandValue().getValue(coord.x, coord.y),
-    congestionPenalty: world.getLandValue().getCongestionPenalty(coord.x, coord.y),
+    landValue: world.getLandValue().getValue(lvCoord.x, lvCoord.y),
+    congestionPenalty: world.getLandValue().getCongestionPenalty(lvCoord.x, lvCoord.y),
     building: building ? buildingInfo(building) : null,
     structure: structure ? { type: structure.type } : null,
   };
