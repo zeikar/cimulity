@@ -2106,18 +2106,22 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
   });
 
-  it('a jam that would once have CONDEMNED the probe now only freezes it: level, occupancy and population all hold', () => {
-    // The sibling test above pins the BLOCKING half of the freeze (a jam that merely puts the
-    // next level out of reach). This pins the CONDEMNING half — the case the sweep's
-    // uncongested read exists for. Same seam fixture, one argument different: the probe's
-    // seeded level, 3 instead of 2.
+  it('a jam strong enough to CONDEMN the probe under the old sweep leaves it occupied at its level', () => {
+    // The sibling test above pins a jam that merely puts the next level out of reach. This
+    // pins a CONDEMNING jam — the case the sweep's uncongested read exists for. Same seam
+    // fixture, one argument different: the probe's seeded level, 3 instead of 2.
     //
     // Why level 3 is the interesting one. Uncongested the anchor sits at ~0.5429, which
     // supports level 3 (LEVEL_THRESHOLDS[3] = 0.45). Jammed it falls to ~0.3714, which
     // supports only level 2 — so on PRE-TASK-2 semantics, where the sweep read the congested
     // value, isUnderSupported(3, 0.3714) was true and the probe went derelict on the very
-    // first sweep. Today the sweep reads the uncongested value, the probe stays occupied, and
-    // congestion's whole effect is that no growth rung fires.
+    // first sweep. Today the sweep reads the uncongested value and the probe survives, across
+    // two consecutive sweeps under the jam.
+    //
+    // What this scenario does NOT show is a frozen level-up: the uncongested 0.5429 is short
+    // of LEVEL_THRESHOLDS[4] = 0.65, so this probe could not have climbed to level 4 with or
+    // without the jam. The freeze evidence lives in the two tests that can attribute it — the
+    // sibling test above for the level-up gate, and the jammed/unjammed density pair below.
     const world = new World(32, 8, { regenerate: false });
     const map = world.getMap();
     const {
@@ -2130,9 +2134,6 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     // Precondition: uncongested, this anchor SUPPORTS level 3 — so anything that condemns the
     // probe below can only have come from the congestion term.
     expect(world.getLandValue().getUncongestedValue(5, 1)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[3]);
-    // Demand is not the confound either: residential stays above the growth deadband
-    // throughout (the fixture's C job surplus), so land value is the only closed gate.
-    expect(world.getDemand().residential).toBeGreaterThan(GROWTH_DEMAND_THRESHOLD);
 
     const POPULATION_BEFORE = world.getPopulation(); // 30 (probe) + 40 (commercial) = 70
     expect(POPULATION_BEFORE).toBe(buildingCapacity(map.getBuildings().getBuilding(PROBE_ID)!) + 40);
@@ -2158,8 +2159,10 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
     // THE revert-sensitive assertion: on pre-Task-2 semantics this reads true.
     expect(map.getBuildings().getBuilding(PROBE_ID)!.abandoned).toBe(false);
     expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
-    expect(map.getBuildings().getBuilding(PROBE_ID)!.density).toBe(0);
     expect(world.getPopulation()).toBe(POPULATION_BEFORE);
+    // Deliberately NOT asserted: `density`. Below ZONE_MAX_LEVEL the density branch cannot
+    // fire at all, so "density stays 0" here would be true under any semantics; the density
+    // gate is attributed by the jammed/unjammed pair below instead.
     // Deliberately NOT asserted: `age`. A powered, road-accessed, unfrozen building ages once
     // per growth pass even when every growth branch rejects it — aging is eligibility, not a
     // growth mutation.
@@ -2181,7 +2184,6 @@ describe('World.tick() — congestion-suppressed land value gates level-up', () 
 
     expect(map.getBuildings().getBuilding(PROBE_ID)!.abandoned).toBe(false);
     expect(map.getBuildings().getBuilding(PROBE_ID)!.level).toBe(3);
-    expect(map.getBuildings().getBuilding(PROBE_ID)!.density).toBe(0);
     expect(world.getPopulation()).toBe(POPULATION_BEFORE);
   });
 

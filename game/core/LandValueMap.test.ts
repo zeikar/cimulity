@@ -534,18 +534,31 @@ describe('LandValueMap', () => {
       expect(lv.getUncongestedValue(0, 5)).toBe(0);
     });
 
-    it('(d) is only approximately (not exactly) getValue + getCongestionPenalty, because both are independently float32-rounded', () => {
+    it('(d) is only approximately getValue + getCongestionPenalty — the naive derivation drifts on some congestion bytes, because both addends are independently float32-rounded', () => {
       const map = makeMap(5, 5, [{ x: 2, y: 2, type: TileType.ROAD }]);
-      const congested = new LandValueMap(5, 5);
-      congested.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5),
-        congestedTraffic(5, 5, [{ x: 2, y: 2, c: 100 }]));
 
-      const sum = congested.getValue(2, 1) + congested.getCongestionPenalty(2, 1);
+      // Swept over every congestion-bearing byte instead of pinned to one, so the evidence
+      // does not hinge on a single fixture value: plenty of bytes DO happen to round-trip
+      // exactly, and a one-byte assertion would fail on any harmless retune that landed this
+      // fixture on one of them. The only thing that fails this test is the derivation becoming
+      // exact for EVERY byte — which is precisely the case where the stored array would be
+      // redundant and someone should re-examine it.
+      let drifted = 0;
+      for (let c = 1; c <= 255; c++) {
+        const congested = new LandValueMap(5, 5);
+        congested.recompute(map, new StructureMap(5, 5), zeroCoverage(5, 5),
+          congestedTraffic(5, 5, [{ x: 2, y: 2, c }]));
 
-      // The naive derivation drifts at the float32 ulp level — this is the whole reason
-      // getUncongestedValue is a stored array rather than getValue(x,y) + getCongestionPenalty(x,y).
-      expect(sum).not.toBe(congested.getUncongestedValue(2, 1));
-      expect(sum).toBeCloseTo(congested.getUncongestedValue(2, 1), 6);
+        const derived = congested.getValue(2, 1) + congested.getCongestionPenalty(2, 1);
+        const stored = congested.getUncongestedValue(2, 1);
+
+        expect(derived).toBeCloseTo(stored, 6);
+        if (derived !== stored) drifted++;
+      }
+
+      // The whole reason getUncongestedValue is a stored array rather than
+      // getValue(x,y) + getCongestionPenalty(x,y).
+      expect(drifted).toBeGreaterThan(0);
     });
   });
 
