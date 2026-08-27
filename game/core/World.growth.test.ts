@@ -236,7 +236,7 @@ describe('World.tick() — density tier', () => {
     expect(b2.density).toBe(0);
   });
 
-  it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + demand[type] >= DENSITY_DEMAND_THRESHOLD', () => {
+  it('density advances only when at ZONE_MAX_LEVEL + age >= DENSITY_COOLDOWN_INTERVALS + demand[type] >= DENSITY_DEMAND_BAR[type]', () => {
     // The max-level R and its level-4 C/I demand seeders sit on a fully served
     // cluster (power, water, four services, lv ≈ 1.0) so the abandonment sweep
     // (Task 4) does not flag any of them — leaving density the only variable.
@@ -257,7 +257,7 @@ describe('World.tick() — density tier', () => {
       structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
     });
     // 80 reachable jobs against the max-level R's 50 workers → net 30 on a market of 100 →
-    // ratio 0.30, a saturated residential bar, well clear of DENSITY_DEMAND_THRESHOLD.
+    // ratio 0.30, a saturated residential bar, well clear of DENSITY_DEMAND_BAR.residential.
     map.getBuildings().addBuilding({
       type: 'commercial',
       footprint: [SERVED_C],

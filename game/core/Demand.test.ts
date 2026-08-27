@@ -523,7 +523,12 @@ describe('Demand — regression readings', () => {
   // branch compare computed floats against float constants with the identical tie property, so a lone
   // tolerant gate here would be an inconsistency. Pinning u = 50 either way would break on a no-op
   // reassociation, so this table brackets it instead: below at u = 40, above at u = 80, and the new
-  // window opened in between at u = 60.
+  // window opened in between at u = 60. A second, tighter pair further below narrows that bracket to
+  // the contour's immediate 1-point neighbors — 12% and 13% unemployment on their own 2000-workforce
+  // map — so the opening cannot drift anywhere inside the wide 10-to-15 window without failing, while
+  // still stopping one point shy of the untested contour on each side. expectProducibleBag requires
+  // every labor scalar to be a multiple of POPULATION_PER_LEVEL, so this fixture steps in units of it;
+  // 240 and 260 are the nearest values that convention can express on either side of the 250 contour.
   function makeReachMap(): BuildingMap {
     // The building map every row below shares: only the labor bag varies per row.
     const map = makeBuildingMap();
@@ -562,6 +567,43 @@ describe('Demand — regression readings', () => {
     expect(v.industrial).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
     expect(v.industrial).toBeCloseTo(0.375, 10);
     expect(v.residential).toBe(0);
+  });
+
+  /**
+   * Own R:C+I = 200:200 map (workforce 2000, jobsCapacity 2000, no reachable vacancies), built only
+   * from legal ZONE_MAX_LEVEL buildings: only the labor bag varies per row, same shape as makeReachMap
+   * above but scaled so 1% of workforce is a producible 10-worker step, letting the two rows below sit
+   * one point on either side of 12.5%.
+   */
+  function makeBracketMap(): BuildingMap {
+    const map = makeBuildingMap();
+    // Modal 2-wide building at level 5 (ZONE_MAX_LEVEL): 2 tiles × level 5 × 5 = 50 each. The 20-wide
+    // map fits 10 per row, so each count-10 run below needs its own row.
+    // 40 residential (50 each) → workforce 2000.
+    addRun(map, 0, 0, 'residential', 10, 5);
+    addRun(map, 10, 1, 'residential', 10, 5);
+    addRun(map, 20, 2, 'residential', 10, 5);
+    addRun(map, 30, 3, 'residential', 10, 5);
+    // 20 commercial + 20 industrial (50 each) → jobs capacity 2000.
+    addRun(map, 100, 4, 'commercial', 10, 5);
+    addRun(map, 110, 5, 'commercial', 10, 5);
+    addRun(map, 200, 6, 'industrial', 10, 5);
+    addRun(map, 210, 7, 'industrial', 10, 5);
+    return map;
+  }
+
+  it('12% unemployment — brackets the 12.5% industrial-density-bar opening from below', () => {
+    const v = demandFor(makeBracketMap(), { employed: 1760, unemployed: 240, reachableUnfilledJobs: 0, jobsCapacity: 2000 });
+
+    expect(v.industrial).toBeLessThan(DENSITY_DEMAND_BAR.industrial);
+    expect(v.industrial).toBeCloseTo(0.175, 10);
+  });
+
+  it('13% unemployment — brackets the 12.5% industrial-density-bar opening from above', () => {
+    const v = demandFor(makeBracketMap(), { employed: 1740, unemployed: 260, reachableUnfilledJobs: 0, jobsCapacity: 2000 });
+
+    expect(v.industrial).toBeGreaterThanOrEqual(DENSITY_DEMAND_BAR.industrial);
+    expect(v.industrial).toBeCloseTo(0.2, 10);
   });
 });
 
