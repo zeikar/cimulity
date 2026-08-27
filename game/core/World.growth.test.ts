@@ -6,7 +6,8 @@ import {
   DENSITY_COOLDOWN_INTERVALS,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, POPULATION_PER_LEVEL } from './growthConstants';
-import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
+import { footprintCells } from './zoneGrowth';
+import { DENSITY_DEMAND_BAR, DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
 import type { Frontage } from './buildingFootprint';
@@ -741,6 +742,95 @@ describe('World.tick() — density tier', () => {
     expect(merged.footprint).toHaveLength(2);
     expect(merged.structureRect).toEqual({ x: 2, y: 1, w: 2, h: 1 });
     expect(buildingCapacity(merged)).toBe(70); // conserved: 1*5*7 + 1*5*7
+  });
+
+  it('industrial density bump fires via the per-type DENSITY_DEMAND_BAR while demand stays below the old flat DENSITY_DEMAND_THRESHOLD', () => {
+    // World-level counterpart of Demand.test.ts's 15% unemployment row: a labor state where
+    // industrial demand clears DENSITY_DEMAND_BAR.industrial (0.1875) but stays below the old
+    // flat DENSITY_DEMAND_THRESHOLD (0.375) that gated every type before 913143e. If the old
+    // flat gate were still in effect this fixture's density bump would never fire — that is
+    // what makes this a regression test rather than a smoke test.
+    const world = new World(34, 8, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+
+    // Target: max-level, 1x1-lot industrial building at SERVED_I, aged to the density-cooldown
+    // edge so it is eligible on the very pass it next ages in (age += 1 at World.ts:1110 runs
+    // before the cooldown read at World.ts:1211). 1x1 structureRect fills the lot, so
+    // canExtendStructure is false and the density branch is reached; maxDensityForLot allows
+    // tier 1 on a 1-wide lot.
+    map.getBuildings().addExistingBuilding({
+      id: 100, type: 'industrial', footprint: [SERVED_I], anchor: SERVED_I,
+      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS - 1, abandoned: false,
+      frontage: 'S', structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 },
+    });
+
+    // Labor seeders: level-1, age-0, road-connected via frontage 'N' onto the same y=2 road row
+    // seedServedCluster lays down, south of the served cluster's rows-3..4 structures and clear
+    // of the power plant (cols 0-1), police (cols 7-8), and fire (cols 9-10) footprints. Level 1
+    // is sweep-immune (isUnderSupported floors at 1) and below canMerge's ZONE_MAX_LEVEL gate, so
+    // they need no power/water/coverage of their own — only road access for the labor BFS. At
+    // age 0 they cannot pass GROWTH_COOLDOWN_INTERVALS + stagger on the one pass this test runs.
+    let nextId = 101;
+    const seedZoned = (
+      type: 'residential' | 'industrial', x: number, y: number, w: number, h: number,
+    ): void => {
+      const footprint = footprintCells({ x, y, w, h });
+      const zoneType = type === 'residential' ? TileType.ZONE_RESIDENTIAL : TileType.ZONE_INDUSTRIAL;
+      for (const c of footprint) map.setTile(c.x, c.y, createTile(c.x, c.y, zoneType));
+      const added = map.getBuildings().addExistingBuilding({
+        id: nextId++, type, footprint, anchor: { x, y },
+        level: 1, density: 0, age: 0, abandoned: false, frontage: 'N',
+        structureRect: { x, y, w, h },
+      });
+      expect(added).toBe(true);
+    };
+
+    // Residential total capacity W = (16 + 16 + 8) tiles * level 1 * 5 units/tile = 200.
+    seedZoned('residential', 11, 3, 4, 4);
+    seedZoned('residential', 15, 3, 4, 4);
+    seedZoned('residential', 19, 3, 4, 2);
+
+    // C/I job capacity: target's own 25 (1*1*5*5) plus (16 + 9 + 4) tiles * 5 = 145 more, for a
+    // total J = 170. (W - J) / max(W, MIN_MARKET) = 30 / 200 = 0.15, inside (0.125, 0.2), and
+    // (W - J) / W = 0.15 < 0.2.
+    seedZoned('industrial', 23, 3, 4, 4);
+    seedZoned('industrial', 27, 3, 3, 3);
+    seedZoned('industrial', 30, 3, 2, 2);
+
+    // SERVED_R and SERVED_C are deliberately left unoccupied — every other density-tier fixture
+    // in this describe block seeds all three anchors, but occupying them here would add their
+    // own residential/commercial capacity and move W/J off the tuned 200/170, pushing industrial
+    // demand out of the [DENSITY_DEMAND_BAR.industrial, DENSITY_DEMAND_THRESHOLD) window this
+    // fixture targets — that is why this test deviates from the sibling idiom; do not "fix" the
+    // deviation by seeding them the way the others do. Consequently a level-1 residential and a
+    // level-1 commercial building spawn on those two zoned-but-empty tiles during this same growth
+    // pass (Branch A: demand > 0 and the cluster is powered), so `lastResult.changedBuildingIds`
+    // below contains three ids, not one. That is harmless: `demandVec` (World.ts:1058) is captured
+    // once, before the zone-tile loop that both spawns and density-bumps, so those spawns cannot
+    // retroactively move the snapshot that gates the target's density bump. Also expect
+    // `demand.commercial` to read exactly 1.0 below — the retail axis saturates because this
+    // fixture has zero commercial building capacity anywhere; that's not part of the discriminator
+    // and doesn't affect the result, it just looks alarming in a debugger.
+    world.markDemandDirty();
+
+    // Discriminator trio: industrial demand clears the new per-type bar but sits below the old
+    // flat threshold (the old gate would NOT have fired here), and residential demand is not
+    // frozen at 0 (migration keeps it positive — no residential freeze).
+    const demand = world.getDemand();
+    expect(demand.industrial).toBeGreaterThanOrEqual(DENSITY_DEMAND_BAR.industrial);
+    expect(demand.industrial).toBeLessThan(DENSITY_DEMAND_THRESHOLD);
+    expect(demand.residential).toBeGreaterThan(0);
+
+    let lastResult: ReturnType<typeof world.tick> | null = null;
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) lastResult = world.tick();
+
+    // The first growth pass fires at tickCount === ZONE_GROWTH_INTERVAL — assert THAT pass's
+    // outcome, not an eventual one reached over further ticks.
+    const target = map.getBuildings().getBuilding(100)!;
+    expect(target.density).toBe(1);
+    expect(target.level).toBe(ZONE_MAX_LEVEL);
+    expect(lastResult!.changedBuildingIds).toContain(100);
   });
 });
 
