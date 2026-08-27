@@ -191,7 +191,13 @@ export function TileInfoPanel({
             {info.isSchoolSource ? 'School' : `${Math.round(info.schoolCoverage * 100)}%`}
           </span>
         </Row>
-        <Row label="Land Value">{Math.round(info.landValue * 100)}%</Row>
+        {/* FLOOR, not round: this is the exact number the growth gates compare
+            against LEVEL_THRESHOLDS, and every one of those is a whole percent.
+            Rounding UP renders a stored 0.84891 as "85%" — the player reads a met
+            gate, waits for an upgrade that never fires, and the one number that
+            decides it lied. Flooring can understate by under 1%, but it can never
+            show a bar as cleared. */}
+        <Row label="Land Value">{Math.floor(info.landValue * 100)}%</Row>
         <Row label="Congestion Loss">
           {congestionPercent > 0 ? (
             <span style={{ color: '#ff6b6b' }}>-{congestionPercent}%</span>
