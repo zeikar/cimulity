@@ -317,6 +317,63 @@ describe('inspectTile', () => {
     expect(inspectTile(world, { x: 3, y: 2 })!.congestionPenalty).toBe(anchorPenalty);
   });
 
+  it('reports the building ANCHOR service coverage when a non-anchor footprint cell is clicked', () => {
+    // World.tick: "Graded fields (land value, coverage) gate at the ANCHOR; binary fields
+    // (power, water) scan the FOOTPRINT." All four coverage gates call is*AnchorCovered,
+    // so a non-anchor cell reading its own coverage could show green while the anchor
+    // blocks growth — the same misleading wait state as the land-value case.
+    const size = 20;
+    const world = new World(size, size, { regenerate: false });
+    world.getMap().setTile(2, 2, createTile(2, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().setTile(3, 2, createTile(3, 2, TileType.ZONE_RESIDENTIAL));
+    world.getMap().getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [
+        { x: 2, y: 2 },
+        { x: 3, y: 2 },
+      ],
+      anchor: { x: 2, y: 2 },
+      level: 1,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x: 2, y: 2, w: 2, h: 1 },
+    });
+
+    // Cover the NON-anchor cell only; the anchor stays at 0, so every gate is shut.
+    const covered = 200;
+    world.getServiceCoverageMap().getRaw()[2 * size + 3] = covered;
+    world.getFireCoverageMap().getRaw()[2 * size + 3] = covered;
+    world.getHospitalCoverageMap().getRaw()[2 * size + 3] = covered;
+    world.getSchoolCoverageMap().getRaw()[2 * size + 3] = covered;
+
+    // Non-vacuous: the clicked cell really is covered on its own reading.
+    expect(covered).toBeGreaterThanOrEqual(SERVICE_COVERAGE_THRESHOLD_RAW);
+
+    const info = inspectTile(world, { x: 3, y: 2 })!;
+    // The anchor decides, so every gate reads shut and every number reads 0.
+    expect(info.serviceCovered).toBe(false);
+    expect(info.fireServiceCovered).toBe(false);
+    expect(info.hospitalServiceCovered).toBe(false);
+    expect(info.schoolServiceCovered).toBe(false);
+    expect(info.coverage).toBe(0);
+    expect(info.fireCoverage).toBe(0);
+    expect(info.hospitalCoverage).toBe(0);
+    expect(info.schoolCoverage).toBe(0);
+  });
+
+  it('reports the clicked cell service coverage when no building occupies the tile', () => {
+    // The anchor redirect is building-scoped; bare land still describes itself.
+    const size = 20;
+    const world = new World(size, size, { regenerate: false });
+    world.getServiceCoverageMap().getRaw()[2 * size + 3] = 200;
+
+    const info = inspectTile(world, { x: 3, y: 2 })!;
+    expect(info.serviceCovered).toBe(true);
+    expect(info.coverage).toBeCloseTo(200 / 255);
+  });
+
   it('reports the clicked cell land value when no building occupies the tile', () => {
     // The anchor redirect applies to building cells only — a bare tile still
     // describes itself.

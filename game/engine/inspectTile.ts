@@ -41,6 +41,16 @@ export interface TileBuildingInfo {
   readonly maxDensity: 1 | 2;
 }
 
+/**
+ * One-shot readout for the SELECT-tool panel.
+ *
+ * WHICH CELL a field describes depends on its kind, mirroring the split World.tick gates on:
+ * the GRADED fields (`landValue`, `congestionPenalty`, and the four `*Coverage` /
+ * `*Covered` pairs) are read at the building ANCHOR when a building occupies the tile,
+ * because that is the cell the growth gates evaluate; `powered` / `watered` are BINARY and
+ * satisfied by any footprint cell. On a bare tile or a structure every field describes the
+ * clicked cell itself.
+ */
 export interface TileInfo {
   readonly x: number;
   readonly y: number;
@@ -73,15 +83,9 @@ export interface TileInfo {
   readonly schoolServiceCovered: boolean;
   /** True when this tile's structure is a school (the school coverage source). */
   readonly isSchoolSource: boolean;
-  /**
-   * Land value in [0, 1], read at the building ANCHOR when a building occupies the tile —
-   * the cell the growth gates compare against LEVEL_THRESHOLDS — and at this tile otherwise.
-   */
+  /** Land value in [0, 1] — compared against LEVEL_THRESHOLDS by the growth gates. */
   readonly landValue: number;
-  /**
-   * Applied land-value penalty from road congestion, in [0, 1] — same unit as `landValue`
-   * and read at the same cell (see above), so the pair always describes one tile.
-   */
+  /** Applied land-value penalty from road congestion, in [0, 1] — same unit as `landValue`. */
   readonly congestionPenalty: number;
   /** Grown building occupying this tile, if any. */
   readonly building: TileBuildingInfo | null;
@@ -178,41 +182,42 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
       ? isBuildingWatered(building, water)
       : water.isWatered(coord.x, coord.y);
 
-  // Land value follows the SAME entity-level rule as the utilities above, for the same
-  // reason: the growth gates read the building ANCHOR (World.tick), so reporting the
-  // clicked cell would show a threshold as cleared that the deciding cell has not —
-  // land value steps across a lot at a park or service-coverage edge. congestionPenalty
-  // moves with it: the two are halves of one figure (penalty = uncongested − value) and
-  // sit adjacent in the panel, so they must describe the same cell.
-  const lvCoord = building ? building.anchor : coord;
+  // GRADED readouts — land value, its congestion penalty, and the four service coverages —
+  // resolve at the building ANCHOR. World.tick states the split this mirrors: "Graded fields
+  // (land value, coverage) gate at the ANCHOR; binary fields (power, water) scan the
+  // FOOTPRINT." Power and water above are that binary half and correctly scan the footprint.
+  // Reporting a graded field at the clicked cell would show a threshold as cleared that the
+  // deciding cell has not — these fields step across a lot at a park or coverage edge — so a
+  // player would read an open gate and wait for growth that cannot fire.
+  const gradedCoord = building ? building.anchor : coord;
 
   // Police coverage: a police_station tile is the source — its footprint cells
   // are excluded from the coverage sweep, so we report coverage 0/false for it
   // (matching the power_plant/water_tower source exclusion pattern). All other
   // tiles read the raw cell value and apply the same raw threshold as the gate.
   const isServiceSource = structure !== null && structure.type === 'police_station';
-  const coverageRaw = isServiceSource ? 0 : svc.getCoverage(coord.x, coord.y);
+  const coverageRaw = isServiceSource ? 0 : svc.getCoverage(gradedCoord.x, gradedCoord.y);
   const coverage = coverageRaw / 255;
   const serviceCovered = isServiceSource ? false : coverageRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
   // Fire coverage: a fire_station tile is the source — same source-exclusion
   // pattern as the police readout above.
   const isFireSource = structure !== null && structure.type === 'fire_station';
-  const fireRaw = isFireSource ? 0 : fire.getCoverage(coord.x, coord.y);
+  const fireRaw = isFireSource ? 0 : fire.getCoverage(gradedCoord.x, gradedCoord.y);
   const fireCoverage = fireRaw / 255;
   const fireServiceCovered = isFireSource ? false : fireRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
   // Hospital coverage: a hospital tile is the source — same source-exclusion
   // pattern as the police/fire readout above.
   const isHospitalSource = structure !== null && structure.type === 'hospital';
-  const hospitalRaw = isHospitalSource ? 0 : hospital.getCoverage(coord.x, coord.y);
+  const hospitalRaw = isHospitalSource ? 0 : hospital.getCoverage(gradedCoord.x, gradedCoord.y);
   const hospitalCoverage = hospitalRaw / 255;
   const hospitalServiceCovered = isHospitalSource ? false : hospitalRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
   // School coverage: a school tile is the source — same source-exclusion
   // pattern as the police/fire/hospital readout above.
   const isSchoolSource = structure !== null && structure.type === 'school';
-  const schoolRaw = isSchoolSource ? 0 : school.getCoverage(coord.x, coord.y);
+  const schoolRaw = isSchoolSource ? 0 : school.getCoverage(gradedCoord.x, gradedCoord.y);
   const schoolCoverage = schoolRaw / 255;
   const schoolServiceCovered = isSchoolSource ? false : schoolRaw >= SERVICE_COVERAGE_THRESHOLD_RAW;
 
@@ -235,8 +240,8 @@ export function inspectTile(world: World, coord: TileCoord): TileInfo | null {
     schoolCoverage,
     schoolServiceCovered,
     isSchoolSource,
-    landValue: world.getLandValue().getValue(lvCoord.x, lvCoord.y),
-    congestionPenalty: world.getLandValue().getCongestionPenalty(lvCoord.x, lvCoord.y),
+    landValue: world.getLandValue().getValue(gradedCoord.x, gradedCoord.y),
+    congestionPenalty: world.getLandValue().getCongestionPenalty(gradedCoord.x, gradedCoord.y),
     building: building ? buildingInfo(building) : null,
     structure: structure ? { type: structure.type } : null,
   };
