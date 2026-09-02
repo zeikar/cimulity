@@ -665,6 +665,12 @@ export class World {
    *
    * IMPORTANT: must NOT call getLaborMarket() — that drains (calls recomputeLaborIfDirty →
    * recomputeLabor) and would cause infinite recursion. Allocate the field directly here.
+   *
+   * Contract: this refreshes `this.labor` only — it deliberately does NOT mark happiness or
+   * demand dirty (cascades fire at MARK time only, from markLaborDirty, never from inside a
+   * recompute). Happiness reads labor as of this change, so calling this directly can leave
+   * an already-cached getHappiness()/getDemand() value stale against the new labor snapshot.
+   * Callers who need happiness/demand to follow must go through markLaborDirty() instead.
    */
   recomputeLabor(): void {
     // Allocate directly — never via getLaborMarket() to avoid re-entering recomputeLaborIfDirty.
