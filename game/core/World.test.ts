@@ -3013,6 +3013,35 @@ function makeCorridorWorld(opts: { withJobs: boolean }): World {
   return world;
 }
 
+/**
+ * Pure mirror of the land/budget/congestion three-fifths of
+ * World.recomputeHappiness()'s four-term combination, given an independently-computed
+ * employmentTerm (each caller reads getEmployed()/getUnemployed() and derives its own rate —
+ * see the asymmetric-unemployment-term regression block below for why that is not imported
+ * from Demand.ts). Shared by every happiness-formula mirror test so this arithmetic lives in
+ * exactly one place instead of being re-typed at each call site.
+ */
+function expectedFourTermHappiness(world: World, employmentTerm: number): number {
+  let residentialCount = 0;
+  let residentialLandValueSum = 0;
+  for (const b of world.getMap().getBuildings().iterBuildings()) {
+    if (b.abandoned) continue;
+    if (b.type === 'residential') {
+      residentialCount++;
+      residentialLandValueSum += world.getLandValue().getValue(b.anchor.x, b.anchor.y);
+    }
+  }
+  const landScore = residentialLandValueSum / residentialCount;
+  const congestionIndex = world.getTrafficMap().getCongestionIndex();
+  const budgetHealth = world.getMoney() / STARTING_FUNDS;
+  return (
+    HAPPINESS_W_LAND * landScore +
+    HAPPINESS_W_JOBS * employmentTerm +
+    HAPPINESS_W_BUDGET * budgetHealth -
+    HAPPINESS_W_TRAFFIC * congestionIndex
+  );
+}
+
 describe('World land value — congestion feedback', () => {
   it('a loaded road lowers the land value beside it versus an identical no-flow city', () => {
     const withFlows = makeCorridorWorld({ withJobs: true });
@@ -3062,29 +3091,13 @@ describe('World.getHappiness() — congestion term', () => {
     const congestionIndex = world.getTrafficMap().getCongestionIndex();
     expect(congestionIndex).toBeGreaterThan(0);
 
-    let residentialCount = 0;
-    let residentialLandValueSum = 0;
-    for (const b of world.getMap().getBuildings().iterBuildings()) {
-      if (b.abandoned) continue;
-      if (b.type === 'residential') {
-        residentialCount++;
-        residentialLandValueSum += world.getLandValue().getValue(b.anchor.x, b.anchor.y);
-      }
-    }
-
-    const landScore = residentialLandValueSum / residentialCount;
     // Same ordering rule as congestion above: read the labor market AFTER capturing happiness.
     const employed = world.getEmployed();
     const unemployed = world.getUnemployed();
     const workforce = employed + unemployed;
     const unemploymentRate = workforce > 0 ? unemployed / workforce : 0;
     const employmentScore = 1 - unemploymentRate / MIGRATION_UNEMPLOYMENT_CUTOFF;
-    const budgetHealth = world.getMoney() / STARTING_FUNDS;
-    const expected =
-      HAPPINESS_W_LAND * landScore +
-      HAPPINESS_W_JOBS * employmentScore +
-      HAPPINESS_W_BUDGET * budgetHealth -
-      HAPPINESS_W_TRAFFIC * congestionIndex;
+    const expected = expectedFourTermHappiness(world, employmentScore);
 
     expect(happiness).toBeCloseTo(expected, 8);
   });
@@ -3104,5 +3117,172 @@ describe('World.getHappiness() — congestion term', () => {
       HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * 1 + HAPPINESS_W_BUDGET * 1;
 
     expect(happiness).toBeLessThan(threeTerm);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Asymmetric unemployment term (World.recomputeHappiness) — regression pins
+// ---------------------------------------------------------------------------
+//
+// Every fixture below: 1×1 density-0 buildings, so capacity = level × DENSITY_CAPACITY_UNITS[0]
+// (the density-0 unit is 5) on one shared road row (buildings at y=1 fronting 'S', road at
+// y=2), followed by markLaborDirty() so the labor map is actually recomputed rather than left
+// at its never-computed empty default (see the World.test.ts file header /
+// makeCorridorWorld for the established pattern). Happiness is captured
+// FIRST, then getEmployed()/getUnemployed() are read — its internal drain
+// order is what refreshes the labor map.
+
+describe('World.getHappiness() — asymmetric unemployment term regression', () => {
+  it('stalled city: unemployment past the migration-crisis cutoff pins the jobs term at exactly 0 (not a soft "balance" score)', () => {
+    // Sized to mirror a measured playtest city stalled at 28.8% unemployment. Workforce 125 =
+    // R L5 ×5 (capacity level*5 = 25 each); jobs 90 = C L5 ×3 + C L3 ×1 (25*3 + 15 = 90) →
+    // employed 90, unemployed 35, rate 35/125 = 0.28 — comfortably above
+    // MIGRATION_UNEMPLOYMENT_CUTOFF (0.2) and off its floating-point contour.
+    // The OLD symmetric jobsBalance formula read this exact fixture as 1 - 35/215 ≈ 0.837 — a
+    // 28.8%-unemployment crisis displaying as an "83% jobs balance" (the 0.832 defect measured
+    // in a real playtest city and the reason this term was replaced).
+    const world = new World(9, 3, { regenerate: false });
+    for (let x = 0; x < 9; x++) world.getMap().setTile(x, 2, createTile(x, 2, TileType.ROAD));
+
+    let nextId = 1;
+    for (let x = 0; x < 5; x++) {
+      expect(world.getMap().getBuildings().addExistingBuilding({
+        id: nextId++, type: 'residential',
+        footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level: 5, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
+    }
+    const jobLevels = [5, 5, 5, 3];
+    for (let i = 0; i < jobLevels.length; i++) {
+      const x = 5 + i;
+      expect(world.getMap().getBuildings().addExistingBuilding({
+        id: nextId++, type: 'commercial',
+        footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level: jobLevels[i], density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
+    }
+
+    // Without this, laborDirty stays false: getHappiness() would read the labor map's
+    // never-computed empty default (workforce 0 → employment term always 1), and every
+    // assertion below on employed/unemployed/the term would silently prove nothing.
+    world.markLaborDirty();
+    world.setMoney(STARTING_FUNDS);
+
+    const happiness = world.getHappiness();
+
+    const employed = world.getEmployed();
+    const unemployed = world.getUnemployed();
+    expect(employed).toBe(90);
+    expect(unemployed).toBe(35);
+
+    const workforce = employed + unemployed;
+    const rate = unemployed / workforce;
+    expect(rate).toBeGreaterThanOrEqual(MIGRATION_UNEMPLOYMENT_CUTOFF);
+    const employmentTerm = Math.max(0, Math.min(1, 1 - rate / MIGRATION_UNEMPLOYMENT_CUTOFF));
+    expect(employmentTerm).toBe(0);
+
+    const expected = expectedFourTermHappiness(world, employmentTerm);
+    expect(happiness).toBeCloseTo(expected, 8);
+  });
+
+  it('jobs surplus: unfilled vacancies at zero unemployment score full marks, not a diluted balance (Micropolis GetUnemployment() semantics)', () => {
+    // R L1 (capacity 1*1*1*5 = 5 workers) + C L5 (capacity 1*1*5*5 = 25 jobs), both fronting the
+    // same road row → employed 5, unemployed 0 → rate 0 → employment term exactly 1.
+    // The OLD symmetric formula read this fixture as 1 - 20/30 ≈ 0.33 (20 unfilled vacancies
+    // diluting the score); surplus vacancies are no longer unhappiness under the new term.
+    const world = new World(2, 3, { regenerate: false });
+    for (let x = 0; x < 2; x++) world.getMap().setTile(x, 2, createTile(x, 2, TileType.ROAD));
+
+    expect(world.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'residential',
+      footprint: [{ x: 0, y: 1 }], anchor: { x: 0, y: 1 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 1, w: 1, h: 1 },
+    })).toBe(true);
+    expect(world.getMap().getBuildings().addExistingBuilding({
+      id: 2, type: 'commercial',
+      footprint: [{ x: 1, y: 1 }], anchor: { x: 1, y: 1 },
+      level: 5, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 1, y: 1, w: 1, h: 1 },
+    })).toBe(true);
+
+    // Without this, laborDirty stays false: getHappiness() would read the labor map's
+    // never-computed empty default (workforce 0 → employment term always 1), which would
+    // happen to match this test's expected term by coincidence and hide a real regression.
+    world.markLaborDirty();
+    world.setMoney(STARTING_FUNDS);
+
+    const happiness = world.getHappiness();
+
+    const employed = world.getEmployed();
+    const unemployed = world.getUnemployed();
+    expect(employed).toBe(5);
+    expect(unemployed).toBe(0);
+
+    const workforce = employed + unemployed;
+    const rate = workforce > 0 ? unemployed / workforce : 0;
+    expect(rate).toBe(0);
+    const employmentTerm = Math.max(0, Math.min(1, 1 - rate / MIGRATION_UNEMPLOYMENT_CUTOFF));
+    expect(employmentTerm).toBe(1);
+
+    const expected = expectedFourTermHappiness(world, employmentTerm);
+    expect(happiness).toBeCloseTo(expected, 8);
+  });
+
+  it('partial unemployment strictly inside the cutoff band scores strictly between 0 and 1', () => {
+    // Workforce 50 = R L5 ×2 (25 each); jobs 45 = C L5 (25) + C L4 (20) → employed 45,
+    // unemployed 5, rate 5/50 = 0.1 — strictly inside (0, CUTOFF) and away from the CUTOFF
+    // contour itself, which is where an earlier cycle hit a floating-point assertion trap.
+    const world = new World(4, 3, { regenerate: false });
+    for (let x = 0; x < 4; x++) world.getMap().setTile(x, 2, createTile(x, 2, TileType.ROAD));
+
+    for (let x = 0; x < 2; x++) {
+      expect(world.getMap().getBuildings().addExistingBuilding({
+        id: x + 1, type: 'residential',
+        footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level: 5, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
+    }
+    const jobLevels = [5, 4];
+    for (let i = 0; i < jobLevels.length; i++) {
+      const x = 2 + i;
+      expect(world.getMap().getBuildings().addExistingBuilding({
+        id: 100 + x, type: 'commercial',
+        footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level: jobLevels[i], density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      })).toBe(true);
+    }
+
+    // Without this, laborDirty stays false: getHappiness() would read the labor map's
+    // never-computed empty default (workforce 0 → employment term always 1), so the
+    // employed/unemployed and employment-term assertions below would silently prove nothing.
+    world.markLaborDirty();
+    world.setMoney(STARTING_FUNDS);
+
+    const happiness = world.getHappiness();
+
+    const employed = world.getEmployed();
+    const unemployed = world.getUnemployed();
+    expect(employed).toBe(45);
+    expect(unemployed).toBe(5);
+
+    const workforce = employed + unemployed;
+    const rate = unemployed / workforce;
+    expect(rate).toBeGreaterThan(0);
+    expect(rate).toBeLessThan(MIGRATION_UNEMPLOYMENT_CUTOFF);
+    const employmentTerm = Math.max(0, Math.min(1, 1 - rate / MIGRATION_UNEMPLOYMENT_CUTOFF));
+    // Contour avoidance lives HERE, on the rate/term, not on the happiness mirror below:
+    // asserting an exact term at or beside the 0.2 contour is the floating-point trap an
+    // earlier cycle hit, so this stays an inequality even though the total-happiness mirror
+    // right after it can safely be exact.
+    expect(employmentTerm).toBeGreaterThan(0);
+    expect(employmentTerm).toBeLessThan(1);
+
+    const expected = expectedFourTermHappiness(world, employmentTerm);
+    expect(happiness).toBeCloseTo(expected, 8);
   });
 });
