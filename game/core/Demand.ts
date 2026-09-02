@@ -55,10 +55,12 @@ export const COMMERCIAL_CAPACITY_SHARE = 0.25;
 export const MIGRATION_PRESSURE = 0.1;
 
 // The unemployment rate at which in-migration stops entirely — Micropolis's
-// `migration = pop × (employment − 1)` in a bounded form. Shares its rate with
-// UNEMPLOYMENT_WARNING_RATE in app/hooks/laborStatus.ts, duplicated here because the layer boundary
-// runs core → app and never app → core; the HUD warning additionally needs WARNING_MIN_WORKFORCE, so
-// a hamlet can have migration damped to zero with no warning shown.
+// `migration = pop × (employment − 1)` in a bounded form. Three consumers share this one cutoff:
+// this file's migration term and World.recomputeHappiness's employment term both import the
+// constant AND the `unemploymentRate` helper below, so neither can drift on how the rate itself is
+// computed; UNEMPLOYMENT_WARNING_RATE in app/hooks/laborStatus.ts duplicates only the number,
+// because the layer boundary runs core → app and never app → core — the HUD warning additionally
+// needs WARNING_MIN_WORKFORCE, so a hamlet can have migration damped to zero with no warning shown.
 export const MIGRATION_UNEMPLOYMENT_CUTOFF = 0.2;
 
 // The C/I demand a city with a worker for every job shows from outside investment alone — the
@@ -120,6 +122,20 @@ function severity(shortfall: number, market: number): number {
   return clamp01((shortfall / market - DEADBAND_RATE) / (SATURATION_RATE - DEADBAND_RATE));
 }
 
+/**
+ * Unemployed fraction of the workforce, guarded against an empty workforce (returns 0 — with
+ * nobody in the labor market, nobody exists to be unemployed). Plain scalars in, not `LaborScalars`,
+ * so this serves both this module's `labor.employed`/`labor.unemployed` and World's two
+ * `getEmployed()`/`getUnemployed()` getters without either caller reshaping its data to match.
+ * The rate computation itself is the only piece genuinely shared with World.recomputeHappiness's
+ * employment term — each caller still applies its own MIGRATION_UNEMPLOYMENT_CUTOFF clamp and its
+ * own further scaling (this file's MIGRATION_PRESSURE, happiness's none) on top.
+ */
+export function unemploymentRate(employed: number, unemployed: number): number {
+  const workforce = employed + unemployed;
+  return workforce > 0 ? unemployed / workforce : 0;
+}
+
 // Plain scalars extracted from LaborMarketMap — no import of World or labor modules here.
 type LaborScalars = Readonly<{
   employed: number;
@@ -172,8 +188,8 @@ export class Demand {
     // exactly the offset-inside-the-formula defect the deleted structural terms had. Migration stays
     // residential-only, but C and I carry their own external driver in `workplaceFloor` below,
     // combined the same way.
-    const unemploymentRate = workforce > 0 ? labor.unemployed / workforce : 0;
-    const migration = MIGRATION_PRESSURE * clamp01(1 - unemploymentRate / MIGRATION_UNEMPLOYMENT_CUTOFF);
+    const rate = unemploymentRate(labor.employed, labor.unemployed);
+    const migration = MIGRATION_PRESSURE * clamp01(1 - rate / MIGRATION_UNEMPLOYMENT_CUTOFF);
 
     // --- retail axis (commercial only) ---
     const totalCapacity = capacitySumR + capacitySumC + capacitySumI;

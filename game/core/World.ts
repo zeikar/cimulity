@@ -7,7 +7,7 @@ import { GameMap } from './Map';
 import { TileType, createTile, isZoneType } from './Tile';
 import type { BuildingType } from './Building';
 import { LandValueMap } from './LandValueMap';
-import { Demand, DENSITY_DEMAND_BAR, GROWTH_DEMAND_THRESHOLD } from './Demand';
+import { Demand, DENSITY_DEMAND_BAR, GROWTH_DEMAND_THRESHOLD, MIGRATION_UNEMPLOYMENT_CUTOFF, unemploymentRate } from './Demand';
 import type { DemandVector } from './Demand';
 import { Terrain, SEA_LEVEL, projectTileHeightsToVertexHeights } from './Terrain';
 import * as terrainGenerator from './terrainGenerator';
@@ -82,7 +82,13 @@ export const DENSITY_COOLDOWN_INTERVALS = 24;
 export const STARTING_FUNDS = 10000;
 /** Land-value contribution weight for city happiness (W_LAND + W_JOBS + W_BUDGET = 1.0). */
 export const HAPPINESS_W_LAND = 0.5;
-/** Jobs-balance contribution weight for city happiness. */
+/**
+ * Employment contribution weight for city happiness. The term itself reads only the
+ * unemployment rate (`unemployed / workforce`), clamped against `MIGRATION_UNEMPLOYMENT_CUTOFF` —
+ * a job surplus (unfilled vacancies) is not citizen misery, so it no longer drags this term down.
+ * Mirrors Micropolis's `GetUnemployment()`, which likewise reads only worker surplus and returns
+ * 0 once jobs ≥ workers.
+ */
 export const HAPPINESS_W_JOBS = 0.3;
 /** Budget-health contribution weight for city happiness. */
 export const HAPPINESS_W_BUDGET = 0.2;
@@ -717,7 +723,7 @@ export class World {
 
   /**
    * City-wide happiness scalar in [0, 1]. Display-only KPI — never feeds growth/demand/level-up.
-   * Lazy: recomputes only when inputs (land value, money, buildings, traffic) have changed
+   * Lazy: recomputes only when inputs (land value, money, buildings, traffic, labor) have changed
    * since last read.
    */
   getHappiness(): number {
@@ -734,26 +740,19 @@ export class World {
     // Drain land value FIRST so anchor reads are fresh — mirrors recomputeLandValue draining coverage.
     this.recomputeLandValueIfDirty();
 
-    let capacitySumR = 0;
-    let capacitySumC = 0;
-    let capacitySumI = 0;
+    let jobsCapacitySum = 0;
     let residentialCount = 0;
     let residentialLandValueSum = 0;
 
     for (const b of this.map.getBuildings().iterBuildings()) {
       if (b.abandoned) continue;
       if (b.type === 'residential') {
-        capacitySumR += buildingCapacity(b);
         residentialCount++;
         residentialLandValueSum += this.getLandValue().getValue(b.anchor.x, b.anchor.y);
-      } else if (b.type === 'commercial') {
-        capacitySumC += buildingCapacity(b);
       } else {
-        capacitySumI += buildingCapacity(b);
+        jobsCapacitySum += buildingCapacity(b);
       }
     }
-
-    const jobsCapacitySum = capacitySumC + capacitySumI;
 
     if (residentialCount === 0 && jobsCapacitySum === 0) {
       this.happiness = EMPTY_CITY_HAPPINESS;
@@ -762,13 +761,22 @@ export class World {
     }
 
     const landScore = residentialCount > 0 ? clamp01(residentialLandValueSum / residentialCount) : 0;
-    const jobsBalance = clamp01(1 - Math.abs(jobsCapacitySum - capacitySumR) / Math.max(jobsCapacitySum + capacitySumR, 1));
+    // Labor drains on read; the land-value drain above already refreshed it (recomputeLandValue
+    // reads getTrafficMap(), which force-refreshes labor inside recomputeTraffic), so this is a
+    // plain read in practice — no recompute cycle.
+    // NOT a plain employment fraction — do not read this as employed/workforce. It is unemployment
+    // normalized against the migration-crisis cutoff and inverted: 1 at zero unemployment, but it
+    // already reaches 0 once unemployment hits MIGRATION_UNEMPLOYMENT_CUTOFF (20% — i.e. still 80%
+    // employed, the same point where Demand's in-migration term also stops), never at total
+    // unemployment. unemploymentRate() guards an empty workforce to a rate of 0, so a jobs-only
+    // city — nobody exists yet to be unemployed — reads full marks here, not zero.
+    const unemploymentCutoffScore = clamp01(1 - unemploymentRate(this.getEmployed(), this.getUnemployed()) / MIGRATION_UNEMPLOYMENT_CUTOFF);
     const budgetHealth = clamp01(this.money / STARTING_FUNDS);
     // Traffic drains on read; the land-value drain above already refreshed it whenever traffic
     // was dirty (markTrafficDirty dirties land value too), so this is a plain read in practice.
     const congestionIndex = this.getTrafficMap().getCongestionIndex();
 
-    this.happiness = clamp01(HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * jobsBalance + HAPPINESS_W_BUDGET * budgetHealth - HAPPINESS_W_TRAFFIC * congestionIndex);
+    this.happiness = clamp01(HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * unemploymentCutoffScore + HAPPINESS_W_BUDGET * budgetHealth - HAPPINESS_W_TRAFFIC * congestionIndex);
     this.happinessDirty = false;
   }
 

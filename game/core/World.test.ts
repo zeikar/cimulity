@@ -22,7 +22,7 @@ import {
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, stagger } from './growthConstants';
 import { buildingCapacity } from './buildingCapacity';
-import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD } from './Demand';
+import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD, MIGRATION_UNEMPLOYMENT_CUTOFF } from './Demand';
 import { TileType, createTile } from './Tile';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
@@ -2439,13 +2439,23 @@ describe('World.getHappiness() — budget sensitivity', () => {
   });
 });
 
-describe('World.getHappiness() — jobs-balance sensitivity', () => {
+describe('World.getHappiness() — employment sensitivity', () => {
   it('balanced residential/jobs levels produce higher happiness than all-residential with same money', () => {
-    // Balanced: 2 residential level-1 + 2 commercial level-1 → jobsBalance near 1.
-    // Unbalanced: 4 residential level-1 + 0 commercial → jobsBalance = clamp01(1 - 4/4) = 0.
-    // Both worlds have the same money (STARTING_FUNDS), no roads (landScore=0 for residentialCount>0 path).
-    const worldBalanced = new World(4, 4, { regenerate: false });
-    const worldUnbalanced = new World(4, 4, { regenerate: false });
+    // The employment term now measures ACTUAL employment (labor-market matching over the road
+    // graph), not a bare capacity ratio — so, unlike the old jobsBalance term, both fixtures need
+    // a shared road row: with no road, 2R+2C reads as full unemployment too (every worker
+    // road-less), and this test would be vacuous.
+    // Balanced: 2R + 2C, level 1 each, all fronting the SAME road row → the 10 workers reach the
+    // 10 job slots exactly, full employment (rate 0 → employment term exactly 1). This doubles as
+    // the FULL-EMPLOYMENT regression for the new employment term.
+    // All-R: 4R level 1 on the IDENTICAL road row, no jobs at all → rate 1 → employment term 0.
+    const worldBalanced = new World(4, 3, { regenerate: false });
+    const worldAllR = new World(4, 3, { regenerate: false });
+
+    for (let x = 0; x < 4; x++) {
+      worldBalanced.getMap().setTile(x, 1, createTile(x, 1, TileType.ROAD));
+      worldAllR.getMap().setTile(x, 1, createTile(x, 1, TileType.ROAD));
+    }
 
     // Balanced: 2R + 2C, level 1 each.
     worldBalanced.getMap().getBuildings().addExistingBuilding({
@@ -2473,37 +2483,41 @@ describe('World.getHappiness() — jobs-balance sensitivity', () => {
       structureRect: { x: 3, y: 0, w: 1, h: 1 },
     });
 
-    // Unbalanced: 4R + 0 jobs.
-    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
-      id: 1, type: 'residential',
-      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
-      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 0, y: 0, w: 1, h: 1 },
-    });
-    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
-      id: 2, type: 'residential',
-      footprint: [{ x: 1, y: 0 }], anchor: { x: 1, y: 0 },
-      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 1, y: 0, w: 1, h: 1 },
-    });
-    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
-      id: 3, type: 'residential',
-      footprint: [{ x: 2, y: 0 }], anchor: { x: 2, y: 0 },
-      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 2, y: 0, w: 1, h: 1 },
-    });
-    worldUnbalanced.getMap().getBuildings().addExistingBuilding({
-      id: 4, type: 'residential',
-      footprint: [{ x: 3, y: 0 }], anchor: { x: 3, y: 0 },
-      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
-      structureRect: { x: 3, y: 0, w: 1, h: 1 },
-    });
+    // All-R: 4R + 0 jobs, on the identical road row.
+    for (let x = 0; x < 4; x++) {
+      worldAllR.getMap().getBuildings().addExistingBuilding({
+        id: x + 1, type: 'residential',
+        footprint: [{ x, y: 0 }], anchor: { x, y: 0 },
+        level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 0, w: 1, h: 1 },
+      });
+    }
 
-    // Dirty both via setMoney to trigger recompute through the proper path.
     worldBalanced.setMoney(STARTING_FUNDS);
-    worldUnbalanced.setMoney(STARTING_FUNDS);
+    worldAllR.setMoney(STARTING_FUNDS);
+    // Mirrors what the growth pass and CommandDispatcher do after a building change.
+    worldBalanced.markLaborDirty();
+    worldAllR.markLaborDirty();
 
-    expect(worldBalanced.getHappiness()).toBeGreaterThan(worldUnbalanced.getHappiness());
+    // Capture happiness FIRST: its internal drain order (land value, then traffic/labor) is what
+    // refreshes every component — reading the components first could disagree with the result.
+    const happinessBalanced = worldBalanced.getHappiness();
+
+    expect(worldBalanced.getEmployed()).toBe(10);
+    expect(worldBalanced.getUnemployed()).toBe(0);
+
+    const landScore =
+      (worldBalanced.getLandValue().getValue(0, 0) + worldBalanced.getLandValue().getValue(1, 0)) / 2;
+    const congestionIndex = worldBalanced.getTrafficMap().getCongestionIndex();
+    const budgetHealth = worldBalanced.getMoney() / STARTING_FUNDS;
+    const expected =
+      HAPPINESS_W_LAND * landScore +
+      HAPPINESS_W_JOBS * 1 +
+      HAPPINESS_W_BUDGET * budgetHealth -
+      HAPPINESS_W_TRAFFIC * congestionIndex;
+
+    expect(happinessBalanced).toBeCloseTo(expected, 8);
+    expect(happinessBalanced).toBeGreaterThan(worldAllR.getHappiness());
   });
 });
 
@@ -2628,6 +2642,10 @@ describe('World.getHappiness() — reset freshness', () => {
     });
     seedPower(world, 4, 3);
     world.setMoney(STARTING_FUNDS);
+    // Fixture built via direct addExistingBuilding — mirrors what the growth pass does, so the
+    // employment term reads a real labor snapshot instead of the workforce-0 guard (which would
+    // otherwise read employmentScore=1 and coincidentally land exactly on EMPTY_CITY_HAPPINESS).
+    world.markLaborDirty();
     // Confirm non-empty-city happiness before reset.
     expect(world.getHappiness()).not.toBe(EMPTY_CITY_HAPPINESS);
 
@@ -2683,13 +2701,17 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     expect(h1).toBe(h2);
   });
 
-  it('formula sanity: pure-budget world matches HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*0 + HAPPINESS_W_BUDGET*1', () => {
+  it('formula sanity: pure-budget world matches HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*1 + HAPPINESS_W_BUDGET*1', () => {
     // World with only commercial buildings (no residential, has jobs) → NOT empty-city.
-    // residentialCount=0, jobsCapacitySum=buildingCapacity(level 1, 1x1 sr)=5, capacitySumR=0:
-    //   landScore    = 0  (no residential buildings)
-    //   jobsBalance  = clamp01(1 - |5-0| / max(5+0,1)) = 0
-    //   budgetHealth = clamp01(STARTING_FUNDS / STARTING_FUNDS) = 1
-    // expected = HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*0 + HAPPINESS_W_BUDGET*1
+    // residentialCount=0, jobsCapacitySum=buildingCapacity(level 1, 1x1 sr)=5:
+    //   landScore       = 0  (no residential buildings)
+    //   employmentScore = workforce=employed+unemployed=0 (no residential ⇒ no workers) → the
+    //                     workforce-0 guard fires (unemploymentRate=0) → clamp01(1 - 0/CUTOFF) = 1.
+    //                     A jobs-only city has nobody to be unemployed, so it reads full marks —
+    //                     the intended semantic flip from the old symmetric jobsBalance term,
+    //                     which read 0 here (job surplus with no offsetting workers).
+    //   budgetHealth    = clamp01(STARTING_FUNDS / STARTING_FUNDS) = 1
+    // expected = HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*1 + HAPPINESS_W_BUDGET*1
     const world = new World(4, 4, { regenerate: false });
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
@@ -2698,8 +2720,11 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
       structureRect: { x: 0, y: 0, w: 1, h: 1 },
     });
     world.setMoney(STARTING_FUNDS);
+    // Proves the workforce-0 guard against a freshly recomputed labor snapshot, not a
+    // never-recomputed empty one (setMoney marks only happiness dirty, not labor).
+    world.markLaborDirty();
     const h = world.getHappiness();
-    const expected = HAPPINESS_W_LAND * 0 + HAPPINESS_W_JOBS * 0 + HAPPINESS_W_BUDGET * 1;
+    const expected = HAPPINESS_W_LAND * 0 + HAPPINESS_W_JOBS * 1 + HAPPINESS_W_BUDGET * 1;
     expect(h).toBeCloseTo(expected, 5);
   });
 
@@ -2747,6 +2772,10 @@ describe('World.getHappiness() — hydration freshness', () => {
       structureRect: { x: 0, y: 2, w: 1, h: 1 },
     });
     src.setMoney(STARTING_FUNDS);
+    // Fixture built via direct addExistingBuilding — mirrors what the growth pass does, so the
+    // employment term reads a real labor snapshot instead of the workforce-0 guard (which would
+    // otherwise read employmentScore=1 and coincidentally land exactly on EMPTY_CITY_HAPPINESS).
+    src.markLaborDirty();
     // Confirm source happiness is not the empty-city default.
     const srcHappiness = src.getHappiness();
     expect(srcHappiness).not.toBe(EMPTY_CITY_HAPPINESS);
@@ -3033,27 +3062,27 @@ describe('World.getHappiness() — congestion term', () => {
     const congestionIndex = world.getTrafficMap().getCongestionIndex();
     expect(congestionIndex).toBeGreaterThan(0);
 
-    let capacitySumR = 0;
-    let jobsCapacitySum = 0;
     let residentialCount = 0;
     let residentialLandValueSum = 0;
     for (const b of world.getMap().getBuildings().iterBuildings()) {
       if (b.abandoned) continue;
       if (b.type === 'residential') {
-        capacitySumR += buildingCapacity(b);
         residentialCount++;
         residentialLandValueSum += world.getLandValue().getValue(b.anchor.x, b.anchor.y);
-      } else {
-        jobsCapacitySum += buildingCapacity(b);
       }
     }
 
     const landScore = residentialLandValueSum / residentialCount;
-    const jobsBalance = 1 - Math.abs(jobsCapacitySum - capacitySumR) / Math.max(jobsCapacitySum + capacitySumR, 1);
+    // Same ordering rule as congestion above: read the labor market AFTER capturing happiness.
+    const employed = world.getEmployed();
+    const unemployed = world.getUnemployed();
+    const workforce = employed + unemployed;
+    const unemploymentRate = workforce > 0 ? unemployed / workforce : 0;
+    const employmentScore = 1 - unemploymentRate / MIGRATION_UNEMPLOYMENT_CUTOFF;
     const budgetHealth = world.getMoney() / STARTING_FUNDS;
     const expected =
       HAPPINESS_W_LAND * landScore +
-      HAPPINESS_W_JOBS * jobsBalance +
+      HAPPINESS_W_JOBS * employmentScore +
       HAPPINESS_W_BUDGET * budgetHealth -
       HAPPINESS_W_TRAFFIC * congestionIndex;
 
@@ -3067,8 +3096,9 @@ describe('World.getHappiness() — congestion term', () => {
     const congestionIndex = world.getTrafficMap().getCongestionIndex();
     expect(congestionIndex).toBeGreaterThan(0);
 
-    // Same city, three-term (pre-feedback) score: 1 R and 1 C building, both level 4, so
-    // jobsBalance = 1 and budgetHealth = 1 (no tick, so money is untouched).
+    // Same city, three-term (pre-feedback) score: 1 R and 1 C building, both level 4, equal
+    // capacity, connected by the corridor road → full employment (employment term = 1) and
+    // budgetHealth = 1 (no tick, so money is untouched).
     const landScore = world.getLandValue().getValue(0, 1);
     const threeTerm =
       HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * 1 + HAPPINESS_W_BUDGET * 1;
