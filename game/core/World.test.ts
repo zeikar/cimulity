@@ -19,6 +19,23 @@ import {
   HAPPINESS_W_JOBS,
   HAPPINESS_W_BUDGET,
   HAPPINESS_W_TRAFFIC,
+  ROAD_UPKEEP,
+  POWER_PLANT_UPKEEP,
+  WATER_TOWER_UPKEEP,
+  POLICE_STATION_UPKEEP,
+  FIRE_STATION_UPKEEP,
+  HOSPITAL_UPKEEP,
+  SCHOOL_UPKEEP,
+  PARK_UPKEEP,
+  structureUpkeep,
+  ROAD_COST,
+  POWER_PLANT_COST,
+  WATER_TOWER_COST,
+  POLICE_STATION_COST,
+  FIRE_STATION_COST,
+  HOSPITAL_COST,
+  SCHOOL_COST,
+  PARK_COST,
 } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS, stagger } from './growthConstants';
 import { buildingCapacity } from './buildingCapacity';
@@ -408,7 +425,7 @@ describe('World.tick() — monthly tax settlement', () => {
     }
   });
 
-  it('on the tick bringing getElapsedDays() to exactly DAYS_PER_MONTH money increases by Math.floor(popBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH', () => {
+  it('on the tick bringing getElapsedDays() to exactly DAYS_PER_MONTH money settles income minus upkeep', () => {
     const world = new World(4, 4, { regenerate: false });
     const map = world.getMap();
     map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
@@ -423,7 +440,7 @@ describe('World.tick() — monthly tax settlement', () => {
 
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(
-      moneyBeforeBoundary + Math.floor(popBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH,
+      moneyBeforeBoundary + Math.floor(popBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH - ROAD_UPKEEP,
     );
   });
 
@@ -519,7 +536,9 @@ describe('World.tick() — monthly tax settlement', () => {
     world.tick();
 
     expect(world.getMoney()).toBe(
-      moneyBefore + Math.floor(level4Pop * TAX_PER_POP) * DAYS_PER_MONTH,
+      moneyBefore
+        + Math.floor(level4Pop * TAX_PER_POP) * DAYS_PER_MONTH
+        - (10 * ROAD_UPKEEP + POWER_PLANT_UPKEEP + WATER_TOWER_UPKEEP + POLICE_STATION_UPKEEP + HOSPITAL_UPKEEP + FIRE_STATION_UPKEEP + SCHOOL_UPKEEP),
     );
     expect(mapF.getBuildings().getBuildingAt(0, 1)?.level).toBe(ZONE_MAX_LEVEL);
   });
@@ -530,6 +549,88 @@ describe('World.tick() — monthly tax settlement', () => {
     for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(before);
+  });
+
+  it('with zero population, a road row + power plant + park: the boundary tick lowers money by exactly the upkeep sum, and the 29 non-boundary ticks leave it untouched', () => {
+    const world = new World(10, 4, { regenerate: false });
+    for (let x = 0; x < 10; x++) world.getMap().setTile(x, 0, createTile(x, 0, TileType.ROAD));
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      anchor: { x: 0, y: 2 },
+      footprint: [{ x: 0, y: 2 }, { x: 1, y: 2 }, { x: 0, y: 3 }, { x: 1, y: 3 }],
+    });
+    world.getStructureMap().addStructure({ type: 'park', anchor: { x: 3, y: 2 }, footprint: [{ x: 3, y: 2 }] });
+    expect(world.getPopulation()).toBe(0);
+
+    for (let i = 0; i < DAYS_PER_MONTH - 1; i++) {
+      const before = world.getMoney();
+      world.tick();
+      expect(world.getMoney()).toBe(before);
+    }
+
+    const beforeBoundary = world.getMoney();
+    world.tick();
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(beforeBoundary - (10 * ROAD_UPKEEP + POWER_PLANT_UPKEEP + PARK_UPKEEP));
+  });
+
+  it('with setMoney(100) and one power plant, the boundary tick leaves money at exactly 0, never negative, and a SECOND consecutive boundary month holds it at 0', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      anchor: { x: 0, y: 0 },
+      footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+    });
+    world.setMoney(100);
+
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(0);
+
+    // The floor must hold under a SECOND settlement while already at 0 — not just on the
+    // first tick that hits it.
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+
+    expect(world.getElapsedDays()).toBe(2 * DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(0);
+  });
+
+  it('with money exactly equal to upkeep, the Math.min tie lands money at exactly 0 (not -0)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.getStructureMap().addStructure({
+      type: 'power_plant',
+      anchor: { x: 0, y: 0 },
+      footprint: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+    });
+    world.setMoney(POWER_PLANT_UPKEEP);
+
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(0);
+  });
+
+  it('the boundary tick calls earn() with the income and trySpend() with the upkeep; non-boundary ticks call neither', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.getMap().setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL, 1));
+    world.getMap().setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    const earnSpy = vi.spyOn(world, 'earn');
+    const trySpendSpy = vi.spyOn(world, 'trySpend');
+
+    for (let i = 0; i < DAYS_PER_MONTH - 1; i++) {
+      world.tick();
+      expect(earnSpy).not.toHaveBeenCalled();
+      expect(trySpendSpy).not.toHaveBeenCalled();
+    }
+
+    const popBeforeBoundary = world.getPopulation();
+    world.tick();
+
+    expect(earnSpy).toHaveBeenCalledTimes(1);
+    expect(earnSpy).toHaveBeenCalledWith(Math.floor(popBeforeBoundary * TAX_PER_POP) * DAYS_PER_MONTH);
+    expect(trySpendSpy).toHaveBeenCalledTimes(1);
+    expect(trySpendSpy).toHaveBeenCalledWith(ROAD_UPKEEP);
   });
 });
 
@@ -2838,6 +2939,46 @@ describe('traffic cadence constants', () => {
     // sweep is unaffected either way — it reads the uncongested land value.
     // See the TRAFFIC_INTERVAL doc comment in World.ts.
     expect(TRAFFIC_INTERVAL % LAND_VALUE_INTERVAL).toBe(0);
+  });
+});
+
+describe('budget constants', () => {
+  it('every *_UPKEEP value is a non-negative integer', () => {
+    for (const upkeep of [ROAD_UPKEEP, POWER_PLANT_UPKEEP, WATER_TOWER_UPKEEP, POLICE_STATION_UPKEEP, FIRE_STATION_UPKEEP, HOSPITAL_UPKEEP, SCHOOL_UPKEEP, PARK_UPKEEP]) {
+      expect(Number.isInteger(upkeep)).toBe(true);
+      expect(upkeep).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('each *_UPKEEP equals its placement cost / 5, the SC2K build-to-monthly-upkeep ratio', () => {
+    // If a *_COST is ever rebalanced without its *_UPKEEP following, this ratio silently
+    // drifts and the JSDoc on each *_UPKEEP constant (and the POWER_PLANT_UPKEEP
+    // break-even arithmetic derived from it) goes stale. Mirrors the relationship-style
+    // assertions in `traffic cadence constants` above rather than re-asserting a
+    // TypeScript-guaranteed literal.
+    expect(POWER_PLANT_UPKEEP).toBe(POWER_PLANT_COST / 5);
+    expect(WATER_TOWER_UPKEEP).toBe(WATER_TOWER_COST / 5);
+    expect(POLICE_STATION_UPKEEP).toBe(POLICE_STATION_COST / 5);
+    expect(FIRE_STATION_UPKEEP).toBe(FIRE_STATION_COST / 5);
+    expect(HOSPITAL_UPKEEP).toBe(HOSPITAL_COST / 5);
+    expect(SCHOOL_UPKEEP).toBe(SCHOOL_COST / 5);
+    expect(PARK_UPKEEP).toBe(PARK_COST / 5);
+    expect(ROAD_UPKEEP).toBe(ROAD_COST / 5);
+  });
+
+  it('structureUpkeep() returns the matching constant for each StructureType', () => {
+    // NOTE: five of the seven upkeep constants (water_tower/police/fire/hospital/school) are
+    // all 160 by design — a shared service-building tier. This test cannot tell those five
+    // branches apart from one another (a switch that returned the wrong 160-valued constant
+    // for one of them would still pass); only the power_plant (200) and park (20) branches
+    // are genuinely discriminated here.
+    expect(structureUpkeep('power_plant')).toBe(POWER_PLANT_UPKEEP);
+    expect(structureUpkeep('water_tower')).toBe(WATER_TOWER_UPKEEP);
+    expect(structureUpkeep('police_station')).toBe(POLICE_STATION_UPKEEP);
+    expect(structureUpkeep('fire_station')).toBe(FIRE_STATION_UPKEEP);
+    expect(structureUpkeep('hospital')).toBe(HOSPITAL_UPKEEP);
+    expect(structureUpkeep('school')).toBe(SCHOOL_UPKEEP);
+    expect(structureUpkeep('park')).toBe(PARK_UPKEEP);
   });
 });
 

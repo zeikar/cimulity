@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { World, STARTING_FUNDS, ROAD_COST, ZONE_COST, BULLDOZE_COST, ZONE_GROWTH_INTERVAL, TAX_PER_POP, DAYS_PER_MONTH } from '../core/World';
+import { World, STARTING_FUNDS, ROAD_COST, ZONE_COST, BULLDOZE_COST, ZONE_GROWTH_INTERVAL, TAX_PER_POP, DAYS_PER_MONTH, ROAD_UPKEEP } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { Tool } from '../tools/Tool';
 import { executeClick, executeDrag } from './CommandDispatcher';
@@ -67,7 +67,7 @@ describe('build spend — executeDrag', () => {
 });
 
 describe('monthly tax settlement with road-adjacent zones', () => {
-  it('money is unchanged on every non-boundary tick and increases exactly once at the DAYS_PER_MONTH-th tick', () => {
+  it('money is unchanged on every non-boundary tick and settles income minus upkeep exactly once at the DAYS_PER_MONTH-th tick', () => {
     const world = new World(10, 10, { regenerate: false });
 
     // Layout: road at (1,0); zone at (0,0) adjacent to the road.
@@ -92,7 +92,7 @@ describe('monthly tax settlement with road-adjacent zones', () => {
       } else {
         expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
         expect(world.getMoney()).toBe(
-          before + Math.floor(popJustBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH,
+          before + Math.floor(popJustBeforeThatTick * TAX_PER_POP) * DAYS_PER_MONTH - ROAD_UPKEEP,
         );
       }
     }
@@ -115,7 +115,7 @@ describe('monthly tax settlement with road-adjacent zones', () => {
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
     expect(world.getTick()).toBe(DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(
-      before + Math.floor(popBefore * TAX_PER_POP) * DAYS_PER_MONTH,
+      before + Math.floor(popBefore * TAX_PER_POP) * DAYS_PER_MONTH - ROAD_UPKEEP,
     );
   });
 });

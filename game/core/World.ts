@@ -20,6 +20,7 @@ import { SchoolCoverageMap, isSchoolAnchorCovered } from './SchoolCoverageMap';
 import { TrafficMap } from './TrafficMap';
 import { LaborMarketMap } from './LaborMarketMap';
 import { StructureMap } from './StructureMap';
+import type { StructureType } from './StructureMap';
 import {
   pickSeedFrontage,
   greedyDepthLot,
@@ -144,6 +145,56 @@ export const HOSPITAL_COST = 800;
 export const SCHOOL_COST = 800;
 /** Cost to place a 1×1 park — cheaper than the 800 service blocks; a small amenity; tunable. */
 export const PARK_COST = 100;
+/**
+ * Monthly upkeep for a power plant: POWER_PLANT_COST=1000 / 5, SC2K's build-to-monthly-upkeep
+ * ratio for police/fire stations, reused here for every structure so upkeep is a running drag
+ * rather than a second up-front tax. A full one-of-each loadout (this constant plus
+ * WATER_TOWER_UPKEEP, POLICE_STATION_UPKEEP, FIRE_STATION_UPKEEP, HOSPITAL_UPKEEP,
+ * SCHOOL_UPKEEP, PARK_UPKEEP) runs 1020/month; at TAX_PER_POP × DAYS_PER_MONTH that breaks
+ * even at population 34 — comfortably inside the runway STARTING_FUNDS=10000 still leaves
+ * after the ~5100 the same loadout costs to place. This and every other *_UPKEEP constant below
+ * (plus ROAD_UPKEEP per road tile) must stay a whole integer: earn()/trySpend() silently ignore
+ * a non-integer amount.
+ */
+export const POWER_PLANT_UPKEEP = 200;
+/** Monthly upkeep for a water tower: WATER_TOWER_COST=800 / 5. */
+export const WATER_TOWER_UPKEEP = 160;
+/** Monthly upkeep for a police station: POLICE_STATION_COST=800 / 5. */
+export const POLICE_STATION_UPKEEP = 160;
+/** Monthly upkeep for a fire station: FIRE_STATION_COST=800 / 5. */
+export const FIRE_STATION_UPKEEP = 160;
+/** Monthly upkeep for a hospital: HOSPITAL_COST=800 / 5. */
+export const HOSPITAL_UPKEEP = 160;
+/** Monthly upkeep for a school: SCHOOL_COST=800 / 5. */
+export const SCHOOL_UPKEEP = 160;
+/** Monthly upkeep for a park: PARK_COST=100 / 5. */
+export const PARK_UPKEEP = 20;
+/** Monthly upkeep per ROAD tile: ROAD_COST=10 / 5. */
+export const ROAD_UPKEEP = 2;
+
+/**
+ * Monthly upkeep for one structure, by type. Mirrors structureFootprintSize's exhaustive-switch
+ * shape (StructureMap.ts) so adding a StructureType forces an upkeep decision at compile time too.
+ */
+export function structureUpkeep(type: StructureType): number {
+  switch (type) {
+    case 'power_plant':
+      return POWER_PLANT_UPKEEP;
+    case 'water_tower':
+      return WATER_TOWER_UPKEEP;
+    case 'police_station':
+      return POLICE_STATION_UPKEEP;
+    case 'fire_station':
+      return FIRE_STATION_UPKEEP;
+    case 'hospital':
+      return HOSPITAL_UPKEEP;
+    case 'school':
+      return SCHOOL_UPKEEP;
+    case 'park':
+      return PARK_UPKEEP;
+  }
+}
+
 /** Days per calendar month. */
 export const DAYS_PER_MONTH = 30;
 /** Months per calendar year. */
@@ -796,6 +847,23 @@ export class World {
     return sum;
   }
 
+  /** Tax income for one settled month, at the current (pre-growth) population. */
+  private monthlyTaxIncome(): number {
+    return Math.floor(this.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
+  }
+
+  /** Upkeep for one settled month: every placed structure plus every ROAD tile. */
+  private monthlyUpkeep(): number {
+    let sum = 0;
+    for (const structure of this.structures.iterStructures()) {
+      sum += structureUpkeep(structure.type);
+    }
+    for (const tile of this.map.iterateTiles()) {
+      if (tile.type === TileType.ROAD) sum += ROAD_UPKEEP;
+    }
+    return sum;
+  }
+
   /**
    * Reset to a blank city: clear the map, the tick counter, the calendar, and the treasury.
    * Also clears the StructureMap and zeroes the PowerMap backing array so subsequent
@@ -902,9 +970,12 @@ export class World {
    *      → land value (which reads the traffic snapshot). Every one of them is then a frozen
    *      read-only snapshot for the rest of the tick.
    *   4. DIRT heals to GRASS; each heal contributes to `changed`.
-   *   5. Monthly tax settlement: on a month-boundary day (day % DAYS_PER_MONTH === 0),
-   *      tax is settled pre-growth, so a tick that is both a growth tick and a month
-   *      boundary taxes the pre-level-up population (that level-up is taxed next month).
+   *   5. Monthly settlement: on a month-boundary day (day % DAYS_PER_MONTH === 0), income then
+   *      upkeep are settled pre-growth (so a tick that is both a growth tick and a month
+   *      boundary settles on the pre-level-up population; that level-up is taxed next month),
+   *      through earn()/trySpend() so isValidMoneyAmount and markHappinessDirty() apply to both.
+   *      Upkeep the treasury cannot cover is forgone, not carried as debt — money never goes
+   *      negative.
    *   6. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
    *      Growth reads `landValue` as a frozen snapshot recomputed at the start of this
    *      tick (when dirty or on cadence). The growth pass mutates Building.level/density/age
@@ -996,12 +1067,16 @@ export class World {
       }
     }
 
-    // Monthly tax settlement (no per-day bucket): on a month-boundary day, settle
-    // a whole month at the pre-growth population. Settled before zone growth so a
-    // coincident growth+boundary tick's level-up is taxed next month. Intra-month
-    // population changes are not prorated — accepted MVP tolerance.
+    // Monthly settlement (no per-day bucket): on a month-boundary day, settle a whole month
+    // of income then upkeep at the pre-growth population/structures. Settled before zone
+    // growth so a coincident growth+boundary tick's level-up is taxed next month. Both go
+    // through earn()/trySpend() so isValidMoneyAmount and markHappinessDirty() apply the same
+    // way they do to player spending. Upkeep is clamped to the current balance first: the
+    // treasury floors at 0 rather than carrying debt, so unaffordable upkeep is forgone, not
+    // deferred. Intra-month population changes are not prorated — accepted MVP tolerance.
     if (this.day % DAYS_PER_MONTH === 0) {
-      this.money += Math.floor(this.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
+      this.earn(this.monthlyTaxIncome());
+      this.trySpend(Math.min(this.monthlyUpkeep(), this.money));
     }
 
     // Pass 2: Zone growth — only on growth ticks.
