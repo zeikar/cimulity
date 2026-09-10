@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { executeClick, executeDrag, previewDrag, previewClick, applyCommands } from './CommandDispatcher';
 import { Tool } from '../tools/Tool';
 import { World } from '../core/World';
-import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST, SCHOOL_COST, PARK_COST } from '../core/World';
+import { POWER_PLANT_COST, WATER_TOWER_COST, BULLDOZE_COST, POLICE_STATION_COST, FIRE_STATION_COST, HOSPITAL_COST, SCHOOL_COST, PARK_COST, POWER_PLANT_UPKEEP, STARTING_FUNDS, TAX_PER_POP, DAYS_PER_MONTH, HAPPINESS_W_JOBS, HAPPINESS_W_BUDGET, BUDGET_W_STOCK, BUDGET_W_FLOW, BUDGET_DEFICIT_SPAN } from '../core/World';
 import { TileType, createTile } from '../core/Tile';
 import { MAX_ELEVATION, SEA_LEVEL } from '../core/Terrain';
 
@@ -1450,5 +1450,60 @@ describe('CommandDispatcher traffic dirty-marking — (c) zone-bulldoze removing
     // getTrafficMap() drains the dirty flag (set via the removedBuildingIds fold).
     const trafficAfter = world.getTrafficMap().getCongestion(1, 0);
     expect(trafficAfter).toBe(0);
+  });
+});
+
+describe('place-structure upkeep reaches happiness without a tick', () => {
+  it('placing a power plant lowers getHappiness() on the very next read', () => {
+    // What this pins is the END-TO-END contract — a placement's cost AND its new monthly upkeep
+    // both show in the very next getHappiness() read, with no tick() in between — not any single
+    // dirty path. Every structure type sets all seven invalidation flags in applyCommands, so the
+    // charge, the coverage cascade and the traffic cascade all fire on this placement; the test
+    // deliberately does not attribute the refresh to one of them.
+    //
+    // The expectations are closed-form because the fixture has NO residential building:
+    // recomputeHappiness scores landScore 0 when residentialCount === 0, so the
+    // coverage-to-land-value refresh this placement also triggers cannot move the result; the
+    // workforce is empty, so unemploymentRate()'s empty-workforce guard puts the employment term
+    // at 1; and with no commuters there are no flows, so congestion is 0. The budget term is the
+    // only input left that can move.
+    const world = makeWorld();
+    expect(world.getMap().getBuildings().addExistingBuilding({
+      id: 1, type: 'commercial',
+      footprint: [{ x: 0, y: 0 }], anchor: { x: 0, y: 0 },
+      level: 1, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    })).toBe(true);
+    expect(world.setMoney(STARTING_FUNDS)).toBe(true);
+
+    // The one commercial's capacity (1×1 structureRect × level 1 × 5) is the whole tax base —
+    // and the reason the empty-city happiness shortcut is not taken.
+    expect(world.getPopulation()).toBe(5);
+    const monthlyIncome = Math.floor(world.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
+
+    // Full treasury and zero upkeep (no structures, no roads) → both halves of the budget term
+    // sit at 1.
+    const h0 = world.getHappiness();
+    expect(h0).toBeCloseTo(HAPPINESS_W_JOBS + HAPPINESS_W_BUDGET, 8);
+
+    expect(executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world).changedTiles).toHaveLength(4);
+    expect(world.getMoney()).toBe(STARTING_FUNDS - POWER_PLANT_COST);
+
+    // No tick() and no other mark between the two reads. The budget term is retyped by hand
+    // rather than read back from `budgetHealthScore` — calling the production function on both
+    // sides would make this a tautology that a formula dropping the upkeep argument entirely
+    // still satisfies. Neither half is clamped here: the stock half is 0.9 and the flow half
+    // 0.95, both interior.
+    //
+    // A deliberate LOCAL copy of the blend, whose canonical hand-derived helper is
+    // `blendBudgetHealth` in game/core/World.test.ts. No *.test.ts under game/ imports from
+    // another *.test.ts, and standing up cross-file test-helper infrastructure for this one
+    // call site is not worth it.
+    const h1 = world.getHappiness();
+    const expectedBudgetHealth =
+      BUDGET_W_STOCK * ((STARTING_FUNDS - POWER_PLANT_COST) / STARTING_FUNDS)
+      + BUDGET_W_FLOW * (1 + (monthlyIncome - POWER_PLANT_UPKEEP) / BUDGET_DEFICIT_SPAN);
+    expect(h1).toBeCloseTo(HAPPINESS_W_JOBS + HAPPINESS_W_BUDGET * expectedBudgetHealth, 8);
+    expect(h1).toBeLessThan(h0);
   });
 });

@@ -49,7 +49,7 @@ import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 function seedPower(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
+  const added = world.getStructureMap().addStructure({
     type: 'power_plant',
     anchor: { x: ax, y: ay },
     footprint: [
@@ -57,18 +57,20 @@ function seedPower(world: World, ax: number, ay: number): void {
       { x: ax, y: ay + 1 }, { x: ax + 1, y: ay + 1 },
     ],
   });
+  expect(added).not.toBeNull();
   world.markPowerDirty();
   world.recomputePower();
 }
 
 function seedWater(world: World, ax: number, ay: number): void {
-  world.getStructureMap().addStructure({
+  const added = world.getStructureMap().addStructure({
     type: 'water_tower',
     anchor: { x: ax, y: ay },
     footprint: [
       { x: ax, y: ay },
     ],
   });
+  expect(added).not.toBeNull();
   world.markWaterDirty();
   world.recomputeWater();
 }
@@ -3204,12 +3206,28 @@ function makeCorridorWorld(opts: { withJobs: boolean }): World {
 }
 
 /**
- * Pure mirror of World.recomputeHappiness()'s budgetHealth term, re-derived by hand from
- * public reads rather than calling `budgetHealthScore` — calling the function under test here
- * would make every happiness-formula mirror below a tautology. Income mirrors the private
- * `monthlyTaxIncome()`; upkeep mirrors the private `monthlyUpkeep()` (structures via
- * `structureUpkeep`, plus ROAD_UPKEEP per ROAD tile); the blend itself is the same
- * BUDGET_W_STOCK/BUDGET_W_FLOW/BUDGET_DEFICIT_SPAN arithmetic, retyped rather than imported.
+ * Hand-derived counterpart of production's `budgetHealthScore` — the stock/flow blend retyped
+ * rather than imported, since calling the function under test would make every budget mirror
+ * below a tautology.
+ *
+ * The anti-tautology property lives in the CALLERS, not here: each one derives `money`,
+ * `monthlyIncome` and `monthlyUpkeep` independently (from public world reads, or from the
+ * fixture constants it already has in hand) instead of letting production compute them. This
+ * function only owns the weighted-sum SHAPE, so a structural change to the blend — a third
+ * budget input, or clamp-then-sum becoming sum-then-clamp — fails in one place loudly instead
+ * of leaving several independently-stale hand copies agreeing with each other.
+ */
+function blendBudgetHealth(money: number, monthlyIncome: number, monthlyUpkeep: number): number {
+  const stockScore = Math.max(0, Math.min(1, money / STARTING_FUNDS));
+  const flowScore = Math.max(0, Math.min(1, 1 + (monthlyIncome - monthlyUpkeep) / BUDGET_DEFICIT_SPAN));
+  return Math.max(0, Math.min(1, BUDGET_W_STOCK * stockScore + BUDGET_W_FLOW * flowScore));
+}
+
+/**
+ * Pure mirror of World.recomputeHappiness()'s budgetHealth term, from public reads only.
+ * Income mirrors the private `monthlyTaxIncome()`; upkeep mirrors the private `monthlyUpkeep()`
+ * (structures via `structureUpkeep`, plus ROAD_UPKEEP per ROAD tile). Deriving both here — not
+ * reading them back off the World — is what keeps this a real check rather than a restatement.
  */
 function mirrorBudgetHealth(world: World): number {
   const income = Math.floor(world.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
@@ -3220,9 +3238,7 @@ function mirrorBudgetHealth(world: World): number {
   for (const tile of world.getMap().iterateTiles()) {
     if (tile.type === TileType.ROAD) upkeep += ROAD_UPKEEP;
   }
-  const stockScore = Math.max(0, Math.min(1, world.getMoney() / STARTING_FUNDS));
-  const flowScore = Math.max(0, Math.min(1, 1 + (income - upkeep) / BUDGET_DEFICIT_SPAN));
-  return Math.max(0, Math.min(1, BUDGET_W_STOCK * stockScore + BUDGET_W_FLOW * flowScore));
+  return blendBudgetHealth(world.getMoney(), income, upkeep);
 }
 
 /**
@@ -3592,5 +3608,184 @@ describe('World.getHappiness() — asymmetric unemployment term regression', () 
     expect(connectedHappiness).toBeCloseTo(connectedExpected, 8);
     const disconnectedExpected = expectedFourTermHappiness(disconnected, disconnectedTerm);
     expect(disconnectedHappiness).toBeCloseTo(disconnectedExpected, 8);
+  });
+});
+
+describe('World.getHappiness() — budgetHealth is a live signal', () => {
+  /** Fresh footprint array per call — Building stores the array by reference. */
+  function residential2x2Footprint(): { x: number; y: number }[] {
+    return [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }];
+  }
+
+  /**
+   * The fixture's single residential: a 2×2 lot at anchor (0,0), structureRect the whole lot,
+   * fronting 'S' so its south row (y=1) meets the road row at y=2. Sits on GRASS tiles, so the
+   * growth loop (which iterates zone tiles) never visits it.
+   */
+  function addResidential2x2(world: World, id: number, level: number): void {
+    expect(world.getMap().getBuildings().addExistingBuilding({
+      id, type: 'residential',
+      footprint: residential2x2Footprint(), anchor: { x: 0, y: 0 },
+      level, density: 0, age: 0, abandoned: false, frontage: 'S',
+      structureRect: { x: 0, y: 0, w: 2, h: 2 },
+    })).toBe(true);
+  }
+
+  /** Mirror of recomputeHappiness's unemploymentCutoffScore — the same expression the
+   *  asymmetric-unemployment tests above spell out inline, hoisted here because three phases
+   *  of one test need it. */
+  function employmentTerm(world: World): number {
+    const employed = world.getEmployed();
+    const unemployed = world.getUnemployed();
+    const workforce = employed + unemployed;
+    const rate = workforce > 0 ? unemployed / workforce : 0;
+    return Math.max(0, Math.min(1, 1 - rate / MIGRATION_UNEMPLOYMENT_CUTOFF));
+  }
+
+  it('an over-built, under-populated city falls as the deficit lands and recovers when population catches up', () => {
+    // Reuses the coincident-growth fixture's 10×8 structure layout: road row at y=2, plant at
+    // (4,3), tower at (7,3), and the four coverage stations at (0,3)/(2,3)/(3,0)/(5,0).
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    for (let x = 0; x < 10; x++) map.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    seedPower(world, 4, 3);
+    seedWater(world, 7, 3);
+    seedPolice(world, 0, 3);
+    seedHospital(world, 2, 3);
+    seedFire(world, 3, 0);
+    seedSchool(world, 5, 0);
+    // Each seed helper asserts its own registration, but none of them can see the others:
+    // StructureMap.addStructure also returns null SILENTLY on an OVERLAP, so this pins that all
+    // six coexist. A fixture missing a structure would still pass every assertion below — mirror
+    // and production read the same degraded world — while proving nothing about upkeep.
+    expect(world.getStructureMap().getAllStructures()).toHaveLength(6);
+    let roadTiles = 0;
+    for (const tile of map.iterateTiles()) {
+      if (tile.type === TileType.ROAD) roadTiles++;
+    }
+    expect(roadTiles).toBe(10);
+
+    // 6 structures (200 + 160×5 = 1000) + 10 ROAD tiles (10 × 2) = 1020/month. At or past
+    // BUDGET_DEFICIT_SPAN by design: this city is over-built enough that a ZERO tax base would
+    // bottom the flow half out entirely, so the thin tax base below still leaves a real deficit.
+    const monthlyUpkeep =
+      POWER_PLANT_UPKEEP + WATER_TOWER_UPKEEP + POLICE_STATION_UPKEEP
+      + HOSPITAL_UPKEEP + FIRE_STATION_UPKEEP + SCHOOL_UPKEEP + roadTiles * ROAD_UPKEEP;
+    expect(monthlyUpkeep).toBeGreaterThanOrEqual(BUDGET_DEFICIT_SPAN);
+
+    // ---- Phase 1: over-built, under-populated ----
+    addResidential2x2(world, 1, 1);
+    world.markLaborDirty();
+    expect(world.setMoney(STARTING_FUNDS)).toBe(true);
+
+    // buildingCapacity owns the structureRect × level × density-unit arithmetic, so the fixture's
+    // tax base is pinned on its result rather than restated from a comment.
+    expect(buildingCapacity(map.getBuildings().getBuilding(1)!)).toBe(20);
+    expect(world.getPopulation()).toBe(20);
+    const thinIncome = Math.floor(20 * TAX_PER_POP) * DAYS_PER_MONTH;
+    const deficit = monthlyUpkeep - thinIncome;
+    expect(deficit).toBeGreaterThan(0);
+    expect(deficit).toBeLessThan(BUDGET_DEFICIT_SPAN); // interior, so the flow half is not clamped
+
+    // Happiness FIRST: its internal drain order (land value, then traffic/labor) is what
+    // refreshes every component — reading the components first could disagree with the result.
+    const happinessOverBuilt = world.getHappiness();
+
+    // The anchor's land value and congestion are the two happiness inputs that are NOT the
+    // budget term (the employment term is pinned at 0 below). Both are captured here and
+    // re-asserted unchanged in every later phase, which is what makes the between-phase
+    // happiness comparisons sign-guaranteed rather than merely argued.
+    const anchorLandValue = world.getLandValue().getValue(0, 0);
+    expect(world.getTrafficMap().getCongestionIndex()).toBe(0);
+    // There are no jobs anywhere, so the whole workforce is unemployed → rate 1, far past
+    // MIGRATION_UNEMPLOYMENT_CUTOFF → the employment term is 0 in every phase. Happiness
+    // therefore tops out at HAPPINESS_W_LAND * landScore + HAPPINESS_W_BUDGET * budgetHealth.
+    expect(world.getEmployed()).toBe(0);
+    expect(world.getUnemployed()).toBe(20);
+    expect(employmentTerm(world)).toBe(0);
+
+    // Full treasury, so the stock half is at its ceiling and the deficit is the whole story.
+    expect(mirrorBudgetHealth(world)).toBeCloseTo(
+      blendBudgetHealth(STARTING_FUNDS, thinIncome, monthlyUpkeep), 8,
+    );
+    expect(happinessOverBuilt).toBeCloseTo(expectedFourTermHappiness(world, employmentTerm(world)), 8);
+
+    // One month-boundary tick. tickCount 30 is neither a growth tick (30 % 8 !== 0 → no
+    // abandonment sweep, no level-up, no merge) nor a cadence tick (30 % 16 !== 0), so the
+    // monthly settlement is the ONLY thing this tick does to the fixture.
+    expect(world.setElapsedDays(DAYS_PER_MONTH - 1)).toBe(true);
+    world.tick();
+    expect(world.getTick()).toBe(DAYS_PER_MONTH);
+    expect(world.getTick() % ZONE_GROWTH_INTERVAL).not.toBe(0);
+    expect(world.getTick() % LAND_VALUE_INTERVAL).not.toBe(0);
+    expect(map.getBuildings().getBuilding(1)?.level).toBe(1);
+    expect(map.getBuildings().getBuilding(1)?.abandoned).toBe(false);
+
+    // A real deficit landed: income earned, then the full upkeep spent.
+    const drainedMoney = STARTING_FUNDS + thinIncome - monthlyUpkeep;
+    expect(world.getMoney()).toBe(drainedMoney);
+    expect(drainedMoney).toBeLessThan(STARTING_FUNDS);
+
+    const happinessAfterDeficit = world.getHappiness();
+    const mirrorAfterDeficit = mirrorBudgetHealth(world);
+    expect(mirrorAfterDeficit).toBeCloseTo(
+      blendBudgetHealth(drainedMoney, thinIncome, monthlyUpkeep), 8,
+    );
+    expect(world.getLandValue().getValue(0, 0)).toBe(anchorLandValue);
+    expect(world.getTrafficMap().getCongestionIndex()).toBe(0);
+    expect(happinessAfterDeficit).toBeCloseTo(expectedFourTermHappiness(world, 0), 8);
+    // Only the stock half moved — the flow half is unchanged, since neither population nor
+    // upkeep changed over the tick.
+    expect(happinessAfterDeficit).toBeLessThan(happinessOverBuilt);
+
+    // ---- Phase 2: population catches up at the SAME anchor ----
+    // Deliberately a remove-and-re-add through the public BuildingMap API rather than the
+    // shorter `getBuilding(1)!.level = 5`: getBuilding() handing back a live mutable reference
+    // is an implementation detail this test should not depend on.
+    expect(map.getBuildings().removeBuilding(1)).toBe(true);
+    addResidential2x2(world, 2, 5);
+    world.markLaborDirty();
+
+    // Same geometry, level 5 → income now clears the 1020 upkeep outright.
+    expect(buildingCapacity(map.getBuildings().getBuilding(2)!)).toBe(100);
+    expect(world.getPopulation()).toBe(100);
+    const fullIncome = Math.floor(100 * TAX_PER_POP) * DAYS_PER_MONTH;
+    expect(fullIncome).toBeGreaterThanOrEqual(monthlyUpkeep);
+
+    const happinessRecovered = world.getHappiness();
+    expect(world.getLandValue().getValue(0, 0)).toBe(anchorLandValue);
+    expect(world.getTrafficMap().getCongestionIndex()).toBe(0);
+    expect(employmentTerm(world)).toBe(0); // still no jobs
+    // The treasury has not moved since the phase-1 settlement, so the stock half is identical
+    // to mirrorAfterDeficit's and the surplus clamps the flow half at its ceiling: this
+    // recovery is the flow half and nothing else.
+    expect(mirrorBudgetHealth(world)).toBeCloseTo(
+      blendBudgetHealth(drainedMoney, fullIncome, monthlyUpkeep), 8,
+    );
+    expect(mirrorBudgetHealth(world)).toBeGreaterThan(mirrorAfterDeficit);
+    expect(happinessRecovered).toBeCloseTo(expectedFourTermHappiness(world, 0), 8);
+    expect(happinessRecovered).toBeGreaterThan(happinessAfterDeficit);
+
+    // ---- Phase 3: the surplus month actually settles ----
+    // tickCount 60 is again neither a growth tick (60 % 8 !== 0) nor a cadence tick
+    // (60 % 16 !== 0), so the sweep cannot touch the level-5 fixture.
+    expect(world.setElapsedDays(2 * DAYS_PER_MONTH - 1)).toBe(true);
+    world.tick();
+    expect(world.getTick()).toBe(2 * DAYS_PER_MONTH);
+    expect(world.getTick() % ZONE_GROWTH_INTERVAL).not.toBe(0);
+    expect(world.getTick() % LAND_VALUE_INTERVAL).not.toBe(0);
+    expect(map.getBuildings().getBuilding(2)?.level).toBe(5);
+    expect(map.getBuildings().getBuilding(2)?.abandoned).toBe(false);
+
+    expect(world.getMoney()).toBe(drainedMoney + fullIncome - monthlyUpkeep);
+    expect(world.getMoney()).toBeGreaterThan(STARTING_FUNDS); // stock half clamps at 1
+
+    const happinessSurplus = world.getHappiness();
+    expect(world.getLandValue().getValue(0, 0)).toBe(anchorLandValue);
+    expect(world.getTrafficMap().getCongestionIndex()).toBe(0);
+    // Both halves at their ceiling — exact, since each clamp lands on 1 before the weights sum.
+    expect(mirrorBudgetHealth(world)).toBe(1);
+    expect(happinessSurplus).toBeCloseTo(expectedFourTermHappiness(world, 0), 8);
+    expect(happinessSurplus).toBeGreaterThanOrEqual(happinessRecovered);
   });
 });
