@@ -91,7 +91,7 @@ export const HAPPINESS_W_LAND = 0.5;
  * 0 once jobs ≥ workers.
  */
 export const HAPPINESS_W_JOBS = 0.3;
-/** Budget-health contribution weight for city happiness. */
+/** Budget-health contribution weight for city happiness. See `budgetHealthScore` for the term itself. */
 export const HAPPINESS_W_BUDGET = 0.2;
 /**
  * Congestion penalty weight for city happiness — SUBTRACTED from the three positive terms,
@@ -102,6 +102,18 @@ export const HAPPINESS_W_BUDGET = 0.2;
  * this direct term is the city-wide signal on top of that, not a double-count amplifier.
  */
 export const HAPPINESS_W_TRAFFIC = 0.15;
+/** Treasury-stock contribution weight inside `budgetHealthScore` (BUDGET_W_STOCK + BUDGET_W_FLOW = 1.0). */
+export const BUDGET_W_STOCK = 0.5;
+/** Monthly-net-flow contribution weight inside `budgetHealthScore` (BUDGET_W_STOCK + BUDGET_W_FLOW = 1.0). */
+export const BUDGET_W_FLOW = 0.5;
+/**
+ * Monthly net-flow deficit, in money units, at which `budgetHealthScore`'s flow term bottoms
+ * out at 0. A surplus of any size reads 1. 1000 is 10% of STARTING_FUNDS — ten months of
+ * runway from a fresh treasury, and exactly what a power plant + water tower + police + fire
+ * + hospital + school loadout (every structure type except the park: 200 + 160×5 = 1000) costs
+ * in upkeep with zero tax base.
+ */
+export const BUDGET_DEFICIT_SPAN = 1000;
 /** Initial/empty-city happiness value returned when no residential or jobs buildings exist. */
 export const EMPTY_CITY_HAPPINESS = 0.5;
 /** Tax revenue per population point per day. */
@@ -240,6 +252,20 @@ export interface WorldDate {
 /** Clamp x to [0, 1]. Mirrors the Demand.ts idiom. */
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+/**
+ * Budget-health term for `recomputeHappiness`: a stock+flow blend so the score can move
+ * before the treasury actually drains, not just after. `money` is the treasury stock;
+ * `monthlyIncome - monthlyUpkeep` is the net flow the NEXT settlement will apply.
+ * Four states this distinguishes: surplus with a full reserve reads 1; a surplus but an
+ * already-drained treasury reads BUDGET_W_FLOW; a deficit with a still-full treasury falls
+ * from 1 toward BUDGET_W_STOCK; a deficit with a drained treasury reads 0.
+ */
+export function budgetHealthScore(money: number, monthlyIncome: number, monthlyUpkeep: number): number {
+  const stockScore = clamp01(money / STARTING_FUNDS);
+  const flowScore = clamp01(1 + (monthlyIncome - monthlyUpkeep) / BUDGET_DEFICIT_SPAN);
+  return clamp01(BUDGET_W_STOCK * stockScore + BUDGET_W_FLOW * flowScore);
 }
 
 export class World {
@@ -780,8 +806,8 @@ export class World {
 
   /**
    * City-wide happiness scalar in [0, 1]. Display-only KPI — never feeds growth/demand/level-up.
-   * Lazy: recomputes only when inputs (land value, money, buildings, traffic, labor) have changed
-   * since last read.
+   * Lazy: recomputes only when inputs (land value, money, buildings, structures, roads, traffic,
+   * labor) have changed since last read.
    */
   getHappiness(): number {
     this.recomputeHappinessIfDirty();
@@ -828,7 +854,7 @@ export class World {
     // unemployment. unemploymentRate() guards an empty workforce to a rate of 0, so a jobs-only
     // city — nobody exists yet to be unemployed — reads full marks here, not zero.
     const unemploymentCutoffScore = clamp01(1 - unemploymentRate(this.getEmployed(), this.getUnemployed()) / MIGRATION_UNEMPLOYMENT_CUTOFF);
-    const budgetHealth = clamp01(this.money / STARTING_FUNDS);
+    const budgetHealth = budgetHealthScore(this.money, this.monthlyTaxIncome(), this.monthlyUpkeep());
     // Traffic drains on read; the land-value drain above already refreshed it whenever traffic
     // was dirty (markTrafficDirty dirties land value too), so this is a plain read in practice.
     const congestionIndex = this.getTrafficMap().getCongestionIndex();

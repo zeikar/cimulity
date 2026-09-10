@@ -19,6 +19,10 @@ import {
   HAPPINESS_W_JOBS,
   HAPPINESS_W_BUDGET,
   HAPPINESS_W_TRAFFIC,
+  BUDGET_W_STOCK,
+  BUDGET_W_FLOW,
+  BUDGET_DEFICIT_SPAN,
+  budgetHealthScore,
   ROAD_UPKEEP,
   POWER_PLANT_UPKEEP,
   WATER_TOWER_UPKEEP,
@@ -2522,7 +2526,7 @@ describe('World.getHappiness() — budget sensitivity', () => {
     expect(worldRich.getHappiness()).toBeGreaterThan(worldPoor.getHappiness());
   });
 
-  it('setMoney(0) produces the lowest budgetHealth (0) in budget term', () => {
+  it('setMoney(0) zeroes the stock half of budgetHealth, lowering the budget term', () => {
     const world = new World(4, 4, { regenerate: false });
     world.getMap().getBuildings().addExistingBuilding({
       id: 1, type: 'commercial',
@@ -2610,7 +2614,7 @@ describe('World.getHappiness() — employment sensitivity', () => {
     const landScore =
       (worldBalanced.getLandValue().getValue(0, 0) + worldBalanced.getLandValue().getValue(1, 0)) / 2;
     const congestionIndex = worldBalanced.getTrafficMap().getCongestionIndex();
-    const budgetHealth = worldBalanced.getMoney() / STARTING_FUNDS;
+    const budgetHealth = mirrorBudgetHealth(worldBalanced);
     const expected =
       HAPPINESS_W_LAND * landScore +
       HAPPINESS_W_JOBS * 1 +
@@ -2811,7 +2815,8 @@ describe('World.getHappiness() — dirty/lazy correctness', () => {
     //                     A jobs-only city has nobody to be unemployed, so it reads full marks —
     //                     the intended semantic flip from the old symmetric jobsBalance term,
     //                     which read 0 here (job surplus with no offsetting workers).
-    //   budgetHealth    = clamp01(STARTING_FUNDS / STARTING_FUNDS) = 1
+    //   budgetHealth    = budgetHealthScore(STARTING_FUNDS, income, upkeep) = 1: full treasury
+    //                     (stock half = 1) and income covers the zero upkeep (flow half = 1).
     // expected = HAPPINESS_W_LAND*0 + HAPPINESS_W_JOBS*1 + HAPPINESS_W_BUDGET*1
     const world = new World(4, 4, { regenerate: false });
     world.getMap().getBuildings().addExistingBuilding({
@@ -2979,6 +2984,50 @@ describe('budget constants', () => {
     expect(structureUpkeep('hospital')).toBe(HOSPITAL_UPKEEP);
     expect(structureUpkeep('school')).toBe(SCHOOL_UPKEEP);
     expect(structureUpkeep('park')).toBe(PARK_UPKEEP);
+  });
+
+  it('BUDGET_W_STOCK and BUDGET_W_FLOW sum to exactly 1', () => {
+    expect(BUDGET_W_STOCK + BUDGET_W_FLOW).toBe(1);
+  });
+
+  it('BUDGET_DEFICIT_SPAN is positive', () => {
+    expect(BUDGET_DEFICIT_SPAN).toBeGreaterThan(0);
+  });
+});
+
+describe('budgetHealthScore', () => {
+  it('full reserve with income covering upkeep scores 1', () => {
+    expect(budgetHealthScore(STARTING_FUNDS, 500, 200)).toBeCloseTo(1, 8);
+  });
+
+  it('drained treasury but in surplus scores exactly BUDGET_W_FLOW', () => {
+    expect(budgetHealthScore(0, 500, 200)).toBeCloseTo(BUDGET_W_FLOW, 8);
+  });
+
+  it('full reserve with a half-span deficit scores BUDGET_W_STOCK + BUDGET_W_FLOW / 2', () => {
+    expect(budgetHealthScore(STARTING_FUNDS, 0, BUDGET_DEFICIT_SPAN / 2))
+      .toBeCloseTo(BUDGET_W_STOCK + BUDGET_W_FLOW / 2, 8);
+  });
+
+  it('exact breakeven (income === upkeep) reads full marks on the flow half, not a shortfall', () => {
+    // Breakeven is not a surplus, yet 1 + (income - upkeep) / SPAN = 1 here too — worth pinning
+    // explicitly since the JSDoc's "any surplus reads 1" wording does not literally cover it.
+    expect(budgetHealthScore(0, 100, 100)).toBeCloseTo(BUDGET_W_FLOW, 8);
+  });
+
+  it('drained treasury with a deficit at or past the span scores 0', () => {
+    expect(budgetHealthScore(0, 0, BUDGET_DEFICIT_SPAN)).toBeCloseTo(0, 8);
+  });
+
+  it('a deficit well past the span still clamps at 0, not a negative score', () => {
+    // Counterpart to the stock-overshoot clamp below: case above pins exactly-at-the-boundary,
+    // this pins strictly-beyond-it, so the two together distinguish "clamps at the boundary"
+    // from "clamps beyond it".
+    expect(budgetHealthScore(0, 0, BUDGET_DEFICIT_SPAN * 2)).toBeCloseTo(0, 8);
+  });
+
+  it('money above STARTING_FUNDS clamps the stock half at 1', () => {
+    expect(budgetHealthScore(STARTING_FUNDS * 2, 500, 200)).toBeCloseTo(1, 8);
   });
 });
 
@@ -3155,6 +3204,28 @@ function makeCorridorWorld(opts: { withJobs: boolean }): World {
 }
 
 /**
+ * Pure mirror of World.recomputeHappiness()'s budgetHealth term, re-derived by hand from
+ * public reads rather than calling `budgetHealthScore` — calling the function under test here
+ * would make every happiness-formula mirror below a tautology. Income mirrors the private
+ * `monthlyTaxIncome()`; upkeep mirrors the private `monthlyUpkeep()` (structures via
+ * `structureUpkeep`, plus ROAD_UPKEEP per ROAD tile); the blend itself is the same
+ * BUDGET_W_STOCK/BUDGET_W_FLOW/BUDGET_DEFICIT_SPAN arithmetic, retyped rather than imported.
+ */
+function mirrorBudgetHealth(world: World): number {
+  const income = Math.floor(world.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
+  let upkeep = 0;
+  for (const s of world.getStructureMap().getAllStructures()) {
+    upkeep += structureUpkeep(s.type);
+  }
+  for (const tile of world.getMap().iterateTiles()) {
+    if (tile.type === TileType.ROAD) upkeep += ROAD_UPKEEP;
+  }
+  const stockScore = Math.max(0, Math.min(1, world.getMoney() / STARTING_FUNDS));
+  const flowScore = Math.max(0, Math.min(1, 1 + (income - upkeep) / BUDGET_DEFICIT_SPAN));
+  return Math.max(0, Math.min(1, BUDGET_W_STOCK * stockScore + BUDGET_W_FLOW * flowScore));
+}
+
+/**
  * Pure mirror of the land/budget/congestion three-fifths of
  * World.recomputeHappiness()'s four-term combination, given an independently-computed
  * employmentTerm (each caller reads getEmployed()/getUnemployed() and derives its own rate —
@@ -3174,7 +3245,7 @@ function expectedFourTermHappiness(world: World, employmentTerm: number): number
   }
   const landScore = residentialLandValueSum / residentialCount;
   const congestionIndex = world.getTrafficMap().getCongestionIndex();
-  const budgetHealth = world.getMoney() / STARTING_FUNDS;
+  const budgetHealth = mirrorBudgetHealth(world);
   return (
     HAPPINESS_W_LAND * landScore +
     HAPPINESS_W_JOBS * employmentTerm +
@@ -3182,6 +3253,83 @@ function expectedFourTermHappiness(world: World, employmentTerm: number): number
     HAPPINESS_W_TRAFFIC * congestionIndex
   );
 }
+
+describe('mirrorBudgetHealth — pinned against budgetHealthScore', () => {
+  it('agrees with budgetHealthScore across a spread of world states (empty treasury, a real deficit, a comfortable surplus, and varying population/structure/road counts)', () => {
+    // Re-derives income/upkeep independently of mirrorBudgetHealth's own body, so this isolates
+    // agreement of the STOCK+FLOW BLEND itself between the test's hand copy and the production
+    // function — not just agreement buried inside the four-term happiness sum every other
+    // mirror test checks it through.
+    function deriveIncomeAndUpkeep(world: World): { income: number; upkeep: number } {
+      const income = Math.floor(world.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
+      let upkeep = 0;
+      for (const s of world.getStructureMap().getAllStructures()) upkeep += structureUpkeep(s.type);
+      for (const tile of world.getMap().iterateTiles()) {
+        if (tile.type === TileType.ROAD) upkeep += ROAD_UPKEEP;
+      }
+      return { income, upkeep };
+    }
+
+    function addResidential(world: World, x: number, level: number): void {
+      world.getMap().getBuildings().addExistingBuilding({
+        id: x + 1, type: 'residential',
+        footprint: [{ x, y: 1 }], anchor: { x, y: 1 },
+        level, density: 0, age: 0, abandoned: false, frontage: 'S',
+        structureRect: { x, y: 1, w: 1, h: 1 },
+      });
+    }
+
+    function setRoadRow(world: World, count: number): void {
+      for (let x = 0; x < count; x++) world.getMap().setTile(x, 2, createTile(x, 2, TileType.ROAD));
+    }
+
+    // Empty treasury, in flow surplus: money=0, one L3 residential (capacity 15, income 450),
+    // 2 road tiles (upkeep 4). Stock half = 0 (boundary); flow half clamps to 1 (boundary) —
+    // the "fully drained but still earning" edge.
+    const emptyTreasury = new World(10, 4, { regenerate: false });
+    setRoadRow(emptyTreasury, 2);
+    addResidential(emptyTreasury, 0, 3);
+    emptyTreasury.setMoney(0);
+
+    // Real monthly deficit: money=3000 (stock 0.3, interior), one L1 residential (capacity 5,
+    // income 150), but a power plant (200) + water tower (160) cost 360/month — upkeep exceeds
+    // income by 210, so flow = clamp01(1 - 210/1000) = 0.79 (interior, genuinely below 1, not a
+    // clamp-boundary agreement). Exercises the multi-structure summation loop with 2 structures.
+    const realDeficit = new World(10, 6, { regenerate: false });
+    addResidential(realDeficit, 0, 1);
+    expect(realDeficit.getStructureMap().addStructure({ type: 'power_plant', anchor: { x: 3, y: 3 }, footprint: station2x2(3, 3) })).not.toBeNull();
+    expect(realDeficit.getStructureMap().addStructure({ type: 'water_tower', anchor: { x: 6, y: 3 }, footprint: [{ x: 6, y: 3 }] })).not.toBeNull();
+    realDeficit.setMoney(3000);
+
+    // Comfortable surplus: full treasury, three L5 residential (capacity 75, income 2250)
+    // against only 3 road tiles (upkeep 6) — both halves pin at 1 (the ceiling-boundary edge,
+    // deliberately paired with emptyTreasury's floor-boundary edge above).
+    const comfortableSurplus = new World(10, 4, { regenerate: false });
+    setRoadRow(comfortableSurplus, 3);
+    addResidential(comfortableSurplus, 0, 5);
+    addResidential(comfortableSurplus, 1, 5);
+    addResidential(comfortableSurplus, 2, 5);
+    comfortableSurplus.setMoney(STARTING_FUNDS);
+
+    // Varying population/structure/road counts: money=7000 (stock 0.7, interior), one L1
+    // residential (capacity 5, income 150), 5 road tiles (upkeep 10) plus police+fire+hospital
+    // (160 each = 480) — upkeep totals 490 against income 150, a 340 deficit, so
+    // flow = clamp01(1 - 340/1000) = 0.66 (interior). Exercises the summation loop with 3
+    // structures, distinct from realDeficit's 2.
+    const mixedCounts = new World(10, 6, { regenerate: false });
+    setRoadRow(mixedCounts, 5);
+    addResidential(mixedCounts, 0, 1);
+    expect(mixedCounts.getStructureMap().addStructure({ type: 'police_station', anchor: { x: 0, y: 4 }, footprint: station2x2(0, 4) })).not.toBeNull();
+    expect(mixedCounts.getStructureMap().addStructure({ type: 'fire_station', anchor: { x: 3, y: 4 }, footprint: station2x2(3, 4) })).not.toBeNull();
+    expect(mixedCounts.getStructureMap().addStructure({ type: 'hospital', anchor: { x: 6, y: 4 }, footprint: station2x2(6, 4) })).not.toBeNull();
+    mixedCounts.setMoney(7000);
+
+    for (const world of [emptyTreasury, realDeficit, comfortableSurplus, mixedCounts]) {
+      const { income, upkeep } = deriveIncomeAndUpkeep(world);
+      expect(mirrorBudgetHealth(world)).toBeCloseTo(budgetHealthScore(world.getMoney(), income, upkeep), 8);
+    }
+  });
+});
 
 describe('World land value — congestion feedback', () => {
   it('a loaded road lowers the land value beside it versus an identical no-flow city', () => {
@@ -3252,7 +3400,9 @@ describe('World.getHappiness() — congestion term', () => {
 
     // Same city, three-term (pre-feedback) score: 1 R and 1 C building, both level 4, equal
     // capacity, connected by the corridor road → full employment (employment term = 1) and
-    // budgetHealth = 1 (no tick, so money is untouched).
+    // budgetHealth = 1: stock half = 1 (no tick, so money is untouched at STARTING_FUNDS) AND
+    // flow half = 1 (population 40 taxes to 1200/month against just 16 in road upkeep — deep
+    // surplus, not merely a full treasury).
     const landScore = world.getLandValue().getValue(0, 1);
     const threeTerm =
       HAPPINESS_W_LAND * landScore + HAPPINESS_W_JOBS * 1 + HAPPINESS_W_BUDGET * 1;
