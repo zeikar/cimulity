@@ -260,7 +260,9 @@ function clamp01(x: number): number {
  * `monthlyIncome - monthlyUpkeep` is the net flow the NEXT settlement will apply.
  * Four states this distinguishes: surplus with a full reserve reads 1; a surplus but an
  * already-drained treasury reads BUDGET_W_FLOW; a deficit with a still-full treasury falls
- * from 1 toward BUDGET_W_STOCK; a deficit with a drained treasury reads 0.
+ * from 1 toward BUDGET_W_STOCK; a deficit with a drained treasury falls toward 0, reaching
+ * it only once the deficit is BUDGET_DEFICIT_SPAN or worse — a shallower deficit on an empty
+ * treasury still scores the surviving part of the flow half.
  */
 export function budgetHealthScore(money: number, monthlyIncome: number, monthlyUpkeep: number): number {
   const stockScore = clamp01(money / STARTING_FUNDS);
