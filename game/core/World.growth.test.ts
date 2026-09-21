@@ -18,6 +18,7 @@ import { isAnchorCovered } from './ServiceCoverageMap';
 import { isFireAnchorCovered } from './FireCoverageMap';
 import { isHospitalAnchorCovered } from './HospitalCoverageMap';
 import { isSchoolAnchorCovered } from './SchoolCoverageMap';
+import { FUNDING_FULL_PER_MILLE } from './serviceFunding';
 
 function seedPower(world: World, ax: number, ay: number): void {
   world.getStructureMap().addStructure({
@@ -1068,6 +1069,36 @@ describe('World.tick() — T3 density-bump E2E', () => {
     expect(b).not.toBeNull();
     expect(b!.density).toBe(1);
   });
+
+  it('an underfunded month freezes the density bump; full funding resumes it', () => {
+    const world = new World(12, 6, { regenerate: false });
+    const map = world.getMap();
+    seedServedCluster(world);
+
+    expect(map.getBuildings().addExistingBuilding({
+      id: 0, type: 'residential', footprint: [SERVED_R], anchor: SERVED_R,
+      level: ZONE_MAX_LEVEL, density: 0, age: DENSITY_COOLDOWN_INTERVALS, abandoned: false, frontage: 'S',
+      structureRect: { x: SERVED_R.x, y: SERVED_R.y, w: 1, h: 1 },
+    })).toBe(true);
+    expect(map.getBuildings().addExistingBuilding({ id: 1, type: 'industrial', footprint: [SERVED_C], anchor: SERVED_C, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_C.x, y: SERVED_C.y, w: 1, h: 1 } })).toBe(true);
+    expect(map.getBuildings().addExistingBuilding({ id: 2, type: 'industrial', footprint: [SERVED_I], anchor: SERVED_I, level: 5, density: 0, age: 0, abandoned: false, frontage: 'S', structureRect: { x: SERVED_I.x, y: SERVED_I.y, w: 1, h: 1 } })).toBe(true);
+
+    world.markDemandDirty();
+    expect(world.getDemand().residential).toBeGreaterThanOrEqual(DENSITY_DEMAND_THRESHOLD);
+
+    // Tick 8 precedes the first settlement (day 30), so nothing re-derives the per-mille.
+    world.setServiceFundingPerMille(FUNDING_FULL_PER_MILLE - 1);
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE - 1);
+    const frozen = map.getBuildings().getBuilding(0)!;
+    expect(frozen.density).toBe(0);
+    expect(frozen.abandoned).toBe(false);
+
+    world.setServiceFundingPerMille(FUNDING_FULL_PER_MILLE);
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+    expect(map.getBuildings().getBuilding(0)!.density).toBe(1);
+  });
 });
 
 describe('World.getDemand() — freshness', () => {
@@ -1344,13 +1375,15 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     expect(world.getDemand().residential).toBeGreaterThan(0);
   }
 
-  it('structure-grow happens before level-up on a multi-cell lot', () => {
-    // 1×4 R-zone lot: cells (1,0)..(1,3), frontage='S', road at (1,4).
-    // structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end.
-    // Land value at anchor (1,0): road proximity (weight 0.40) plus the four services'
-    // coverage (weight 0.50, all covering (1,0) here) clears LEVEL_THRESHOLDS[2]=0.25 comfortably.
-    // Decision-A: bump to World(10,8); add road (0,4) + tower (0,5)-(1,6) to water road (1,4).
-    const world = new World(10, 8, { regenerate: false });
+  /**
+   * 1×4 R-zone lot: cells (1,0)..(1,3), frontage='S', road at (1,4); building id 0 at level 1
+   * with structureRect = {x:1, y:3, w:1, h:1} — 1×1 at the south end — whose structure grows
+   * on the next growth pass.
+   * Land value at anchor (1,0): road proximity (weight 0.40) plus the four services'
+   * coverage (weight 0.50, all covering (1,0) here) clears LEVEL_THRESHOLDS[2]=0.25 comfortably.
+   * Decision-A: World(10,8); road (0,4) + tower (0,5)-(1,6) to water road (1,4).
+   */
+  function seedStructureGrowLot(world: World): void {
     const map = world.getMap();
 
     // Paint the 1×4 zone strip and the road.
@@ -1403,6 +1436,12 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // Asserted LAST, once every road, structure and building is in place — an assertion inside a
     // seeding helper would read a labor market with no residential origins yet.
     expectGrowthPreconditions(world);
+  }
+
+  it('structure-grow happens before level-up on a multi-cell lot', () => {
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    seedStructureGrowLot(world);
 
     const result = tickOneGrowthInterval(world);
 
@@ -1417,6 +1456,28 @@ describe("World.tick() — structure-grow (Branch B')", () => {
     // changedBuildingIds and changedTiles populated.
     expect(result.changedBuildingIds).toContain(0);
     expect(result.changedTiles).toContainEqual({ x: 1, y: 0 });
+  });
+
+  it('an underfunded month freezes structure-grow but not aging; full funding resumes it', () => {
+    const world = new World(10, 8, { regenerate: false });
+    const map = world.getMap();
+    seedStructureGrowLot(world);
+    const ageBefore = map.getBuildings().getBuilding(0)!.age;
+
+    // Tick 8 precedes the first settlement (day 30), so nothing re-derives the per-mille.
+    world.setServiceFundingPerMille(FUNDING_FULL_PER_MILLE - 1);
+    const frozen = tickOneGrowthInterval(world);
+
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE - 1);
+    const b = map.getBuildings().getBuilding(0)!;
+    expect(b.structureRect).toEqual({ x: 1, y: 3, w: 1, h: 1 });
+    expect(b.level).toBe(1);
+    expect(b.age).toBe(ageBefore + 1);
+    expect(frozen.changedBuildingIds).not.toContain(0);
+
+    world.setServiceFundingPerMille(FUNDING_FULL_PER_MILLE);
+    tickOneGrowthInterval(world);
+    expect(map.getBuildings().getBuilding(0)!.structureRect).toEqual({ x: 1, y: 2, w: 1, h: 2 });
   });
 
   it('repeated ticks: structureRect grows to MIN_STRUCTURE_DEPTH_CAP, then level bumps (yard kept beyond cap)', () => {

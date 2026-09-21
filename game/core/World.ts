@@ -1037,6 +1037,10 @@ export class World {
    *      Upkeep the treasury cannot cover is forgone, not carried as debt — money never goes
    *      negative.
    *   6. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
+   *      Hard funding freeze: unless the latest settlement (this tick's, on a coincident tick)
+   *      paid upkeep in full, no building structure-grows, levels up, or gains density. Spawn
+   *      is exempt — new buildings widen the tax base the city recovers through — and aging
+   *      and the abandonment sweep run as usual.
    *      Growth reads `landValue` as a frozen snapshot recomputed at the start of this
    *      tick (when dirty or on cadence). The growth pass mutates Building.level/density/age
    *      but NOT `landValue` or any influence input. If a future rule mutates influence
@@ -1160,6 +1164,14 @@ export class World {
       const fireSvc = this.getFireCoverageMap();
       const hospitalSvc = this.getHospitalCoverageMap();
       const schoolSvc = this.getSchoolCoverageMap();
+      // Read straight from the field the settlement above just wrote, so a tick that is both a
+      // month boundary and a growth tick is gated by THIS month's payment. A hard gate on every
+      // growth MUTATION below (structure-grow, level-up, density, merge) — never on spawn
+      // (Branch A widens the tax base, which is how an underfunded city recovers), never on
+      // `age += 1` (eligibility keeps accruing, as during dereliction), and never on the
+      // abandonment sweep below (its verdict must read only inputs the flag cannot change, and
+      // abandoning shrinks the tax base that pays upkeep — see its comment).
+      const upkeepFunded = this.serviceFunding === FUNDING_FULL_PER_MILLE;
 
       // Abandonment sweep: runs BEFORE demand/growth so the same-tick growth reads
       // demand that already excludes the just-derelict, and so a building that
@@ -1280,8 +1292,8 @@ export class World {
         const anchorLandValue = lv.getValue(existing.anchor.x, existing.anchor.y);
         const lot = lotBboxOf(existing.footprint);
 
-        // Shared growth gate: demand, land value threshold, age cooldown, water, and the four
-        // service-coverage anchors — feeds BOTH structure-grow and level-up below, at any level.
+        // Shared growth gate: upkeep funding, demand, land value threshold, age cooldown, water, and
+        // the four service-coverage anchors — feeds BOTH structure-grow and level-up below, at any level.
         // At GROWTH_DEMAND_THRESHOLD there is no imbalance beyond the deadband and no
         // in-migration for this type → no structure-grow, no level-up.
         // The lookahead level is clamped to ZONE_MAX_LEVEL: LEVEL_THRESHOLDS only has indices
@@ -1298,7 +1310,9 @@ export class World {
         // below, at any level); not spawn, density, or merge.
         // Graded fields (land value, coverage) gate at the ANCHOR; binary fields (power, water)
         // scan the FOOTPRINT — any powered/watered cell satisfies the gate. This is the intended split.
-        const growthGate = demandVec[existing.type] > GROWTH_DEMAND_THRESHOLD && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc) && isHospitalAnchorCovered(existing.anchor, hospitalSvc) && isSchoolAnchorCovered(existing.anchor, schoolSvc);
+        // Upkeep funding is city-wide, not per-building: any upkeep left unpaid at the latest
+        // settlement freezes both mutations for every building (see `upkeepFunded`).
+        const growthGate = upkeepFunded && demandVec[existing.type] > GROWTH_DEMAND_THRESHOLD && anchorLandValue >= threshold && existing.age >= cooldown && isBuildingWatered(existing, wm) && isAnchorCovered(existing.anchor, svc) && isFireAnchorCovered(existing.anchor, fireSvc) && isHospitalAnchorCovered(existing.anchor, hospitalSvc) && isSchoolAnchorCovered(existing.anchor, schoolSvc);
 
         if (canExtendStructure(existing.structureRect, lot, existing.frontage)) {
           // Branch B' — structure-grow, reachable at ANY level now, not just below max.
@@ -1362,7 +1376,9 @@ export class World {
           // density-vs-lot-width check in mapSerialization.ts. The dev-only devApi seeding path can
           // still construct an over-cap building directly in memory, as it can construct any other
           // otherwise-unreachable state; this gate does not and cannot guard against that.
+          // Density is a growth rung too, so it shares the upkeep-funding freeze (`upkeepFunded`).
           if (
+            upkeepFunded &&
             demandVec[existing.type] >= DENSITY_DEMAND_BAR[existing.type] &&
             anchorLandValue >= LEVEL_THRESHOLDS[ZONE_MAX_LEVEL] &&
             existing.age >= DENSITY_COOLDOWN_INTERVALS &&

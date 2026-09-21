@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { World, ZONE_GROWTH_INTERVAL, ZONE_MAX_LEVEL } from './World';
+import { World, ZONE_GROWTH_INTERVAL, ZONE_MAX_LEVEL, DAYS_PER_MONTH, POWER_PLANT_UPKEEP, ROAD_UPKEEP } from './World';
 import { GROWTH_COOLDOWN_INTERVALS, LEVEL_THRESHOLDS } from './growthConstants';
 import { TileType, createTile } from './Tile';
 
@@ -190,6 +190,25 @@ describe('World.tick() — zone growth', () => {
     // Growth creates a building at level 1; tile.level is legacy (never written by growth).
     expect(map.getBuildings().getBuildingAt(1, 0)?.level).toBe(1);
     expect(result.changed).toBeGreaterThanOrEqual(1);
+  });
+
+  it('spawn is exempt from the funding freeze: a zero-funded coincident settlement + growth tick still creates the building', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 0, createTile(1, 0, TileType.ZONE_RESIDENTIAL));
+    map.setTile(2, 0, createTile(2, 0, TileType.ROAD));
+    seedPower(world, 2, 1); // plant at (2,1)–(3,2) powers road (2,0)
+    // Proves the plant landed, and that the month is owed with nothing to pay it from.
+    expect(world.monthlyUpkeep()).toBe(POWER_PLANT_UPKEEP + ROAD_UPKEEP);
+    expect(world.monthlyTaxIncome()).toBe(0);
+    world.setMoney(0);
+    // The 8th tick below lands on day 240: a month boundary AND a growth tick.
+    world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - ZONE_GROWTH_INTERVAL);
+
+    for (let i = 0; i < ZONE_GROWTH_INTERVAL; i++) world.tick();
+
+    expect(world.getServiceFundingPerMille()).toBe(0);
+    expect(map.getBuildings().getBuildingAt(1, 0)?.level).toBe(1);
   });
 
   it('zone with no orthogonal ROAD neighbor stays level 0 across multiple growth intervals', () => {

@@ -47,7 +47,7 @@ import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD, MIGRATION_UNEMPLOYME
 import { TileType, createTile } from './Tile';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
-import { FUNDING_FULL_PER_MILLE } from './serviceFunding';
+import { FUNDING_FULL_PER_MILLE, fundingPerMille } from './serviceFunding';
 
 function seedPower(world: World, ax: number, ay: number): void {
   const added = world.getStructureMap().addStructure({
@@ -164,6 +164,99 @@ function seedPolice(world: World, ax: number, ay: number): void {
   expect(added).not.toBeNull();
   world.markServiceDirty();
   world.recomputeService();
+}
+
+/**
+ * A level-4 residential probe at (0,1) that levels up on its very next growth pass, on a fully
+ * served 10×8 map. Asserts the fixture's own preconditions (probe cell powered, watered, covered,
+ * land value ≥ the level-5 gate; reachable jobs and open residential demand). Does NOT touch the
+ * calendar — callers pick the growth tick with setElapsedDays.
+ *
+ * Decision-A: water gates level-up, so the layout includes a water tower adjacent to the road
+ * network so the building can still level up. Spawn is NOT water-gated.
+ *
+ * Layout (10x8 map):
+ *   Road row at y=2: all 10 cells connected.
+ *   Zone (0,1)=RESIDENTIAL, frontage='S' adj to road (0,2).
+ *   Diversity in 3×3 around (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → all 3 types.
+ *   Plant at (4,3)–(5,4): (4,3) adj to road (4,2) → powers road row.
+ *   Tower at (7,3)–(8,4): (7,3) adj to road (7,2) → waters road row.
+ *   Road (0,2) is powered+watered; zone (0,1) adj to (0,2) → powered+watered ✓.
+ *   Service coverage now ALSO contributes to land value (weight 0.50), so the four
+ *   stations are reseeded close to road (0,2) to push LV(0,1) ≥ 0.85 (level-5 gate):
+ *   service-avg ≈ 0.896 → LV(0,1) ≈ 0.89.
+ *   Rows y=5..7 are left free.
+ */
+function seedCoincidentLevelUpFixture(world: World): void {
+  const mapF = world.getMap();
+  // Road row.
+  for (let x = 0; x < 10; x++) mapF.setTile(x, 2, createTile(x, 2, TileType.ROAD));
+  // Zone + diversity (all in 3×3 window around (0,1)).
+  mapF.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
+  mapF.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
+  mapF.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
+  // Plant, tower, and the four coverage stations — all near the road row, footprints disjoint.
+  seedPower(world, 4, 3); // plant at (4,3)–(5,4); cell (4,3) adj to road (4,2)
+  seedWater(world, 7, 3); // tower at (7,3)–(8,4); cell (7,3) adj to road (7,2)
+  // Police (0,3)–(1,4): (0,3) adj road (0,2) d=0 → anchor (0,1) coverage 1.0.
+  seedPolice(world, 0, 3);
+  // Hospital (2,3)–(3,4): (2,3) adj road (2,2) → road(0,2) 2 hops → ≈0.917.
+  seedHospital(world, 2, 3);
+  // Fire (3,0)–(4,1): (3,1)/(4,1) adj road (3,2)/(4,2) → road(0,2) 3 hops → ≈0.875.
+  seedFire(world, 3, 0);
+  // School (5,0)–(6,1): (5,1)/(6,1) adj road (5,2)/(6,2) → road(0,2) 5 hops → ≈0.792.
+  seedSchool(world, 5, 0);
+
+  // Verify road (0,2) is powered and watered, and zone (0,1) inherits both, and is covered.
+  expect(world.getPowerMap().isPowered(0, 2)).toBe(true);
+  expect(world.getWaterMap().isWatered(0, 2)).toBe(true);
+  expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
+  expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
+  expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+  expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+  expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+  expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
+  // Authoritative land-value guard: the level-5 gate is LEVEL_THRESHOLDS[5] = 0.85.
+  world.recomputeLandValue();
+  expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(0.85);
+
+  // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 to level up on the next growth tick.
+  // stagger(first-alloc-id)=0, cooldown=8. age=7 → after age+1=8 >= 8 → level-up fires.
+  expect(mapF.getBuildings().addBuilding({
+    type: 'residential',
+    footprint: [{ x: 0, y: 1 }],
+    anchor: { x: 0, y: 1 },
+    level: ZONE_MAX_LEVEL - 1,
+    density: 0,
+    age: GROWTH_COOLDOWN_INTERVALS - 1,
+    abandoned: false,
+    frontage: 'S', // road is south at (0,2)
+    structureRect: { x: 0, y: 1, w: 1, h: 1 },
+  })).not.toBeNull();
+  // Jobs sources so residential demand stays positive. Two level-4 commercials at (8,1) and
+  // (9,1) — covered, road-adjacent cells with lv ≈ 0.73, so level 4 (their supportable max)
+  // survives the abandonment sweep. Frontage 'S': the access node is the road row at y=2, so
+  // the probe's BFS actually reaches them; fronting 'N' onto grass would make the jobs
+  // invisible and residential demand 0. buildingCapacity(level 4, 1x1 sr) = 20, so two C
+  // give 40 jobs against the level-4 probe's 20 workers → net 20 on a market of 100 →
+  // resSeverity 0.75, comfortably above GROWTH_DEMAND_THRESHOLD. (Both sit on GRASS tiles,
+  // so the growth loop never visits them; only the sweep reads their anchors.)
+  for (const x of [8, 9]) {
+    expect(mapF.getBuildings().addExistingBuilding({
+      id: 990 + x,
+      type: 'commercial',
+      footprint: [{ x, y: 1 }],
+      anchor: { x, y: 1 },
+      level: 4,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'S',
+      structureRect: { x, y: 1, w: 1, h: 1 },
+    })).toBe(true);
+  }
+
+  expectJobsReachable(world);
 }
 
 describe('World', () => {
@@ -514,91 +607,11 @@ describe('World.tick() — monthly tax settlement', () => {
   });
 
   it('a coincident growth + month-boundary tick taxes the PRE-growth population and still levels the zone up', () => {
-    // Decision-A: water now gates level-up, so this fixture adds a water tower adjacent
-    // to the road network so the building can still level up. Spawn is NOT water-gated.
-    //
-    // Layout (10x8 map):
-    //   Road row at y=2: all 10 cells connected.
-    //   Zone (0,1)=RESIDENTIAL, frontage='S' adj to road (0,2).
-    //   Diversity in 3×3 around (0,1): (0,0)=INDUSTRIAL, (1,1)=COMMERCIAL → all 3 types.
-    //   Plant at (4,3)–(5,4): (4,3) adj to road (4,2) → powers road row.
-    //   Tower at (7,3)–(8,4): (7,3) adj to road (7,2) → waters road row.
-    //   Road (0,2) is powered+watered; zone (0,1) adj to (0,2) → powered+watered ✓.
-    //   Service coverage now ALSO contributes to land value (weight 0.50), so the four
-    //   stations are reseeded close to road (0,2) to push LV(0,1) ≥ 0.85 (level-5 gate):
-    //   service-avg ≈ 0.896 → LV(0,1) ≈ 0.89.
     const world = new World(10, 8, { regenerate: false });
     const mapF = world.getMap();
-    // Road row.
-    for (let x = 0; x < 10; x++) mapF.setTile(x, 2, createTile(x, 2, TileType.ROAD));
-    // Zone + diversity (all in 3×3 window around (0,1)).
-    mapF.setTile(0, 1, createTile(0, 1, TileType.ZONE_RESIDENTIAL));
-    mapF.setTile(1, 1, createTile(1, 1, TileType.ZONE_COMMERCIAL));
-    mapF.setTile(0, 0, createTile(0, 0, TileType.ZONE_INDUSTRIAL));
-    // Plant, tower, and the four coverage stations — all near the road row, footprints disjoint.
-    seedPower(world, 4, 3); // plant at (4,3)–(5,4); cell (4,3) adj to road (4,2)
-    seedWater(world, 7, 3); // tower at (7,3)–(8,4); cell (7,3) adj to road (7,2)
-    // Police (0,3)–(1,4): (0,3) adj road (0,2) d=0 → anchor (0,1) coverage 1.0.
-    seedPolice(world, 0, 3);
-    // Hospital (2,3)–(3,4): (2,3) adj road (2,2) → road(0,2) 2 hops → ≈0.917.
-    seedHospital(world, 2, 3);
-    // Fire (3,0)–(4,1): (3,1)/(4,1) adj road (3,2)/(4,2) → road(0,2) 3 hops → ≈0.875.
-    seedFire(world, 3, 0);
-    // School (5,0)–(6,1): (5,1)/(6,1) adj road (5,2)/(6,2) → road(0,2) 5 hops → ≈0.792.
-    seedSchool(world, 5, 0);
+    seedCoincidentLevelUpFixture(world);
 
     world.setElapsedDays(ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH - 1);
-
-    // Verify road (0,2) is powered and watered, and zone (0,1) inherits both, and is covered.
-    expect(world.getPowerMap().isPowered(0, 2)).toBe(true);
-    expect(world.getWaterMap().isWatered(0, 2)).toBe(true);
-    expect(world.getPowerMap().isPowered(0, 1)).toBe(true);
-    expect(world.getWaterMap().isWatered(0, 1)).toBe(true);
-    expect(world.getServiceCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
-    expect(world.getFireCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
-    expect(world.getHospitalCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
-    expect(world.getSchoolCoverageMap().getCoverage(0, 1)).toBeGreaterThan(0);
-    // Authoritative land-value guard: the level-5 gate is LEVEL_THRESHOLDS[5] = 0.85.
-    world.recomputeLandValue();
-    expect(world.getLandValue().getValue(0, 1)).toBeGreaterThanOrEqual(0.85);
-
-    // Seed a building at level (ZONE_MAX_LEVEL - 1) = 4 to level up on this growth tick.
-    // stagger(first-alloc-id)=0, cooldown=8. age=7 → after age+1=8 >= 8 → level-up fires.
-    mapF.getBuildings().addBuilding({
-      type: 'residential',
-      footprint: [{ x: 0, y: 1 }],
-      anchor: { x: 0, y: 1 },
-      level: ZONE_MAX_LEVEL - 1,
-      density: 0,
-      age: GROWTH_COOLDOWN_INTERVALS - 1,
-      abandoned: false,
-      frontage: 'S', // road is south at (0,2)
-      structureRect: { x: 0, y: 1, w: 1, h: 1 },
-    });
-    // Jobs sources so residential demand stays positive. Two level-4 commercials at (8,1) and
-    // (9,1) — covered, road-adjacent cells with lv ≈ 0.73, so level 4 (their supportable max)
-    // survives the abandonment sweep. Frontage 'S': the access node is the road row at y=2, so
-    // the probe's BFS actually reaches them; fronting 'N' onto grass would make the jobs
-    // invisible and residential demand 0. buildingCapacity(level 4, 1x1 sr) = 20, so two C
-    // give 40 jobs against the level-4 probe's 20 workers → net 20 on a market of 100 →
-    // resSeverity 0.75, comfortably above GROWTH_DEMAND_THRESHOLD. (Both sit on GRASS tiles,
-    // so the growth loop never visits them; only the sweep reads their anchors.)
-    for (const x of [8, 9]) {
-      expect(mapF.getBuildings().addExistingBuilding({
-        id: 990 + x,
-        type: 'commercial',
-        footprint: [{ x, y: 1 }],
-        anchor: { x, y: 1 },
-        level: 4,
-        density: 0,
-        age: 0,
-        abandoned: false,
-        frontage: 'S',
-        structureRect: { x, y: 1, w: 1, h: 1 },
-      })).toBe(true);
-    }
-
-    expectJobsReachable(world);
 
     const moneyBefore = world.getMoney();
     const level4Pop = world.getPopulation();
@@ -610,6 +623,54 @@ describe('World.tick() — monthly tax settlement', () => {
         - (10 * ROAD_UPKEEP + POWER_PLANT_UPKEEP + WATER_TOWER_UPKEEP + POLICE_STATION_UPKEEP + HOSPITAL_UPKEEP + FIRE_STATION_UPKEEP + SCHOOL_UPKEEP),
     );
     expect(mapF.getBuildings().getBuildingAt(0, 1)?.level).toBe(ZONE_MAX_LEVEL);
+  });
+
+  it('an unpaid settlement freezes the level-up on that same tick; the first growth pass after a fully-funded settlement levels up', () => {
+    const world = new World(10, 8, { regenerate: false });
+    seedCoincidentLevelUpFixture(world);
+    // Four unconnected plants in the free rows: they exist only to lift upkeep past the
+    // fixture's income, so a settlement from an empty treasury comes up short.
+    for (const x of [0, 2, 4, 6]) seedPower(world, x, 5);
+    const probe = () => world.getMap().getBuildings().getBuildingAt(0, 1)!;
+
+    const income = world.monthlyTaxIncome();
+    const upkeep = world.monthlyUpkeep();
+    expect(upkeep).toBeGreaterThan(income);
+    world.setMoney(0);
+
+    const tickTo = (day: number): void => {
+      while (world.getElapsedDays() < day) world.tick();
+    };
+
+    // Day 240: a month boundary AND a growth tick — gated by this same tick's payment.
+    const shortDay = ZONE_GROWTH_INTERVAL * DAYS_PER_MONTH;
+    world.setElapsedDays(shortDay - 1);
+    world.tick();
+    expect(world.getServiceFundingPerMille()).toBe(fundingPerMille(income, upkeep));
+    expect(world.getServiceFundingPerMille()).toBeLessThan(FUNDING_FULL_PER_MILLE);
+    expect(probe().level).toBe(ZONE_MAX_LEVEL - 1);
+    expect(probe().abandoned).toBe(false);
+
+    // Growth ticks 248, 256, 264 still read the short month: frozen, but still aging.
+    let lastAge = probe().age;
+    for (let day = shortDay + ZONE_GROWTH_INTERVAL; day < shortDay + DAYS_PER_MONTH; day += ZONE_GROWTH_INTERVAL) {
+      tickTo(day);
+      expect(probe().level).toBe(ZONE_MAX_LEVEL - 1);
+      expect(probe().abandoned).toBe(false);
+      expect(probe().age).toBeGreaterThan(lastAge);
+      lastAge = probe().age;
+    }
+
+    // Day 270: a settlement but not a growth tick — fully paid.
+    world.setMoney(STARTING_FUNDS);
+    const paidDay = shortDay + DAYS_PER_MONTH;
+    expect(paidDay % ZONE_GROWTH_INTERVAL).not.toBe(0);
+    tickTo(paidDay);
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
+
+    // Day 272: the first growth pass after the paid settlement.
+    tickTo(Math.ceil(paidDay / ZONE_GROWTH_INTERVAL) * ZONE_GROWTH_INTERVAL);
+    expect(probe().level).toBe(ZONE_MAX_LEVEL);
   });
 
   it('money is unchanged even on a month-boundary tick when population is 0', () => {
