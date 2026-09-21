@@ -47,6 +47,7 @@ import { DENSITY_DEMAND_THRESHOLD, GROWTH_DEMAND_THRESHOLD, MIGRATION_UNEMPLOYME
 import { TileType, createTile } from './Tile';
 import { SERVICE_COVERAGE_THRESHOLD_RAW } from './ServiceCoverageMap';
 import { serializeWorld, deserializeWorldInto } from './mapSerialization';
+import { FUNDING_FULL_PER_MILLE } from './serviceFunding';
 
 function seedPower(world: World, ax: number, ay: number): void {
   const added = world.getStructureMap().addStructure({
@@ -330,6 +331,68 @@ describe('World.setMoney()', () => {
   });
 });
 
+describe('World service funding — initial state', () => {
+  it('new World starts with FUNDING_FULL_PER_MILLE', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
+  });
+});
+
+describe('World.setServiceFundingPerMille()', () => {
+  it('returns true and sets funding to 0', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.setServiceFundingPerMille(0)).toBe(true);
+    expect(world.getServiceFundingPerMille()).toBe(0);
+  });
+
+  it('returns true and sets funding to 500', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.setServiceFundingPerMille(500)).toBe(true);
+    expect(world.getServiceFundingPerMille()).toBe(500);
+  });
+
+  it('returns true and sets funding to 1000', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(world.setServiceFundingPerMille(1000)).toBe(true);
+    expect(world.getServiceFundingPerMille()).toBe(1000);
+  });
+
+  it('returns false and leaves funding unchanged for -1', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const before = world.getServiceFundingPerMille();
+    expect(world.setServiceFundingPerMille(-1)).toBe(false);
+    expect(world.getServiceFundingPerMille()).toBe(before);
+  });
+
+  it('returns false and leaves funding unchanged for 1001', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const before = world.getServiceFundingPerMille();
+    expect(world.setServiceFundingPerMille(1001)).toBe(false);
+    expect(world.getServiceFundingPerMille()).toBe(before);
+  });
+
+  it('returns false and leaves funding unchanged for 12.5', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const before = world.getServiceFundingPerMille();
+    expect(world.setServiceFundingPerMille(12.5)).toBe(false);
+    expect(world.getServiceFundingPerMille()).toBe(before);
+  });
+
+  it('returns false and leaves funding unchanged for NaN', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const before = world.getServiceFundingPerMille();
+    expect(world.setServiceFundingPerMille(NaN)).toBe(false);
+    expect(world.getServiceFundingPerMille()).toBe(before);
+  });
+
+  it('returns false and leaves funding unchanged for Infinity', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const before = world.getServiceFundingPerMille();
+    expect(world.setServiceFundingPerMille(Infinity)).toBe(false);
+    expect(world.getServiceFundingPerMille()).toBe(before);
+  });
+});
+
 describe('World calendar', () => {
   it('from a fresh world getDate() is {1,1,1} and getElapsedDays() is 0', () => {
     const world = new World(4, 4, { regenerate: false });
@@ -555,6 +618,15 @@ describe('World.tick() — monthly tax settlement', () => {
     for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(before);
+    // Zero due (empty world, zero upkeep) reads fully funded.
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
+
+    // Zero due stays fully funded even with nothing in the treasury.
+    world.setMoney(0);
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+    expect(world.getElapsedDays()).toBe(2 * DAYS_PER_MONTH);
+    expect(world.getMoney()).toBe(0);
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
   });
 
   it('with zero population, a road row + power plant + park: the boundary tick lowers money by exactly the upkeep sum, and the 29 non-boundary ticks leave it untouched', () => {
@@ -593,6 +665,8 @@ describe('World.tick() — monthly tax settlement', () => {
 
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(0);
+    // Paid 100 of due 200 (POWER_PLANT_UPKEEP) → 500 per mille, on the boundary tick itself.
+    expect(world.getServiceFundingPerMille()).toBe(500);
 
     // The floor must hold under a SECOND settlement while already at 0 — not just on the
     // first tick that hits it.
@@ -600,6 +674,8 @@ describe('World.tick() — monthly tax settlement', () => {
 
     expect(world.getElapsedDays()).toBe(2 * DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(0);
+    // Paid 0 of due 200 → 0 per mille.
+    expect(world.getServiceFundingPerMille()).toBe(0);
   });
 
   it('with money exactly equal to upkeep, the Math.min tie lands money at exactly 0 (not -0)', () => {
@@ -615,6 +691,39 @@ describe('World.tick() — monthly tax settlement', () => {
 
     expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
     expect(world.getMoney()).toBe(0);
+    // Exact payment ending at money 0 still reads fully funded.
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
+  });
+
+  it('setMoney(0) with a road-adjacent residential building and a power plant where income exceeds upkeep: the boundary tick reads FUNDING_FULL_PER_MILLE (paid = due even though the treasury started at 0)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    const map = world.getMap();
+    map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+    // level 2, 1x1 structureRect → capacity 2*5 = 10 → income 10*DAYS_PER_MONTH = 300,
+    // comfortably above the power plant's 200 upkeep (plus 2 for the one road tile).
+    map.getBuildings().addBuilding({
+      type: 'residential',
+      footprint: [{ x: 0, y: 0 }],
+      anchor: { x: 0, y: 0 },
+      level: 2,
+      density: 0,
+      age: 0,
+      abandoned: false,
+      frontage: 'E',
+      structureRect: { x: 0, y: 0, w: 1, h: 1 },
+    });
+    const plant = world.getStructureMap().addStructure({
+      type: 'power_plant',
+      anchor: { x: 2, y: 2 },
+      footprint: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 2, y: 3 }, { x: 3, y: 3 }],
+    });
+    expect(plant).not.toBeNull();
+    world.setMoney(0);
+
+    for (let i = 0; i < DAYS_PER_MONTH; i++) world.tick();
+
+    expect(world.getElapsedDays()).toBe(DAYS_PER_MONTH);
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
   });
 
   it('the boundary tick calls earn() with the income and trySpend() with the upkeep; non-boundary ticks call neither', () => {
@@ -650,6 +759,22 @@ describe('World.reset() — treasury', () => {
     expect(world.getDate()).toEqual({ year: 1, month: 1, day: 1 });
     expect(world.getElapsedDays()).toBe(0);
     expect(world.getTick()).toBe(0);
+  });
+});
+
+describe('World.reset() — service funding', () => {
+  it('restores FUNDING_FULL_PER_MILLE after setServiceFundingPerMille(0) (regenerate: true)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.setServiceFundingPerMille(0);
+    world.reset({ regenerate: true });
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
+  });
+
+  it('restores FUNDING_FULL_PER_MILLE after setServiceFundingPerMille(0) (regenerate: false)', () => {
+    const world = new World(4, 4, { regenerate: false });
+    world.setServiceFundingPerMille(0);
+    world.reset({ regenerate: false });
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE);
   });
 });
 
@@ -3225,9 +3350,10 @@ function blendBudgetHealth(money: number, monthlyIncome: number, monthlyUpkeep: 
 
 /**
  * Pure mirror of World.recomputeHappiness()'s budgetHealth term, from public reads only.
- * Income mirrors the private `monthlyTaxIncome()`; upkeep mirrors the private `monthlyUpkeep()`
- * (structures via `structureUpkeep`, plus ROAD_UPKEEP per ROAD tile). Deriving both here — not
- * reading them back off the World — is what keeps this a real check rather than a restatement.
+ * Income and upkeep are deliberately RE-DERIVED here (structures via `structureUpkeep`, plus
+ * ROAD_UPKEEP per ROAD tile) rather than calling the now-public `monthlyTaxIncome()` /
+ * `monthlyUpkeep()` — reading them back off the World would make this a restatement, not a
+ * real check.
  */
 function mirrorBudgetHealth(world: World): number {
   const income = Math.floor(world.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;

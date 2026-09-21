@@ -36,6 +36,7 @@ import { lotBboxOf } from './buildingFootprint';
 import { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL } from './growthConstants';
 import { canMerge, mergedBuildingShape } from './mergePolicy';
 import { buildingCapacity } from './buildingCapacity';
+import { FUNDING_FULL_PER_MILLE, fundingPerMille, isValidFundingPerMille } from './serviceFunding';
 export { GROWTH_COOLDOWN_INTERVALS, stagger, LEVEL_THRESHOLDS, ZONE_MAX_LEVEL, POPULATION_PER_LEVEL } from './growthConstants';
 
 export const DEFAULT_NEWCITY_SEED = terrainGenerator.DEFAULT_NEWCITY_SEED;
@@ -276,6 +277,13 @@ export class World {
   private terrainRev: number = 0;
   private tickCount: number = 0;
   private money: number = STARTING_FUNDS;
+  /**
+   * Per-mille of last month's upkeep actually paid (FUNDING_FULL_PER_MILLE = paid in full).
+   * Persisted. Written only by the settlement in `tick()`, `reset()`, and the serialization
+   * setter below. Read by the growth pass as the freeze predicate (level-up, structure-grow,
+   * density, merge). Nothing derived caches this value, so no dirty mark accompanies a change.
+   */
+  private serviceFunding: number = FUNDING_FULL_PER_MILLE;
   /** 0-based elapsed days; incremented once per tick() (1 tick = 1 day). */
   private day: number = 0;
   /** Lazily allocated on first getLandValue() call. */
@@ -395,6 +403,10 @@ export class World {
     return this.money;
   }
 
+  getServiceFundingPerMille(): number {
+    return this.serviceFunding;
+  }
+
   /** 1-based calendar date derived from elapsed days; day index 0 ⇒ {year:1,month:1,day:1}. */
   getDate(): WorldDate {
     const daysPerYear = DAYS_PER_MONTH * MONTHS_PER_YEAR;
@@ -448,6 +460,17 @@ export class World {
     if (!this.isValidMoneyAmount(amount)) return false;
     this.money = amount;
     this.markHappinessDirty();
+    return true;
+  }
+
+  /**
+   * Restore the service-funding ratio to a specific per-mille value. For serialization use
+   * only — do not call this in normal gameplay logic; the monthly settlement in tick() is
+   * the only gameplay writer.
+   */
+  setServiceFundingPerMille(n: number): boolean {
+    if (!isValidFundingPerMille(n)) return false;
+    this.serviceFunding = n;
     return true;
   }
 
@@ -875,13 +898,21 @@ export class World {
     return sum;
   }
 
-  /** Tax income for one settled month, at the current (pre-growth) population. */
-  private monthlyTaxIncome(): number {
+  /**
+   * Tax income for one settled month, at the current (pre-growth) population.
+   * Read by the settlement in tick(), by recomputeHappiness (the budgetHealth flow term),
+   * by tests, and by the HUD's projected net flow.
+   */
+  monthlyTaxIncome(): number {
     return Math.floor(this.getPopulation() * TAX_PER_POP) * DAYS_PER_MONTH;
   }
 
-  /** Upkeep for one settled month: every placed structure plus every ROAD tile. */
-  private monthlyUpkeep(): number {
+  /**
+   * Upkeep for one settled month: every placed structure plus every ROAD tile.
+   * Read by the settlement in tick(), by recomputeHappiness (the budgetHealth flow term),
+   * by tests, and by the HUD's projected net flow.
+   */
+  monthlyUpkeep(): number {
     let sum = 0;
     for (const structure of this.structures.iterStructures()) {
       sum += structureUpkeep(structure.type);
@@ -933,6 +964,7 @@ export class World {
     this.tickCount = 0;
     this.day = 0;
     this.money = STARTING_FUNDS;
+    this.serviceFunding = FUNDING_FULL_PER_MILLE;
     this.landValueDirty = false;
 
     if (!regenerate) {
@@ -1101,10 +1133,18 @@ export class World {
     // through earn()/trySpend() so isValidMoneyAmount and markHappinessDirty() apply the same
     // way they do to player spending. Upkeep is clamped to the current balance first: the
     // treasury floors at 0 rather than carrying debt, so unaffordable upkeep is forgone, not
-    // deferred. Intra-month population changes are not prorated — accepted MVP tolerance.
+    // deferred — but the unpaid share is recorded as the per-mille funding ratio that the
+    // growth pass below reads as a hard freeze on level-up, structure-grow, density, and
+    // merge (not spawn, not the abandonment sweep). One uniform ratio covers all upkeep
+    // (structures and roads alike; no priority order). Settlement precedes the growth pass,
+    // so a tick that is both a growth tick and a month boundary is gated by this same
+    // month's payment. Intra-month population changes are not prorated — accepted MVP tolerance.
     if (this.day % DAYS_PER_MONTH === 0) {
       this.earn(this.monthlyTaxIncome());
-      this.trySpend(Math.min(this.monthlyUpkeep(), this.money));
+      const due = this.monthlyUpkeep();
+      const paid = Math.min(due, this.money);
+      this.trySpend(paid);
+      this.serviceFunding = fundingPerMille(paid, due);
     }
 
     // Pass 2: Zone growth — only on growth ticks.
