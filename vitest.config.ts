@@ -28,6 +28,7 @@ export default defineConfig({
         'game/core/buildingCapacity.ts',
         'game/core/LandValueMap.ts',
         'game/core/Map.ts',
+        'game/core/serviceFunding.ts',
         'game/core/World.ts',
         'game/core/Tile.ts',
         'game/core/mapSerialization.ts',
