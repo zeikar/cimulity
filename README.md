@@ -4,6 +4,8 @@
 
 **Open-source minimal city simulation game in the browser.**
 
+**[▶ Play the live demo](https://zeikar.dev/cimulity/)**
+
 Cimulity is a SimCity-style city builder built with Next.js, TypeScript, and PixiJS. It focuses on a small, readable simulation core: isometric terrain, roads, zoning, basic growth/economy, and terrain editing.
 
 ![Cimulity gameplay — an isometric city with roads, R/C/I buildings, service buildings, parks, and a coastline](docs/screenshots/city-overview.png)
