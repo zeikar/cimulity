@@ -1453,6 +1453,70 @@ describe('CommandDispatcher traffic dirty-marking — (c) zone-bulldoze removing
   });
 });
 
+describe('CommandDispatcher — removal-only batches are never blocked by cost', () => {
+  function makeWorld8(): World {
+    return new World(8, 8, { regenerate: false });
+  }
+
+  it('bulldozing a power plant at zero treasury still removes it: 4 changed tiles, structure gone, money stays 0', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    world.trySpend(world.getMoney()); // drain to 0
+    const result = executeClick(Tool.BULLDOZE, { x: 2, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(4);
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        expect(world.getMap().getTile(2 + dx, 2 + dy)?.type).toBe(TileType.DIRT);
+      }
+    }
+    expect(world.getStructureMap().getStructureAt(2, 2)).toBeNull();
+    expect(world.getMoney()).toBe(0);
+  });
+
+  it('drag-bulldozing two zoned tiles at money=1 (< 2×BULLDOZE_COST) charges only min(total, money), landing money at exactly 0', () => {
+    const world = makeWorld8();
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world);
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 3, y: 2 }, world);
+    expect(world.setMoney(1)).toBe(true);
+    const result = executeDrag(Tool.BULLDOZE, { x: 2, y: 2 }, { x: 3, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(2);
+    expect(world.getMap().getTile(2, 2)?.type).toBe(TileType.DIRT);
+    expect(world.getMap().getTile(3, 2)?.type).toBe(TileType.DIRT);
+    expect(world.getMoney()).toBe(0);
+  });
+
+  it('drag-bulldozing two zoned tiles at an affordable balance still charges the full 2×BULLDOZE_COST (regression control)', () => {
+    const world = makeWorld8();
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 2, y: 2 }, world);
+    executeClick(Tool.ZONE_RESIDENTIAL, { x: 3, y: 2 }, world);
+    expect(world.setMoney(BULLDOZE_COST * 3)).toBe(true);
+    const result = executeDrag(Tool.BULLDOZE, { x: 2, y: 2 }, { x: 3, y: 2 }, world);
+    expect(result.changedTiles).toHaveLength(2);
+    expect(world.getMoney()).toBe(BULLDOZE_COST * 3 - BULLDOZE_COST * 2);
+  });
+
+  it('a hand-built mixed batch (remove-structure + a non-removal tile write) at zero treasury stays all-or-nothing (regression control)', () => {
+    const world = makeWorld8();
+    executeClick(Tool.POWER_PLANT, { x: 2, y: 2 }, world);
+    const structure = world.getStructureMap().getStructureAt(2, 2);
+    expect(structure).not.toBeNull();
+    const structureId = structure!.id;
+    world.trySpend(world.getMoney()); // drain to 0
+
+    const result = applyCommands(
+      [
+        { kind: 'remove-structure', structureId },
+        { kind: 'tile', x: 5, y: 5, tile: createTile(5, 5, TileType.ROAD) },
+      ],
+      world,
+    );
+
+    expect(result.changedTiles).toEqual([]);
+    expect(world.getStructureMap().getStructureAt(2, 2)).not.toBeNull();
+    expect(world.getMoney()).toBe(0);
+  });
+});
+
 describe('place-structure upkeep reaches happiness without a tick', () => {
   it('placing a power plant lowers getHappiness() on the very next read', () => {
     // What this pins is the END-TO-END contract — a placement's cost AND its new monthly upkeep

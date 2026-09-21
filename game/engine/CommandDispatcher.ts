@@ -91,12 +91,31 @@ function tileKey(x: number, y: number): string {
 }
 
 /**
+ * True when a command only tears something down: a structure removal, or the
+ * DIRT tile write that buildBulldozeCommands (game/tools/ToolActions.ts) emits
+ * for a ROAD/ZONE clear — the only tool that ever writes DIRT. Drives the
+ * zero-treasury escape hatch in applyCommands below.
+ */
+function isRemovalCommand(cmd: ToolCommand): boolean {
+  if (cmd.kind === 'remove-structure') return true;
+  if (cmd.kind === 'tile') return cmd.tile.type === TileType.DIRT;
+  return false;
+}
+
+/**
  * Apply tool commands to core state; report tiles actually written.
  * This is the only place tool-driven mutation reaches core.
  *
  * Cost is charged on the whole batch before any tile write (all-or-nothing).
  * Same-zone repaint emits no commands → zero total → free, no trySpend call.
  * Insufficient funds → silent no-op, empty changedTiles.
+ *
+ * Exception: a batch made entirely of removal commands (remove-structure, or the
+ * DIRT tile writes bulldoze emits) is never rejected for cost — it charges
+ * whatever the treasury can cover, down to zero, and always applies. Demolition
+ * is the player's only way to cut monthly upkeep (see the settlement in
+ * `World.tick`), so it must stay available even at a zero treasury; blocking it
+ * on cost would make a stuck budget unrecoverable.
  *
  * Power and water are recomputed at the end of `applyCommands` whenever any
  * command dirtied them, so the next render frame always reads a fresh snapshot
@@ -133,9 +152,17 @@ export function applyCommands(commands: ToolCommand[], world: World): ToolResult
   if (commands.length === 0) return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
 
   const total = commands.reduce((s, c) => s + commandCost(c), 0);
-  // Never call trySpend(0) — only charge when there is an actual cost.
-  if (total > 0 && !world.trySpend(total)) {
-    return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
+  if (total > 0) {
+    if (commands.every(isRemovalCommand)) {
+      // Escape hatch: removal-only batches always apply. Charge whatever the
+      // treasury can cover, down to zero — never call trySpend(0) — and never
+      // reject for cost (see the JSDoc above).
+      const affordable = Math.min(total, world.getMoney());
+      if (affordable > 0) world.trySpend(affordable);
+    } else if (!world.trySpend(total)) {
+      // Never call trySpend(0) — only charge when there is an actual cost.
+      return { changedTiles: [], affectedTiles: [], removedBuildingIds: [] };
+    }
   }
 
   const map = world.getMap();
