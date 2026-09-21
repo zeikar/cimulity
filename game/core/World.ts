@@ -1038,9 +1038,9 @@ export class World {
    *      negative.
    *   6. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
    *      Hard funding freeze: unless the latest settlement (this tick's, on a coincident tick)
-   *      paid upkeep in full, no building structure-grows, levels up, or gains density. Spawn
-   *      is exempt — new buildings widen the tax base the city recovers through — and aging
-   *      and the abandonment sweep run as usual.
+   *      paid upkeep in full, no building structure-grows, levels up, gains density, or
+   *      merges. Spawn is exempt — new buildings widen the tax base the city recovers
+   *      through — and aging and the abandonment sweep run as usual.
    *      Growth reads `landValue` as a frozen snapshot recomputed at the start of this
    *      tick (when dirty or on cadence). The growth pass mutates Building.level/density/age
    *      but NOT `landValue` or any influence input. If a future rule mutates influence
@@ -1050,10 +1050,10 @@ export class World {
    *      therefore ACROSS ticks, never within one: the buildings growth changes only set dirty
    *      flags (markLaborDirty at the end of this tick), which resolve at step 3 of the NEXT
    *      tick. One-tick lag, bounded work per tick.
-   *      ABANDONMENT is deliberately OUTSIDE that loop: only growth decides on congestion,
-   *      and the sweep reads the uncongested land value instead, so no edge runs from
-   *      traffic to the verdict's land-value input. That acyclicity is the property this
-   *      design buys; the argument for it is at the sweep in the growth pass below.
+   *      ABANDONMENT is deliberately OUTSIDE that loop: only growth decides on congestion and
+   *      on funding, and the sweep reads the uncongested land value and never the funding
+   *      ratio, so no edge runs from traffic or funding to the verdict. That acyclicity is the
+   *      property this design buys; the argument for it is at the sweep in the growth pass below.
    */
   tick(): WorldTickResult {
     this.tickCount++;
@@ -1169,8 +1169,8 @@ export class World {
       // growth MUTATION below (structure-grow, level-up, density, merge) — never on spawn
       // (Branch A widens the tax base, which is how an underfunded city recovers), never on
       // `age += 1` (eligibility keeps accruing, as during dereliction), and never on the
-      // abandonment sweep below (its verdict must read only inputs the flag cannot change, and
-      // abandoning shrinks the tax base that pays upkeep — see its comment).
+      // abandonment sweep below (its verdict must read only inputs `abandoned` cannot change,
+      // and abandoning shrinks the tax base that pays upkeep — see its comment).
       const upkeepFunded = this.serviceFunding === FUNDING_FULL_PER_MILLE;
 
       // Abandonment sweep: runs BEFORE demand/growth so the same-tick growth reads
@@ -1193,8 +1193,16 @@ export class World {
       // that was closed by retuning a scalar. The remaining inputs — road, diversity,
       // service, park — are all things the flag cannot change, so reading only those makes
       // the verdict unable to alter its own next input, whatever the margins happen to be.
-      // Congestion keeps its bite by FREEZING growth at the congested `anchorLandValue`
-      // gates below; it never condemns.
+      // SERVICE FUNDING is the second input deliberately kept out of the verdict. The ratio is
+      // population-fed — the tax base decides how much of the upkeep gets paid — so condemning
+      // on it would run population → tax → ratio → verdict as a REINFORCING month-scale loop:
+      // each condemnation shrinks the tax base that pays next month's upkeep, deepening the
+      // shortfall that condemned it, where congestion's loop reverses itself. The sweep
+      // therefore reads neither `serviceFunding` nor any field derived from it (the land
+      // value's service term is station coverage, which funding does not touch).
+      // Congestion and funding both keep their bite by FREEZING growth — congestion at the
+      // congested `anchorLandValue` gates below, funding through `upkeepFunded` — and neither
+      // ever condemns.
       const frozenThisTick = new Set<number>();
       for (const b of buildings.iterBuildings()) {
         // One read feeds BOTH directions, so abandon and recover can never disagree about
@@ -1402,40 +1410,44 @@ export class World {
       // Branch B'' (merge): pairwise width-axis lot consolidation.
       // Multiple disjoint pairs may merge in a single growth tick — `usedThisTick`
       // ensures each building participates in at most one merge.
-      const candidates = [...buildings.iterBuildings()];
-      const usedThisTick = new Set<number>();
-      for (let i = 0; i < candidates.length; i++) {
-        const a = candidates[i];
-        if (usedThisTick.has(a.id)) continue;
-        if (frozenThisTick.has(a.id)) continue; // derelict / just-re-occupied — no merge this tick
-        if (!hasFrontageRoadAccess(a, this)) continue;
-        if (!isBuildingPowered(a, pw)) continue;
-        if (!isBuildingWatered(a, wm)) continue;
-        for (let j = i + 1; j < candidates.length; j++) {
-          const b = candidates[j];
-          if (usedThisTick.has(b.id)) continue;
-          if (frozenThisTick.has(b.id)) continue; // derelict / just-re-occupied — no merge this tick
-          if (!hasFrontageRoadAccess(b, this)) continue;
-          if (!isBuildingPowered(b, pw)) continue;
-          if (!isBuildingWatered(b, wm)) continue;
-          if (!canMerge(a, b, demandVec)) continue;
+      // A merge is densification — only an assembled lot reaches the top density tier
+      // (`maxDensityForLot`) — so it shares the upkeep-funding freeze with the other rungs.
+      if (upkeepFunded) {
+        const candidates = [...buildings.iterBuildings()];
+        const usedThisTick = new Set<number>();
+        for (let i = 0; i < candidates.length; i++) {
+          const a = candidates[i];
+          if (usedThisTick.has(a.id)) continue;
+          if (frozenThisTick.has(a.id)) continue; // derelict / just-re-occupied — no merge this tick
+          if (!hasFrontageRoadAccess(a, this)) continue;
+          if (!isBuildingPowered(a, pw)) continue;
+          if (!isBuildingWatered(a, wm)) continue;
+          for (let j = i + 1; j < candidates.length; j++) {
+            const b = candidates[j];
+            if (usedThisTick.has(b.id)) continue;
+            if (frozenThisTick.has(b.id)) continue; // derelict / just-re-occupied — no merge this tick
+            if (!hasFrontageRoadAccess(b, this)) continue;
+            if (!isBuildingPowered(b, pw)) continue;
+            if (!isBuildingWatered(b, wm)) continue;
+            if (!canMerge(a, b, demandVec)) continue;
 
-          const shape = mergedBuildingShape(a, b);
-          buildings.removeBuilding(a.id);
-          buildings.removeBuilding(b.id);
-          const merged = buildings.addBuilding(shape);
-          if (merged === null) {
-            throw new Error(
-              `merge invariant violated: addBuilding(merged) returned null for ` +
-              `a=${a.id} b=${b.id}`,
-            );
+            const shape = mergedBuildingShape(a, b);
+            buildings.removeBuilding(a.id);
+            buildings.removeBuilding(b.id);
+            const merged = buildings.addBuilding(shape);
+            if (merged === null) {
+              throw new Error(
+                `merge invariant violated: addBuilding(merged) returned null for ` +
+                `a=${a.id} b=${b.id}`,
+              );
+            }
+
+            usedThisTick.add(a.id);
+            usedThisTick.add(b.id);
+            changedBuildingIds.push(a.id, b.id, merged.id);
+            for (const c of merged.footprint) changedTiles.push({ x: c.x, y: c.y });
+            break; // a is used; move to next i
           }
-
-          usedThisTick.add(a.id);
-          usedThisTick.add(b.id);
-          changedBuildingIds.push(a.id, b.id, merged.id);
-          for (const c of merged.footprint) changedTiles.push({ x: c.x, y: c.y });
-          break; // a is used; move to next i
         }
       }
 

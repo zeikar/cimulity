@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { World, ZONE_GROWTH_INTERVAL } from './World';
+import { World, ZONE_GROWTH_INTERVAL, DAYS_PER_MONTH } from './World';
 import { LEVEL_THRESHOLDS, POPULATION_PER_LEVEL, POPULATION_PER_TILE_LEVEL } from './growthConstants';
+import { FUNDING_FULL_PER_MILLE } from './serviceFunding';
 import { TRAFFIC_CAPACITY } from './trafficAssignment';
 import { TileType, createTile } from './Tile';
 
@@ -467,5 +468,93 @@ describe('World.tick() — congestion freezes growth, it never condemns', () => 
       before: before[drifted],
       after: after[drifted],
     }).toBeNull();
+  });
+
+  // Nested here to reuse the corridor fixture: service funding is the other input that
+  // freezes growth but never condemns. Every sample is taken before elapsed day
+  // DAYS_PER_MONTH, because the first settlement re-derives the per-mille from each fixture's
+  // own books (fully funded in all of them) and would silently undo the seeded value.
+  describe('abandonment verdict is funding-independent', () => {
+    /** Asserts the sample precedes the first settlement and still sees the seeded per-mille. */
+    function expectSeededFunding(world: World, perMille: number): void {
+      expect(world.getElapsedDays()).toBeLessThan(DAYS_PER_MONTH);
+      expect(world.getServiceFundingPerMille()).toBe(perMille);
+    }
+
+    /** The bare-land level-2 resident of the first abandonment tests: no road → land value 0. */
+    function seedLevel2OnBareLand(perMille: number): World {
+      const world = new World(8, 8, { regenerate: false });
+      const map = world.getMap();
+      map.setTile(0, 0, createTile(0, 0, TileType.ZONE_RESIDENTIAL));
+      map.getBuildings().addExistingBuilding({
+        id: 0,
+        type: 'residential',
+        footprint: [{ x: 0, y: 0 }],
+        anchor: { x: 0, y: 0 },
+        level: 2,
+        density: 0,
+        age: 0,
+        abandoned: false,
+        frontage: 'E',
+        structureRect: { x: 0, y: 0, w: 1, h: 1 },
+      });
+      world.markLandValueDirty();
+      expect(world.setServiceFundingPerMille(perMille)).toBe(true);
+      return world;
+    }
+
+    it.each([FUNDING_FULL_PER_MILLE, 0])('per-mille %i: an under-supported level 2 is abandoned', (perMille) => {
+      const world = seedLevel2OnBareLand(perMille);
+
+      tickOneGrowthInterval(world);
+
+      expectSeededFunding(world, perMille);
+      expect(world.getMap().getBuildings().getBuilding(0)!.abandoned).toBe(true);
+      expect(world.getPopulation()).toBe(0);
+    });
+
+    it.each([FUNDING_FULL_PER_MILLE, 0])('per-mille %i: restoring land value re-occupies it — recovery is a verdict, not growth', (perMille) => {
+      const world = seedLevel2OnBareLand(perMille);
+      const map = world.getMap();
+
+      tickOneGrowthInterval(world);
+      expectSeededFunding(world, perMille);
+      expect(map.getBuildings().getBuilding(0)!.abandoned).toBe(true);
+
+      map.setTile(1, 0, createTile(1, 0, TileType.ROAD));
+      world.markLandValueDirty();
+      tickOneGrowthInterval(world);
+
+      expectSeededFunding(world, perMille);
+      expect(map.getBuildings().getBuilding(0)!.abandoned).toBe(false);
+      expect(world.getPopulation()).toBe(2 * POPULATION_PER_TILE_LEVEL);
+    });
+
+    it('the employed corridor probe is never abandoned, and the sweep input is identical, at either per-mille', () => {
+      const runs = [FUNDING_FULL_PER_MILLE, 0].map(perMille => {
+        const { world, probeId } = buildEmployedProbeCorridor();
+        expect(world.setServiceFundingPerMille(perMille)).toBe(true);
+        const probeAnchor = world.getMap().getBuildings().getBuilding(probeId)!.anchor;
+
+        world.markLaborDirty();
+        world.recomputeLandValueIfDirty();
+        const lv = world.getLandValue();
+        expect(lv.getUncongestedValue(probeAnchor.x, probeAnchor.y)).toBeGreaterThanOrEqual(LEVEL_THRESHOLDS[2]);
+        expect(lv.getValue(probeAnchor.x, probeAnchor.y)).toBeLessThan(LEVEL_THRESHOLDS[2]);
+
+        const abandonedSamples: boolean[] = [];
+        const uncongestedSamples: number[][] = [];
+        for (let i = 0; i < 3; i++) {
+          tickOneGrowthInterval(world);
+          expectSeededFunding(world, perMille);
+          abandonedSamples.push(world.getMap().getBuildings().getBuilding(probeId)!.abandoned);
+          uncongestedSamples.push(snapshotUncongested(world));
+        }
+        expect(abandonedSamples).toEqual([false, false, false]);
+        return uncongestedSamples;
+      });
+
+      expect(runs[1]).toEqual(runs[0]);
+    });
   });
 });

@@ -6,6 +6,7 @@ import { buildingCapacity } from './buildingCapacity';
 import { canExtendStructure, footprintCells, maxDensityForLot, structureDepth } from './zoneGrowth';
 import type { Rect } from './buildingFootprint';
 import { lotBboxOf } from './buildingFootprint';
+import { FUNDING_FULL_PER_MILLE } from './serviceFunding';
 import { TileType, createTile } from './Tile';
 import { executeClick } from '../engine/CommandDispatcher';
 import { Tool } from '../tools/Tool';
@@ -251,6 +252,37 @@ describe("World.tick() — merge (Branch B'')", () => {
     // structureRect = bbox union of the two 1×1 structureRects → 2×1
     expect(merged.structureRect).toEqual({ x: X0, y: R_Y, w: 2, h: 1 });
     expect(buildingCapacity(merged)).toBe(70); // conserved: 2·1·5·7 = 35 + 35
+  });
+
+  it('an underfunded month freezes the merge but not aging; full funding lets the pair merge', () => {
+    // The happy-path fixture above, whose pair merges on its first growth pass when funded.
+    const { world, ids } = setupMergeStrip(2);
+    const map = world.getMap();
+    const [idA, idB] = ids;
+    const popBefore = world.getPopulation();
+    const agesBefore = ids.map(id => map.getBuildings().getBuilding(id)!.age);
+
+    // Tick 8 precedes the first settlement (day 30), so nothing re-derives the per-mille.
+    world.setServiceFundingPerMille(FUNDING_FULL_PER_MILLE - 1);
+    const frozen = oneGrowthTick(world);
+
+    expect(world.getServiceFundingPerMille()).toBe(FUNDING_FULL_PER_MILLE - 1);
+    ids.forEach((id, i) => {
+      const b = map.getBuildings().getBuilding(id);
+      expect(b).not.toBeNull();
+      expect(b!.age).toBe(agesBefore[i] + 1); // aging is eligibility, not a growth mutation
+    });
+    expect(residentialOf(world).length).toBe(2);
+    expect(world.getPopulation()).toBe(popBefore);
+    expect(frozen.changedBuildingIds).not.toContain(idA);
+    expect(frozen.changedBuildingIds).not.toContain(idB);
+
+    world.setServiceFundingPerMille(FUNDING_FULL_PER_MILLE);
+    oneGrowthTick(world);
+
+    const remaining = residentialOf(world);
+    expect(remaining.length).toBe(1);
+    expect(remaining[0].structureRect).toEqual({ x: X0, y: R_Y, w: 2, h: 1 });
   });
 
   it('a derelict pair ages through the freeze, so it merges on the first unfrozen pass after recovery', () => {
