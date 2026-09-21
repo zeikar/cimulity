@@ -12,21 +12,27 @@ Cimulity is a SimCity-style city builder built with Next.js, TypeScript, and Pix
 
 ## Project Status
 
-MVP-1 is playable and in active development. The current build supports:
-- 64x64 isometric terrain with camera pan/zoom, hover/select, and drag previews
-- Roads, bulldoze, R/C/I zoning, and raise/lower/level terrain tools
-- Vertex-based terrain with smooth slopes, elevation-derived water, and coplanar road/zone placement
-- Fixed-timestep simulation with zone growth, lot merges (capacity-conserving at equal density tiers, capacity-gaining across mixed tiers), population, money (monthly tax income minus structure and road upkeep), speed/pause controls, autosave, and New City reset
-- Power plants + binary reachability gate zone growth
-- Water towers gate zone level-ups/density — density tiers now add real population/job capacity rather than a cosmetic tag, and once a lot is fully built out with its structure unable to extend any further, it merges with a neighbouring lot, unlocking the top density tier (power gates initial spawn)
-- Population, workforce, and job capacity all derive from each building's built structure area (not level alone), so a wider merged lot or a fully built-out structure holds proportionally more people and jobs
-- Police, fire, hospital, and school stations provide road-network coverage; level-up now requires all four at the anchor
-- Land value gates level-up, structure growth, and the density bump at the anchor: road proximity (weight 0.40), zone-mix diversity (0.10), service coverage (0.50 — avg of the four), plus additive park proximity (+0.25 max) and a subtractive road-congestion penalty (−0.20 max); park is a separate amenity, not a fifth coverage service
-- Display-only happiness KPI (0–1 scalar, land value/jobs/budget weighted minus a congestion penalty) and a toggleable statistics panel with population/money/happiness/congestion sparklines
-- Dot-art textures replace placeholder colored geometry: buildings get dynamic window lights (punched/curtain facades) and seeded per-building lot coverage; roads autotile into smooth diagonal asphalt ribbons with junction hubs and sidewalk aprons; terrain adds park/street decorations plus coastal sand and highland rock bands
-- Buildings above level 1 abandon (go derelict) when the uncongested land value drops below their level's requirement, and re-occupy on recovery; level 1 is the floor, and traffic congestion is deliberately excluded from that verdict, freezing growth instead of condemning
-- Aggregate labor market (job capacity, worker matching, employment) routes commutes over the road graph; those commute flows load each road tile into a per-tile congestion value, and a data-view overlay (None/Traffic/Jobs) visualizes both
-- R/C/I demand is now derived from labor-market balance (jobs vs. workers), not blended in as a secondary signal, with a small damped floor (in-migration for R, an external-market pull for C/I) that keeps all three bars off exact zero at a fully employed balance, each still falling to zero past its own cutoff
+MVP-1 is playable and in active development. It is an open-ended sandbox: there is no win/lose condition, and the treasury floors at 0 instead of going into debt.
+
+**Map and tools**
+- 64x64 isometric map with camera pan/zoom, hover/select, and drag previews
+- Vertex-based terrain with smooth slopes, elevation-derived water, and raise/lower/level tools; roads and zones can be placed on flat or single-plane (ramp) tiles, but buildings only spawn on flat land
+- Roads, bulldoze, R/C/I zoning, power plants, water towers, police/fire/hospital/school stations, and parks
+
+**Simulation**
+- Fixed-timestep loop with speed/pause controls, autosave, and New City reset
+- Zone growth needs power to spawn or grow at all; structure growth, level-up, and the density bump additionally need water, all four service coverages at the anchor, and enough anchor land value
+- Land value = road proximity (0.40) + zone-mix diversity (0.10) + service coverage (0.50, avg of the four), plus park proximity (+0.25 max) and minus road congestion (−0.20 max); a park is an amenity, not a fifth coverage service
+- Population, workforce, and job capacity derive from each building's built structure area, level, and density tier; a fully built-out lot can merge with an equally built-out, aligned neighbour of the same zone (capacity-conserving at equal density tiers, capacity-gaining across mixed tiers), unlocking the top density tier
+- An aggregate labor market matches workers to jobs over the road graph; the resulting commute flows load each road tile into a per-tile congestion value
+- R/C/I demand derives from labor-market balance (jobs vs. workers; commercial also tracks its retail share), with a small damped floor (in-migration for R, an external-market pull for C/I) that keeps each bar off exact zero at a fully employed balance
+- Buildings above level 1 go derelict when their uncongested land value drops below their level's requirement, and re-occupy on recovery; congestion freezes growth but never causes abandonment
+- Money is monthly tax income minus structure and road upkeep, and placing anything spends from it
+
+**Display**
+- Happiness KPI (0–1, display-only): land value, jobs, and budget weighted, minus a congestion penalty
+- Toggleable statistics panel (population/money/happiness/congestion/unemployment sparklines) and a data-view overlay (None/Traffic/Jobs)
+- Dot-art textures: buildings with dynamic window lights (punched/curtain facades) and seeded per-building lot coverage; autotiled roads with smooth diagonal ribbons, junction hubs, and sidewalk aprons; park/street decorations plus coastal sand and highland rock bands
 
 Next focus: sound effects and continued tool-feedback polish.
 
@@ -77,7 +83,7 @@ See [docs/architecture.md](docs/architecture.md) for the full layer diagram, dir
 
 - [x] **Services** - Police, fire, hospital, and school coverage all shipped (road-network + distance falloff); the coverage family has four members (police/fire/hospital emergency trio + school education); level-up gates on all four at the anchor
 - [x] **Parks** - Park tile shipped (forest-green, keyboard K, cost 100); raises nearby land value (Chebyshev radius 4, additive +0.25 max, nearest-park strongest-wins); park is a land-value amenity — it is NOT a fifth coverage service (the formula is road 0.40 + diversity 0.10 + service 0.50, plus the additive park +0.25 and a subtractive road-congestion penalty of −0.20 max)
-- [x] **Happiness/statistics** - Display-only happiness KPI (0..1) and a statistics panel with population/money/happiness/congestion sparklines; happiness does not yet feed simulation
+- [x] **Happiness/statistics** - Display-only happiness KPI (0..1) and a statistics panel with population/money/happiness/congestion/unemployment sparklines; happiness does not yet feed simulation
 - [ ] **Sound effects** - Audio feedback
 - [x] **Land-value model** - Road weight rebalanced 0.7→0.40, diversity 0.3→0.10; the four coverage services now contribute a combined service term (weight 0.50, average of the four normalised coverages) atop the additive park bonus (+0.25) and a subtractive road-congestion penalty (−0.20 max). Services play a dual role: hard-gate level-up at the anchor AND feed land value.
 
