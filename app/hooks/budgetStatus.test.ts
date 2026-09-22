@@ -9,11 +9,13 @@ describe('budgetStatus', () => {
     [5000, 500, 1500, 1000, -1000, 100, false, 5, '⚠ Treasury empty in ~5 months — upkeep exceeds tax income.'], // deficit with money
     [5001, 1000, 1500, 1000, -500, 100, false, 11, '⚠ Treasury empty in ~11 months — upkeep exceeds tax income.'], // ceil case: 5001/500 = 10.002 -> 11
     [400, 1000, 1500, 1000, -500, 100, false, 1, '⚠ Treasury empty in ~1 month — upkeep exceeds tax income.'], // singular month
+    [12000, 0, 1000, 1000, -1000, 100, false, 12, '⚠ Treasury empty in ~12 months — upkeep exceeds tax income.'], // at the warning horizon
+    [13000, 0, 1000, 1000, -1000, 100, false, 13, null], // beyond the warning horizon: runway still reported, no alarm
     [0, 700, 1000, 1000, -300, 100, false, 0, '⚠ Upkeep exceeds tax income — the next settlement goes unpaid and freezes growth.'], // zero-treasury deficit, still fully funded per-mille
-    [0, 0, 0, 545, 0, 54, true, null, '⚠ Upkeep unpaid (funded 54%) — growth frozen.'], // active shortfall, no deficit in play
-    [100, 400, 500, 800, -100, 80, true, 1, '⚠ Upkeep unpaid (funded 80%) — growth frozen.'], // shortfall wins over a computed runway of 1
-    [1000, 1000, 800, 999, 200, 99, true, null, '⚠ Upkeep unpaid (funded 99%) — growth frozen.'], // fundedPercent floors: 999/10 -> 99, still underfunded
-    [1000, 1000, 800, 500, 200, 50, true, null, '⚠ Upkeep unpaid (funded 50%) — growth frozen.'], // recovered net flow but freeze is live until the next settlement
+    [0, 0, 0, 545, 0, 54, true, null, '⚠ Last month\'s upkeep went unpaid — growth frozen until a month is paid in full.'], // active shortfall, no deficit in play
+    [100, 400, 500, 800, -100, 80, true, 1, '⚠ Last month\'s upkeep went unpaid — growth frozen until a month is paid in full.'], // shortfall wins over a computed runway of 1
+    [1000, 1000, 800, 999, 200, 99, true, null, '⚠ Last month\'s upkeep went unpaid — growth frozen until a month is paid in full.'], // fundedPercent floors: 999/10 -> 99, still underfunded
+    [1000, 1000, 800, 500, 200, 50, true, null, '⚠ Last month\'s upkeep went unpaid — growth frozen until a month is paid in full.'], // recovered net flow but freeze is live until the next settlement
   ])(
     'money=%i income=%i upkeep=%i perMille=%i → netFlow=%i fundedPercent=%i underfunded=%s',
     (money, monthlyIncome, monthlyUpkeep, serviceFundingPerMille, netFlow, fundedPercent, underfunded, runwayMonths, warning) => {

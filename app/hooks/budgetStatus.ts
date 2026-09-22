@@ -7,6 +7,11 @@
 // imported) so this file stays free of game/core imports; keep in sync by hand.
 const FUNDING_FULL_PER_MILLE = 1000;
 
+// A deficit whose runway is further out than this is not worth an alarm: a single road in an
+// empty city already projects decades of runway, and a permanent red line trains the player
+// to ignore it.
+const RUNWAY_WARNING_MONTHS = 12;
+
 export type BudgetInput = {
   money: number;
   monthlyIncome: number;
@@ -38,10 +43,12 @@ export function budgetStatus(input: BudgetInput): BudgetStatus {
   // (growth is frozen right now, as of the last settlement), while runwayMonths is a
   // projection of what might happen later. A live consequence always outranks a forecast.
   if (underfunded) {
-    warning = `⚠ Upkeep unpaid (funded ${fundedPercent}%) — growth frozen.`;
+    // The funded % sits on its own HUD row; the warning says how long the freeze lasts, since
+    // net flow may already be positive while last month's shortfall still holds growth.
+    warning = "⚠ Last month's upkeep went unpaid — growth frozen until a month is paid in full.";
   } else if (runwayMonths === 0) {
     warning = '⚠ Upkeep exceeds tax income — the next settlement goes unpaid and freezes growth.';
-  } else if (runwayMonths !== null) {
+  } else if (runwayMonths !== null && runwayMonths <= RUNWAY_WARNING_MONTHS) {
     const monthWord = runwayMonths === 1 ? 'month' : 'months';
     warning = `⚠ Treasury empty in ~${runwayMonths} ${monthWord} — upkeep exceeds tax income.`;
   }
