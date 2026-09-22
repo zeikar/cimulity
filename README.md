@@ -27,9 +27,10 @@ MVP-1 is playable and in active development. It is an open-ended sandbox: there 
 - An aggregate labor market matches workers to jobs over the road graph; the resulting commute flows load each road tile into a per-tile congestion value
 - R/C/I demand derives from labor-market balance (jobs vs. workers; commercial also tracks its retail share), with a small damped floor (in-migration for R, an external-market pull for C/I) that keeps each bar off exact zero at a fully employed balance
 - Buildings above level 1 go derelict when their uncongested land value drops below their level's requirement, and re-occupy on recovery; congestion freezes growth but never causes abandonment
-- Money is monthly tax income minus structure and road upkeep, and placing anything spends from it
+- Money is monthly tax income minus structure and road upkeep, and placing anything spends from it. A month that can't pay its upkeep in full freezes building growth (level-up, structure growth, density, merges) until a month is paid in full again; new buildings still spawn, nothing is abandoned over it, and an empty treasury never blocks demolition
 
 **Display**
+- HUD shows projected net flow (income minus upkeep) and the percentage of last month's upkeep actually funded, plus a warning line for growth-freezing shortfalls or a low treasury runway
 - Happiness KPI (0–1, display-only): land value, jobs, and budget weighted, minus a congestion penalty
 - Toggleable statistics panel (population/money/happiness/congestion/unemployment sparklines) and a data-view overlay (None/Traffic/Jobs)
 - Dot-art textures: buildings with dynamic window lights (punched/curtain facades) and seeded per-building lot coverage; autotiled roads with smooth diagonal ribbons, junction hubs, and sidewalk aprons; park/street decorations plus coastal sand and highland rock bands

@@ -167,7 +167,9 @@ export const PARK_COST = 100;
  * even at population 34 — comfortably inside the runway STARTING_FUNDS=10000 still leaves
  * after the ~5100 the same loadout costs to place. This and every other *_UPKEEP constant below
  * (plus ROAD_UPKEEP per road tile) must stay a whole integer: earn()/trySpend() silently ignore
- * a non-integer amount.
+ * a non-integer amount. Below that break-even point, once the treasury is drained a month's tax
+ * income no longer covers the loadout's upkeep, and the resulting funding shortfall freezes
+ * structure-grow, level-up, density, and merge city-wide until a month settles fully paid again.
  */
 export const POWER_PLANT_UPKEEP = 200;
 /** Monthly upkeep for a water tower: WATER_TOWER_COST=800 / 5. */
@@ -924,7 +926,8 @@ export class World {
   }
 
   /**
-   * Reset to a blank city: clear the map, the tick counter, the calendar, and the treasury.
+   * Reset to a blank city: clear the map, the tick counter, the calendar, the treasury, and
+   * the service-funding ratio (restored to fully funded, so a fresh city never starts frozen).
    * Also clears the StructureMap and zeroes the PowerMap backing array so subsequent
    * `isPowered` reads start clean.
    * installTerrain creates a fresh Terrain and bumps terrainRev — SelectionRenderer's
@@ -1035,7 +1038,10 @@ export class World {
    *      boundary settles on the pre-level-up population; that level-up is taxed next month),
    *      through earn()/trySpend() so isValidMoneyAmount and markHappinessDirty() apply to both.
    *      Upkeep the treasury cannot cover is forgone, not carried as debt — money never goes
-   *      negative.
+   *      negative. The settlement also records how much of that upkeep it actually paid as a
+   *      persisted per-mille ratio (`serviceFunding`, via `fundingPerMille`), which step 6
+   *      below reads as a hard freeze on structure-grow, level-up, density, and merge until a
+   *      month settles fully paid again.
    *   6. Zone growth: gated on tickCount % ZONE_GROWTH_INTERVAL === 0.
    *      Hard funding freeze: unless the latest settlement (this tick's, on a coincident tick)
    *      paid upkeep in full, no building structure-grows, levels up, gains density, or
