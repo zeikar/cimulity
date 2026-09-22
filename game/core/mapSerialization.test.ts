@@ -4,17 +4,17 @@ import { TileType, createTile } from './Tile';
 import { serializeWorld, deserializeWorldInto, WORLD_SAVE_VERSION } from './mapSerialization';
 
 describe('WORLD_SAVE_VERSION', () => {
-  it('is 19', () => {
-    expect(WORLD_SAVE_VERSION).toBe(19);
+  it('is 20', () => {
+    expect(WORLD_SAVE_VERSION).toBe(20);
   });
 });
 
-describe('v19 serialization', () => {
-  it('WORLD_SAVE_VERSION is 19 and serializeWorld emits vertex-smooth terrain', () => {
+describe('v20 serialization', () => {
+  it('WORLD_SAVE_VERSION is 20 and serializeWorld emits vertex-smooth terrain', () => {
     const world = new World(4, 4, { regenerate: false });
     const parsed = JSON.parse(serializeWorld(world));
-    expect(WORLD_SAVE_VERSION).toBe(19);
-    expect(parsed.v).toBe(19);
+    expect(WORLD_SAVE_VERSION).toBe(20);
+    expect(parsed.v).toBe(20);
     expect(parsed.terrain.mode).toBe('vertex-smooth');
     expect(parsed.terrain.vertexHeights).toHaveLength(5);
     expect('tileElevations' in parsed.terrain).toBe(false);
@@ -374,9 +374,62 @@ describe('v19 serialization', () => {
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(base))).toBe(true);
   });
 
-  it('rejects a v18 save (v18 and earlier rejected since v19 is native)', () => {
+  it('serializeWorld emits sf equal to getServiceFundingPerMille()', () => {
+    const world = new World(4, 4, { regenerate: false });
+    expect(JSON.parse(serializeWorld(world)).sf).toBe(1000);
+
+    world.setServiceFundingPerMille(500);
+    expect(JSON.parse(serializeWorld(world)).sf).toBe(500);
+  });
+
+  it('round-trips the service-funding ratio and resets to full on World.reset', () => {
+    const src = new World(4, 4, { regenerate: false });
+    src.setServiceFundingPerMille(500);
+
+    const dst = new World(4, 4, { regenerate: false });
+    expect(deserializeWorldInto(dst, serializeWorld(src))).toBe(true);
+    expect(dst.getServiceFundingPerMille()).toBe(500);
+
+    dst.reset({ regenerate: false });
+    expect(dst.getServiceFundingPerMille()).toBe(1000);
+  });
+
+  it('rejects sf missing, out of range, non-integer, or non-numeric without mutating the target', () => {
+    const makeBase = () => JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
+
+    const target = new World(4, 4, { regenerate: false });
+    target.getMap().setTile(0, 0, createTile(0, 0, TileType.ROAD));
+
+    const missing = makeBase();
+    delete missing.sf;
+    expect(deserializeWorldInto(target, JSON.stringify(missing))).toBe(false);
+
+    const tooHigh = makeBase();
+    tooHigh.sf = 1001;
+    expect(deserializeWorldInto(target, JSON.stringify(tooHigh))).toBe(false);
+
+    const negative = makeBase();
+    negative.sf = -1;
+    expect(deserializeWorldInto(target, JSON.stringify(negative))).toBe(false);
+
+    const fractional = makeBase();
+    fractional.sf = 12.5;
+    expect(deserializeWorldInto(target, JSON.stringify(fractional))).toBe(false);
+
+    const stringValue = makeBase();
+    stringValue.sf = '500';
+    expect(deserializeWorldInto(target, JSON.stringify(stringValue))).toBe(false);
+
+    // Target must be unmodified through all five rejections.
+    expect(target.getMap().getTile(0, 0)?.type).toBe(TileType.ROAD);
+  });
+
+  it('rejects v18 and v19 saves (only v20 is native)', () => {
     const obj = JSON.parse(serializeWorld(new World(4, 4, { regenerate: false })));
     obj.v = 18;
+    expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
+
+    obj.v = 19;
     expect(deserializeWorldInto(new World(4, 4, { regenerate: false }), JSON.stringify(obj))).toBe(false);
   });
 });
@@ -926,7 +979,7 @@ describe('v16 police station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(19);
+    expect(parsed.v).toBe(20);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1027,7 +1080,7 @@ describe('v16 fire station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(19);
+    expect(parsed.v).toBe(20);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1128,7 +1181,7 @@ describe('v16 hospital station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(19);
+    expect(parsed.v).toBe(20);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1229,7 +1282,7 @@ describe('v16 school station persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(19);
+    expect(parsed.v).toBe(20);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);
@@ -1324,7 +1377,7 @@ describe('v17 park persistence', () => {
 
     const json1 = serializeWorld(src);
     const parsed = JSON.parse(json1);
-    expect(parsed.v).toBe(19);
+    expect(parsed.v).toBe(20);
 
     const dst = new World(W, W, { regenerate: false });
     expect(deserializeWorldInto(dst, json1)).toBe(true);

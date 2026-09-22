@@ -1,7 +1,7 @@
 /**
  * World-envelope (de)serialization.
  *
- * v19 is native; v18 and earlier are rejected; `worldStore` falls back to a fresh
+ * v20 is native; v19 and earlier are rejected; `worldStore` falls back to a fresh
  * procedural world. `t[]` accepts only
  * the current `TileType` enum; coherence (water ⇒ GRASS && no building footprint) is checked after
  * staging validation and before commit. `serializeWorld` does NOT validate coherence —
@@ -20,19 +20,17 @@ import type { Building } from './Building';
 import { Terrain, SEA_LEVEL } from './Terrain';
 import { isStructureType, structureFootprintSize } from './StructureMap';
 import type { Structure, StructureType } from './StructureMap';
+import { isValidFundingPerMille } from './serviceFunding';
 
 /**
  * World-envelope version — owned by serializeWorld/deserializeWorldInto.
- * This is the `v` value written to disk. Only native v19 saves are accepted.
+ * This is the `v` value written to disk. Only native v20 saves are accepted.
  *
- * Bumped 18 -> 19 because the lot-width density cap (`maxDensityForLot`) makes a pre-change
- * save's over-cap density (a 1-wide lot at density 2) a state no SIMULATION path can produce going
- * forward; rejecting stale saves at load is one of two independent guards against it persisting —
- * see `validateBuildingsArray`'s own `e.den > maxDensityForLot(...)` check below for the other,
- * which also catches an over-cap building hand-crafted directly into a *native* v19 envelope (e.g.
- * via devApi, which can construct any otherwise-unreachable state and is not itself blocked here).
+ * Bumped 19 -> 20 because the envelope gains `sf` (the service-funding per-mille recorded at the
+ * monthly settlement); a v19 save carries no funding state to restore, so per CLAUDE.md's
+ * "no migration" rule it is rejected outright rather than backfilled with a default.
  */
-export const WORLD_SAVE_VERSION = 19;
+export const WORLD_SAVE_VERSION = 20;
 
 /**
  * Maps a StructureType to its corresponding TileType — single source of truth so
@@ -86,7 +84,7 @@ interface BuildingSaveEntry {
 
 /**
  * Serialize the full world state to a JSON string.
- * Always emits `v: WORLD_SAVE_VERSION` (= 19).
+ * Always emits `v: WORLD_SAVE_VERSION` (= 20).
  * Does NOT validate coherence — the in-memory world is serialized as-is.
  *
  * `b[]` and `s[]` are both sorted by id ascending for deterministic byte-equality across round-trips.
@@ -135,6 +133,7 @@ export function serializeWorld(world: World): string {
     l,
     m: world.getMoney(),
     d: world.getElapsedDays(),
+    sf: world.getServiceFundingPerMille(),
     b,
     s,
     terrain: world.getTerrain().toJSON(),
@@ -150,6 +149,7 @@ interface WorldSaveData {
   l: number[];
   m: number;
   d: number;
+  sf: number; // service-funding per-mille, integer 0..1000 (see serviceFunding.ts)
   b: unknown[];
   s: unknown[];
   terrain: unknown;
@@ -339,10 +339,10 @@ function validateStructuresArray(
 }
 
 /**
- * Apply a serialized v19 world envelope onto an existing World instance.
+ * Apply a serialized v20 world envelope onto an existing World instance.
  * @returns true if the full world state was committed; false (without mutating) on any failure.
  *
- * Ordering: parse → shape-guard → v===19 → dims → m/d → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
+ * Ordering: parse → shape-guard → v===20 → dims → m/d/sf → t[] → l[] → b[] → s[] → orphan-check → terrain → coherence → commit.
  * Full staging-then-commit: every invariant is checked before any world mutation.
  */
 export function deserializeWorldInto(world: World, json: string): boolean {
@@ -376,6 +376,8 @@ export function deserializeWorldInto(world: World, json: string): boolean {
   // Money + day: both required, whole non-negative integers.
   if (!Number.isInteger(data.m) || data.m < 0) return false;
   if (!Number.isInteger(data.d) || data.d < 0) return false;
+  // Service-funding ratio: required integer per-mille in [0, 1000] (isValidFundingPerMille).
+  if (!isValidFundingPerMille(data.sf)) return false;
 
   // t[]: required array of length w*h with every entry in the current TileType enum.
   const size = w * h;
@@ -508,9 +510,12 @@ export function deserializeWorldInto(world: World, json: string): boolean {
 
   world.setMoney(data.m);
   world.setElapsedDays(data.d);
+  world.setServiceFundingPerMille(data.sf);
 
   // Land value and service coverage are not persisted — mark dirty so the first tick after load recomputes.
   // Demand is dirtied via the markLaborDirty() cascade below.
+  // The funding ratio IS persisted and is restored above, so a save taken mid-freeze stays
+  // frozen on the first growth pass after load until the next fully-paid monthly settlement.
   world.markLandValueDirty();
   world.markPowerDirty();
   // Drain power dirty here so the first render frame after load never sees a stale snapshot — `World.tick` recompute is defense-in-depth, not the only path.

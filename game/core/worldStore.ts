@@ -21,19 +21,18 @@ import { serializeWorld, deserializeWorldInto } from './mapSerialization';
 
 const MAP_WIDTH = 64;
 const MAP_HEIGHT = 64;
-// Storage key bumped to 'cimulity:save:v19' to match WORLD_SAVE_VERSION = 19.
-// Legacy saves at ':v18 and earlier' remain in localStorage untouched but are never read.
+// Storage key bumped to 'cimulity:save:v20' to match WORLD_SAVE_VERSION = 20.
+// Legacy saves at ':v19 and earlier' remain in localStorage untouched but are never read.
 // First save under this key always creates fresh data (no silent overwrite of stale data).
-const STORAGE_KEY = 'cimulity:save:v19';
+const STORAGE_KEY = 'cimulity:save:v20';
 
-// Bumped to service-v19 for two behavioural changes to World that `hasCurrentWorldApi`
-// cannot detect:
-//   1. World.tick's monthly settlement now charges structure and road upkeep (previously free);
-//   2. recomputeHappiness now blends treasury stock with monthly net flow (previously stock only).
-// Neither change adds a public method, so the API probe cannot see them. A retained singleton
-// would keep running the free-upkeep settlement for the rest of the session; the save format
-// is untouched at v19.
-const WORLD_SINGLETON_GUARD = 'service-v19' as const;
+// Bumped to service-v20: the monthly settlement now records the service-funding ratio and the
+// growth pass gates structure-grow/level-up/density/merge on it — a behavioural change
+// `hasCurrentWorldApi` cannot detect on its own. A retained singleton would keep growing
+// unconditionally regardless of unpaid upkeep. The new public methods (getServiceFundingPerMille,
+// setServiceFundingPerMille, monthlyTaxIncome, monthlyUpkeep) are probed below so a singleton that
+// predates them is discarded even if the sentinel were somehow stale.
+const WORLD_SINGLETON_GUARD = 'service-v20' as const;
 
 const store = globalThis as unknown as {
   __cimulityWorld?: World;
@@ -63,10 +62,7 @@ function readSave(): string | null {
  * `GameMap`, `BuildingMap`, or `StructureMap` — stale HMR singletons missing
  * the method break the app.**
  *
- * Checked methods (as of service-v19). The list itself has not moved since service-v15 —
- * v16, v17, v18, and v19 were behavioural `World.tick` and `recomputeHappiness` bumps that
- * added no method to this surface — but the stamp tracks the guard so a reader can tell at a
- * glance that it was reviewed against the current sentinel:
+ * Checked methods (as of service-v20):
  *   World: getMoney, trySpend, setMoney, getDate, getElapsedDays, setElapsedDays,
  *          getMap, getLandValue, markLandValueDirty, recomputeLandValueIfDirty,
  *          recomputeLandValue, getHappiness, getTerrain, installTerrain, getTerrainRevision,
@@ -81,6 +77,7 @@ function readSave(): string | null {
  *          getTrafficMap, markTrafficDirty, recomputeTrafficIfDirty, recomputeTraffic,
  *          getLaborMarket, markLaborDirty, recomputeLaborIfDirty, recomputeLabor,
  *          getEmployed, getUnemployed, getJobsCapacity,
+ *          getServiceFundingPerMille, setServiceFundingPerMille, monthlyTaxIncome, monthlyUpkeep,
  *          getStructureMap
  *   GameMap: getBuildings, setTileAndReconcile
  *   BuildingMap: getBuildingAt, getBuilding, iterBuildings, getAllBuildings,
@@ -98,6 +95,16 @@ function hasCurrentWorldApi(world: World): boolean {
     typeof world.getDate !== 'function' ||
     typeof world.getElapsedDays !== 'function' ||
     typeof world.setElapsedDays !== 'function'
+  ) {
+    return false;
+  }
+  // Service-funding ratio API (added service-v20): persisted per-mille + the income/upkeep
+  // figures the monthly settlement derives it from.
+  if (
+    typeof world.getServiceFundingPerMille !== 'function' ||
+    typeof world.setServiceFundingPerMille !== 'function' ||
+    typeof world.monthlyTaxIncome !== 'function' ||
+    typeof world.monthlyUpkeep !== 'function'
   ) {
     return false;
   }

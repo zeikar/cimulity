@@ -39,8 +39,8 @@ function makeFakeStorage(): FakeStorage {
   };
 }
 
-// The storage key mirrors the constant in worldStore.ts (v19 cut).
-const STORAGE_KEY = 'cimulity:save:v19';
+// The storage key mirrors the constant in worldStore.ts (v20 cut).
+const STORAGE_KEY = 'cimulity:save:v20';
 
 // ---- singleton reset helper ----
 
