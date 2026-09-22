@@ -227,7 +227,7 @@ function validateBuildingsArray(
     const lot = lotBboxOf(footprint);
 
     // Density is capped by lot width (maxDensityForLot), not just the 0..2 enum range checked
-    // above — a native v19 save can still be hand-crafted (e.g. via devApi, the one legitimate
+    // above — a native save can still be hand-crafted (e.g. via devApi, the one legitimate
     // producer of otherwise-unreachable states) with a one-wide lot at density 2, which would
     // recreate the mixed-density merge deadlock the lot-width cap exists to prevent. Reject it
     // here rather than clamp it: clamping would silently rewrite the save's data, the exact

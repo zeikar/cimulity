@@ -46,7 +46,9 @@ export function budgetStatus(input: BudgetInput): BudgetStatus {
     // The funded % sits on its own HUD row; the warning says how long the freeze lasts, since
     // net flow may already be positive while last month's shortfall still holds growth.
     warning = "⚠ Last month's upkeep went unpaid — growth frozen until a month is paid in full.";
-  } else if (runwayMonths === 0) {
+  } else if (netFlow < 0 && money < -netFlow) {
+    // The settlement adds income, then pays min(upkeep, money): it comes up short whenever the
+    // treasury can't absorb one month's deficit, not only once it is already empty.
     warning = '⚠ Upkeep exceeds tax income — the next settlement goes unpaid and freezes growth.';
   } else if (runwayMonths !== null && runwayMonths <= RUNWAY_WARNING_MONTHS) {
     const monthWord = runwayMonths === 1 ? 'month' : 'months';

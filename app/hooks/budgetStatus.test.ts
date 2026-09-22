@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { budgetStatus } from './budgetStatus';
+import { FUNDING_FULL_PER_MILLE } from '@/game/core/serviceFunding';
 
 describe('budgetStatus', () => {
   it.each([
@@ -8,7 +9,8 @@ describe('budgetStatus', () => {
     [2000, 1000, 800, 1000, 200, 100, false, null, null], // surplus with money, no warning
     [5000, 500, 1500, 1000, -1000, 100, false, 5, '⚠ Treasury empty in ~5 months — upkeep exceeds tax income.'], // deficit with money
     [5001, 1000, 1500, 1000, -500, 100, false, 11, '⚠ Treasury empty in ~11 months — upkeep exceeds tax income.'], // ceil case: 5001/500 = 10.002 -> 11
-    [400, 1000, 1500, 1000, -500, 100, false, 1, '⚠ Treasury empty in ~1 month — upkeep exceeds tax income.'], // singular month
+    [500, 1000, 1500, 1000, -500, 100, false, 1, '⚠ Treasury empty in ~1 month — upkeep exceeds tax income.'], // singular month: money exactly covers one deficit, so the next settlement still pays in full
+    [50, 0, 200, 1000, -200, 100, false, 1, '⚠ Upkeep exceeds tax income — the next settlement goes unpaid and freezes growth.'], // money > 0 but below one month's deficit: the next settlement comes up short
     [12000, 0, 1000, 1000, -1000, 100, false, 12, '⚠ Treasury empty in ~12 months — upkeep exceeds tax income.'], // at the warning horizon
     [13000, 0, 1000, 1000, -1000, 100, false, 13, null], // beyond the warning horizon: runway still reported, no alarm
     [0, 700, 1000, 1000, -300, 100, false, 0, '⚠ Upkeep exceeds tax income — the next settlement goes unpaid and freezes growth.'], // zero-treasury deficit, still fully funded per-mille
@@ -31,4 +33,14 @@ describe('budgetStatus', () => {
       });
     },
   );
+});
+
+// budgetStatus.ts keeps a local copy of the full-funding per-mille so the helper stays free of
+// game/core imports; this pins the copy to the core constant.
+describe('budgetStatus — full-funding constant', () => {
+  it('reads exactly FUNDING_FULL_PER_MILLE as fully funded and one less as underfunded', () => {
+    const base = { money: 0, monthlyIncome: 0, monthlyUpkeep: 0 };
+    expect(budgetStatus({ ...base, serviceFundingPerMille: FUNDING_FULL_PER_MILLE }).underfunded).toBe(false);
+    expect(budgetStatus({ ...base, serviceFundingPerMille: FUNDING_FULL_PER_MILLE - 1 }).underfunded).toBe(true);
+  });
 });
