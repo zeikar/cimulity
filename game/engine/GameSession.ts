@@ -27,6 +27,7 @@ import type { ToolResult, ToolPreview } from '../tools';
 import type { GameLoopTickInfo, SpeedMultiplier } from '../core/GameLoop';
 import { TILE_COLORS } from '../render/visuals/palette';
 import { installDevApi, uninstallDevApi } from './devApi';
+import { FUNDING_FULL_PER_MILLE } from '../core/serviceFunding';
 
 // Drag-preview colors sourced from the shared palette so there's one source of truth.
 const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
@@ -47,7 +48,7 @@ const DRAG_PREVIEW_COLORS: Partial<Record<Tool, number>> = {
 
 /**
  * Snapshot passed to `onTickUpdate`. Bundled into one object rather than positional
- * args: it is 11 fields fanned out across four engine-internal emit sites plus the
+ * args: it is 14 fields fanned out across four engine-internal emit sites plus the
  * hand-written `stableForwarders` wrapper in GameCanvas, and same-typed neighbors
  * (happiness, congestion) would silently swap under a positional list with no compiler
  * error. TypeScript also accepts a SHORTER-arity callback for a longer signature, so a
@@ -67,6 +68,12 @@ export interface TickUpdate {
   unemployed: number;
   /** Non-abandoned C/I capacity INCLUDING road-less buildings that can never fill (see `LaborResult` in laborMarket.ts). */
   jobsCapacity: number;
+  /** Tax income for the next settled month at the current population; see World.monthlyTaxIncome. */
+  monthlyIncome: number;
+  /** Upkeep due for the next settled month across all structures and roads; see World.monthlyUpkeep. */
+  monthlyUpkeep: number;
+  /** Share of last month's upkeep actually paid, as an integer per-mille (1000 = paid in full); see World.getServiceFundingPerMille. */
+  serviceFundingPerMille: number;
 }
 
 export interface GameSessionCallbacks {
@@ -191,6 +198,9 @@ export class GameSession {
       employed: this.world!.getEmployed(),
       unemployed: this.world!.getUnemployed(),
       jobsCapacity: this.world!.getJobsCapacity(),
+      monthlyIncome: this.world!.monthlyTaxIncome(),
+      monthlyUpkeep: this.world!.monthlyUpkeep(),
+      serviceFundingPerMille: this.world!.getServiceFundingPerMille(),
     });
     // Keep tracker in sync; tool mutation already scheduled a save via scheduleSave above.
     this.lastSyncedMoney = money;
@@ -254,6 +264,9 @@ export class GameSession {
       employed: this.world ? this.world.getEmployed() : 0,
       unemployed: this.world ? this.world.getUnemployed() : 0,
       jobsCapacity: this.world ? this.world.getJobsCapacity() : 0,
+      monthlyIncome: this.world ? this.world.monthlyTaxIncome() : 0,
+      monthlyUpkeep: this.world ? this.world.monthlyUpkeep() : 0,
+      serviceFundingPerMille: this.world ? this.world.getServiceFundingPerMille() : FUNDING_FULL_PER_MILLE,
     });
     this.lastSyncedMoney = m;
     this.lastSyncedElapsedDays = this.world ? this.world.getElapsedDays() : 0;
@@ -481,6 +494,9 @@ export class GameSession {
         employed: world.getEmployed(),
         unemployed: world.getUnemployed(),
         jobsCapacity: world.getJobsCapacity(),
+        monthlyIncome: world.monthlyTaxIncome(),
+        monthlyUpkeep: world.monthlyUpkeep(),
+        serviceFundingPerMille: world.getServiceFundingPerMille(),
       });
       this.lastSyncedMoney = money;
       this.lastSyncedElapsedDays = elapsedDays;
@@ -503,6 +519,9 @@ export class GameSession {
       employed: world.getEmployed(),
       unemployed: world.getUnemployed(),
       jobsCapacity: world.getJobsCapacity(),
+      monthlyIncome: world.monthlyTaxIncome(),
+      monthlyUpkeep: world.monthlyUpkeep(),
+      serviceFundingPerMille: world.getServiceFundingPerMille(),
     });
     this.lastSyncedMoney = world.getMoney();
     this.lastSyncedElapsedDays = world.getElapsedDays();

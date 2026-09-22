@@ -78,6 +78,7 @@ export default defineConfig({
         'game/core/LaborMarketMap.ts',
         'app/hooks/sampleStats.ts',
         'app/hooks/laborStatus.ts',
+        'app/hooks/budgetStatus.ts',
         'game/render/visuals/polygon/windowLights.ts',
         'game/render/visuals/polygon/windowGeometry.ts',
         'game/render/roadAutoTile.ts',

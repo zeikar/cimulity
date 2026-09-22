@@ -18,6 +18,8 @@ import { EMPTY_CITY_DEMAND } from '@/game/core/Demand';
 import type { TileCoord, ScreenCoord } from '@/game/types/coordinates';
 import type { TileInfo, TickUpdate } from '@/game/engine';
 import { laborStatus } from '@/app/hooks/laborStatus';
+import { budgetStatus } from '@/app/hooks/budgetStatus';
+import { FUNDING_FULL_PER_MILLE } from '@/game/core/serviceFunding';
 
 export default function Home() {
   // Minimal React state: only UI display values
@@ -26,7 +28,7 @@ export default function Home() {
   const [inspect, setInspect] = useState<{ info: TileInfo; anchor: ScreenCoord } | null>(null);
   const [fps, setFps] = useState<number>(0);
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
-  const [sim, setSim] = useState<TickUpdate>({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS, date: { year: 1, month: 1, day: 1 }, demand: EMPTY_CITY_DEMAND, happiness: EMPTY_CITY_HAPPINESS, congestion: 0, employed: 0, unemployed: 0, jobsCapacity: 0 });
+  const [sim, setSim] = useState<TickUpdate>({ tick: 0, dirt: 0, population: 0, money: STARTING_FUNDS, date: { year: 1, month: 1, day: 1 }, demand: EMPTY_CITY_DEMAND, happiness: EMPTY_CITY_HAPPINESS, congestion: 0, employed: 0, unemployed: 0, jobsCapacity: 0, monthlyIncome: 0, monthlyUpkeep: 0, serviceFundingPerMille: FUNDING_FULL_PER_MILLE });
   const [currentTool, setCurrentTool] = useState<Tool>(Tool.SELECT);
   const [resetNonce, setResetNonce] = useState(0);
   const [speedMultiplier, setSpeedMultiplier] = useState<1 | 2 | 3>(1);
@@ -103,6 +105,7 @@ export default function Home() {
   }, []);
 
   const labor = laborStatus({ employed: sim.employed, unemployed: sim.unemployed, jobsCapacity: sim.jobsCapacity });
+  const budget = budgetStatus({ money: sim.money, monthlyIncome: sim.monthlyIncome, monthlyUpkeep: sim.monthlyUpkeep, serviceFundingPerMille: sim.serviceFundingPerMille });
 
   // Accumulate display-only sample history for the StatsPanel charts.
   // labor.rate (0..1) matches the happiness/congestion convention; percent formatting happens in the chart.
@@ -174,6 +177,7 @@ export default function Home() {
         paused={paused}
         statsSamples={statsSamples}
         labor={labor}
+        budget={budget}
         dataView={dataView}
         onDataViewChange={setDataView}
       />

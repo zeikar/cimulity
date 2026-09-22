@@ -13,6 +13,7 @@ import { Tool } from '@/game/tools';
 import type { DataView } from '@/game/render/dataView';
 import type { StatsSample } from '@/app/hooks/sampleStats';
 import type { LaborStatus } from '@/app/hooks/laborStatus';
+import type { BudgetStatus } from '@/app/hooks/budgetStatus';
 import { StatsPanel } from './StatsPanel';
 import { DataViewPanel } from './DataViewPanel';
 
@@ -53,6 +54,7 @@ export interface GameHUDProps {
   paused: boolean;
   statsSamples: StatsSample[];
   labor: LaborStatus;
+  budget: BudgetStatus;
   dataView: DataView;
   onDataViewChange: (v: DataView) => void;
 }
@@ -84,6 +86,7 @@ export function GameHUD({
   paused,
   statsSamples,
   labor,
+  budget,
   dataView,
   onDataViewChange,
 }: GameHUDProps) {
@@ -123,6 +126,21 @@ export function GameHUD({
         <div>
           <strong>Money:</strong> {money}
         </div>
+        <div>
+          <strong>Net/month:</strong>{' '}
+          <span style={{ color: budget.netFlow < 0 ? '#ff5252' : undefined }}>
+            {budget.netFlow > 0 ? `+${budget.netFlow}` : budget.netFlow}
+          </span>
+        </div>
+        <div>
+          <strong>Upkeep funded:</strong>{' '}
+          <span style={{ color: budget.underfunded ? '#ff5252' : undefined }}>
+            {budget.fundedPercent}%
+          </span>
+        </div>
+        {budget.warning && (
+          <div style={{ color: '#ff5252', marginTop: '4px' }}>{budget.warning}</div>
+        )}
         <div>
           <strong>R:</strong> <BarBlocks value={demand.residential} color="#4caf50" /> {demand.residential.toFixed(2)}
         </div>
