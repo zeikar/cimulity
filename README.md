@@ -1,5 +1,11 @@
 # Cimulity
 
+[![Deploy](https://github.com/zeikar/cimulity/actions/workflows/deploy.yml/badge.svg)](https://github.com/zeikar/cimulity/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![PixiJS](https://img.shields.io/badge/PixiJS-8-e72264)](https://pixijs.com/)
 [![Built with HyperClaude](https://img.shields.io/badge/built%20with-HyperClaude-7c3aed)](http://zeikar.dev/hyperclaude/)
 
 **Open-source minimal city simulation game in the browser.**
@@ -103,7 +109,3 @@ This is a learning/demonstration project. Feel free to fork and experiment!
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
----
-
-**Built with [HyperClaude](http://zeikar.dev/hyperclaude/)** — *Claude builds, Codex critiques.* My own Claude Code plugin. 🤖✨
